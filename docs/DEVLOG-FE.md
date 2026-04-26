@@ -22,3 +22,20 @@
 ### The Tech Debt
 - Wallet support is currently Phantom-focused; if multi-wallet support is needed later, we should add adapters incrementally and verify Windows compatibility package by package.
 - We still need implementation wiring for `ConnectionProvider` + `WalletProvider` and environment-based RPC config for Devnet.
+
+## 2026-04-26 - MatchSocket Hook & Shared Types
+
+### The Change
+- Created `packages/shared-types/src/websocket.ts` to define the "Contract" between Frontend and Backend based on the card/health game mechanics. Includes `GameState`, `PlayerState`, `Card`, and socket event types.
+- Updated `apps/web/tsconfig.json` paths to map `@shared/*` to the local `shared-types` package folder.
+- Built `useMatchSocket.ts` hook using the native `WebSocket` API.
+- Created `scripts/mock-ws-server.js` to simulate the backend.
+
+### The Reasoning
+- Contract-First Development: Defining the payload interfaces before the backend is built forces alignment and unblocks the frontend.
+- Native WebSocket: Opted for the browser's built-in `WebSocket` instead of Socket.io to keep the Next.js bundle light and ensure perfect compatibility with the backend's Bun/Hono stack.
+- State vs Callbacks: The hook maintains the `GameState` internally and exposes it to the UI instead of using event callbacks, preventing stale closures in React.
+
+### The Tech Debt
+- The `tsconfig.json` path mapping is a temporary workaround. If the monorepo expands, we should set up proper NPM Workspaces / Turborepo.
+- The `mock-ws-server.js` should be deleted once the real Hono backend is deployed to Devnet.
