@@ -10,6 +10,7 @@ interface ServerPlayerState {
   baseHealth: number;
   characterState: CharacterState;
   hand: Card[];
+  hasDeposited: boolean;
 }
 
 export interface Room {
@@ -114,14 +115,15 @@ export class RoomManager {
       room.players.set(address, {
         baseHealth: 100,
         characterState: 'stay',
-        hand: this.getMockHand()
+        hand: this.getMockHand(),
+        hasDeposited: false
       });
     }
 
-    // Check if we can start
+    // Check if we can start depositing
     if (room.status === 'waiting' && room.clients.size === 2) {
-      room.status = 'playing';
-      console.log(`Room ${roomId} has 2 players. Starting match!`);
+      room.status = 'depositing';
+      console.log(`Room ${roomId} has 2 players. Transitioning to depositing!`);
     }
 
     this.broadcastGameState(room);
@@ -147,7 +149,25 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    if (message.type === 'playCard') {
+    if (message.type === 'confirmDeposit') {
+      const { signature } = message.payload;
+      console.log(`Player ${address} confirmed deposit with signature ${signature} in room ${roomId}`);
+      
+      const playerState = room.players.get(address);
+      if (playerState) {
+        playerState.hasDeposited = true;
+      }
+
+      // Check if both players have deposited
+      const allDeposited = Array.from(room.players.values()).every(p => p.hasDeposited);
+      if (allDeposited && room.status === 'depositing') {
+        room.status = 'playing';
+        console.log(`Room ${roomId} both players deposited. Starting match!`);
+        this.broadcastGameState(room);
+      }
+    }
+
+    if (message.type === 'playCard' && room.status === 'playing') {
       const { cardId } = message.payload;
       console.log(`Player ${address} played card ${cardId} in room ${roomId}`);
       
@@ -176,7 +196,7 @@ export class RoomManager {
 
         // Check for end
         if (opponentState.baseHealth <= 0) {
-          room.status = 'match_ended';
+          room.status = 'finished';
           this.broadcastMatchResult(room, address);
         }
       }
@@ -187,7 +207,7 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    room.status = 'match_ended';
+    room.status = 'finished';
     const opponentAddress = Array.from(room.clients.keys()).find(a => a !== disconnectedAddress);
     
     if (opponentAddress) {
