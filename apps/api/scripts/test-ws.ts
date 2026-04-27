@@ -57,8 +57,21 @@ async function runTest() {
 
   await new Promise(r => setTimeout(r, 500));
 
-  // 4. Bob plays a card
-  console.log('4. Bob playing a card...');
+  // 4. Send confirmDeposit for Alice and Bob
+  console.log('4. Alice and Bob confirming deposits...');
+  ws1.send(JSON.stringify({
+    type: 'confirmDeposit',
+    payload: { signature: 'sig_alice_123' }
+  }));
+  ws2.send(JSON.stringify({
+    type: 'confirmDeposit',
+    payload: { signature: 'sig_bob_456' }
+  }));
+
+  await new Promise(r => setTimeout(r, 500));
+
+  // 5. Bob plays a card
+  console.log('5. Bob playing a card...');
   ws2.send(JSON.stringify({
     type: 'playCard',
     payload: { cardId: 'mock-card-id', selectedOptionIndex: 0 }
@@ -66,14 +79,14 @@ async function runTest() {
 
   await new Promise(r => setTimeout(r, 1500));
 
-  // 5. Bob disconnects
-  console.log('5. Bob disconnecting...');
+  // 6. Bob disconnects
+  console.log('6. Bob disconnecting...');
   ws2.close();
 
   await new Promise(r => setTimeout(r, 1000));
 
-  // 6. Bob reconnects
-  console.log('6. Bob reconnecting...');
+  // 7. Bob reconnects
+  console.log('7. Bob reconnecting...');
   const ws3 = new WebSocket(`ws://localhost:8080/match/${roomId}?address=bob`);
   
   ws3.onmessage = (event) => {
