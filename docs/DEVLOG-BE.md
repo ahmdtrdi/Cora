@@ -82,3 +82,18 @@
 
 **The Tech Debt:**
 - **Trusting the Client:** Currently, the server blindly trusts the `confirmDeposit` message. In a production environment, the backend *must* receive the transaction signature in this payload and verify it against the Solana RPC to ensure the funds actually landed in the escrow PDA before unlocking the `playing` state.
+
+## 2026-04-27 - GET /api/questions Endpoint & Pool JSON
+
+**The Change:**
+- Created a sample JSON file at `data/questions/pool.json` containing 8 logic and math GAT questions.
+- Added a `GET /api/questions` route in `apps/api/src/index.ts`.
+- Implemented file reading logic using `Bun.file()` to fetch the questions from `pool.json`.
+- Implemented shuffling logic that selects 5 randomized questions from the pool and returns them in a standard JSON format.
+
+**The Reasoning:**
+- **Decoupled Data:** Storing the question bank in a simple `.json` file inside `data/questions/` allows data to be easily managed independently of application code, following the MVP boundaries defined in `MASTER.md`.
+- **Match Gameplay Requirements:** The endpoint randomly shuffles and limits questions to 5, which meets the requirement of providing fresh questions per game.
+
+**The Tech Debt:**
+- **In-Memory Shuffling Risk:** We read the JSON file directly and shuffle elements in memory. If the question bank grows to thousands of items, reading the full parsed JSON and slicing may impact memory and performance. We'd ideally want to use an actual database (e.g., PostgreSQL or Turso) with a randomized query limit approach eventually.
