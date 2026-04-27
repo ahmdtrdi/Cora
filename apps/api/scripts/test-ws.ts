@@ -1,0 +1,68 @@
+// test-ws.ts
+// Run this with `bun run scripts/test-ws.ts` after starting the dev server
+
+async function runTest() {
+  console.log('--- Starting WebSocket Test ---');
+  
+  // 1. Get a roomId from matchmaking
+  console.log('1. Fetching match roomId...');
+  const res = await fetch('http://localhost:8080/match', { method: 'POST' });
+  const { roomId } = await res.json() as { roomId: string };
+  console.log(`Got roomId: ${roomId}`);
+
+  // 2. Connect Player 1
+  console.log('2. Connecting Player 1 (alice)...');
+  const ws1 = new WebSocket(`ws://localhost:8080/match/${roomId}?address=alice`);
+  
+  ws1.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log(`[Alice] Received:`, data.type);
+  };
+
+  // Wait a bit
+  await new Promise(r => setTimeout(r, 500));
+
+  // 3. Connect Player 2
+  console.log('3. Connecting Player 2 (bob)...');
+  const ws2 = new WebSocket(`ws://localhost:8080/match/${roomId}?address=bob`);
+  
+  ws2.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log(`[Bob] Received:`, data.type, data.payload?.status);
+  };
+
+  await new Promise(r => setTimeout(r, 500));
+
+  // 4. Bob plays a card
+  console.log('4. Bob playing a card...');
+  ws2.send(JSON.stringify({
+    type: 'playCard',
+    payload: { cardId: 'mock-card-id', selectedOptionIndex: 0 }
+  }));
+
+  await new Promise(r => setTimeout(r, 1500));
+
+  // 5. Bob disconnects
+  console.log('5. Bob disconnecting...');
+  ws2.close();
+
+  await new Promise(r => setTimeout(r, 1000));
+
+  // 6. Bob reconnects
+  console.log('6. Bob reconnecting...');
+  const ws3 = new WebSocket(`ws://localhost:8080/match/${roomId}?address=bob`);
+  
+  ws3.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log(`[Bob Reconnected] Received:`, data.type, data.payload?.status);
+  };
+
+  await new Promise(r => setTimeout(r, 1500));
+
+  console.log('--- Test Finished ---');
+  ws1.close();
+  ws3.close();
+  process.exit(0);
+}
+
+runTest().catch(console.error);
