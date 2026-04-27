@@ -22,6 +22,7 @@ export interface Room {
 
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
+  private matchmakingQueue: Array<{ address: string; resolve: (roomId: string) => void }> = [];
   private DISCONNECT_TIMEOUT_MS = 10000; // 10 seconds
 
   // Returns the room if it exists, otherwise creates a new one
@@ -45,16 +46,38 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
-  // FIFO matchmaking: finds a waiting room with 1 player, or creates a new one
-  public findOrCreateMatch(): string {
-    for (const [roomId, room] of this.rooms.entries()) {
-      if (room.status === 'waiting' && room.clients.size < 2) {
-        return roomId;
-      }
+  // True FIFO matchmaking: pairs two players and returns a shared roomId
+  public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
+    // Check if there is another player in queue who isn't the same address
+    const index = this.matchmakingQueue.findIndex((q) => q.address !== address);
+
+    if (index !== -1) {
+      // Pair found!
+      const pairedPlayer = this.matchmakingQueue.splice(index, 1)[0];
+      const newRoomId = `room-${Date.now()}`;
+      this.createRoom(newRoomId);
+      
+      // Resolve for the waiting player
+      pairedPlayer.resolve(newRoomId);
+      // Resolve for current player
+      return newRoomId;
     }
-    const newRoomId = `room-${Date.now()}`;
-    this.createRoom(newRoomId);
-    return newRoomId;
+
+    // No pair found, enter queue
+    return new Promise((resolve) => {
+      const queueItem = { address, resolve };
+      this.matchmakingQueue.push(queueItem);
+
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          const qIndex = this.matchmakingQueue.indexOf(queueItem);
+          if (qIndex !== -1) {
+            this.matchmakingQueue.splice(qIndex, 1);
+            console.log(`Player ${address} aborted matchmaking request.`);
+          }
+        });
+      }
+    });
   }
 
   public joinRoom(roomId: string, address: string, ws: ServerWebSocket<unknown>) {
