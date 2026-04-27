@@ -20,7 +20,8 @@
     "strict": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@shared/*": ["../../packages/shared-types/src/*"]
+      "@shared/*": ["../../packages/shared-types/src/*"],
+      "@cora/game-logic": ["../../packages/game-logic/src/index.ts"]
     }
   }
 }
