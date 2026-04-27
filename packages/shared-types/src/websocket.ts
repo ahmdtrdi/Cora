@@ -1,6 +1,6 @@
 export type CharacterState = 'stay' | 'action' | 'angry' | 'happy';
 export type CardType = 'heal' | 'attack';
-export type GameStatus = 'waiting' | 'round_starting' | 'playing' | 'round_ended' | 'match_ended';
+export type GameStatus = 'waiting' | 'depositing' | 'playing' | 'finished';
 
 export interface PlayerState {
   address: string;
@@ -31,6 +31,7 @@ export interface GameState {
 // Messages sent from Client -> Server
 export type ClientToServerEvents = {
   playCard: (cardId: string, selectedOptionIndex: number) => void;
+  confirmDeposit: (signature: string) => void;
 };
 
 // Messages sent from Server -> Client
