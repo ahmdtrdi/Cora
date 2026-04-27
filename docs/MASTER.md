@@ -48,10 +48,9 @@ Real-time PvP wagering requires sub-second finality and near-zero transaction fe
 │     └─ Anchor smart contract locks tokens in PDA vault      │
 │                                                             │
 │  3. BATTLE (Off-Chain)                                      │
-│     └─ 3-round card-based battle via WebSocket              │
-│     └─ Players use randomized Action Cards (Heal/Attack)    │
-│     └─ Cards contain GAT logic multiple-choice questions    │
-│     └─ Correct answers reduce enemy or restore own Base HP  │
+│     └─ Server sends 5 randomized GAT logic modules          │
+│     └─ Players answer via WebSocket (no wallet signing)     │
+│     └─ Server scores: correct answers + time bonus          │
 │                                                             │
 │  4. SETTLEMENT (On-Chain — Transaction #2)                  │
 │     └─ Server determines winner                             │
@@ -153,60 +152,4 @@ No DAO for MVP. Community management = Discord server + viral Blinks on X.
 
 ## ✅ Core Validation Milestone
 
-> A user opens a URL, connects their Phantom browser extension, wagers test tokens, plays a 3-round card-based logic battle against another player, and watches the funds settle on-chain. This complete loop validates our core architecture.
----
-
-## Project Folder Structure (MVP)
-
-The repository is intentionally scaffolded with clear top-level boundaries, while leaving implementation details to each role and module owner.
-
-```text
-Cora/
-|-- .github/
-|   `-- workflows/
-|-- apps/
-|   |-- web/
-|   |-- api/
-|   `-- settlement-oracle/
-|-- packages/
-|   |-- solana-program/
-|   |-- solana-client/
-|   |-- game-logic/
-|   |-- shared-types/
-|   `-- ui/
-|-- data/
-|   |-- questions/
-|   |-- tokens/
-|   `-- fixtures/
-|-- notebooks/
-|-- scripts/
-`-- docs/
-    |-- MASTER.md
-    `-- AGENTS.md
-```
-
-### Folder Explanations
-
-- `.github/workflows`: CI pipelines for lint, test, build, and deploy checks.
-- `apps/web`: User-facing app for lobby, battle, result flow, and wallet connection.
-- `apps/api`: Matchmaking, WebSocket gameplay transport, and app APIs.
-- `apps/settlement-oracle`: Service that authorizes match settlement signatures for on-chain verification.
-- `packages/solana-program`: Anchor/Rust escrow program and on-chain instruction logic.
-- `packages/solana-client`: TypeScript client helpers for program interaction and transaction construction.
-- `packages/game-logic`: Shared scoring rules, question flow, and deterministic match logic.
-- `packages/shared-types`: Shared schemas and types used across apps and packages.
-- `packages/ui`: Reusable UI components and design tokens for frontend consistency.
-- `data/questions`: Source question bank for GAT/TIU and related metadata.
-- `data/tokens`: Allowed SPL token arena configuration and token metadata.
-- `data/fixtures`: Test fixtures and mock payloads for development and QA.
-- `notebooks`: Research notebooks, including anti-cheat proof-of-concept experiments.
-- `scripts`: Project automation scripts such as seeding, local setup, and helper utilities.
-- `docs`: Product, architecture, and execution references for the team.
-
-### Ownership Model
-
-- Frontend Lead primarily owns `apps/web` and collaborates on `packages/ui`.
-- Backend & Networking Lead primarily owns `apps/api` and `apps/settlement-oracle`.
-- Data & Game Logic Engineer primarily owns `packages/game-logic`, `data/questions`, and `notebooks`.
-- Web3 & Smart Contract Lead primarily owns `packages/solana-program` and `packages/solana-client`.
-- Cross-team interfaces should be stabilized in `packages/shared-types`.
+> A user opens a URL, connects their Phantom browser extension, wagers test tokens, plays a 5-question logic/aptitude quiz against another player, and watches the funds settle on-chain. This complete loop validates our core architecture.
