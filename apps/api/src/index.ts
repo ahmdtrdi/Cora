@@ -1,12 +1,18 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { createBunWebSocket } from 'hono/bun';
 import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
 import { RoomManager } from './managers/RoomManager';
+import { rateLimiter } from './middleware/rateLimiter';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
 const roomManager = new RoomManager();
+
+// Global Middlewares
+app.use('/*', cors()); // Enable CORS for all routes (frontend communication)
+app.use('/*', rateLimiter); // Basic in-memory rate limiting
 
 // Basic health check route
 app.get('/health', (c) => {

@@ -97,3 +97,19 @@
 
 **The Tech Debt:**
 - **In-Memory Shuffling Risk:** We read the JSON file directly and shuffle elements in memory. If the question bank grows to thousands of items, reading the full parsed JSON and slicing may impact memory and performance. We'd ideally want to use an actual database (e.g., PostgreSQL or Turso) with a randomized query limit approach eventually.
+
+## 2026-04-27 - Security Middleware (CORS & Rate Limiter) added
+
+**The Change:**
+- Added Hono's native `cors` middleware (`hono/cors`) as a global middleware on `/*`.
+- Created a custom in-memory rate limiter middleware at `apps/api/src/middleware/rateLimiter.ts`.
+- Registered `rateLimiter` globally on `/*` before hitting the application routes.
+- Limited each IP to 60 requests per minute with an automated 1% chance memory cleanup trigger.
+
+**The Reasoning:**
+- **CORS Requirements:** The frontend (e.g., `localhost:3000`) and the Blink (browser extensions) require CORS headers to execute cross-origin requests to the backend (`localhost:8080`).
+- **Abuse Prevention:** Opening the API publicly immediately invites bots. The in-memory map rate limiter prevents simple spam (DDoS on the WebSocket allocator or mass-scraping of the question pool) while keeping implementation lightweight and dependency-free.
+- **Health Check Enhancement:** The `/health` route is now protected and accessible via CORS without requiring authentication, allowing uptime monitoring services to ping it freely.
+
+**The Tech Debt:**
+- **In-Memory Rate Limiter limitation:** Just like the WebSocket rooms, keeping a `Map` of IPs in local memory will fail once the backend is load-balanced across multiple instances. Rate limits will be per-instance. Eventually, this needs to be decoupled into a Redis cache (Upstash) or rely on edge infrastructure controls (like Cloudflare/Vercel rate-limiting) instead of application-level limiting.
