@@ -1,14 +1,38 @@
 // test-ws.ts
 // Run this with `bun run scripts/test-ws.ts` after starting the dev server
 
+async function fetchMatch(address: string): Promise<string> {
+  const res = await fetch('http://localhost:8080/match', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address })
+  });
+  const data = await res.json() as { roomId?: string, error?: string };
+  if (data.error || !data.roomId) {
+    throw new Error(`Failed to match for ${address}: ${data.error}`);
+  }
+  return data.roomId;
+}
+
 async function runTest() {
   console.log('--- Starting WebSocket Test ---');
   
-  // 1. Get a roomId from matchmaking
-  console.log('1. Fetching match roomId...');
-  const res = await fetch('http://localhost:8080/match', { method: 'POST' });
-  const { roomId } = await res.json() as { roomId: string };
-  console.log(`Got roomId: ${roomId}`);
+  // 1. Get a roomId from matchmaking concurrently
+  console.log('1. Fetching match roomId concurrently for Alice and Bob...');
+  
+  const [roomIdAlice, roomIdBob] = await Promise.all([
+    fetchMatch('alice'),
+    fetchMatch('bob')
+  ]);
+  
+  console.log(`Got roomId Alice: ${roomIdAlice}`);
+  console.log(`Got roomId Bob: ${roomIdBob}`);
+  
+  if (roomIdAlice !== roomIdBob) {
+    throw new Error('Room IDs do not match! Matchmaking failed.');
+  }
+  
+  const roomId = roomIdAlice;
 
   // 2. Connect Player 1
   console.log('2. Connecting Player 1 (alice)...');

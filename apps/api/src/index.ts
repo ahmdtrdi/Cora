@@ -14,8 +14,20 @@ app.get('/health', (c) => {
 });
 
 // Matchmaking route
-app.post('/match', (c) => {
-  const roomId = roomManager.findOrCreateMatch();
+app.post('/match', async (c) => {
+  let address: string;
+  try {
+    const body = await c.req.json();
+    address = body.address;
+  } catch (e) {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!address) {
+    return c.json({ error: 'Address is required' }, 400);
+  }
+
+  const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
   return c.json({ roomId });
 });
 
