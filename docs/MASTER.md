@@ -48,9 +48,10 @@ Real-time PvP wagering requires sub-second finality and near-zero transaction fe
 │     └─ Anchor smart contract locks tokens in PDA vault      │
 │                                                             │
 │  3. BATTLE (Off-Chain)                                      │
-│     └─ Server sends 5 randomized GAT logic modules          │
-│     └─ Players answer via WebSocket (no wallet signing)     │
-│     └─ Server scores: correct answers + time bonus          │
+│     └─ 3-round card-based battle via WebSocket              │
+│     └─ Players use randomized Action Cards (Heal/Attack)    │
+│     └─ Cards contain GAT logic multiple-choice questions    │
+│     └─ Correct answers reduce enemy or restore own Base HP  │
 │                                                             │
 │  4. SETTLEMENT (On-Chain — Transaction #2)                  │
 │     └─ Server determines winner                             │
@@ -152,7 +153,7 @@ No DAO for MVP. Community management = Discord server + viral Blinks on X.
 
 ## ✅ Core Validation Milestone
 
-> A user opens a URL, connects their Phantom browser extension, wagers test tokens, plays a 5-question logic/aptitude quiz against another player, and watches the funds settle on-chain. This complete loop validates our core architecture.
+> A user opens a URL, connects their Phantom browser extension, wagers test tokens, plays a 3-round card-based logic battle against another player, and watches the funds settle on-chain. This complete loop validates our core architecture.
 ---
 
 ## Project Folder Structure (MVP)
