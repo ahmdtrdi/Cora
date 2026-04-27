@@ -13,6 +13,30 @@ app.get('/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Questions route
+app.get('/api/questions', async (c) => {
+  try {
+    const defaultPath = 'data/questions/pool.json';
+    const fallbackPath = '../../data/questions/pool.json';
+
+    let questions;
+    try {
+      questions = await Bun.file(defaultPath).json();
+    } catch {
+      questions = await Bun.file(fallbackPath).json();
+    }
+
+    // Serve 5 random questions
+    const shuffled = questions.sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, 5);
+
+    return c.json({ questions: selected });
+  } catch (error) {
+    console.error('Failed to load questions:', error);
+    return c.json({ error: 'Failed to load questions' }, 500);
+  }
+});
+
 // Matchmaking route
 app.post('/match', async (c) => {
   let address: string;
