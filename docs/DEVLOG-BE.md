@@ -113,3 +113,18 @@
 
 **The Tech Debt:**
 - **In-Memory Rate Limiter limitation:** Just like the WebSocket rooms, keeping a `Map` of IPs in local memory will fail once the backend is load-balanced across multiple instances. Rate limits will be per-instance. Eventually, this needs to be decoupled into a Redis cache (Upstash) or rely on edge infrastructure controls (like Cloudflare/Vercel rate-limiting) instead of application-level limiting.
+
+## 2026-04-27 - Server Keypair & Settlement Signature
+
+**The Change:**
+- Installed `@solana/web3.js`, `bs58`, and `tweetnacl` to handle Solana cryptography natively in Bun.
+- Created `apps/api/src/utils/settlement.ts` which loads `SERVER_KEYPAIR` from `.env`.
+- Added support for both `[1, 2, ...]` (JSON array array) and `bs58` string formats for the keypair storage.
+- Added `signSettlementAuthorization(matchId, winnerAddress)` that executes an Ed25519 signature over a deterministic payload (`SETTLE:<matchId>:<winnerAddress>`).
+
+**The Reasoning:**
+- **Zero-Trust Client:** As outlined in the architecture, the client cannot be trusted to report who won. The server determines the winner, signs the result cryptographically, and this signature is verified by the Solana smart contract (Anchor) inside the `settle_match` instruction.
+- **Payload Determinism:** Standardizing the message buffer to a strict `SETTLE:<matchId>:<winnerAddress>` format makes it easy for the Rust Anchor backend to recreate the exact payload and verify the Ed25519 signature before releasing the escrowed funds.
+
+**The Tech Debt:**
+- **Calling the Contract:** The `settlement.ts` module currently only *generates* the signature. To fully implement "Server can call settle_match", we will need to install `@coral-xyz/anchor`, import the IDL, and write the RPC call to push the transaction on-chain on behalf of the server. Currently, we just have the cryptographic auth ready.
