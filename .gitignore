@@ -25,5 +25,8 @@ out/
 .DS_Store
 Thumbs.db
 
+# Docs
+production_readiness.md
+SPRINT_CORA.md
 # Questions Database
 data/questions/*.json

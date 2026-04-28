@@ -5,9 +5,12 @@ import type {
   CharacterState,
   GameStatus,
   MatchResult,
+  Card
 } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 import { loadQuestions } from '../questions';
+import { deriveMatchId } from '@shared/escrow';
+import { signSettlementAuthorization, serverPublicKey } from '../utils/settlement';
 
 interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
@@ -20,6 +23,8 @@ interface ServerPlayerMeta {
 
 export interface Room {
   id: string;
+  /** 32-byte match ID derived from room ID — used for on-chain PDA derivation */
+  matchIdBytes: Uint8Array;
   clients: Map<string, RoomClient>;
   status: GameStatus;
   playerMeta: Map<string, ServerPlayerMeta>;
@@ -39,6 +44,7 @@ export class RoomManager {
 
     const newRoom: Room = {
       id: roomId,
+      matchIdBytes: deriveMatchId(roomId),
       clients: new Map(),
       status: 'waiting',
       playerMeta: new Map(),
@@ -383,15 +389,24 @@ export class RoomManager {
     }
   }
 
-  /**
-   * Broadcast a message to all connected clients in a room.
-   */
-  private broadcastToRoom(room: Room, message: WsMessage) {
-    const raw = JSON.stringify(message);
+  private broadcastMatchResult(room: Room, winnerAddress: string) {
+    // Sign settlement authorization for on-chain verification
+    const settlementSignature = signSettlementAuthorization(
+      room.matchIdBytes,
+      winnerAddress,
+    );
+
     for (const client of room.clients.values()) {
       if (client.ws) {
-        client.ws.send(raw);
+        client.ws.send(JSON.stringify({
+          type: 'matchResult',
+          payload: {
+            winner: winnerAddress,
+            matchId: Buffer.from(room.matchIdBytes).toString('hex'),
+            settlementSignature,
+            serverPublicKey,
+          }
+        } as WsMessage));
       }
     }
   }
-}

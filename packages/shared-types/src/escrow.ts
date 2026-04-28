@@ -1,0 +1,77 @@
+import { createHash } from 'crypto';
+
+/**
+ * Shared constants between smart contract and backend/frontend.
+ * These MUST match the values in packages/solana-program/.../constants.rs
+ *
+ * Smart contract seeds (Rust):
+ *   MATCH_SEED = b"match"
+ *   VAULT_SEED = b"vault"
+ */
+export const ESCROW_CONSTANTS = {
+  MATCH_SEED: 'match',
+  VAULT_SEED: 'vault',
+  DEPOSIT_TIMEOUT_SECONDS: 300,
+  MATCH_TIMEOUT_SECONDS: 1800,
+  FEE_BASIS_POINTS: 250,
+  BASIS_POINTS_DIVISOR: 10_000,
+  /** The exact fee percentage as a readable number */
+  FEE_PERCENTAGE: 2.5,
+} as const;
+
+/**
+ * Settlement message format.
+ * Both backend (signing) and smart contract (verification) must use the same format.
+ *
+ * Format: SETTLE:<match_id_hex>:<winner_pubkey_base58>
+ *
+ * The smart contract reconstructs this message from on-chain state and verifies
+ * the ed25519 signature against it.
+ */
+export const SETTLEMENT_MESSAGE_PREFIX = 'SETTLE';
+
+export function buildSettlementMessage(
+  matchIdBytes: Uint8Array,
+  winnerAddress: string,
+): string {
+  const matchIdHex = Buffer.from(matchIdBytes).toString('hex');
+  return `${SETTLEMENT_MESSAGE_PREFIX}:${matchIdHex}:${winnerAddress}`;
+}
+
+/**
+ * Generates a deterministic 32-byte match ID from a room identifier.
+ *
+ * The backend creates human-readable room IDs (e.g., "room-1714300000000").
+ * The smart contract requires a fixed [u8; 32] match ID for PDA derivation.
+ *
+ * This function bridges the two by hashing the room ID into 32 bytes using SHA-256.
+ * Both backend and frontend must use this same function to derive the on-chain match ID.
+ *
+ * @param roomId The human-readable room identifier from matchmaking
+ * @returns 32-byte Uint8Array suitable for on-chain match_id parameter
+ */
+export function deriveMatchId(roomId: string): Uint8Array {
+  const hash = createHash('sha256').update(roomId).digest();
+  return new Uint8Array(hash);
+}
+
+/**
+ * On-chain match lifecycle.
+ * Maps to the Rust enum MatchStatus in state.rs.
+ */
+export type OnChainMatchStatus =
+  | 'WaitingDeposit'
+  | 'Active'
+  | 'Settled'
+  | 'Refunded';
+
+/**
+ * Maps backend GameStatus to on-chain MatchStatus.
+ * Not all backend statuses have on-chain equivalents (e.g., 'waiting' is purely off-chain).
+ */
+export const GAME_TO_CHAIN_STATUS: Record<string, OnChainMatchStatus | null> = {
+  waiting: null,       // Off-chain only — before initialize_match is called
+  depositing: 'WaitingDeposit',
+  playing: 'Active',
+  finished: null,      // Could be 'Settled' or 'Refunded' — determined by settlement flow
+};
