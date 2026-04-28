@@ -5,11 +5,17 @@ pub enum CoraError {
     #[msg("Wager amount must be greater than zero")]
     InvalidWagerAmount,
 
+    #[msg("Player A and Player B cannot be the same")]
+    SamePlayer,
+
     #[msg("Player is not a participant in this match")]
     UnauthorizedPlayer,
 
     #[msg("Player has already deposited")]
     AlreadyDeposited,
+
+    #[msg("Match is not in active status")]
+    NotActive,
 
     #[msg("Match is not waiting for deposits")]
     NotWaitingDeposit,
@@ -25,6 +31,9 @@ pub enum CoraError {
 
     #[msg("Timeout has not been reached yet")]
     TimeoutNotReached,
+
+    #[msg("Token mint does not match match state")]
+    InvalidTokenMint,
 
     #[msg("Match has already been finalized")]
     MatchAlreadyFinalized,
