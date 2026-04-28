@@ -24,3 +24,7 @@ out/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Docs
+production_readiness.md
+SPRINT_CORA.md

@@ -1,6 +1,7 @@
 import { Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
+import { buildSettlementMessage } from '@shared/escrow';
 
 /**
  * Loads the server keypair from the environment variable.
@@ -35,17 +36,21 @@ const serverKeypair = getServerKeypair();
 export const serverPublicKey = serverKeypair.publicKey.toBase58();
 
 /**
- * Signs the settlement payload.
- * The server signs a deterministic message that matches the Anchor program's expected payload.
- * 
- * @param matchId The unique ID of the match
+ * Signs the settlement payload using the shared message format.
+ * The signed message exactly matches what the Anchor program reconstructs and verifies.
+ *
+ * Message format (defined in @cora/shared-types/escrow):
+ *   SETTLE:<match_id_hex>:<winner_pubkey_base58>
+ *
+ * @param matchId The 32-byte match ID (derived from deriveMatchId)
  * @param winnerAddress The Solana public key of the winning wallet
  * @returns Base58 encoded signature that the client or server can submit on-chain
  */
-export function signSettlementAuthorization(matchId: string, winnerAddress: string): string {
-  // Construct a deterministic message string. 
-  // The Anchor program expects to verify a signature over this exact payload format.
-  const messageString = `SETTLE:${matchId}:${winnerAddress}`;
+export function signSettlementAuthorization(
+  matchId: Uint8Array,
+  winnerAddress: string,
+): string {
+  const messageString = buildSettlementMessage(matchId, winnerAddress);
   const messageBuffer = Buffer.from(messageString, 'utf-8');
 
   // Sign using Ed25519 (standard Solana signature)
@@ -54,3 +59,4 @@ export function signSettlementAuthorization(matchId: string, winnerAddress: stri
   // Return signature encoded in Base58 for easy transportation & Anchor parsing
   return bs58.encode(signatureBytes);
 }
+

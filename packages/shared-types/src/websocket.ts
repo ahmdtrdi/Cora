@@ -1,6 +1,6 @@
 export type CharacterState = 'stay' | 'action' | 'angry' | 'happy';
 export type CardType = 'heal' | 'attack';
-export type GameStatus = 'waiting' | 'depositing' | 'playing' | 'finished';
+export type GameStatus = 'waiting' | 'depositing' | 'playing' | 'settling' | 'finished';
 
 export interface PlayerState {
   address: string;
@@ -34,10 +34,21 @@ export type ClientToServerEvents = {
   confirmDeposit: (signature: string) => void;
 };
 
+// Settlement result payload sent after match ends
+export interface MatchResultPayload {
+  winner: string;
+  /** 32-byte match ID as hex string — use to derive PDA on-chain */
+  matchId: string;
+  /** Server's ed25519 settlement signature (base58 encoded) */
+  settlementSignature: string;
+  /** Server public key (base58) — matches the one stored in MatchState on-chain */
+  serverPublicKey: string;
+}
+
 // Messages sent from Server -> Client
 export type ServerToClientEvents = {
   gameStateUpdate: (state: GameState) => void;
-  matchResult: (winnerAddress: string) => void;
+  matchResult: (result: MatchResultPayload) => void;
 };
 
 // Serialization format for native WebSocket (since we aren't using Socket.io)

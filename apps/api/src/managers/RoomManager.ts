@@ -1,5 +1,7 @@
 import type { ServerWebSocket } from 'bun';
 import type { GameState, WsMessage, CharacterState, GameStatus, Card } from '@shared/websocket';
+import { deriveMatchId } from '@shared/escrow';
+import { signSettlementAuthorization, serverPublicKey } from '../utils/settlement';
 
 interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
@@ -15,6 +17,8 @@ interface ServerPlayerState {
 
 export interface Room {
   id: string;
+  /** 32-byte match ID derived from room ID — used for on-chain PDA derivation */
+  matchIdBytes: Uint8Array;
   clients: Map<string, RoomClient>;
   status: GameStatus;
   currentRound: number;
@@ -34,6 +38,7 @@ export class RoomManager {
 
     const newRoom: Room = {
       id: roomId,
+      matchIdBytes: deriveMatchId(roomId),
       clients: new Map(),
       status: 'waiting',
       currentRound: 1,
@@ -259,12 +264,23 @@ export class RoomManager {
   }
 
   private broadcastMatchResult(room: Room, winnerAddress: string) {
+    // Sign settlement authorization for on-chain verification
+    const settlementSignature = signSettlementAuthorization(
+      room.matchIdBytes,
+      winnerAddress,
+    );
+
     for (const client of room.clients.values()) {
       if (client.ws) {
         client.ws.send(JSON.stringify({
           type: 'matchResult',
-          payload: winnerAddress
-        } as WsMessage<string>));
+          payload: {
+            winner: winnerAddress,
+            matchId: Buffer.from(room.matchIdBytes).toString('hex'),
+            settlementSignature,
+            serverPublicKey,
+          }
+        } as WsMessage));
       }
     }
   }
