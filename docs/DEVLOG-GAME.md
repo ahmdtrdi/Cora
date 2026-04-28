@@ -111,8 +111,24 @@ Built the core Game Engine as a pure TypeScript class in `packages/game-logic/`.
 - `DamageEvent` log kept to last 20 entries for FE animation replay without unbounded memory growth.
 
 **The Tech Debt:**
-- No unit tests yet for `GameEngine` or `QuestionDealer`. These are critical and should be the next priority (`bun test` in `packages/game-logic`).
 - Question pool is only 20 questions. Need to expand significantly or wire up AI-generated question pipeline.
 - Card type distribution (60/40 attack/heal) is hardcoded — should be configurable or balanced through playtesting.
-- `setTimeout` for character state reset inside `GameEngine.playCard()` is a side-effect in what should be a pure function. Consider moving animation timing to the caller (RoomManager).
-- No anti-cheat: a client could spam `playCard` messages. Consider adding a cooldown or rate limiter in `handlePlayCard`.
+
+---
+
+### 3. Game Engine Stabilization & Test Simulation
+
+**The Change:**
+- Fixed critical bugs in `GameEngine` and `QuestionDealer` (removed `setTimeout` side effect, added rate limit cooldown, added recursion guards).
+- Added `resetCharacterStates` to `GameEngine` and moved the animation timeout responsibility to `RoomManager`.
+- Ensured strict schema validation for single correct answers in `question.ts`.
+- Implemented a 2-player terminal mock simulation (`mock-match.ts`) that runs a full headless match.
+- Expanded unit tests (`GameEngine.test.ts`) covering all win conditions, wrong answers, and heal caps.
+
+**The Reasoning:**
+- A pure engine makes deterministic testing possible and prevents hard-to-track race conditions with callbacks/timeouts.
+- The 2-player headless simulation is the best way to validate the full engine lifecycle without spinning up the browser.
+- Rate limits protect against malicious clients spamming the API endpoint to instantly reduce opponent HP.
+
+**The Tech Debt:**
+- We may want to extract the rate limit constant (500ms) into a configurable engine parameter.
