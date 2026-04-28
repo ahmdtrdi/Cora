@@ -41,6 +41,9 @@ async function runTest() {
   ws1.onmessage = (event) => {
     const data = JSON.parse(event.data);
     console.log(`[Alice] Received:`, data.type);
+    if (data.type === 'matchResult') {
+      console.log(`[Alice] Match Result Payload:`, data.payload);
+    }
   };
 
   // Wait a bit
@@ -52,7 +55,10 @@ async function runTest() {
   
   ws2.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    console.log(`[Bob] Received:`, data.type, data.payload?.status);
+    console.log(`[Bob] Received:`, data.type, data.payload?.status || '');
+    if (data.type === 'matchResult') {
+      console.log(`[Bob] Match Result Payload:`, data.payload);
+    }
   };
 
   await new Promise(r => setTimeout(r, 500));
