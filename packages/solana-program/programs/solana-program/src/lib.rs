@@ -6,7 +6,9 @@ pub mod state;
 use anchor_lang::prelude::*;
 
 pub use instructions::InitializeMatch;
+pub use instructions::DepositWager;
 pub(crate) use instructions::__client_accounts_initialize_match;
+pub(crate) use instructions::__client_accounts_deposit_wager;
 
 declare_id!("9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W");
 
@@ -21,5 +23,9 @@ pub mod solana_program {
         server_pubkey: Pubkey,
     ) -> Result<()> {
         instructions::initialize_match::handler(ctx, match_id, wager_amount, server_pubkey)
+    }
+
+    pub fn deposit_wager(ctx: Context<DepositWager>) -> Result<()> {
+        instructions::deposit_wager::handler(ctx)
     }
 }

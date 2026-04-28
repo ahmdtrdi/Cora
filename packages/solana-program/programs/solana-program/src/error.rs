@@ -11,6 +11,9 @@ pub enum CoraError {
     #[msg("Player has already deposited")]
     AlreadyDeposited,
 
+    #[msg("Match is not waiting for deposits")]
+    NotWaitingDeposit,
+
     #[msg("Invalid match status for this operation")]
     InvalidMatchStatus,
 
