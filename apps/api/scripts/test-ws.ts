@@ -34,13 +34,24 @@ async function runTest() {
   
   const roomId = roomIdAlice;
 
+  let aliceHand: any[] = [];
+  let bobHand: any[] = [];
+
   // 2. Connect Player 1
   console.log('2. Connecting Player 1 (alice)...');
   const ws1 = new WebSocket(`ws://localhost:8080/match/${roomId}?address=alice`);
   
   ws1.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    console.log(`[Alice] Received:`, data.type);
+    if (data.type !== 'timerSync' && data.type !== 'cardCountdown') {
+       console.log(`[Alice] Received:`, data.type);
+    }
+    if (data.type === 'gameStateUpdate' && data.payload?.hand?.length > 0) {
+      aliceHand = data.payload.hand;
+    }
+    if (data.type === 'cardCountdown') {
+      console.log(`[Alice] Countdown: ${data.payload.remainingMs}ms`);
+    }
     if (data.type === 'matchResult') {
       console.log(`[Alice] Match Result Payload:`, data.payload);
     }
@@ -55,7 +66,12 @@ async function runTest() {
   
   ws2.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    console.log(`[Bob] Received:`, data.type, data.payload?.status || '');
+    if (data.type !== 'timerSync' && data.type !== 'cardCountdown') {
+      console.log(`[Bob] Received:`, data.type);
+    }
+    if (data.type === 'gameStateUpdate' && data.payload?.hand?.length > 0) {
+      bobHand = data.payload.hand;
+    }
     if (data.type === 'matchResult') {
       console.log(`[Bob] Match Result Payload:`, data.payload);
     }
@@ -74,37 +90,46 @@ async function runTest() {
     payload: { signature: 'sig_bob_456' }
   }));
 
-  await new Promise(r => setTimeout(r, 500));
+  await new Promise(r => setTimeout(r, 1000));
 
-  // 5. Bob plays a card
-  console.log('5. Bob playing a card...');
-  ws2.send(JSON.stringify({
-    type: 'playCard',
-    payload: { cardId: 'mock-card-id', selectedOptionIndex: 0 }
+  while (aliceHand.length === 0) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  // 5. Alice opens a card
+  const cardToPlay = aliceHand[0];
+  console.log(`\n5. Alice opening card ${cardToPlay.id}...`);
+  ws1.send(JSON.stringify({
+    type: 'openCard',
+    payload: { cardId: cardToPlay.id }
   }));
 
-  await new Promise(r => setTimeout(r, 1500));
+  // Wait 3 seconds to see countdown ticks
+  await new Promise(r => setTimeout(r, 3000));
 
-  // 6. Bob disconnects
-  console.log('6. Bob disconnecting...');
-  ws2.close();
+  // 6. Alice answers the card
+  console.log(`\n6. Alice answering the card...`);
+  ws1.send(JSON.stringify({
+    type: 'playCard',
+    payload: { cardId: cardToPlay.id, selectedOptionId: cardToPlay.question.options[0].id }
+  }));
 
   await new Promise(r => setTimeout(r, 1000));
 
-  // 7. Bob reconnects
-  console.log('7. Bob reconnecting...');
-  const ws3 = new WebSocket(`ws://localhost:8080/match/${roomId}?address=bob`);
-  
-  ws3.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    console.log(`[Bob Reconnected] Received:`, data.type, data.payload?.status);
-  };
+  // 7. Alice opens another card but lets it timeout
+  const nextCard = aliceHand[1]; // using original hand reference, might be stale but IDs usually persist or we just use [1]
+  console.log(`\n7. Alice opening card ${nextCard.id} and waiting for timeout (10s)...`);
+  ws1.send(JSON.stringify({
+    type: 'openCard',
+    payload: { cardId: nextCard.id }
+  }));
 
-  await new Promise(r => setTimeout(r, 1500));
+  // Wait for 11 seconds to guarantee expiry
+  await new Promise(r => setTimeout(r, 11000));
 
-  console.log('--- Test Finished ---');
+  console.log('\n--- Test Finished ---');
   ws1.close();
-  ws3.close();
+  ws2.close();
   process.exit(0);
 }
 
