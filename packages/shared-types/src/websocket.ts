@@ -56,8 +56,31 @@ export interface GameState {
   damageLog: DamageEvent[];
 }
 
+// ─── Card Countdown Pipeline Types ────────────────────────────
+
+export interface CardCountdownData {
+  cardId: string;
+  /** Remaining time in ms for this card's answer window */
+  remainingMs: number;
+}
+
+export interface CardExpiredData {
+  /** The card that timed out */
+  cardId: string;
+}
+
+export interface ScoreUpdateData {
+  playerAddress: string;
+  opponentAddress: string;
+  playerScore: number;
+  opponentScore: number;
+  playerHealth: number;
+  opponentHealth: number;
+}
+
 // Messages sent from Client -> Server
 export type ClientToServerEvents = {
+  openCard: (data: { cardId: string }) => void;
   playCard: (cardId: string, selectedOptionId: string) => void;
   confirmDeposit: (signature: string) => void;
 };
@@ -80,6 +103,10 @@ export type ServerToClientEvents = {
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
   phaseChange: (phase: GamePhase) => void;
+  playCardResult: (result: { correct: boolean; damage: number; heal: number; multiplier: number; cardType: CardType }) => void;
+  cardCountdown: (data: CardCountdownData) => void;
+  cardExpired: (data: CardExpiredData) => void;
+  scoreUpdate: (data: ScoreUpdateData) => void;
 };
 
 export interface MatchResult {
