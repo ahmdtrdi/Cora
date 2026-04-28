@@ -128,3 +128,34 @@
 
 **The Tech Debt:**
 - **Calling the Contract:** The `settlement.ts` module currently only *generates* the signature. To fully implement "Server can call settle_match", we will need to install `@coral-xyz/anchor`, import the IDL, and write the RPC call to push the transaction on-chain on behalf of the server. Currently, we just have the cryptographic auth ready.
+
+## 2026-04-28 - Question Delivery Pipeline (Per-Card Countdown, Answer Validation, Live Scores)
+
+**The Change:**
+- Updated `packages/shared-types/src/websocket.ts` to add new cross-team WS events:
+  - `openCard` (client → server): player opens/selects a card to start the answer countdown.
+  - `cardCountdown` (server → client): 1-second ticks with `remainingMs` for the opened card.
+  - `cardExpired` (server → client): notifies player their card timed out.
+  - `scoreUpdate` (server → client): per-player live scores and health after every card play/expiry.
+  - `playCardResult` (server → client): formalized in the type contract (was already emitted but missing from `ServerToClientEvents`).
+  - Added `CardCountdownData`, `CardExpiredData`, `ScoreUpdateData` interfaces.
+- Refactored `apps/api/src/managers/RoomManager.ts`:
+  - Added `OpenedCard` interface tracking per-player card state (cardId, openedAt, countdown interval, timeout handle).
+  - Added `openedCards: Map<string, OpenedCard>` to the `Room` interface.
+  - Added `handleOpenCard()`: validates card in hand, starts 10-second countdown with 1s ticks, schedules auto-expiry timeout.
+  - Added `expireCard()`: on timeout, calls `engine.playCard()` with an invalid option (`'__timeout__'`) so the engine treats it as a wrong answer — card consumed, new card dealt, no damage/heal. Emits `cardExpired` event.
+  - Modified `handlePlayCard()`: now requires the card to have been opened first via `openCard`. Clears the countdown on valid answer. Rejects plays for cards that weren't opened or already expired.
+  - Added `broadcastScoreUpdate()`: after every play (success or expiry), sends per-player `scoreUpdate` with current scores and health to both players.
+  - Added `clearOpenedCard()` / `clearAllOpenedCards()` helpers for cleanup on answer, game over, and forfeit.
+  - Wired `openCard` message type in `handleMessage()`.
+
+**The Reasoning:**
+- **Per-Card Countdown:** The existing model had no time pressure per question — only a global 5-minute match timer. Players could hold cards indefinitely. Adding a 10-second per-card countdown after opening creates real-time pressure and matches the game design intent.
+- **Server-Side Enforcement:** The countdown and timeout are enforced entirely server-side. The client sends `openCard`, receives countdown ticks, and must send `playCard` within the window. Late plays are impossible because the server auto-expires the card via `setTimeout`.
+- **Zero Game-Logic Changes:** The timeout trick (`engine.playCard(address, cardId, '__timeout__')`) leverages the existing engine behavior — any non-matching option is treated as a wrong answer, consuming the card and dealing a new one. This avoids touching `packages/game-logic` (GAME role's territory).
+- **Live Score Broadcasts:** `scoreUpdate` events after every play give the FE real-time data for score animations without having to parse the full `gameStateUpdate` payload.
+
+**The Tech Debt:**
+- **One Card at a Time:** Currently enforced that a player can only have one card open at a time. If the game design evolves to allow multiple simultaneous opened cards, the `openedCards` tracking would need to change from `Map<string, OpenedCard>` to `Map<string, Map<string, OpenedCard>>`.
+- **Rate Limit Interaction:** The engine's internal 500ms rate limit could theoretically conflict with an `expireCard` call that fires right after a manual play. In practice this is unlikely because the player can only have one card open, but worth monitoring.
+- **FE Integration:** The frontend hook (`useMatchSocket.ts`) needs to be updated by the FE team to handle the new `openCard` → `cardCountdown` → `playCard` / `cardExpired` → `scoreUpdate` flow.
