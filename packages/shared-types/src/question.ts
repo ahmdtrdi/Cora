@@ -70,6 +70,9 @@ export function validateQuestion(data: any): data is Question {
   });
   if (!optionsValid) return false;
 
+  const correctAnswersCount = data.options.filter((opt: any) => opt.score === true).length;
+  if (correctAnswersCount !== 1) return false;
+
   if (typeof data.explanation !== "string") return false;
 
   return true;

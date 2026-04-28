@@ -11,6 +11,7 @@ export interface EnginePlayerState {
   score: number;
   hand: EngineCard[];
   characterState: CharacterState;
+  lastPlayTimestamp?: number;
 }
 
 /**

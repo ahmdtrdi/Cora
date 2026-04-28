@@ -133,6 +133,14 @@ export class GameEngine {
       return this.failResult(playerAddress, opponentAddress);
     }
 
+    const now = Date.now();
+    const lastPlay = player.lastPlayTimestamp || 0;
+    if (now - lastPlay < 500) {
+      // Rate limit: 500ms cooldown
+      return this.failResult(playerAddress, opponentAddress);
+    }
+    player.lastPlayTimestamp = now;
+
     // Find the card in the player's hand
     const cardIndex = player.hand.findIndex(c => c.id === cardId);
     if (cardIndex === -1) {
@@ -198,13 +206,6 @@ export class GameEngine {
       this.emit('gameOver', { winnerAddress: playerAddress, reason: 'hp_zero' });
     }
 
-    // Reset character states after a delay (caller can use setTimeout)
-    setTimeout(() => {
-      player.characterState = 'stay';
-      opponent.characterState = 'stay';
-      this.emit('stateUpdate', {});
-    }, 1000);
-
     this.emit('stateUpdate', {});
 
     return {
@@ -222,6 +223,16 @@ export class GameEngine {
       winnerAddress,
       winReason: gameOver ? 'hp_zero' : undefined,
     };
+  }
+
+  /**
+   * Reset character states to 'stay'. Called by caller (e.g. RoomManager) after animations.
+   */
+  resetCharacterStates(): void {
+    for (const player of this.players.values()) {
+      player.characterState = 'stay';
+    }
+    this.emit('stateUpdate', {});
   }
 
   // ─── State Accessors ─────────────────────────────────────────

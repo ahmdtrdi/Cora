@@ -288,7 +288,12 @@ export class RoomManager {
       }));
     }
 
-    // State update is handled by engine's stateUpdate event
+    // Reset character states after 1s animation
+    setTimeout(() => {
+      if (room.engine && room.engine.isActive()) {
+        room.engine.resetCharacterStates();
+      }
+    }, 1000);
   }
 
   // ─── Forfeit ──────────────────────────────────────────────────
