@@ -6,7 +6,7 @@ import {
   WalletProvider,
 } from "@solana/wallet-adapter-react";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { clusterApiUrl } from "@solana/web3.js";
 
@@ -34,7 +34,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
        * instantiate its legacy wallet adapter here. Common legacy adapters can be found
        * in the npm package `@solana/wallet-adapter-wallets`.
        */
-      new PhantomWalletAdapter(),
+      // No need to manually add Phantom anymore! It is automatically detected via the Wallet Standard.
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [network]

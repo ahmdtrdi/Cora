@@ -29,13 +29,16 @@ export function useMatchSocket(roomId: string) {
 
   useEffect(() => {
     if (!roomId) return;
+    let isCurrent = true;
 
     // Use environment variable in production, fallback to localhost for dev
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
     const ws = new WebSocket(`${wsUrl}/match/${roomId}`);
     socketRef.current = ws;
 
-    setConnectionState('connecting');
+    queueMicrotask(() => {
+      if (isCurrent) setConnectionState('connecting');
+    });
 
     ws.onopen = () => {
       setConnectionState('connected');
@@ -100,6 +103,7 @@ export function useMatchSocket(roomId: string) {
 
     // Cleanup on unmount
     return () => {
+      isCurrent = false;
       ws.close();
       socketRef.current = null;
     };
