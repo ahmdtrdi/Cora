@@ -1,15 +1,20 @@
 import type { ServerWebSocket } from 'bun';
-import type { GameState, WsMessage, CharacterState, GameStatus, Card } from '@shared/websocket';
+import type {
+  GameState,
+  WsMessage,
+  CharacterState,
+  GameStatus,
+  MatchResult,
+} from '@shared/websocket';
+import { GameEngine } from '@cora/game-logic';
+import { loadQuestions } from '../questions';
 
 interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
   disconnectTimeout: ReturnType<typeof setTimeout> | null;
 }
 
-interface ServerPlayerState {
-  baseHealth: number;
-  characterState: CharacterState;
-  hand: Card[];
+interface ServerPlayerMeta {
   hasDeposited: boolean;
 }
 
@@ -17,8 +22,8 @@ export interface Room {
   id: string;
   clients: Map<string, RoomClient>;
   status: GameStatus;
-  currentRound: number;
-  players: Map<string, ServerPlayerState>;
+  playerMeta: Map<string, ServerPlayerMeta>;
+  engine: GameEngine | null;
 }
 
 export class RoomManager {
@@ -36,8 +41,8 @@ export class RoomManager {
       id: roomId,
       clients: new Map(),
       status: 'waiting',
-      currentRound: 1,
-      players: new Map()
+      playerMeta: new Map(),
+      engine: null,
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;
@@ -57,7 +62,7 @@ export class RoomManager {
       const pairedPlayer = this.matchmakingQueue.splice(index, 1)[0];
       const newRoomId = `room-${Date.now()}`;
       this.createRoom(newRoomId);
-      
+
       // Resolve for the waiting player
       pairedPlayer.resolve(newRoomId);
       // Resolve for current player
@@ -109,14 +114,11 @@ export class RoomManager {
       console.log(`Player ${address} joined room ${roomId}`);
       room.clients.set(address, {
         ws,
-        disconnectTimeout: null
+        disconnectTimeout: null,
       });
 
-      room.players.set(address, {
-        baseHealth: 100,
-        characterState: 'stay',
-        hand: this.getMockHand(),
-        hasDeposited: false
+      room.playerMeta.set(address, {
+        hasDeposited: false,
       });
     }
 
@@ -137,7 +139,7 @@ export class RoomManager {
     if (client) {
       console.log(`Player ${address} disconnected from room ${roomId}. Starting 10s timeout.`);
       client.ws = null;
-      
+
       client.disconnectTimeout = setTimeout(() => {
         console.log(`Player ${address} forfeit room ${roomId} due to timeout.`);
         this.forfeitMatch(roomId, address);
@@ -150,145 +152,246 @@ export class RoomManager {
     if (!room) return;
 
     if (message.type === 'confirmDeposit') {
-      const { signature } = message.payload;
-      console.log(`Player ${address} confirmed deposit with signature ${signature} in room ${roomId}`);
-      
-      const playerState = room.players.get(address);
-      if (playerState) {
-        playerState.hasDeposited = true;
-      }
-
-      // Check if both players have deposited
-      const allDeposited = Array.from(room.players.values()).every(p => p.hasDeposited);
-      if (allDeposited && room.status === 'depositing') {
-        room.status = 'playing';
-        console.log(`Room ${roomId} both players deposited. Starting match!`);
-        this.broadcastGameState(room);
-      }
+      this.handleDeposit(room, address, message.payload?.signature);
     }
 
     if (message.type === 'playCard' && room.status === 'playing') {
-      const { cardId } = message.payload;
-      console.log(`Player ${address} played card ${cardId} in room ${roomId}`);
-      
-      // Mock game logic: player attacks opponent
-      const opponentAddress = Array.from(room.players.keys()).find(a => a !== address);
-      const playerState = room.players.get(address);
-
-      if (opponentAddress && playerState) {
-        const opponentState = room.players.get(opponentAddress)!;
-        
-        // Remove card from hand
-        playerState.hand = playerState.hand.filter((c: Card) => c.id !== cardId);
-        playerState.characterState = 'action';
-        
-        // Damage opponent
-        opponentState.baseHealth = Math.max(0, opponentState.baseHealth - 20);
-        
-        // Broadcast new state
-        this.broadcastGameState(room);
-
-        // Reset character state after a bit
-        setTimeout(() => {
-          playerState.characterState = 'stay';
-          this.broadcastGameState(room);
-        }, 1000);
-
-        // Check for end
-        if (opponentState.baseHealth <= 0) {
-          room.status = 'finished';
-          this.broadcastMatchResult(room, address);
-        }
-      }
+      this.handlePlayCard(room, address, message.payload);
     }
   }
+
+  // ─── Deposit Handling ─────────────────────────────────────────
+
+  private handleDeposit(room: Room, address: string, signature: string) {
+    console.log(`Player ${address} confirmed deposit with signature ${signature} in room ${room.id}`);
+
+    const meta = room.playerMeta.get(address);
+    if (meta) {
+      meta.hasDeposited = true;
+    }
+
+    // Check if both players have deposited
+    const allDeposited = Array.from(room.playerMeta.values()).every(p => p.hasDeposited);
+    if (allDeposited && room.status === 'depositing') {
+      room.status = 'playing';
+      console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
+      this.initializeEngine(room);
+    }
+  }
+
+  // ─── Engine Initialization ────────────────────────────────────
+
+  private initializeEngine(room: Room) {
+    const addresses = Array.from(room.clients.keys()) as [string, string];
+    const questions = loadQuestions();
+
+    if (questions.length === 0) {
+      console.error(`No questions loaded! Cannot start match in room ${room.id}.`);
+      return;
+    }
+
+    const engine = new GameEngine(addresses, questions);
+    room.engine = engine;
+
+    // Wire engine events to WebSocket broadcasts
+    engine.on('timerSync', (data) => {
+      this.broadcastToRoom(room, {
+        type: 'timerSync',
+        payload: engine.getTimerState(),
+      });
+    });
+
+    engine.on('phaseChange', (data) => {
+      console.log(`Room ${room.id} entering EXTRA POINT phase!`);
+      this.broadcastToRoom(room, {
+        type: 'phaseChange',
+        payload: data.phase,
+      });
+      // Also send full state update so FE has consistent data
+      this.broadcastGameState(room);
+    });
+
+    engine.on('gameOver', (data) => {
+      console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress} (${data.reason})`);
+      room.status = 'finished';
+
+      const result: MatchResult = {
+        winnerAddress: data.winnerAddress,
+        reason: data.reason,
+        finalScores: engine.getScores(),
+        finalHealth: engine.getHealth(),
+      };
+
+      this.broadcastToRoom(room, {
+        type: 'matchResult',
+        payload: result,
+      });
+
+      // Final state update
+      this.broadcastGameState(room);
+    });
+
+    engine.on('stateUpdate', () => {
+      this.broadcastGameState(room);
+    });
+
+    // Start the engine timer
+    engine.start();
+    console.log(`Room ${room.id} game engine started. 5-minute countdown begins!`);
+
+    // Initial state broadcast
+    this.broadcastGameState(room);
+  }
+
+  // ─── Card Play Handling ───────────────────────────────────────
+
+  private handlePlayCard(room: Room, address: string, payload: any) {
+    if (!room.engine || !room.engine.isActive()) return;
+
+    const { cardId, selectedOptionId } = payload;
+    console.log(`Player ${address} played card ${cardId} with answer ${selectedOptionId} in room ${room.id}`);
+
+    const result = room.engine.playCard(address, cardId, selectedOptionId);
+
+    if (!result.success) {
+      console.warn(`Card play failed for ${address} in room ${room.id}`);
+      return;
+    }
+
+    // Broadcast the damage/heal event for FE animations
+    if (result.correct) {
+      this.broadcastToRoom(room, {
+        type: 'damageEvent',
+        payload: {
+          attackerAddress: result.attackerAddress,
+          targetAddress: result.targetAddress,
+          damage: result.cardType === 'attack' ? result.damage : result.heal,
+          multiplier: result.multiplier,
+          type: result.cardType,
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    // Broadcast play result to the player who played
+    const client = room.clients.get(address);
+    if (client?.ws) {
+      client.ws.send(JSON.stringify({
+        type: 'playCardResult',
+        payload: {
+          correct: result.correct,
+          damage: result.damage,
+          heal: result.heal,
+          multiplier: result.multiplier,
+          cardType: result.cardType,
+        },
+      }));
+    }
+
+    // Reset character states after 1s animation
+    setTimeout(() => {
+      if (room.engine && room.engine.isActive()) {
+        room.engine.resetCharacterStates();
+      }
+    }, 1000);
+  }
+
+  // ─── Forfeit ──────────────────────────────────────────────────
 
   private forfeitMatch(roomId: string, disconnectedAddress: string) {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
     room.status = 'finished';
-    const opponentAddress = Array.from(room.clients.keys()).find(a => a !== disconnectedAddress);
-    
-    if (opponentAddress) {
-      this.broadcastMatchResult(room, opponentAddress);
+
+    if (room.engine) {
+      room.engine.stop(disconnectedAddress);
+    } else {
+      // Game hadn't started yet — just notify the remaining player
+      const opponentAddress = Array.from(room.clients.keys()).find(a => a !== disconnectedAddress);
+      if (opponentAddress) {
+        const result: MatchResult = {
+          winnerAddress: opponentAddress,
+          reason: 'forfeit',
+          finalScores: {},
+          finalHealth: {},
+        };
+        this.broadcastToRoom(room, {
+          type: 'matchResult',
+          payload: result,
+        });
+      }
     }
-    
+
     // Clean up room
     this.rooms.delete(roomId);
   }
 
+  // ─── Broadcasting ─────────────────────────────────────────────
+
   private broadcastGameState(room: Room) {
     const addresses = Array.from(room.clients.keys());
-    
+
     for (const address of addresses) {
       const client = room.clients.get(address);
-      if (client?.ws) {
-        const opponentAddress = addresses.find(a => a !== address);
-        
-        const playerState = room.players.get(address)!;
-        const opponentState = opponentAddress ? room.players.get(opponentAddress)! : null;
+      if (!client?.ws) continue;
 
-        const payload: GameState = {
+      let payload: GameState;
+
+      if (room.engine && (room.status === 'playing' || room.status === 'finished')) {
+        // Engine owns the game state
+        payload = room.engine.getStateForPlayer(address);
+      } else {
+        // Pre-game state (waiting / depositing)
+        const opponentAddress = addresses.find(a => a !== address);
+        payload = {
           status: room.status,
-          currentRound: room.currentRound,
           player: {
             address,
-            baseHealth: playerState.baseHealth,
-            characterState: playerState.characterState
-          },
-          opponent: opponentState ? {
-            address: opponentAddress!,
-            baseHealth: opponentState.baseHealth,
-            characterState: opponentState.characterState
-          } : {
-            // Mock empty opponent if waiting
-            address: 'Waiting for opponent...',
             baseHealth: 100,
-            characterState: 'stay'
+            characterState: 'stay',
+            score: 0,
           },
-          hand: playerState.hand
+          opponent: opponentAddress
+            ? {
+                address: opponentAddress,
+                baseHealth: 100,
+                characterState: 'stay',
+                score: 0,
+              }
+            : {
+                address: 'Waiting for opponent...',
+                baseHealth: 100,
+                characterState: 'stay',
+                score: 0,
+              },
+          hand: [],
+          timer: {
+            totalDurationMs: GameEngine.MATCH_DURATION_MS,
+            remainingMs: GameEngine.MATCH_DURATION_MS,
+            phase: 'normal',
+            extraPointThresholdMs: GameEngine.EXTRA_POINT_THRESHOLD_MS,
+          },
+          damageLog: [],
         };
-
-        client.ws.send(JSON.stringify({
-          type: 'gameStateUpdate',
-          payload
-        } as WsMessage<GameState>));
       }
+
+      client.ws.send(JSON.stringify({
+        type: 'gameStateUpdate',
+        payload,
+      } as WsMessage<GameState>));
     }
   }
 
-  private broadcastMatchResult(room: Room, winnerAddress: string) {
+  /**
+   * Broadcast a message to all connected clients in a room.
+   */
+  private broadcastToRoom(room: Room, message: WsMessage) {
+    const raw = JSON.stringify(message);
     for (const client of room.clients.values()) {
       if (client.ws) {
-        client.ws.send(JSON.stringify({
-          type: 'matchResult',
-          payload: winnerAddress
-        } as WsMessage<string>));
+        client.ws.send(raw);
       }
     }
-  }
-
-  private getMockHand(): Card[] {
-    return [
-      {
-        id: `card-${Math.random()}`,
-        type: 'attack',
-        question: {
-          id: 'q-1',
-          text: 'What is 5 + 5?',
-          options: ['10', '15', '20']
-        }
-      },
-      {
-        id: `card-${Math.random()}`,
-        type: 'heal',
-        question: {
-          id: 'q-2',
-          text: 'If A -> B and B -> C, then...',
-          options: ['A -> C', 'C -> A', 'A -> B -> A']
-        }
-      }
-    ];
   }
 }
