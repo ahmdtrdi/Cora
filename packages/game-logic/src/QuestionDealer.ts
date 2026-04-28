@@ -12,8 +12,11 @@ export class QuestionDealer {
   private cursor: number = 0;
 
   constructor(questions: SchemaQuestion[]) {
-    // Deep clone to avoid mutating the original array
-    this.pool = [...questions];
+    // Only keep questions that have exactly one correct answer
+    this.pool = questions.filter(q => q.options.filter(o => o.score === true).length === 1);
+    if (this.pool.length === 0) {
+      console.warn('QuestionDealer initialized with 0 valid questions.');
+    }
     this.shuffle();
   }
 
@@ -34,6 +37,8 @@ export class QuestionDealer {
    * Returns null if the pool is exhausted.
    */
   dealOne(): EngineCard | null {
+    if (this.pool.length === 0) return null;
+
     if (this.cursor >= this.pool.length) {
       // Reshuffle if exhausted — allows infinite play within the timer
       this.cursor = 0;
