@@ -4,20 +4,39 @@ import type { EngineCard } from './types';
 
 /**
  * Shuffles and deals questions from a pool into EngineCards.
- * Uses Fisher-Yates shuffle for unbiased randomization.
+ * Uses a balanced round-robin selection across categories.
  * Each question is dealt at most once per match.
  */
 export class QuestionDealer {
-  private pool: SchemaQuestion[];
-  private cursor: number = 0;
+  private categories: string[];
+  private poolsByCategory: Record<string, SchemaQuestion[]> = {};
+  private currentCategoryIndex: number = 0;
+  private totalRemaining: number = 0;
 
   constructor(questions: SchemaQuestion[]) {
     // Only keep questions that have exactly one correct answer
-    this.pool = questions.filter(q => q.options.filter(o => o.score === true).length === 1);
-    if (this.pool.length === 0) {
+    const validQuestions = questions.filter(q => q.options.filter(o => o.score === true).length === 1);
+    
+    if (validQuestions.length === 0) {
       console.warn('QuestionDealer initialized with 0 valid questions.');
     }
-    this.shuffle();
+
+    // Group by category
+    for (const q of validQuestions) {
+      const category = q.category || 'uncategorized';
+      if (!this.poolsByCategory[category]) {
+        this.poolsByCategory[category] = [];
+      }
+      this.poolsByCategory[category].push(q);
+    }
+
+    this.categories = Object.keys(this.poolsByCategory);
+
+    // Shuffle each category pool
+    for (const category of this.categories) {
+      this.shuffle(this.poolsByCategory[category]);
+      this.totalRemaining += this.poolsByCategory[category].length;
+    }
   }
 
   /**
@@ -33,26 +52,39 @@ export class QuestionDealer {
   }
 
   /**
-   * Deal a single card from the pool.
-   * Returns null if the pool is exhausted.
+   * Deal a single card from the pool, balancing categories.
+   * Returns null if all questions are exhausted.
    */
   dealOne(): EngineCard | null {
-    if (this.pool.length === 0) return null;
+    if (this.totalRemaining === 0) return null;
 
-    if (this.cursor >= this.pool.length) {
-      // Reshuffle if exhausted — allows infinite play within the timer
-      this.cursor = 0;
-      this.shuffle();
+    let attempts = 0;
+    let question: SchemaQuestion | undefined;
+
+    // Try to find a question by cycling through categories
+    while (attempts < this.categories.length) {
+      const category = this.categories[this.currentCategoryIndex];
+      const pool = this.poolsByCategory[category];
+
+      this.currentCategoryIndex = (this.currentCategoryIndex + 1) % this.categories.length;
+
+      if (pool.length > 0) {
+        question = pool.pop();
+        this.totalRemaining--;
+        break;
+      }
+      attempts++;
     }
 
-    const question = this.pool[this.cursor];
-    this.cursor++;
+    if (!question) {
+      return null;
+    }
 
     // Find the correct option
     const correctOption = question.options.find(opt => opt.score === true);
     if (!correctOption) {
       console.warn(`Question ${question.id} has no correct answer, skipping.`);
-      return this.dealOne();
+      return this.dealOne(); // Attempt to draw again
     }
 
     // Randomly assign card type (60% attack, 40% heal)
@@ -67,19 +99,19 @@ export class QuestionDealer {
   }
 
   /**
-   * Number of questions remaining before reshuffle.
+   * Number of questions remaining before exhaustion.
    */
   getRemainingCount(): number {
-    return Math.max(0, this.pool.length - this.cursor);
+    return this.totalRemaining;
   }
 
   /**
    * Fisher-Yates shuffle.
    */
-  private shuffle(): void {
-    for (let i = this.pool.length - 1; i > 0; i--) {
+  private shuffle(array: SchemaQuestion[]): void {
+    for (let i = array.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [this.pool[i], this.pool[j]] = [this.pool[j], this.pool[i]];
+      [array[i], array[j]] = [array[j], array[i]];
     }
   }
 }

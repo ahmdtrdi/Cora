@@ -12,6 +12,7 @@ export interface EnginePlayerState {
   hand: EngineCard[];
   characterState: CharacterState;
   lastPlayTimestamp?: number;
+  queueIndex: number;
 }
 
 /**

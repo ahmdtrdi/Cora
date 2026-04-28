@@ -52,6 +52,7 @@ export class GameEngine {
   private damageLog: DamageEvent[] = [];
   private started = false;
   private finished = false;
+  private matchQueue: EngineCard[] = [];
 
   // ─── Events ───────────────────────────────────────────────────
   private listeners: Map<string, Function[]> = new Map();
@@ -60,15 +61,20 @@ export class GameEngine {
     this.playerAddresses = playerAddresses;
     this.dealer = new QuestionDealer(questions);
 
+    // Generate a shared queue of up to 100 cards for the entire match
+    this.matchQueue = this.dealer.dealHand(100);
+
     // Initialize both players
     for (const address of playerAddresses) {
-      const hand = this.dealer.dealHand(GameEngine.HAND_SIZE);
+      // Both players start with a copy of the first 5 cards
+      const hand = this.matchQueue.slice(0, GameEngine.HAND_SIZE).map(c => ({...c}));
       this.players.set(address, {
         address,
         health: GameEngine.STARTING_HEALTH,
         score: 0,
         hand,
         characterState: 'stay',
+        queueIndex: GameEngine.HAND_SIZE, // Next card to draw is at index 5
       });
     }
   }
@@ -173,11 +179,12 @@ export class GameEngine {
       player.characterState = 'stay';
     }
 
-    // Remove the played card and deal a new one
+    // Remove the played card and deal a new one from the shared queue
     player.hand.splice(cardIndex, 1);
-    const newCard = this.dealer.dealOne();
-    if (newCard) {
-      player.hand.push(newCard);
+    if (player.queueIndex < this.matchQueue.length) {
+      const newCard = this.matchQueue[player.queueIndex];
+      player.hand.push({ ...newCard });
+      player.queueIndex++;
     }
 
     // Record damage event
