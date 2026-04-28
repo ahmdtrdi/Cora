@@ -7,24 +7,35 @@ const mockQuestions: Question[] = [
     id: "q_1",
     category: "math",
     questionText: "1+1?",
-    options: [
-      { id: "A", text: "2", score: true },
-      { id: "B", text: "3", score: false },
-      { id: "C", text: "4", score: false },
-      { id: "D", text: "5", score: false }
-    ],
+    options: [{ id: "A", text: "2", score: true }, { id: "B", text: "3", score: false }, { id: "C", text: "4", score: false }, { id: "D", text: "5", score: false }],
     explanation: "yes"
   },
   {
     id: "q_2",
     category: "logical",
     questionText: "is it?",
-    options: [
-      { id: "A", text: "no", score: false },
-      { id: "B", text: "yes", score: true },
-      { id: "C", text: "maybe", score: false },
-      { id: "D", text: "idk", score: false }
-    ],
+    options: [{ id: "A", text: "no", score: false }, { id: "B", text: "yes", score: true }, { id: "C", text: "maybe", score: false }, { id: "D", text: "idk", score: false }],
+    explanation: "yes"
+  },
+  {
+    id: "q_3",
+    category: "math",
+    questionText: "2+2?",
+    options: [{ id: "A", text: "4", score: true }, { id: "B", text: "5", score: false }, { id: "C", text: "6", score: false }, { id: "D", text: "7", score: false }],
+    explanation: "yes"
+  },
+  {
+    id: "q_4",
+    category: "logical",
+    questionText: "why?",
+    options: [{ id: "A", text: "because", score: true }, { id: "B", text: "not", score: false }, { id: "C", text: "so", score: false }, { id: "D", text: "no", score: false }],
+    explanation: "yes"
+  },
+  {
+    id: "q_5",
+    category: "sequence",
+    questionText: "1,2,3...?",
+    options: [{ id: "A", text: "4", score: true }, { id: "B", text: "5", score: false }, { id: "C", text: "6", score: false }, { id: "D", text: "7", score: false }],
     explanation: "yes"
   }
 ];
