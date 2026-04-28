@@ -1,0 +1,58 @@
+import type { CharacterState, CardType, GamePhase } from '@shared/websocket';
+import type { Question as SchemaQuestion } from '@shared/question';
+
+/**
+ * Internal engine representation of a player.
+ * Contains server-side truth (e.g. correct answers in hand).
+ */
+export interface EnginePlayerState {
+  address: string;
+  health: number;
+  score: number;
+  hand: EngineCard[];
+  characterState: CharacterState;
+  lastPlayTimestamp?: number;
+}
+
+/**
+ * Server-side card that includes the correct answer.
+ * The `correctOptionId` is never sent to clients.
+ */
+export interface EngineCard {
+  id: string;
+  type: CardType;
+  question: SchemaQuestion;
+  correctOptionId: string;
+}
+
+/**
+ * Result of a player playing a card, returned synchronously
+ * by the engine to the caller (RoomManager).
+ */
+export interface PlayCardResult {
+  success: boolean;
+  correct: boolean;
+  damage: number;
+  heal: number;
+  multiplier: number;
+  cardType: CardType;
+  targetAddress: string;
+  attackerAddress: string;
+  newTargetHealth: number;
+  newAttackerHealth: number;
+  gameOver: boolean;
+  winnerAddress?: string;
+  winReason?: 'hp_zero' | 'time_up' | 'forfeit';
+}
+
+/**
+ * Events emitted by the GameEngine.
+ */
+export type GameEngineEventMap = {
+  timerSync: { remainingMs: number; phase: GamePhase };
+  phaseChange: { phase: GamePhase };
+  gameOver: { winnerAddress: string; reason: 'hp_zero' | 'time_up' | 'forfeit' };
+  stateUpdate: {};
+};
+
+export type GameEngineEvent = keyof GameEngineEventMap;

@@ -66,23 +66,19 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
   const roomId = c.req.param('roomId');
   const address = c.req.query('address');
 
-  if (!address) {
-    console.warn('Connection attempt without address.');
-    // In a real app we'd throw or reject, but for Hono WS upgrade:
-    // We can't easily reject inside upgradeWebSocket without returning a Response
-    // We'll handle it by checking inside the WS lifecycle
+  if (!roomId || !address) {
+    return {
+      onOpen(event, ws) {
+        ws.close(1008, 'RoomId and Address are required');
+      }
+    };
   }
 
   return {
-    onOpen(event, ws: ServerWebSocket<unknown>) {
-      if (!address) {
-        ws.close(1008, 'Address query parameter is required');
-        return;
-      }
+    onOpen(event, ws: any) {
       roomManager.joinRoom(roomId, address, ws);
     },
     onMessage(event: MessageEvent) {
-      if (!address) return;
       try {
         const parsed = JSON.parse(event.data.toString()) as WsMessage;
         roomManager.handleMessage(roomId, address, parsed);
@@ -91,7 +87,6 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
       }
     },
     onClose() {
-      if (!address) return;
       roomManager.leaveRoom(roomId, address);
     }
   };

@@ -10,19 +10,12 @@
     "composite": true,
     "downlevelIteration": true,
     "skipLibCheck": true,
-    "jsx": "preserve",
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
-    "allowJs": true,
-    "types": [
-      "bun-types"
-    ],
     "strict": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "@shared/*": ["../../packages/shared-types/src/*"],
-      "@cora/game-logic": ["../../packages/game-logic/src/index.ts"]
+      "@shared/*": ["../shared-types/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "../../packages/shared-types/src/**/*.ts", "../../packages/game-logic/src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "../shared-types/src/**/*.ts"]
 }
