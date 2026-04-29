@@ -8,6 +8,7 @@ import type {
   Card
 } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
+import type { AntiCheatVerdict } from '@cora/game-logic';
 import { loadQuestions } from '../questions';
 import { deriveMatchId } from '@shared/escrow';
 import { signSettlementAuthorization, serverPublicKey } from '../utils/settlement';
@@ -221,17 +222,54 @@ export class RoomManager {
       console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress} (${data.reason})`);
       room.status = 'finished';
 
-      const result: MatchResult = {
-        winnerAddress: data.winnerAddress,
-        reason: data.reason,
-        finalScores: engine.getScores(),
-        finalHealth: engine.getHealth(),
-      };
+      // --- Anti-Cheat Evaluation ---
+      const verdicts = data.antiCheatVerdicts || {};
+      let isRejected = false;
+      let isSuspicious = false;
+      
+      console.log(`[Anti-Cheat] Room ${room.id} verdicts:`);
+      for (const [address, verdict] of Object.entries(verdicts)) {
+        console.log(` - Player ${address}: ${verdict.verdict.toUpperCase()} (Score: ${verdict.trustScore.toFixed(2)})`);
+        if (verdict.verdict === 'rejected') {
+          isRejected = true;
+          console.warn(`[Anti-Cheat] WARNING: Player ${address} was rejected for flags:`, verdict.flags.map(f => f.signal).join(', '));
+        } else if (verdict.verdict === 'suspicious') {
+          isSuspicious = true;
+          console.warn(`[Anti-Cheat] WARNING: Player ${address} is suspicious. Flags:`, verdict.flags.map(f => f.signal).join(', '));
+        }
+        
+        // Log raw stats for future ML collection
+        console.log(`[Anti-Cheat] Stats for ${address}:`, JSON.stringify(verdict.stats));
+      }
 
-      this.broadcastToRoom(room, {
-        type: 'matchResult',
-        payload: result,
-      });
+      if (isRejected) {
+        console.error(`[Anti-Cheat] Match in Room ${room.id} REJECTED. Settlement halted.`);
+        const result: MatchResult = {
+          winnerAddress: data.winnerAddress,
+          reason: 'anti_cheat',
+          finalScores: engine.getScores(),
+          finalHealth: engine.getHealth(),
+        };
+
+        this.broadcastToRoom(room, {
+          type: 'matchInvalidated',
+          payload: result,
+        });
+      } else {
+        const result: MatchResult = {
+          winnerAddress: data.winnerAddress,
+          reason: data.reason,
+          finalScores: engine.getScores(),
+          finalHealth: engine.getHealth(),
+          antiCheatWarning: isSuspicious,
+        };
+
+        this.broadcastMatchResult(room, data.winnerAddress);
+        this.broadcastToRoom(room, {
+          type: 'matchResult',
+          payload: result,
+        });
+      }
 
       // Final state update
       this.broadcastGameState(room);
@@ -410,3 +448,12 @@ export class RoomManager {
       }
     }
   }
+
+  private broadcastToRoom(room: Room, message: WsMessage) {
+    for (const client of room.clients.values()) {
+      if (client.ws) {
+        client.ws.send(JSON.stringify(message));
+      }
+    }
+  }
+}

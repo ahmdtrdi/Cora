@@ -44,6 +44,43 @@ export interface PlayCardResult {
   gameOver: boolean;
   winnerAddress?: string;
   winReason?: 'hp_zero' | 'time_up' | 'forfeit';
+  antiCheatVerdict?: AntiCheatVerdict;
+}
+
+/**
+ * Statistics collected for a player during a match
+ */
+export interface PlayerMatchStats {
+  totalPlays: number;
+  correctPlays: number;
+  accuracyRate: number;
+  avgAnswerTimeMs: number;
+  answerTimeStdDev: number;
+  longestCorrectStreak: number;
+  cooldownHits: number;
+  cadenceCoeffOfVariation: number;
+}
+
+/**
+ * A specific flag raised by the anti-cheat analyzer
+ */
+export interface AntiCheatFlag {
+  signal: string;
+  value: number;
+  threshold: number;
+  penalty: number;
+  description: string;
+}
+
+/**
+ * The final anti-cheat verdict for a player in a match
+ */
+export interface AntiCheatVerdict {
+  playerAddress: string;
+  trustScore: number;
+  verdict: 'trusted' | 'suspicious' | 'rejected';
+  flags: AntiCheatFlag[];
+  stats: PlayerMatchStats;
 }
 
 /**
@@ -52,7 +89,7 @@ export interface PlayCardResult {
 export type GameEngineEventMap = {
   timerSync: { remainingMs: number; phase: GamePhase };
   phaseChange: { phase: GamePhase };
-  gameOver: { winnerAddress: string; reason: 'hp_zero' | 'time_up' | 'forfeit' };
+  gameOver: { winnerAddress: string; reason: 'hp_zero' | 'time_up' | 'forfeit'; antiCheatVerdicts?: Record<string, AntiCheatVerdict> };
   stateUpdate: {};
 };
 
