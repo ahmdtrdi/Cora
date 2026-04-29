@@ -564,3 +564,24 @@
 - `Agree To Match` is currently a UI-only action and does not yet call wallet signing or on-chain deposit instructions.
 - Timeout fallback currently routes users back to character selection; later behavior should be synchronized with backend matchmaking session state.
 
+
+## 2026-04-29 - Play Route Battle Screen MVP (Game-Fi Layout)
+
+### The Change
+- Replaced `apps/web/src/app/play/page.tsx` scaffold content with a real battle screen renderer (`BattleScreen`).
+- Added `apps/web/src/components/play/BattleScreen.tsx` with a full-screen arena-style layout: battlefield, base blocks, circular player/opponent placeholders, center-fanned card hand, and overlay modals.
+- Implemented deterministic question selection from `data/questions/questions.json` using shared `Question` validation from `packages/shared-types/src/question.ts` and room-seeded shuffle logic.
+- Set battle round length to 5 questions (selected from the larger question pool) and enforced a 10-second per-question timer to match backend timing.
+- Implemented question popup modal flow (4 options), answer resolution states (`correct`, `wrong`, `timeout`), hidden enemy-answer behavior, and lightweight opponent attack feedback animation.
+- Added end-of-match summary overlay with per-outcome counts and actions (`Back To Lobby`, `Play Again`).
+
+### The Reasoning
+- The previous `/play` route was a placeholder and did not match intended gameplay interaction.
+- The visual direction needed to feel more game-like while still using available placeholder assets before final character/base art arrives.
+- Keeping deterministic room-seeded selection aligns frontend behavior with multiplayer expectations (both players seeing the same question set/order).
+
+### The Tech Debt
+- Battle UI is currently React/CSS-driven; scene-level animation and combat presentation may later migrate to Phaser for richer in-arena motion.
+- HP is currently displayed on base elements but not yet wired to real websocket game-state updates from the backend engine.
+- Enemy actions are currently mock feedback (no answer reveal by design), pending direct integration with real room event streams.
+- Summary is match-level only and does not yet include reward/settlement integration.
