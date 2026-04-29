@@ -98,3 +98,32 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 - [ ] Ensure that `litesvm` tests are deterministic locally vs CI.
 - [ ] We manually synced the program IDs. We must remember to sync again before devnet/mainnet deployment using the production keypair.
+
+---
+
+## Entry 4 — 2026-04-29: Dynamic Timeouts & Anti-Cheat Settlement Penalty
+
+### The Change
+
+**Smart contract logic (5 files):**
+- `constants.rs` — Updated `DEPOSIT_TIMEOUT` to 15s (faster UX) and `MATCH_TIMEOUT` to 600s (10 min server fallback).
+- `instructions/refund.rs` — Added dynamic timeout selection. Now checks `DEPOSIT_TIMEOUT` if `MatchStatus == WaitingDeposit`, and `MATCH_TIMEOUT` if `MatchStatus == Active`.
+- `instructions/settle_match.rs` & `lib.rs` — Refactored `settle_match` arguments from `winner: Pubkey` to `action: u8, target: Pubkey`.
+  - `action == 0`: Normal win (target = winner).
+  - `action == 1`: Anti-Cheat penalty (target = cheater). Honest player gets 100% refund, cheater forfeits 100% to treasury.
+- `error.rs` — Added `InvalidAction` error code.
+
+**Test infrastructure:**
+- `tests/test_refund.rs` — Split into two full tests using LiteSVM clock warping: `test_refund_waiting_deposit_timeout` (tests failure before 15s, success after) and `test_refund_active_match_timeout` (tests server crash fallback after 600s).
+- `tests/test_settle_match.rs` — Added `test_settle_match_cheater_penalty` testing the 100% cheater slash token transfer.
+
+### The Reasoning
+
+1. **Anti-Cheat Slashing:** Taking a mere 2.5% fee from cheaters is not a deterrent. Total confiscation (100% slashed to treasury) completely destroys the positive expected value of botting. Meanwhile, refunding the honest player 100% ensures fairness since the match integrity was compromised.
+2. **Dynamic Fallback Timeouts:** The blockchain should not dictate normal game loop timings—the backend handles that via WebSocket. The on-chain timeouts (600s) are pure "doomsday fallbacks" to prevent funds from being permanently locked if the backend crashes.
+3. **AlreadyProcessed Error in LiteSVM:** When sending multiple identical transactions (same caller, blockhash, and instruction), Solana rejects the duplicate. We fixed this in `test_refund` by using `player_b` as the fee payer and adding `player_a`'s required instruction signature to alter the transaction fingerprint.
+
+### The Tech Debt
+
+- [ ] The TypeScript backend (`buildSettlementMessage`) still generates a UTF-8 string payload (`SETTLE:<match_id>:<winner>`), but `settle_match.rs` now verifies a 65-byte raw binary payload (`action` + `match_id` + `target`). We MUST align the backend `settlement.ts` in the next task to prevent verification failures.
+- [ ] Devnet deployment keypair (`solana_program-keypair.json`) was generated but is safely ignored in `.gitignore`. We need to run `anchor deploy` and `anchor idl init` next.
