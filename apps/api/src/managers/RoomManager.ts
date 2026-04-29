@@ -5,7 +5,8 @@ import type {
   CharacterState,
   GameStatus,
   MatchResult,
-  Card
+  Card,
+  ScoreUpdateData,
 } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 import type { AntiCheatVerdict } from '@cora/game-logic';
@@ -22,6 +23,13 @@ interface ServerPlayerMeta {
   hasDeposited: boolean;
 }
 
+interface OpenedCard {
+  cardId: string;
+  openedAt: number;
+  countdownInterval: ReturnType<typeof setInterval> | null;
+  timeoutHandle: ReturnType<typeof setTimeout> | null;
+}
+
 export interface Room {
   id: string;
   /** 32-byte match ID derived from room ID — used for on-chain PDA derivation */
@@ -30,12 +38,16 @@ export interface Room {
   status: GameStatus;
   playerMeta: Map<string, ServerPlayerMeta>;
   engine: GameEngine | null;
+  /** Tracks which card each player has currently opened (one at a time per player) */
+  openedCards: Map<string, OpenedCard>;
 }
 
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
   private matchmakingQueue: Array<{ address: string; resolve: (roomId: string) => void }> = [];
-  private DISCONNECT_TIMEOUT_MS = 10000; // 10 seconds
+  private DISCONNECT_TIMEOUT_MS = 10_000; // 10 seconds
+  private CARD_ANSWER_TIMEOUT_MS = 10_000; // 10 seconds per card
+  private CARD_COUNTDOWN_TICK_MS = 1_000; // 1 second countdown tick
 
   // Returns the room if it exists, otherwise creates a new one
   public createRoom(roomId: string): Room {
@@ -50,6 +62,7 @@ export class RoomManager {
       status: 'waiting',
       playerMeta: new Map(),
       engine: null,
+      openedCards: new Map(),
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;
@@ -160,6 +173,10 @@ export class RoomManager {
 
     if (message.type === 'confirmDeposit') {
       this.handleDeposit(room, address, message.payload?.signature);
+    }
+
+    if (message.type === 'openCard' && room.status === 'playing') {
+      this.handleOpenCard(room, address, message.payload?.cardId);
     }
 
     if (message.type === 'playCard' && room.status === 'playing') {
@@ -287,12 +304,112 @@ export class RoomManager {
     this.broadcastGameState(room);
   }
 
+  // ─── Card Open & Countdown ────────────────────────────────────
+
+  private handleOpenCard(room: Room, address: string, cardId: string) {
+    if (!room.engine || !room.engine.isActive()) return;
+    if (!cardId) return;
+
+    // Only one card open at a time per player
+    const existing = room.openedCards.get(address);
+    if (existing) {
+      console.warn(`Player ${address} already has card ${existing.cardId} open in room ${room.id}. Ignoring.`);
+      return;
+    }
+
+    // Verify the card exists in the player's hand via engine state
+    const playerState = room.engine.getStateForPlayer(address);
+    const cardInHand = playerState.hand.find(c => c.id === cardId);
+    if (!cardInHand) {
+      console.warn(`Card ${cardId} not found in ${address}'s hand. Ignoring openCard.`);
+      return;
+    }
+
+    const openedAt = Date.now();
+    console.log(`Player ${address} opened card ${cardId} in room ${room.id}. 10s countdown started.`);
+
+    // Send initial countdown immediately
+    const client = room.clients.get(address);
+    if (client?.ws) {
+      client.ws.send(JSON.stringify({
+        type: 'cardCountdown',
+        payload: { cardId, remainingMs: this.CARD_ANSWER_TIMEOUT_MS },
+      }));
+    }
+
+    // Countdown tick every 1 second
+    const countdownInterval = setInterval(() => {
+      const elapsed = Date.now() - openedAt;
+      const remaining = Math.max(0, this.CARD_ANSWER_TIMEOUT_MS - elapsed);
+
+      const c = room.clients.get(address);
+      if (c?.ws) {
+        c.ws.send(JSON.stringify({
+          type: 'cardCountdown',
+          payload: { cardId, remainingMs: remaining },
+        }));
+      }
+    }, this.CARD_COUNTDOWN_TICK_MS);
+
+    // Timeout: auto-expire the card after 10 seconds
+    const timeoutHandle = setTimeout(() => {
+      this.expireCard(room, address, cardId);
+    }, this.CARD_ANSWER_TIMEOUT_MS);
+
+    room.openedCards.set(address, {
+      cardId,
+      openedAt,
+      countdownInterval,
+      timeoutHandle,
+    });
+  }
+
+  /**
+   * Auto-expire a card when the countdown runs out.
+   * Uses engine.playCard with an invalid option so the engine treats it as a
+   * wrong answer: no damage, no heal, card consumed, new card dealt.
+   */
+  private expireCard(room: Room, address: string, cardId: string) {
+    if (!room.engine || !room.engine.isActive()) return;
+
+    console.log(`Card ${cardId} expired for player ${address} in room ${room.id} (timeout).`);
+
+    // Clear tracking first to prevent double-processing
+    this.clearOpenedCard(room, address);
+
+    // Force-play with invalid option — engine treats as wrong answer
+    room.engine.playCard(address, cardId, '__timeout__');
+
+    // Notify the player that the card expired
+    const client = room.clients.get(address);
+    if (client?.ws) {
+      client.ws.send(JSON.stringify({
+        type: 'cardExpired',
+        payload: { cardId },
+      }));
+    }
+
+    // Broadcast live scores after expiry
+    this.broadcastScoreUpdate(room);
+  }
+
   // ─── Card Play Handling ───────────────────────────────────────
 
   private handlePlayCard(room: Room, address: string, payload: any) {
     if (!room.engine || !room.engine.isActive()) return;
 
     const { cardId, selectedOptionId } = payload;
+
+    // Validate: card must have been opened first
+    const opened = room.openedCards.get(address);
+    if (!opened || opened.cardId !== cardId) {
+      console.warn(`Player ${address} tried to play card ${cardId} without opening it first in room ${room.id}.`);
+      return;
+    }
+
+    // Clear the countdown — player answered in time
+    this.clearOpenedCard(room, address);
+
     console.log(`Player ${address} played card ${cardId} with answer ${selectedOptionId} in room ${room.id}`);
 
     const result = room.engine.playCard(address, cardId, selectedOptionId);
@@ -332,12 +449,38 @@ export class RoomManager {
       }));
     }
 
+    // Broadcast live scores to both players
+    this.broadcastScoreUpdate(room);
+
     // Reset character states after 1s animation
     setTimeout(() => {
       if (room.engine && room.engine.isActive()) {
         room.engine.resetCharacterStates();
       }
     }, 1000);
+  }
+
+  // ─── Opened Card Helpers ──────────────────────────────────────
+
+  /**
+   * Clear the countdown interval and timeout for a player's opened card.
+   */
+  private clearOpenedCard(room: Room, address: string) {
+    const opened = room.openedCards.get(address);
+    if (!opened) return;
+
+    if (opened.countdownInterval) clearInterval(opened.countdownInterval);
+    if (opened.timeoutHandle) clearTimeout(opened.timeoutHandle);
+    room.openedCards.delete(address);
+  }
+
+  /**
+   * Clear all opened cards in a room (used on game over / forfeit).
+   */
+  private clearAllOpenedCards(room: Room) {
+    for (const address of room.openedCards.keys()) {
+      this.clearOpenedCard(room, address);
+    }
   }
 
   // ─── Forfeit ──────────────────────────────────────────────────
@@ -347,6 +490,9 @@ export class RoomManager {
     if (!room) return;
 
     room.status = 'finished';
+
+    // Clear all opened card timers
+    this.clearAllOpenedCards(room);
 
     if (room.engine) {
       room.engine.stop(disconnectedAddress);
@@ -427,6 +573,53 @@ export class RoomManager {
     }
   }
 
+  /**
+   * Broadcast live score update to both players after every card play or expiry.
+   */
+  private broadcastScoreUpdate(room: Room) {
+    if (!room.engine) return;
+
+    const scores = room.engine.getScores();
+    const health = room.engine.getHealth();
+    const addresses = Array.from(room.clients.keys());
+
+    for (const address of addresses) {
+      const client = room.clients.get(address);
+      if (!client?.ws) continue;
+
+      const opponentAddress = addresses.find(a => a !== address) ?? '';
+
+      const scoreData: ScoreUpdateData = {
+        playerAddress: address,
+        opponentAddress,
+        playerScore: scores[address] ?? 0,
+        opponentScore: scores[opponentAddress] ?? 0,
+        playerHealth: health[address] ?? 0,
+        opponentHealth: health[opponentAddress] ?? 0,
+      };
+
+      client.ws.send(JSON.stringify({
+        type: 'scoreUpdate',
+        payload: scoreData,
+      }));
+    }
+  }
+
+  /**
+   * Broadcast a message to all connected clients in a room.
+   */
+  private broadcastToRoom(room: Room, message: WsMessage) {
+    const raw = JSON.stringify(message);
+    for (const client of room.clients.values()) {
+      if (client.ws) {
+        client.ws.send(raw);
+      }
+    }
+  }
+
+  /**
+   * Broadcast settlement-signed match result to all connected clients.
+   */
   private broadcastMatchResult(room: Room, winnerAddress: string) {
     // Sign settlement authorization for on-chain verification
     const settlementSignature = signSettlementAuthorization(
