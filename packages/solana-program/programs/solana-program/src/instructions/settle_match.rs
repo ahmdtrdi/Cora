@@ -12,7 +12,8 @@ use solana_sdk_ids::ed25519_program;
 
 pub fn handler(
     ctx: Context<SettleMatch>,
-    winner: Pubkey,
+    action: u8,
+    target: Pubkey,
     signature: [u8; 64],
 ) -> Result<()> {
     let player_a = ctx.accounts.match_state.player_a;
@@ -29,13 +30,19 @@ pub fn handler(
     );
 
     require!(
-        winner == player_a || winner == player_b,
+        action == 0 || action == 1,
+        CoraError::InvalidAction
+    );
+
+    require!(
+        target == player_a || target == player_b,
         CoraError::InvalidWinner
     );
 
-    let mut message = [0u8; 64];
-    message[..32].copy_from_slice(&match_id);
-    message[32..].copy_from_slice(&winner.to_bytes());
+    let mut message = [0u8; 65];
+    message[0] = action;
+    message[1..33].copy_from_slice(&match_id);
+    message[33..65].copy_from_slice(&target.to_bytes());
 
     verify_ed25519(
         &ctx.accounts.instructions_sysvar.to_account_info(),
@@ -44,65 +51,106 @@ pub fn handler(
         &signature,
     )?;
 
-    let total = wager_amount
-        .checked_mul(2)
-        .ok_or(CoraError::InvalidWagerAmount)?;
-
-    let fee = total
-        .checked_mul(FEE_BASIS_POINTS)
-        .ok_or(CoraError::InvalidWagerAmount)?
-        .checked_div(10_000)
-        .ok_or(CoraError::InvalidWagerAmount)?;
-
-    let winner_amount = total
-        .checked_sub(fee)
-        .ok_or(CoraError::InvalidWagerAmount)?;
-
-    msg!("Total pot: {}", total);
-    msg!("Fee (2.5%): {}", fee);
-    msg!("Winner receives: {}", winner_amount);
-
     let seeds: &[&[&[u8]]] = &[&[MATCH_SEED, match_id.as_ref(), &[bump]]];
     let match_state_info = ctx.accounts.match_state.to_account_info();
 
-    let winner_token_account = if winner == player_a {
-        ctx.accounts.player_a_token_account.to_account_info()
+    if action == 0 {
+        // action 0: Win (target is winner)
+        let total = wager_amount
+            .checked_mul(2)
+            .ok_or(CoraError::InvalidWagerAmount)?;
+
+        let fee = total
+            .checked_mul(FEE_BASIS_POINTS)
+            .ok_or(CoraError::InvalidWagerAmount)?
+            .checked_div(10_000)
+            .ok_or(CoraError::InvalidWagerAmount)?;
+
+        let winner_amount = total
+            .checked_sub(fee)
+            .ok_or(CoraError::InvalidWagerAmount)?;
+
+        let winner_token_account = if target == player_a {
+            ctx.accounts.player_a_token_account.to_account_info()
+        } else {
+            ctx.accounts.player_b_token_account.to_account_info()
+        };
+
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from:      ctx.accounts.vault.to_account_info(),
+                    mint:      ctx.accounts.token_mint.to_account_info(),
+                    to:        winner_token_account,
+                    authority: match_state_info.clone(),
+                },
+                seeds,
+            ),
+            winner_amount,
+            token_decimals,
+        )?;
+
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from:      ctx.accounts.vault.to_account_info(),
+                    mint:      ctx.accounts.token_mint.to_account_info(),
+                    to:        ctx.accounts.treasury.to_account_info(),
+                    authority: match_state_info,
+                },
+                seeds,
+            ),
+            fee,
+            token_decimals,
+        )?;
+
+        msg!("Match settled! Winner: {}", target);
     } else {
-        ctx.accounts.player_b_token_account.to_account_info()
-    };
+        // action 1: Penalty (target is cheater)
+        // Cheater forfeits wager to Treasury
+        // Honest player gets their 100% wager back
+        let honest_token_account = if target == player_a {
+            ctx.accounts.player_b_token_account.to_account_info()
+        } else {
+            ctx.accounts.player_a_token_account.to_account_info()
+        };
 
-    transfer_checked(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.key(),
-            TransferChecked {
-                from:      ctx.accounts.vault.to_account_info(),
-                mint:      ctx.accounts.token_mint.to_account_info(),
-                to:        winner_token_account,
-                authority: match_state_info.clone(),
-            },
-            seeds,
-        ),
-        winner_amount,
-        token_decimals,
-    )?;
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from:      ctx.accounts.vault.to_account_info(),
+                    mint:      ctx.accounts.token_mint.to_account_info(),
+                    to:        honest_token_account,
+                    authority: match_state_info.clone(),
+                },
+                seeds,
+            ),
+            wager_amount,
+            token_decimals,
+        )?;
 
-    transfer_checked(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.key(),
-            TransferChecked {
-                from:      ctx.accounts.vault.to_account_info(),
-                mint:      ctx.accounts.token_mint.to_account_info(),
-                to:        ctx.accounts.treasury.to_account_info(),
-                authority: match_state_info,
-            },
-            seeds,
-        ),
-        fee,
-        token_decimals,
-    )?;
+        transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                TransferChecked {
+                    from:      ctx.accounts.vault.to_account_info(),
+                    mint:      ctx.accounts.token_mint.to_account_info(),
+                    to:        ctx.accounts.treasury.to_account_info(),
+                    authority: match_state_info,
+                },
+                seeds,
+            ),
+            wager_amount,
+            token_decimals,
+        )?;
+
+        msg!("Match penalized! Cheater: {}", target);
+    }
 
     ctx.accounts.match_state.status = MatchStatus::Settled;
-    msg!("Match settled! Winner: {}", winner);
 
     Ok(())
 }

@@ -4,13 +4,13 @@ pub mod instructions;
 pub mod state;
 
 use anchor_lang::prelude::*;
-
-pub use instructions::InitializeMatch;
-pub use instructions::DepositWager;
-pub use instructions::SettleMatch;
-pub(crate) use instructions::__client_accounts_initialize_match;
-pub(crate) use instructions::__client_accounts_deposit_wager;
-pub(crate) use instructions::__client_accounts_settle_match;
+pub use instructions::{DepositWager, InitializeMatch, Refund, SettleMatch};
+pub(crate) use instructions::{
+    __client_accounts_deposit_wager,
+    __client_accounts_initialize_match,
+    __client_accounts_refund,
+    __client_accounts_settle_match,
+};
 
 
 declare_id!("9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W");
@@ -34,9 +34,14 @@ pub mod solana_program {
 
     pub fn settle_match(
         ctx: Context<SettleMatch>,
-        winner: Pubkey,
+        action: u8,
+        target: Pubkey,
         signature: [u8; 64],
     ) -> Result<()> {
-        instructions::settle_match::handler(ctx, winner, signature)
+        instructions::settle_match::handler(ctx, action, target, signature)
+    }
+
+    pub fn refund(ctx: Context<Refund>) -> Result<()> {
+        instructions::refund::handler(ctx)
     }
 }
