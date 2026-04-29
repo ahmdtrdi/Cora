@@ -70,9 +70,9 @@ export const SCIENTISTS: Scientist[] = [
 
 export const ARENAS: Arena[] = [
   {
-    id: "usdc",
-    token: "USDC",
-    label: "USDC Arena",
+    id: "sol",
+    token: "SOL",
+    label: "SOL Arena",
     accent: "#9db496",
     frame: "#274137",
     previewBg:
