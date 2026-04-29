@@ -13,6 +13,11 @@ pub fn handler(
     // Validasi: wager tidak boleh 0
     require!(wager_amount > 0, CoraError::InvalidWagerAmount);
 
+    require!(
+        ctx.accounts.player_a.key() != ctx.accounts.player_b.key(),
+        CoraError::SamePlayer
+    );
+
     let match_state = &mut ctx.accounts.match_state;
     let clock = Clock::get()?;
 

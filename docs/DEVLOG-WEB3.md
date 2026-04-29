@@ -73,3 +73,28 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] Tests use hardcoded Token Program ID and Rent sysvar ID — fragile if Solana changes these (unlikely but worth noting)
 - [ ] Token Program binary may not be loaded in LiteSVM for CPI tests — runtime test may fail even if compile succeeds. Will verify when running `cargo test`.
 - [ ] Backend `confirmDeposit` handler does not verify on-chain tx (deferred to Task 7.2 E2E)
+
+---
+
+## Entry 3 — 2026-04-28: Migrate `deposit_wager` & `settle_match` tests and fix environment sync
+
+### The Change
+
+**Smart contract testing:**
+- `tests/test_deposit.rs` — Created new test for `deposit_wager` using `litesvm`. Mocks the state machine from `WaitingDeposit` to `Active` after both players deposit.
+- `tests/test_settle_match.rs` — Created new test for `settle_match` using `litesvm`. Tests ed25519 precompile instruction execution, token transfers, and fee distribution.
+- `Cargo.toml` — Added `solana-instructions-sysvar = "3.0.0"` and `solana-sdk-ids = "3.1.0"` as standard dependencies instead of relying on monolithic `solana_program`. Added `solana-ed25519-program = "3.0.0"` and `features = ["precompiles"]` to `litesvm` dev-dependencies.
+- `src/instructions/settle_match.rs` — Reverted imports to use modular Anza (Solana 3.0+) crates (`solana_instructions_sysvar` and `solana_sdk_ids`). Cast `Signature` and `Pubkey` types correctly.
+- `src/instructions/initialize_match.rs` & `src/error.rs` — Added `CoraError::SamePlayer` validation to prevent a player from matching against themselves.
+- `Anchor.toml` & `lib.rs` — Synced program ID with the locally generated keypair (`ChhF...`) to fix `anchor build` ID mismatch errors.
+
+### The Reasoning
+
+1. **Solana 3.0 Modular Architecture:** Previously we tried using `solana_program` (the monolithic crate) for instructions and SDK ids, but the new Anza 3.x crates break these out. We adopted the new industry standard (`solana-instructions-sysvar` and `solana-sdk-ids`).
+2. **Precompiles in LiteSVM:** By default, LiteSVM 0.10.0 does not load native precompile programs like Ed25519. The test for `settle_match` threw `InvalidProgramForExecution` until we enabled the `precompiles` feature in `Cargo.toml`.
+3. **Anchor Build Sync:** The user was running `anchor keys sync` from inside `programs/solana-program` instead of the workspace root, causing the ID mismatch to persist. We manually synced it and clarified the proper execution path.
+
+### The Tech Debt
+
+- [ ] Ensure that `litesvm` tests are deterministic locally vs CI.
+- [ ] We manually synced the program IDs. We must remember to sync again before devnet/mainnet deployment using the production keypair.
