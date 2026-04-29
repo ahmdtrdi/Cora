@@ -1,0 +1,136 @@
+﻿"use client";
+
+import { motion } from "framer-motion";
+import type { Arena } from "./LobbyScreen";
+
+type LobbySetupProps = {
+  walletAddress: string;
+  walletConnected: boolean;
+  arenas: Arena[];
+  selectedArenaId: string | null;
+  onSelectArena: (arenaId: string) => void;
+  wagerUsd: string;
+  canPlay: boolean;
+  onPlay: () => void;
+};
+
+function truncateWallet(address: string) {
+  if (address.length <= 12) {
+    return address;
+  }
+  return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
+export function LobbySetup({
+  walletAddress,
+  walletConnected,
+  arenas,
+  selectedArenaId,
+  onSelectArena,
+  wagerUsd,
+  canPlay,
+  onPlay,
+}: LobbySetupProps) {
+  const selectedArena = arenas.find((arena) => arena.id === selectedArenaId) ?? null;
+
+  return (
+    <div className="mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 text-[#1f2b24] md:px-6 md:py-6">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div
+          className="frame-cut frame-cut-sm inline-flex items-center gap-3 px-3 py-2"
+          style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,255,255,0.8)" }}
+        >
+          <div className="h-6 w-6 rounded-full" style={{ background: "rgba(157,180,150,0.55)" }} />
+          <p className="font-gabarito text-xs font-semibold tracking-wide text-[#274137]">
+            {walletConnected ? truncateWallet(walletAddress) : "Wallet not connected"}
+          </p>
+        </div>
+
+        <div
+          className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2"
+          style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,255,255,0.8)" }}
+        >
+          <span className="font-gabarito text-xs uppercase tracking-wider text-[#9db496]">Wager</span>
+          <span className="font-gabarito text-sm font-bold text-[#f8d694]">${wagerUsd || "0"} {selectedArena?.token ?? "---"}</span>
+        </div>
+      </header>
+
+      <main className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+        <section className="frame-cut h-fit p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,255,255,0.76)" }}>
+          <p className="mb-3 font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">Arena Token</p>
+          <div className="space-y-2">
+            {arenas.map((arena) => {
+              const active = selectedArenaId === arena.id;
+              return (
+                <button
+                  key={arena.id}
+                  type="button"
+                  onClick={() => onSelectArena(arena.id)}
+                  className="frame-cut frame-cut-sm w-full px-3 py-2 text-left transition"
+                  style={{
+                    border: active ? `1px solid ${arena.frame}` : "1px solid rgba(39,65,55,0.16)",
+                    background: active ? "rgba(157,180,150,0.22)" : "rgba(255,255,255,0.72)",
+                  }}
+                >
+                  <p className="font-gabarito text-sm font-bold" style={{ color: active ? arena.frame : "#274137" }}>
+                    {arena.token}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="frame-cut relative flex min-h-[320px] flex-col justify-between overflow-hidden p-5 md:min-h-[460px] md:p-6" style={{ border: "1px solid rgba(39,65,55,0.18)", background: selectedArena?.previewBg ?? "linear-gradient(150deg, #ececec 0%, #d9d9d9 100%)" }}>
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.24),transparent_60%)]" />
+
+          <div className="relative z-10 max-w-lg">
+            <p className="font-gabarito text-[11px] uppercase tracking-[0.24em] text-[#4f6759]">Pre-Match Lobby</p>
+            <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#1f2b24] md:text-5xl">Choose Arena</h1>
+            <p className="mt-3 font-gabarito text-sm text-[#3c5044]">
+              Pick your token arena, confirm wager, then continue to character selection.
+            </p>
+          </div>
+
+          <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="frame-cut frame-cut-sm w-full max-w-[220px] px-3 py-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,255,255,0.76)" }}>
+              <p className="font-gabarito text-[10px] uppercase tracking-[0.2em] text-[#6d8373]">
+                Wager (USD)
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="font-gabarito text-sm text-[#ba6931]">$</span>
+                <p className="font-gabarito text-sm font-bold text-[#274137]">
+                  {wagerUsd}
+                </p>
+              </div>
+            </div>
+
+            <motion.button
+              whileHover={canPlay ? { y: -2 } : undefined}
+              whileTap={canPlay ? { scale: 0.98 } : undefined}
+              type="button"
+              onClick={onPlay}
+              disabled={!canPlay}
+              className="frame-cut frame-cut-sm min-w-[150px] px-5 py-3 font-gabarito text-base font-extrabold uppercase tracking-wide transition"
+              style={{
+                border: canPlay
+                  ? `1px solid ${selectedArena?.frame ?? "#274137"}`
+                  : "1px solid rgba(39,65,55,0.2)",
+                background: canPlay ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.65)",
+                color: canPlay ? selectedArena?.frame ?? "#274137" : "rgba(39,65,55,0.5)",
+              }}
+            >
+              Play
+            </motion.button>
+          </div>
+        </section>
+      </main>
+
+      {!walletConnected && (
+        <p className="mt-3 font-gabarito text-xs text-[#6f3a28]">
+          Connect your wallet on the landing page first. Play stays locked until connected.
+        </p>
+      )}
+    </div>
+  );
+}

@@ -226,3 +226,55 @@ body {
 .wallet-adapter-modal-wrapper {
   background: var(--color-surface) !important;
 }
+
+/* ─── DESIGN.md font utilities ────────────────────────────── */
+
+.font-caprasimo { font-family: var(--font-caprasimo, 'Caprasimo'), serif; }
+.font-gabarito  { font-family: var(--font-gabarito, 'Gabarito'), sans-serif; }
+
+/* ─── Lobby keyframes ──────────────────────────────────────── */
+
+/* Shimmer sweep for the matchmaking progress bar */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+/* Expanding glow ring from the VS badge */
+@keyframes vsRing {
+  0%   { transform: scale(1);   opacity: 0.9; }
+  70%  { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* Enemy pod materialise: scale-pop + brightness flash */
+@keyframes matIn {
+  0%   { transform: scale(0.82); opacity: 0;   filter: brightness(2.5); }
+  55%  {                                         filter: brightness(1.5); }
+  100% { transform: scale(1);    opacity: 1;   filter: brightness(1); }
+}
+
+/* ─── Lobby utility classes ────────────────────────────────── */
+
+/* Progress bar fill with shimmer sweep */
+.shimmer-bar {
+  background: linear-gradient(
+    90deg,
+    #b45309 0%,
+    #f8d694 35%,
+    #fef9c3 50%,
+    #f8d694 65%,
+    #b45309 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Lobby full-viewport dark green background with arena grid */
+.lobby-bg {
+  background-color: #1b2e26;
+  background-image:
+    linear-gradient(rgba(155, 180, 150, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(155, 180, 150, 0.04) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
