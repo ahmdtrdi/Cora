@@ -17,11 +17,17 @@ pub enum CoraError {
     #[msg("Match is not in active status")]
     NotActive,
 
+    #[msg("Match is already settled or refunded")]
+    AlreadyFinalized,
+
     #[msg("Match is not waiting for deposits")]
     NotWaitingDeposit,
 
     #[msg("Invalid match status for this operation")]
     InvalidMatchStatus,
+
+    #[msg("Invalid action parameter")]
+    InvalidAction,
 
     #[msg("Invalid settlement signature")]
     InvalidSignature,
@@ -32,8 +38,14 @@ pub enum CoraError {
     #[msg("Timeout has not been reached yet")]
     TimeoutNotReached,
 
+    #[msg("Match has not timed out yet")]
+    MatchNotTimedOut,
+
     #[msg("Token mint does not match match state")]
     InvalidTokenMint,
+
+    #[msg("Match state is inconsistent for refund")]
+    InvalidRefundState,
 
     #[msg("Match has already been finalized")]
     MatchAlreadyFinalized,
