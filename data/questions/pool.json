@@ -1,0 +1,26 @@
+[
+  {
+    "id": "q1",
+    "category": "logical",
+    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "options": [
+      { "id": "A", "text": "Yes", "score": true },
+      { "id": "B", "text": "No", "score": false },
+      { "id": "C", "text": "Cannot be determined", "score": false },
+      { "id": "D", "text": "Maybe", "score": false }
+    ],
+    "explanation": "Transitive property."
+  },
+  {
+    "id": "q2",
+    "category": "math",
+    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "options": [
+      { "id": "A", "text": "$0.05", "score": true },
+      { "id": "B", "text": "$0.10", "score": false },
+      { "id": "C", "text": "$0.15", "score": false },
+      { "id": "D", "text": "$0.95", "score": false }
+    ],
+    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+  }
+]
