@@ -585,3 +585,49 @@
 - HP is currently displayed on base elements but not yet wired to real websocket game-state updates from the backend engine.
 - Enemy actions are currently mock feedback (no answer reveal by design), pending direct integration with real room event streams.
 - Summary is match-level only and does not yet include reward/settlement integration.
+
+## 2026-04-29 - Play Socket Wiring (useMatchSocket Integration)
+
+### The Change
+- Refactored `apps/web/src/hooks/useMatchSocket.ts` to support full match-room integration requirements:
+  - added required `address` param and socket URL query binding (`/match/:roomId?address=...`),
+  - added `openCard` sender API,
+  - added listeners/state for `cardCountdown`, `cardExpired`, and `scoreUpdate`,
+  - split settlement result typing to `MatchResultPayload` (`settlementResult`) and anti-cheat invalidation (`matchInvalidated`),
+  - kept existing `gameStateUpdate`, `damageEvent`, `phaseChange`, and `playCardResult` flows.
+- Refactored `apps/web/src/components/play/BattleScreen.tsx` to consume server-driven battle state:
+  - hand/cards now render from `gameState.hand` instead of local question mock resolution,
+  - card interactions now call `openCard` and `playCard` through the socket hook,
+  - question timer display follows server countdown events,
+  - deposit phase overlay now sends `confirmDeposit` action,
+  - match completion overlay now uses server settlement/invalidation events.
+- Maintained game-fi battlefield composition (full-screen arena, centered fanned card hand, base blocks, circular placeholders) while replacing local-only battle progression logic.
+- Validation run: `npm run lint` passed after aligning with strict hook rules.
+
+### The Reasoning
+- Backend and game-logic already expose authoritative room events; frontend should not remain local-simulated once socket flow is available.
+- Enforcing `address` in the websocket URL is necessary because room join/reconnect identity is address-scoped in the backend room manager.
+- Splitting settlement vs invalidation payloads keeps FE state handling type-safe and reflects real backend event semantics.
+
+### The Tech Debt
+- `confirmDeposit` currently sends a mock signature; this must be replaced with real Phantom transaction signing payloads when wager/deposit wiring lands.
+- Current no-wallet local testing uses dev-preview fallback addresses/query overrides for socket identity. This must be removed or gated behind explicit dev mode once Phantom wallet sign-in/signing is fully wired.
+- Battle outcomes displayed in FE are currently event-derived and UI-focused; full scoreboard/result canonicalization should rely on final backend match payloads during settlement screen implementation.
+- Current `/play` still uses React/CSS presentation; if we adopt Phaser for in-arena animation, this socket adapter should be moved behind a shared battle store (e.g., Zustand) for renderer-agnostic state flow.
+
+## 2026-04-29 - Play Runtime Stabilization (Import Path + Empty-Hand Fallback)
+
+### The Change
+- Updated `apps/web/src/app/play/page.tsx` to import `BattleScreen` via alias path (`@/components/play/BattleScreen`) instead of deep relative path.
+- Updated `apps/web/src/components/play/BattleScreen.tsx` to render placeholder card slots when `gameState.hand` is empty so the arena does not appear blank during non-playing phases.
+- Added address selection fallback flow for local testing: wallet address -> `?address=` query -> deterministic `dev-preview-<roomId>` fallback.
+- Adjusted implementation to satisfy strict React hook purity/ref lint rules.
+- Validation run: `npm run lint` passed.
+
+### The Reasoning
+- The module resolution error was intermittent during hot reload and path reconciliation; alias imports are more stable in this workspace.
+- In websocket-driven battle flow, empty hand before `playing` is expected. Placeholder slots preserve visual continuity and make state transitions clearer.
+- Deterministic fallback address keeps no-wallet testing possible without violating render purity constraints.
+
+### The Tech Debt
+- Deterministic fallback address (`dev-preview-<roomId>`) means two local tabs on the same room will collide unless distinct `?address=` values are provided. This remains temporary until Phantom-authenticated addresses are the default path.

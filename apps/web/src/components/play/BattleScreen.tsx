@@ -1,27 +1,22 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Question } from "@shared/question";
-import { validateQuestion } from "@shared/question";
-import questionPoolRaw from "../../../../../data/questions/questions.json";
-
-type CardState = {
-  question: Question;
-  status: "idle" | "answered";
-  outcome?: "correct" | "wrong" | "timeout";
-};
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import type { Card, GameStatus } from "@shared/websocket";
+import { useMatchSocket } from "../../hooks/useMatchSocket";
 
 type MatchOutcome = {
-  cardIndex: number;
+  cardId: string;
   questionId: string;
   outcome: "correct" | "wrong" | "timeout";
+  at: number;
 };
 
-const QUESTIONS_PER_MATCH = 5;
 const ANSWER_TIME_SEC = 10;
-const START_HP = 100;
+const EMPTY_HAND: Card[] = [];
+const CARD_PLACEHOLDER_COUNT = 5;
 
 const CARD_TRANSFORMS = [
   "translate-y-4 -rotate-6",
@@ -31,194 +26,185 @@ const CARD_TRANSFORMS = [
   "translate-y-4 rotate-6",
 ] as const;
 
-function hashString(seed: string) {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
+function getCardTransform(index: number) {
+  if (index < CARD_TRANSFORMS.length) {
+    return CARD_TRANSFORMS[index];
   }
-  return hash >>> 0;
+  return index % 2 === 0 ? "translate-y-3 -rotate-2" : "translate-y-3 rotate-2";
 }
 
-function makeSeededRng(seed: number) {
-  let state = seed || 0x6d2b79f5;
-  return () => {
-    state += 0x6d2b79f5;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function getStatusLabel(status: GameStatus) {
+  if (status === "waiting") return "Waiting Opponent";
+  if (status === "depositing") return "Deposit Phase";
+  if (status === "playing") return "Playing";
+  if (status === "settling") return "Settling";
+  return "Finished";
 }
 
-function shuffleQuestions(input: Question[], seedText: string) {
-  const rng = makeSeededRng(hashString(seedText));
-  const arr = [...input];
-
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rng() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-
-  return arr;
-}
-
-function getCardColor(card: CardState) {
-  if (card.status !== "answered") {
-    return "#e9e3d7";
-  }
-  if (card.outcome === "correct") {
-    return "#d8ead4";
-  }
-  if (card.outcome === "timeout") {
-    return "#efe8d5";
-  }
+function getOutcomeColor(outcome: MatchOutcome["outcome"]) {
+  if (outcome === "correct") return "#d8ead4";
+  if (outcome === "timeout") return "#efe8d5";
   return "#f2ddd4";
 }
 
-function getCardLabel(card: CardState, idx: number) {
-  if (card.status !== "answered") {
-    return `Card ${idx + 1}`;
-  }
-  if (card.outcome === "correct") {
-    return "Correct";
-  }
-  if (card.outcome === "timeout") {
-    return "Timeout";
-  }
+function getOutcomeLabel(outcome: MatchOutcome["outcome"]) {
+  if (outcome === "correct") return "Correct";
+  if (outcome === "timeout") return "Timeout";
   return "Wrong";
 }
 
 export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("roomId") ?? "mock-room-001";
+  const { publicKey } = useWallet();
+  const fallbackAddress = `dev-preview-${roomId}`;
+  const address =
+    publicKey?.toBase58() ??
+    searchParams.get("address") ??
+    fallbackAddress;
 
-  const validQuestions = useMemo(() => {
-    const raw = questionPoolRaw as unknown[];
-    return raw.filter(validateQuestion) as Question[];
-  }, []);
+  const {
+    connectionState,
+    gameState,
+    settlementResult,
+    matchInvalidated,
+    lastDamageEvent,
+    lastPlayResult,
+    lastCardCountdown,
+    lastCardExpired,
+    openCard,
+    playCard,
+    confirmDeposit,
+  } = useMatchSocket({ roomId, address });
 
-  const buildCards = useCallback(
-    (seedText: string) => {
-      const shuffled = shuffleQuestions(validQuestions, seedText);
-      const selected = shuffled.slice(0, QUESTIONS_PER_MATCH);
-      return selected.map((question) => ({ question, status: "idle" as const }));
-    },
-    [validQuestions],
-  );
-
-  const [cards, setCards] = useState<CardState[]>(() => buildCards(`${roomId}-seed`));
-  const cardsRef = useRef(cards);
-
-  const [activeCardIndex, setActiveCardIndex] = useState<number | null>(null);
+  const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
-
-  const [playerBaseHp] = useState(START_HP);
-  const [opponentBaseHp] = useState(START_HP);
-  const [playerScore, setPlayerScore] = useState(0);
-  const [opponentScore, setOpponentScore] = useState(0);
-
   const [enemyAttackFlash, setEnemyAttackFlash] = useState(false);
   const [enemyEventText, setEnemyEventText] = useState<string | null>(null);
-  const [matchOutcomes, setMatchOutcomes] = useState<MatchOutcome[]>([]);
+  const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
 
-  useEffect(() => {
-    cardsRef.current = cards;
-  }, [cards]);
+  const pendingCardIdRef = useRef<string | null>(null);
+  const pendingQuestionIdRef = useRef<string | null>(null);
+  const lastProcessedPlayAtRef = useRef(0);
+  const lastProcessedExpiredAtRef = useRef(0);
+  const lastDamageTimestampRef = useRef(0);
 
-  const unansweredCount = cards.filter((card) => card.status === "idle").length;
-  const answeredCount = cards.length - unansweredCount;
-  const isMatchComplete = cards.length > 0 && answeredCount === cards.length;
-
-  const emitEnemyAttack = useCallback(() => {
-    const didAttack = Math.random() < 0.45;
-
-    if (!didAttack) {
-      setEnemyEventText("Opponent is thinking...");
-      return;
-    }
-
-    setOpponentScore((prev) => prev + 1);
-    setEnemyAttackFlash(true);
-    setEnemyEventText("Opponent attacked!");
-
-    setTimeout(() => {
-      setEnemyAttackFlash(false);
-    }, 460);
-  }, []);
-
-  const resolveCard = useCallback(
-    (cardIndex: number, optionId: string | null) => {
-      const currentCards = cardsRef.current;
-      const target = currentCards[cardIndex];
-
-      if (!target || target.status !== "idle") {
-        setActiveCardIndex(null);
-        setAnswerLocked(false);
-        return;
-      }
-
-      const selectedOption = optionId
-        ? target.question.options.find((option) => option.id === optionId)
-        : null;
-
-      const timedOut = optionId === null;
-      const isCorrect = selectedOption?.score === true;
-
-      const outcome: "correct" | "wrong" | "timeout" = timedOut
-        ? "timeout"
-        : isCorrect
-          ? "correct"
-          : "wrong";
-
-      if (isCorrect) {
-        setPlayerScore((prev) => prev + 1);
-      }
-
-      setCards((prev) =>
-        prev.map((card, idx) =>
-          idx === cardIndex ? { ...card, status: "answered", outcome } : card,
-        ),
-      );
-
-      setMatchOutcomes((prev) => [
-        ...prev,
-        { cardIndex, questionId: target.question.id, outcome },
-      ]);
-
-      emitEnemyAttack();
-
-      setTimeout(() => {
-        setActiveCardIndex(null);
-        setAnswerLocked(false);
-      }, 250);
-    },
-    [emitEnemyAttack],
+  const hand = gameState?.hand ?? EMPTY_HAND;
+  const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
+  const status = gameState?.status ?? "waiting";
+  const player = gameState?.player;
+  const opponent = gameState?.opponent;
+  const activeCard = useMemo(
+    () => hand.find((card) => card.id === activeCardId) ?? null,
+    [hand, activeCardId],
   );
 
   useEffect(() => {
-    if (activeCardIndex === null || answerLocked || isMatchComplete) {
+    if (!lastCardExpired) return;
+    if (lastCardExpired.at === lastProcessedExpiredAtRef.current) return;
+    lastProcessedExpiredAtRef.current = lastCardExpired.at;
+
+    const questionId = pendingQuestionIdRef.current ?? "unknown";
+    setOutcomes((prev) => [
+      ...prev,
+      {
+        cardId: lastCardExpired.cardId,
+        questionId,
+        outcome: "timeout",
+        at: lastCardExpired.at,
+      },
+    ]);
+    setEnemyEventText("Time up. Card expired.");
+    setActiveCardId(null);
+    setAnswerLocked(false);
+    pendingCardIdRef.current = null;
+    pendingQuestionIdRef.current = null;
+  }, [lastCardExpired]);
+
+  useEffect(() => {
+    if (!lastPlayResult) return;
+    if (lastPlayResult.at === lastProcessedPlayAtRef.current) return;
+    lastProcessedPlayAtRef.current = lastPlayResult.at;
+
+    const cardId = pendingCardIdRef.current ?? "unknown";
+    const questionId = pendingQuestionIdRef.current ?? "unknown";
+    setOutcomes((prev) => [
+      ...prev,
+      {
+        cardId,
+        questionId,
+        outcome: lastPlayResult.correct ? "correct" : "wrong",
+        at: lastPlayResult.at,
+      },
+    ]);
+    setEnemyEventText(lastPlayResult.correct ? "Nice hit!" : "No damage this turn.");
+    setActiveCardId(null);
+    setAnswerLocked(false);
+    pendingCardIdRef.current = null;
+    pendingQuestionIdRef.current = null;
+  }, [lastPlayResult]);
+
+  useEffect(() => {
+    if (!lastDamageEvent) return;
+    if (lastDamageEvent.timestamp === lastDamageTimestampRef.current) return;
+    lastDamageTimestampRef.current = lastDamageEvent.timestamp;
+
+    const enemyAttacked = lastDamageEvent.attackerAddress !== player?.address;
+    if (enemyAttacked) {
+      setTimeout(() => {
+        setEnemyAttackFlash(true);
+        setEnemyEventText("Opponent attacked!");
+        setTimeout(() => setEnemyAttackFlash(false), 420);
+      }, 0);
       return;
     }
+    setTimeout(() => {
+      setEnemyEventText("You attacked!");
+    }, 0);
+  }, [lastDamageEvent, player?.address]);
 
-    let remaining = ANSWER_TIME_SEC;
+  const isPlayable = status === "playing" && connectionState === "connected";
+  const isMatchComplete = Boolean(settlementResult) || Boolean(matchInvalidated) || status === "finished";
 
-    const intervalId = setInterval(() => {
-      remaining -= 1;
-      setSecondsLeft(Math.max(remaining, 0));
+  function onOpenCard(card: Card) {
+    if (!isPlayable || activeCardId || isMatchComplete) return;
+    setActiveCardId(card.id);
+    setSecondsLeft(ANSWER_TIME_SEC);
+    setAnswerLocked(false);
+    pendingCardIdRef.current = card.id;
+    pendingQuestionIdRef.current = card.question.id;
+    openCard(card.id);
+  }
 
-      if (remaining <= 0) {
-        clearInterval(intervalId);
-        setAnswerLocked(true);
-        resolveCard(activeCardIndex, null);
-      }
-    }, 1000);
+  function onAnswer(optionId: string) {
+    if (!activeCard || answerLocked || !isPlayable) return;
+    setAnswerLocked(true);
+    pendingCardIdRef.current = activeCard.id;
+    pendingQuestionIdRef.current = activeCard.question.id;
+    playCard(activeCard.id, optionId);
+  }
 
-    return () => clearInterval(intervalId);
-  }, [activeCardIndex, answerLocked, isMatchComplete, resolveCard]);
+  const playerScore = player?.score ?? 0;
+  const opponentScore = opponent?.score ?? 0;
+  const playerBaseHp = player?.baseHealth ?? 100;
+  const opponentBaseHp = opponent?.baseHealth ?? 100;
 
-  const activeCard = activeCardIndex !== null ? cards[activeCardIndex] : null;
+  const correctCount = outcomes.filter((item) => item.outcome === "correct").length;
+  const timeoutCount = outcomes.filter((item) => item.outcome === "timeout").length;
+  const wrongCount = outcomes.filter((item) => item.outcome === "wrong").length;
+
+  const settlementText = settlementResult
+    ? settlementResult.winner === player?.address
+      ? "You Win"
+      : "You Lose"
+    : matchInvalidated
+      ? "Match Invalidated"
+      : "Match Finished";
+  const displaySecondsLeft =
+    activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
+      ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
+      : secondsLeft;
 
   return (
     <main
@@ -240,7 +226,7 @@ export function BattleScreen() {
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
             >
-              Round {Math.min(answeredCount + 1, QUESTIONS_PER_MATCH)} / {QUESTIONS_PER_MATCH}
+              {getStatusLabel(status)} · {connectionState}
             </span>
             <Link
               href="/lobby"
@@ -301,33 +287,31 @@ export function BattleScreen() {
 
             <div className="absolute bottom-0 left-1/2 w-full max-w-4xl -translate-x-1/2">
               <p className="mb-2 text-center font-gabarito text-sm text-[#4f6759]">
-                {enemyEventText ?? "Pick a card from the center deck."}
+                {enemyEventText ?? (isPlayable ? "Pick a card from the center deck." : "Waiting for server state...")}
               </p>
 
               <div className="flex items-end justify-center gap-2 md:gap-3">
-                {cards.map((card, index) => {
-                  const isActive = activeCardIndex === index;
-                  const isAnswered = card.status === "answered";
-
+                {Array.from({ length: displaySlots }).map((_, index) => {
+                  const card = hand[index] ?? null;
+                  const active = card ? activeCardId === card.id : false;
+                  const transformClass = getCardTransform(index);
                   return (
                     <button
-                      key={card.question.id}
+                      key={card?.id ?? `placeholder-${index}`}
                       type="button"
-                      disabled={isAnswered || activeCardIndex !== null || isMatchComplete}
                       onClick={() => {
-                        setActiveCardIndex(index);
-                        setSecondsLeft(ANSWER_TIME_SEC);
-                        setAnswerLocked(false);
+                        if (card) onOpenCard(card);
                       }}
-                      className={`frame-cut relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] px-2 py-2 text-left transition ${CARD_TRANSFORMS[index]}`}
+                      disabled={!card || !isPlayable || Boolean(activeCardId) || isMatchComplete}
+                      className={`frame-cut relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] px-2 py-2 text-left transition ${transformClass}`}
                       style={{
-                        border: isActive ? "1px solid #274137" : "1px solid rgba(39,65,55,0.2)",
-                        background: getCardColor(card),
-                        opacity: isAnswered ? 0.96 : 1,
+                        border: active ? "1px solid #274137" : "1px solid rgba(39,65,55,0.2)",
+                        background: "#e9e3d7",
+                        opacity: !card || !isPlayable ? 0.6 : 1,
                       }}
                     >
                       <span className="font-gabarito text-[10px] uppercase tracking-[0.16em] text-[#6d8373]">
-                        {getCardLabel(card, index)}
+                        {card ? card.type : "locked"}
                       </span>
                       <span className="absolute bottom-2 left-2 font-caprasimo text-3xl text-[#51675a]">?</span>
                     </button>
@@ -339,18 +323,37 @@ export function BattleScreen() {
         </section>
       </div>
 
-      {activeCard && !isMatchComplete && (
+      {status === "depositing" && (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(20,30,24,0.35)] p-4">
+          <div className="frame-cut w-full max-w-lg p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
+            <p className="font-caprasimo text-3xl text-[#1f2b24]">Confirm Deposit</p>
+            <p className="mt-2 font-gabarito text-sm text-[#4f6759]">
+              Waiting for both players to confirm deposit before the battle starts.
+            </p>
+            <button
+              type="button"
+              onClick={() => confirmDeposit(`mock-signature-${Date.now()}`)}
+              className="frame-cut frame-cut-sm mt-4 px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.88)" }}
+            >
+              Confirm Deposit
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeCard && status === "playing" && !isMatchComplete && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(20,30,24,0.35)] p-4">
           <div className="frame-cut w-full max-w-xl p-4 md:p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
             <div className="mb-2 flex items-center justify-between">
               <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">
-                {activeCard.question.category}
+                {activeCard.question.id}
               </p>
-              <p className="font-caprasimo text-4xl text-[#ba6931]">{secondsLeft}</p>
+              <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
             </div>
 
             <p className="font-gabarito text-lg font-semibold leading-relaxed text-[#1f2b24]">
-              {activeCard.question.questionText}
+              {activeCard.question.text}
             </p>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -359,13 +362,7 @@ export function BattleScreen() {
                   key={option.id}
                   type="button"
                   disabled={answerLocked}
-                  onClick={() => {
-                    if (answerLocked || activeCardIndex === null) {
-                      return;
-                    }
-                    setAnswerLocked(true);
-                    resolveCard(activeCardIndex, option.id);
-                  }}
+                  onClick={() => onAnswer(option.id)}
                   className="frame-cut px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
                   style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#fffdfa" }}
                 >
@@ -383,40 +380,34 @@ export function BattleScreen() {
       {isMatchComplete && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(20,30,24,0.42)] p-4">
           <div className="frame-cut w-full max-w-xl p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
-            <p className="font-caprasimo text-4xl text-[#1f2b24]">Match Summary</p>
-            <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Questions answered: {cards.length}</p>
+            <p className="font-caprasimo text-4xl text-[#1f2b24]">{settlementText}</p>
+            <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Resolved turns: {outcomes.length}</p>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
               <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#edf4eb" }}>
                 <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Correct</p>
-                <p className="font-caprasimo text-2xl text-[#274137]">
-                  {matchOutcomes.filter((item) => item.outcome === "correct").length}
-                </p>
+                <p className="font-caprasimo text-2xl text-[#274137]">{correctCount}</p>
               </div>
               <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f6eee0" }}>
                 <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Timeout</p>
-                <p className="font-caprasimo text-2xl text-[#6f3a28]">
-                  {matchOutcomes.filter((item) => item.outcome === "timeout").length}
-                </p>
+                <p className="font-caprasimo text-2xl text-[#6f3a28]">{timeoutCount}</p>
               </div>
               <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f4e8e2" }}>
                 <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Wrong</p>
-                <p className="font-caprasimo text-2xl text-[#7c4a36]">
-                  {matchOutcomes.filter((item) => item.outcome === "wrong").length}
-                </p>
+                <p className="font-caprasimo text-2xl text-[#7c4a36]">{wrongCount}</p>
               </div>
             </div>
 
-            <div className="mt-4 max-h-40 overflow-auto space-y-2">
-              {matchOutcomes.map((item) => (
+            <div className="mt-4 max-h-40 space-y-2 overflow-auto">
+              {outcomes.map((item) => (
                 <div
-                  key={item.questionId}
+                  key={`${item.cardId}-${item.at}`}
                   className="frame-cut frame-cut-sm flex items-center justify-between px-3 py-2"
-                  style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,255,255,0.8)" }}
+                  style={{ border: "1px solid rgba(39,65,55,0.16)", background: getOutcomeColor(item.outcome) }}
                 >
-                  <p className="font-gabarito text-xs text-[#274137]">Card {item.cardIndex + 1}</p>
+                  <p className="font-gabarito text-xs text-[#274137]">{item.questionId}</p>
                   <p className="font-gabarito text-xs font-semibold uppercase tracking-wide text-[#5e7768]">
-                    {item.outcome}
+                    {getOutcomeLabel(item.outcome)}
                   </p>
                 </div>
               ))}
@@ -430,25 +421,6 @@ export function BattleScreen() {
               >
                 Back To Lobby
               </Link>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextCards = buildCards(`${roomId}-${Date.now()}`);
-                  setCards(nextCards);
-                  setActiveCardIndex(null);
-                  setSecondsLeft(ANSWER_TIME_SEC);
-                  setAnswerLocked(false);
-                  setPlayerScore(0);
-                  setOpponentScore(0);
-                  setEnemyEventText(null);
-                  setEnemyAttackFlash(false);
-                  setMatchOutcomes([]);
-                }}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.88)" }}
-              >
-                Play Again
-              </button>
             </div>
           </div>
         </div>
