@@ -518,3 +518,48 @@
 
 ### The Tech Debt
 - If more rapid UI iteration happens, we should periodically add short consolidation checkpoints to prevent timeline noise.
+
+## 2026-04-29 - Lobby / Matchmaking Queue Screen
+
+### The Change
+- Added Caprasimo and Gabarito Google Fonts via `next/font/google` in `apps/web/src/app/layout.tsx` and exposed them as `--font-caprasimo` / `--font-gabarito` CSS variables. These are the fonts specified in `docs/DESIGN.md`.
+- Added three new CSS keyframes (`shimmer`, `vsRing`, `matIn`) and two utility classes (`.shimmer-bar`, `.lobby-bg`) to `apps/web/src/app/globals.css` for use by lobby components.
+- Created `apps/web/src/app/lobby/page.tsx` — new `/lobby` route with server-side metadata.
+- Created five new components under `apps/web/src/components/lobby/`:
+  - `LobbyScreen.tsx` — orchestrator; owns phase state machine (`character-select → waiting → found`) and wallet gate (redirects to `/` if wallet is not connected).
+  - `CharacterSelect.tsx` — Phase 1; 3-card pre-queue scientist picker (Alan Turing, Marie Curie, Isaac Newton) with animated stat bars, selection state, and a disabled-until-selected "Enter Queue" CTA.
+  - `MatchmakingWaiting.tsx` — Phase 2; dual-pod layout with your player card, a ghost enemy pod with pulsing scan reticle, animated 3-segment progress bar with shimmer effect (~4.2s mock), and cycling flavor text. Transitions to Phase 3 on completion.
+  - `OpponentFound.tsx` — Phase 3; enemy pod materialises with `matIn` scale+brightness animation, four VS burst rings fire on mount, countdown ticks 3→2→1→0 then routes to `/play?roomId=mock-room-001`.
+
+### The Reasoning
+- **Pre-queue character select** (like Clash Royale) was chosen over post-match-found select per team decision. This allows the matchmaking queue to be simpler — no per-player pick phase on the server side.
+- **Scientist data lives in `LobbyScreen.tsx`** (exported as `SCIENTISTS` and `Scientist` type) so all three phase components import from a single source of truth, avoiding data drift.
+- **`useRef` for stable callback** in `MatchmakingWaiting` instead of `useCallback(fn, [])` anti-pattern — avoids the `exhaustive-deps` lint warning while keeping the progress effect from re-mounting.
+- **`AnimatePresence mode="wait"`** ensures exit animations complete before the next phase enters, preventing two panels from overlapping mid-transition.
+- The **lobby background** (`lobby-bg`) uses `#1b2e26` (darker shade of DESIGN.md's `#274137`) to distinguish the dark game arena from the warm-light landing page, matching the "dark tactical pre-game lobby" intent.
+
+### The Tech Debt
+- The `MOCK_ROOM_ID = "mock-room-001"` in `OpponentFound.tsx` must be replaced with a real room ID returned by the Hono matchmaking API once the backend WebSocket gateway is live.
+- The enemy scientist in Phase 3 is currently picked as the first scientist whose ID doesn't match the player's. Once the backend returns an opponent's selected scientist, this should be driven by server state.
+- `USDC Arena · Devnet · $1.00 mock wager` labels are static text scattered across lobby components. When the Wager screen task lands, these should read from shared wager state (e.g. React context or URL params).
+- Fonts use `display: "swap"` — on very slow connections there may be a FOUT. If this becomes an issue, switch to `display: "optional"` or preload the font files.
+- `npm run lint` could not be verified via the command runner (Windows sandbox error). Manual code review was performed; run `npm run lint` before merging this branch.
+
+
+## 2026-04-29 - Lobby Flow Polish (Light Theme + Match Agreement)
+
+### The Change
+- Updated lobby visuals from dark tactical styling to a light theme across setup, character select, waiting, and found screens.
+- Locked the wager display to a fixed `$1.00` in the lobby setup screen (read-only; no user editing).
+- Added gray fallback state for the center arena panel when no arena is selected.
+- Fixed waiting-screen `Cancel` button placement so it no longer overlaps the heading line.
+- Replaced auto-start behavior in the match-found step with an explicit `Agree To Match` button and a 15-second timeout fallback.
+
+### The Reasoning
+- The latest direction required visual consistency with the light landing aesthetic.
+- Fixed wager input keeps the MVP flow deterministic while on-chain deposit wiring is still in progress.
+- Explicit agreement before entering `/play` better represents the "confirm/sign intent" phase after matchmaking.
+
+### The Tech Debt
+- `Agree To Match` is currently a UI-only action and does not yet call wallet signing or on-chain deposit instructions.
+- Timeout fallback currently routes users back to character selection; later behavior should be synchronized with backend matchmaking session state.
