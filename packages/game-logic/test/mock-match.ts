@@ -33,6 +33,19 @@ engine.on('gameOver', (data) => {
   console.log(`Winner: ${data.winnerAddress} (Reason: ${data.reason})`);
   console.log(`Final Scores:`, engine.getScores());
   console.log(`Final Health:`, engine.getHealth());
+  
+  if (data.antiCheatVerdicts) {
+    console.log(`\n🛡️ ANTI-CHEAT VERDICTS 🛡️`);
+    for (const [address, verdict] of Object.entries(data.antiCheatVerdicts)) {
+      console.log(`Player: ${address} | Verdict: ${verdict.verdict.toUpperCase()} | Score: ${verdict.trustScore.toFixed(2)}`);
+      if (verdict.flags.length > 0) {
+        console.log(`  Flags:`);
+        verdict.flags.forEach(f => console.log(`   - [${f.signal}] ${f.description}`));
+      }
+      console.log(`  Stats: Plays=${verdict.stats.totalPlays}, Acc=${Math.round(verdict.stats.accuracyRate*100)}%, AvgTime=${Math.round(verdict.stats.avgAnswerTimeMs)}ms, Cooldowns=${verdict.stats.cooldownHits}`);
+    }
+  }
+
   console.log(`======================================\n`);
   matchOver = true;
   process.exit(0);
