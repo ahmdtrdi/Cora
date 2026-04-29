@@ -61,3 +61,22 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 **The Reasoning:**
 - A pure, I/O-free engine makes deterministic testing possible and prevents hard-to-track race conditions.
 - Terminal simulations allow rapid iteration on the game loop without needing to spin up the web frontend or websocket server.
+
+---
+
+## 5. Anti-Cheat System
+
+**Implementation:**
+- Implemented `AntiCheatAnalyzer`, a stateless-per-action behavioral analysis engine that tracks player interaction patterns (answer speed, accuracy rate, consistency, input cadence, etc.).
+- Integrated it directly into the `GameEngine`, recording every `playCard` action without slowing down the game loop.
+- Emits an `AntiCheatVerdict` (`trusted`, `suspicious`, `rejected`) upon game completion.
+- Updated the `RoomManager` to consume these verdicts, actively halting on-chain settlement for `rejected` matches and broadcasting a `matchInvalidated` event.
+- Created `docs/ML-DATA-COLLECTION.md` detailing how raw `PlayerMatchStats` are collected for future Machine Learning model training.
+
+**The Reasoning:**
+- Real money wagers require a trustless environment. A 10-second timer isn't enough to stop specialized answer bots (OCR + LLM) or macro-assisted clicks.
+- The system must remain entirely server-side. Any client-side anti-cheat can be reverse-engineered and bypassed.
+- By emitting warnings on `suspicious` play but only blocking on `rejected`, we minimize false positives affecting legitimate players.
+
+**Tech Debt:**
+- We are currently using static, educated-guess thresholds for penalties (e.g., < 1500ms average response time is penalized). We need to review the logged data over the first few thousand matches to fine-tune these thresholds, eventually transitioning to an ML-based approach.

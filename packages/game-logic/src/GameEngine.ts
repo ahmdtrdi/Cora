@@ -16,6 +16,7 @@ import type {
   GameEngineEventMap,
 } from './types';
 import { QuestionDealer } from './QuestionDealer';
+import { AntiCheatAnalyzer } from './AntiCheatAnalyzer';
 
 /**
  * Core game engine for a CORA match.
@@ -46,6 +47,7 @@ export class GameEngine {
   private players: Map<string, EnginePlayerState> = new Map();
   private playerAddresses: [string, string];
   private dealer: QuestionDealer;
+  private antiCheat: AntiCheatAnalyzer;
   private phase: GamePhase = 'normal';
   private remainingMs: number = GameEngine.MATCH_DURATION_MS;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -60,6 +62,7 @@ export class GameEngine {
   constructor(playerAddresses: [string, string], questions: SchemaQuestion[]) {
     this.playerAddresses = playerAddresses;
     this.dealer = new QuestionDealer(questions);
+    this.antiCheat = new AntiCheatAnalyzer();
 
     // Generate a shared queue of up to 100 cards for the entire match
     this.matchQueue = this.dealer.dealHand(100);
@@ -105,7 +108,11 @@ export class GameEngine {
 
     if (forfeitAddress) {
       const winnerAddress = this.playerAddresses.find(a => a !== forfeitAddress)!;
-      this.emit('gameOver', { winnerAddress, reason: 'forfeit' });
+      this.emit('gameOver', { 
+        winnerAddress, 
+        reason: 'forfeit',
+        antiCheatVerdicts: this.antiCheat.getVerdicts()
+      });
     }
   }
 
@@ -141,10 +148,16 @@ export class GameEngine {
 
     const now = Date.now();
     const lastPlay = player.lastPlayTimestamp || 0;
-    if (now - lastPlay < 500) {
+    
+    // Check cooldown but don't return immediately, log to anti-cheat first
+    const isCooldownHit = now - lastPlay < 500;
+    
+    if (isCooldownHit) {
       // Rate limit: 500ms cooldown
+      this.antiCheat.recordPlay(playerAddress, false, true);
       return this.failResult(playerAddress, opponentAddress);
     }
+    
     player.lastPlayTimestamp = now;
 
     // Find the card in the player's hand
@@ -179,6 +192,9 @@ export class GameEngine {
       player.characterState = 'stay';
     }
 
+    // Record the play in anti-cheat analyzer
+    this.antiCheat.recordPlay(playerAddress, correct, false);
+
     // Remove the played card and deal a new one from the shared queue
     player.hand.splice(cardIndex, 1);
     if (player.queueIndex < this.matchQueue.length) {
@@ -210,7 +226,12 @@ export class GameEngine {
     if (gameOver) {
       this.finished = true;
       this.clearTimer();
-      this.emit('gameOver', { winnerAddress: playerAddress, reason: 'hp_zero' });
+      const verdicts = this.antiCheat.getVerdicts();
+      this.emit('gameOver', { 
+        winnerAddress: playerAddress, 
+        reason: 'hp_zero',
+        antiCheatVerdicts: verdicts 
+      });
     }
 
     this.emit('stateUpdate', {});
@@ -243,6 +264,14 @@ export class GameEngine {
   }
 
   // ─── State Accessors ─────────────────────────────────────────
+
+  /**
+   * Get anti-cheat verdicts for all players.
+   * Typically called after the match finishes.
+   */
+  getAntiCheatVerdicts() {
+    return this.antiCheat.getVerdicts();
+  }
 
   /**
    * Build the GameState payload for a specific player.
@@ -365,7 +394,11 @@ export class GameEngine {
       this.clearTimer();
 
       const winner = this.determineWinnerByScore();
-      this.emit('gameOver', { winnerAddress: winner, reason: 'time_up' });
+      this.emit('gameOver', { 
+        winnerAddress: winner, 
+        reason: 'time_up',
+        antiCheatVerdicts: this.antiCheat.getVerdicts()
+      });
     }
   }
 

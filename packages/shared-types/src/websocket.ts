@@ -100,6 +100,7 @@ export interface MatchResultPayload {
 export type ServerToClientEvents = {
   gameStateUpdate: (state: GameState) => void;
   matchResult: (result: MatchResultPayload) => void;
+  matchInvalidated: (result: MatchResult) => void; // New event for anti-cheat rejections
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
   phaseChange: (phase: GamePhase) => void;
@@ -111,9 +112,10 @@ export type ServerToClientEvents = {
 
 export interface MatchResult {
   winnerAddress: string;
-  reason: 'hp_zero' | 'time_up' | 'forfeit';
+  reason: 'hp_zero' | 'time_up' | 'forfeit' | 'anti_cheat';
   finalScores: Record<string, number>;
   finalHealth: Record<string, number>;
+  antiCheatWarning?: boolean; // True if the match was suspicious but still settled
 }
 
 // Serialization format for native WebSocket (since we aren't using Socket.io)
