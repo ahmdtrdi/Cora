@@ -16,11 +16,19 @@ type SignDepositIntentParams = {
   wagerUsd: string;
 };
 
+type SignSettlementReleaseIntentParams = {
+  connection: Connection;
+  wallet: WalletContextState;
+  matchId: string;
+  winner: string;
+};
+
 export class DepositIntentError extends Error {
   code:
     | "wallet_not_connected"
     | "wallet_signing_not_supported"
     | "wallet_declined"
+    | "insufficient_balance"
     | "rpc_error"
     | "unknown";
 
@@ -29,6 +37,7 @@ export class DepositIntentError extends Error {
       | "wallet_not_connected"
       | "wallet_signing_not_supported"
       | "wallet_declined"
+      | "insufficient_balance"
       | "rpc_error"
       | "unknown",
     message: string,
@@ -46,8 +55,14 @@ function mapWalletError(error: unknown): DepositIntentError {
     return new DepositIntentError("wallet_declined", "Wallet request was declined.");
   }
 
+  if (lowered.includes("insufficient")) {
+    return new DepositIntentError(
+      "insufficient_balance",
+      "Insufficient balance for transaction fees.",
+    );
+  }
+
   if (
-    lowered.includes("insufficient") ||
     lowered.includes("blockhash") ||
     lowered.includes("rpc")
   ) {
@@ -57,13 +72,15 @@ function mapWalletError(error: unknown): DepositIntentError {
   return new DepositIntentError("unknown", message);
 }
 
-export async function signDepositIntent({
+async function signMemoIntent({
   connection,
   wallet,
-  roomId,
-  token,
-  wagerUsd,
-}: SignDepositIntentParams): Promise<string> {
+  memoMessage,
+}: {
+  connection: Connection;
+  wallet: WalletContextState;
+  memoMessage: string;
+}): Promise<string> {
   if (!wallet.publicKey) {
     throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
   }
@@ -75,7 +92,6 @@ export async function signDepositIntent({
     );
   }
 
-  const memoMessage = `CORA_DEPOSIT_INTENT:${roomId}:${token}:${wagerUsd}:${wallet.publicKey.toBase58()}`;
   const instruction = new TransactionInstruction({
     keys: [],
     programId: MEMO_PROGRAM_ID,
@@ -107,4 +123,33 @@ export async function signDepositIntent({
   } catch (error) {
     throw mapWalletError(error);
   }
+}
+
+export async function signDepositIntent({
+  connection,
+  wallet,
+  roomId,
+  token,
+  wagerUsd,
+}: SignDepositIntentParams): Promise<string> {
+  const memoMessage = `CORA_DEPOSIT_INTENT:${roomId}:${token}:${wagerUsd}:${wallet.publicKey?.toBase58() ?? "unknown"}`;
+  return signMemoIntent({
+    connection,
+    wallet,
+    memoMessage,
+  });
+}
+
+export async function signSettlementReleaseIntent({
+  connection,
+  wallet,
+  matchId,
+  winner,
+}: SignSettlementReleaseIntentParams): Promise<string> {
+  const memoMessage = `CORA_SETTLEMENT_RELEASE:${matchId}:${winner}:${wallet.publicKey?.toBase58() ?? "unknown"}`;
+  return signMemoIntent({
+    connection,
+    wallet,
+    memoMessage,
+  });
 }
