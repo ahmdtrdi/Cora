@@ -6,6 +6,11 @@ import type {
   DamageEvent,
   GamePhase,
   MatchResult,
+  MatchResultPayload,
+  CardCountdownData,
+  CardExpiredData,
+  ScoreUpdateData,
+  CardType,
 } from '@shared/websocket';
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -15,34 +20,39 @@ interface PlayCardResult {
   damage: number;
   heal: number;
   multiplier: number;
-  cardType: 'attack' | 'heal';
+  cardType: CardType;
 }
 
-export function useMatchSocket(roomId: string) {
+interface UseMatchSocketParams {
+  roomId: string;
+  address: string;
+}
+
+export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
+  const [settlementResult, setSettlementResult] = useState<MatchResultPayload | null>(null);
+  const [matchInvalidated, setMatchInvalidated] = useState<MatchResult | null>(null);
   const [lastDamageEvent, setLastDamageEvent] = useState<DamageEvent | null>(null);
-  const [lastPlayResult, setLastPlayResult] = useState<PlayCardResult | null>(null);
+  const [lastPlayResult, setLastPlayResult] = useState<(PlayCardResult & { at: number }) | null>(null);
+  const [lastCardCountdown, setLastCardCountdown] = useState<CardCountdownData | null>(null);
+  const [lastCardExpired, setLastCardExpired] = useState<(CardExpiredData & { at: number }) | null>(null);
+  const [lastScoreUpdate, setLastScoreUpdate] = useState<ScoreUpdateData | null>(null);
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    if (!roomId) return;
-    let isCurrent = true;
+    if (!roomId || !address) return;
 
-    // Use environment variable in production, fallback to localhost for dev
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
-    const ws = new WebSocket(`${wsUrl}/match/${roomId}`);
+    const ws = new WebSocket(`${wsUrl}/match/${roomId}?address=${encodeURIComponent(address)}`);
     socketRef.current = ws;
-
     queueMicrotask(() => {
-      if (isCurrent) setConnectionState('connecting');
+      setConnectionState('connecting');
     });
 
     ws.onopen = () => {
       setConnectionState('connected');
-      console.log(`Connected to match room: ${roomId}`);
     };
 
     ws.onmessage = (event) => {
@@ -55,13 +65,15 @@ export function useMatchSocket(roomId: string) {
             break;
 
           case 'matchResult':
-            setMatchResult(message.payload as MatchResult);
-            console.log('Match Result:', message.payload);
+            setSettlementResult(message.payload as MatchResultPayload);
+            break;
+
+          case 'matchInvalidated':
+            setMatchInvalidated(message.payload as MatchResult);
             break;
 
           case 'timerSync':
-            // Update timer in existing game state if available
-            setGameState(prev => {
+            setGameState((prev) => {
               if (!prev) return prev;
               return {
                 ...prev,
@@ -76,15 +88,32 @@ export function useMatchSocket(roomId: string) {
 
           case 'phaseChange':
             setCurrentPhase(message.payload as GamePhase);
-            console.log('Phase changed to:', message.payload);
             break;
 
           case 'playCardResult':
-            setLastPlayResult(message.payload as PlayCardResult);
+            setLastPlayResult({
+              ...(message.payload as PlayCardResult),
+              at: Date.now(),
+            });
+            break;
+
+          case 'cardCountdown':
+            setLastCardCountdown(message.payload as CardCountdownData);
+            break;
+
+          case 'cardExpired':
+            setLastCardExpired({
+              ...(message.payload as CardExpiredData),
+              at: Date.now(),
+            });
+            break;
+
+          case 'scoreUpdate':
+            setLastScoreUpdate(message.payload as ScoreUpdateData);
             break;
 
           default:
-            console.warn('Unknown message type:', message.type);
+            break;
         }
       } catch (err) {
         console.error('Failed to parse websocket message', err);
@@ -93,7 +122,6 @@ export function useMatchSocket(roomId: string) {
 
     ws.onclose = () => {
       setConnectionState('disconnected');
-      console.log(`Disconnected from match room: ${roomId}`);
     };
 
     ws.onerror = (error) => {
@@ -101,45 +129,52 @@ export function useMatchSocket(roomId: string) {
       console.error('WebSocket error:', error);
     };
 
-    // Cleanup on unmount
     return () => {
-      isCurrent = false;
       ws.close();
       socketRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, address]);
 
-  const playCard = useCallback((cardId: string, selectedOptionId: string) => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      const message: WsMessage = {
-        type: 'playCard',
-        payload: { cardId, selectedOptionId },
-      };
-      socketRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('Cannot play card, socket is not connected');
+  const sendMessage = useCallback((type: string, payload: unknown) => {
+    if (socketRef.current?.readyState !== WebSocket.OPEN) {
+      return;
     }
+    socketRef.current.send(JSON.stringify({ type, payload } as WsMessage));
   }, []);
 
-  const confirmDeposit = useCallback((signature: string) => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      const message: WsMessage = {
-        type: 'confirmDeposit',
-        payload: { signature },
-      };
-      socketRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('Cannot confirm deposit, socket is not connected');
-    }
-  }, []);
+  const openCard = useCallback(
+    (cardId: string) => {
+      sendMessage('openCard', { cardId });
+    },
+    [sendMessage],
+  );
+
+  const playCard = useCallback(
+    (cardId: string, selectedOptionId: string) => {
+      sendMessage('playCard', { cardId, selectedOptionId });
+    },
+    [sendMessage],
+  );
+
+  const confirmDeposit = useCallback(
+    (signature: string) => {
+      sendMessage('confirmDeposit', { signature });
+    },
+    [sendMessage],
+  );
 
   return {
     connectionState,
     gameState,
-    matchResult,
+    settlementResult,
+    matchInvalidated,
     lastDamageEvent,
     lastPlayResult,
+    lastCardCountdown,
+    lastCardExpired,
+    lastScoreUpdate,
     currentPhase,
+    openCard,
     playCard,
     confirmDeposit,
   };
