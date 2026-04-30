@@ -35,6 +35,7 @@ export class GameEngine {
   // ─── Configuration ────────────────────────────────────────────
   static readonly MATCH_DURATION_MS = 300_000;          // 5 minutes
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
+  static readonly ROUNDS_TO_WIN = 2;
   static readonly BASE_DAMAGE = 10;
   static readonly BASE_HEAL = 10;
   static readonly STARTING_HEALTH = 100;
@@ -75,6 +76,7 @@ export class GameEngine {
         address,
         health: GameEngine.STARTING_HEALTH,
         score: 0,
+        roundsWon: 0,
         hand,
         characterState: 'stay',
         queueIndex: GameEngine.HAND_SIZE, // Next card to draw is at index 5
@@ -220,18 +222,32 @@ export class GameEngine {
     }
 
     // Check HP-based win condition
-    const gameOver = opponent.health <= 0;
-    const winnerAddress = gameOver ? playerAddress : undefined;
+    const roundOver = opponent.health <= 0;
+    let gameOver = false;
+    let winnerAddress: string | undefined = undefined;
 
-    if (gameOver) {
-      this.finished = true;
-      this.clearTimer();
-      const verdicts = this.antiCheat.getVerdicts();
-      this.emit('gameOver', { 
-        winnerAddress: playerAddress, 
-        reason: 'hp_zero',
-        antiCheatVerdicts: verdicts 
-      });
+    if (roundOver) {
+      const winnerPlayer = this.players.get(playerAddress);
+      if (winnerPlayer) winnerPlayer.roundsWon += 1;
+
+      const p1 = this.players.get(this.playerAddresses[0])!;
+      const p2 = this.players.get(this.playerAddresses[1])!;
+
+      if (p1.roundsWon >= GameEngine.ROUNDS_TO_WIN || p2.roundsWon >= GameEngine.ROUNDS_TO_WIN) {
+        gameOver = true;
+        winnerAddress = playerAddress;
+        this.finished = true;
+        this.clearTimer();
+        const verdicts = this.antiCheat.getVerdicts();
+        this.emit('gameOver', { 
+          winnerAddress: playerAddress, 
+          reason: 'hp_zero',
+          antiCheatVerdicts: verdicts 
+        });
+      } else {
+        this.emit('roundOver', { winnerAddress: playerAddress, reason: 'hp_zero' });
+        this.resetRound();
+      }
     }
 
     this.emit('stateUpdate', {});
@@ -256,6 +272,15 @@ export class GameEngine {
   /**
    * Reset character states to 'stay'. Called by caller (e.g. RoomManager) after animations.
    */
+  resetRound(): void {
+    this.remainingMs = GameEngine.MATCH_DURATION_MS;
+    this.phase = 'normal';
+    for (const player of this.players.values()) {
+      player.health = GameEngine.STARTING_HEALTH;
+      player.characterState = 'stay';
+    }
+  }
+
   resetCharacterStates(): void {
     for (const player of this.players.values()) {
       player.characterState = 'stay';
@@ -390,15 +415,27 @@ export class GameEngine {
 
     // Time's up — determine winner
     if (this.remainingMs <= 0) {
-      this.finished = true;
-      this.clearTimer();
-
       const winner = this.determineWinnerByScore();
-      this.emit('gameOver', { 
-        winnerAddress: winner, 
-        reason: 'time_up',
-        antiCheatVerdicts: this.antiCheat.getVerdicts()
-      });
+      if (winner) {
+        const winnerPlayer = this.players.get(winner);
+        if (winnerPlayer) winnerPlayer.roundsWon += 1;
+      }
+      
+      const p1 = this.players.get(this.playerAddresses[0])!;
+      const p2 = this.players.get(this.playerAddresses[1])!;
+      
+      if (p1.roundsWon >= GameEngine.ROUNDS_TO_WIN || p2.roundsWon >= GameEngine.ROUNDS_TO_WIN) {
+        this.finished = true;
+        this.clearTimer();
+        this.emit('gameOver', { 
+          winnerAddress: winner!, 
+          reason: 'time_up',
+          antiCheatVerdicts: this.antiCheat.getVerdicts()
+        });
+      } else {
+        this.emit('roundOver', { winnerAddress: winner, reason: 'time_up' });
+        this.resetRound();
+      }
     }
   }
 
