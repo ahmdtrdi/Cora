@@ -61,7 +61,7 @@ export function OpponentFound({
   useEffect(() => {
     if (signed) {
       router.push(
-        `/play?roomId=${encodeURIComponent(MOCK_ROOM_ID)}&address=${encodeURIComponent(walletAddress)}`,
+        `/play?roomId=${encodeURIComponent(MOCK_ROOM_ID)}&address=${encodeURIComponent(walletAddress)}&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}&wager=${encodeURIComponent(wagerUsd)}`,
       );
       return;
     }
@@ -71,7 +71,7 @@ export function OpponentFound({
     }
     const id = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(id);
-  }, [signed, secondsLeft, onTimeout, router, walletAddress]);
+  }, [signed, secondsLeft, onTimeout, router, walletAddress, arena.id, arena.token, wagerUsd]);
 
   async function onSignDeposit() {
     if (!canAttemptSign) return;

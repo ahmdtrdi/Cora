@@ -8,6 +8,9 @@ import type { Card, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { signDepositIntent, signSettlementReleaseIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
+import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
 
 type MatchOutcome = {
   cardId: string;
@@ -21,6 +24,11 @@ const EMPTY_HAND: Card[] = [];
 const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
+const SHARE_NOTICE_DISPLAY_MS = 5000;
+const ARENA_TOKEN_BY_ID: Record<string, string> = {
+  sol: "SOL",
+  bonk: "BONK",
+};
 
 const CARD_TRANSFORMS = [
   "translate-y-4 -rotate-6",
@@ -77,6 +85,9 @@ export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("roomId") ?? "mock-room-001";
   const queryAddress = searchParams.get("address");
+  const arenaId = searchParams.get("arena") ?? "sol";
+  const arenaToken = searchParams.get("token") ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const wagerUsd = searchParams.get("wager") ?? FIXED_WAGER_USD;
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
@@ -118,6 +129,8 @@ export function BattleScreen() {
   const [releaseError, setReleaseError] = useState<string | null>(null);
   const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
+  const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const pendingCardIdRef = useRef<string | null>(null);
   const pendingQuestionIdRef = useRef<string | null>(null);
@@ -245,8 +258,8 @@ export function BattleScreen() {
         connection,
         wallet,
         roomId,
-        token: "SOL",
-        wagerUsd: FIXED_WAGER_USD,
+        token: arenaToken,
+        wagerUsd,
       });
 
       setDepositState("submitting");
@@ -339,6 +352,12 @@ export function BattleScreen() {
       ? "Match Invalidated"
       : "Match Finished";
   const winnerAddress = settlementResult?.winner ?? matchInvalidated?.winnerAddress ?? null;
+  const arenaLabel = `${arenaToken} Arena`;
+  const didWin = winnerAddress ? winnerAddress === address : false;
+  const challengeStatusLabel = didWin ? "Winner" : "Rematch";
+  const challengeDescription = didWin
+    ? "I just won in CORA. Think you can beat me?"
+    : "I am running it back in CORA. Challenge me.";
   const displaySecondsLeft =
     activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
@@ -347,6 +366,16 @@ export function BattleScreen() {
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
+  const challengeLink = useMemo(() => {
+    const origin = typeof window === "undefined" ? null : window.location.origin;
+    return createChallengeLink({
+      origin,
+      arenaId,
+      token: arenaToken,
+      wagerUsd,
+      refAddress: address,
+    });
+  }, [arenaId, arenaToken, wagerUsd, address]);
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
   if (lastSocketIssueAt) {
@@ -415,6 +444,98 @@ export function BattleScreen() {
       setReleaseState("idle");
     }
   }
+
+  async function onCopyChallengeLink() {
+    if (!challengeLink) {
+      setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(challengeLink);
+      setShareNotice({ text: "Challenge link copied.", tone: "success" });
+    } catch {
+      setShareNotice({ text: "Copy failed. Please copy manually from the link below.", tone: "error" });
+    }
+  }
+
+  async function buildChallengeShareImageFile() {
+    if (!challengeLink) return null;
+    try {
+      const blob = await renderChallengeCardJpg({
+        title: "Challenge Me",
+        challengerName: "You",
+        challengerAddress: address,
+        statusLabel: challengeStatusLabel,
+        description: challengeDescription,
+        token: arenaToken,
+        wagerUsd,
+        arenaLabel,
+        challengeLink,
+      });
+      const fileName = createChallengeCardFileName({
+        title: "Challenge Me",
+        challengerName: "You",
+        challengerAddress: address,
+        statusLabel: challengeStatusLabel,
+        description: challengeDescription,
+        token: arenaToken,
+        wagerUsd,
+        arenaLabel,
+        challengeLink,
+      });
+      return new File([blob], fileName, { type: "image/jpeg" });
+    } catch {
+      setShareNotice({ text: "Failed to generate JPG. Try again.", tone: "error" });
+      return null;
+    }
+  }
+
+  function downloadShareFile(file: File) {
+    const objectUrl = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  async function onSaveChallengeJpg() {
+    const imageFile = await buildChallengeShareImageFile();
+    if (!imageFile) return;
+    downloadShareFile(imageFile);
+    setShareNotice({ text: "Saved challenge card JPG.", tone: "success" });
+  }
+
+  async function onShareChallengeToX() {
+    if (!challengeLink) {
+      setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
+      return;
+    }
+    const imageFile = await buildChallengeShareImageFile();
+
+    const intent = createChallengeTweetIntent(challengeLink, challengeDescription);
+    const popup = window.open(intent, "_blank", "noopener,noreferrer");
+    if (!popup) {
+      setShareNotice({ text: "Popup blocked. Allow popups and retry.", tone: "error" });
+      return;
+    }
+    if (imageFile) {
+      downloadShareFile(imageFile);
+      setShareNotice({ text: "Opened X directly. JPG downloaded, attach it to the tweet.", tone: "success" });
+      return;
+    }
+    setShareNotice({ text: "Opened X directly.", tone: "success" });
+  }
+
+  useEffect(() => {
+    if (!shareNotice) return;
+    const id = setTimeout(() => {
+      setShareNotice(null);
+    }, SHARE_NOTICE_DISPLAY_MS);
+    return () => clearTimeout(id);
+  }, [shareNotice]);
 
   if (requiresWalletConnect) {
     return (
@@ -793,6 +914,17 @@ export function BattleScreen() {
               </div>
             )}
 
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+              >
+                Blink Share
+              </button>
+            </div>
+
             <div className="mt-5 flex gap-2">
               <Link
                 href="/lobby"
@@ -802,6 +934,36 @@ export function BattleScreen() {
                 Back To Lobby
               </Link>
             </div>
+          </div>
+        </div>
+      )}
+
+      {shareModalOpen && isMatchComplete && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(20,30,24,0.45)] p-4">
+          <div className="relative w-full max-w-3xl">
+            <button
+              type="button"
+              onClick={() => setShareModalOpen(false)}
+              className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.92)" }}
+            >
+              Close
+            </button>
+            <ChallengeShareCard
+              title="Challenge Me"
+              challengerName="You"
+              challengerAddress={address}
+              arenaLabel={arenaLabel}
+              token={arenaToken}
+              wagerUsd={wagerUsd}
+              challengeLink={challengeLink}
+              description={challengeDescription}
+              statusLabel={challengeStatusLabel}
+              onCopy={onCopyChallengeLink}
+              onSaveJpg={onSaveChallengeJpg}
+              onShareX={onShareChallengeToX}
+              notice={shareNotice}
+            />
           </div>
         </div>
       )}
