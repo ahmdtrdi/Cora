@@ -73,9 +73,8 @@ export function Navbar() {
           ))}
         </div>
 
-        {/* CTA */}
         <Link
-          href="/play"
+          href="/connect"
           className="group relative inline-flex h-9 items-center gap-1.5 overflow-hidden rounded-full border border-white/30 bg-[linear-gradient(140deg,#d97706_0%,#b45309_100%)] px-5 text-sm font-black text-white shadow-[0_4px_18px_var(--amber-glow)] transition-all duration-200 before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(120deg,rgba(255,255,255,0.18),transparent_45%)] after:pointer-events-none after:absolute after:inset-[2px] after:rounded-full after:border after:border-white/35 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_var(--amber-glow)]"
         >
           <span className="relative z-10">Enter</span>
