@@ -172,3 +172,22 @@
 
 **The Tech Debt:**
 - **Frontend Syncs:** While the API properly emits \`roundOver\` inside the \`GameState\` stream, the frontend relies on single-session logic right now and needs UX implementation to animate round transition graphics (like screen wipes and scoreboard ticks).
+
+## 2026-04-30 - Settlement Oracle & On-Chain Anti-Cheat
+
+**The Change:**
+- Updated `buildSettlementMessage` in `packages/shared-types/src/escrow.ts` to generate a 65-byte binary buffer instead of a string, adding an `action` byte (0 for Normal, 1 for Anti-Cheat) and using decoded `targetAddress`.
+- Implemented `submitSettlementTransaction` in `apps/api/src/utils/settlement.ts` using `@solana/web3.js`. It constructs and signs the `global:settle_match` Anchor instruction and sends it directly to the Solana RPC.
+- Modified `RoomManager.ts` to act as an automated oracle:
+  - Normal match completion automatically submits the transaction with `action = 0`.
+  - If `AntiCheatVerdict` returns `rejected`, it halts normal settlement and auto-submits an anti-cheat penalty transaction with `action = 1`, targeting the cheater.
+- Refactored `settlement.test.ts` to use valid Base58 encoded mocks and validated the new 65-byte deterministic signature format. All 53 tests pass.
+
+**The Reasoning:**
+- **Smart Contract Alignment:** The Web3 dev updated the Solana program to handle anti-cheat natively. This required matching the exact 65-byte payload expected by the on-chain `ed25519` signature verification.
+- **Oracle Automation:** By having the backend automatically craft and submit the transaction at the end of the match, we remove the need for the client to pay gas for settlement or manually claim their winnings.
+- **Immediate Penalties:** Tying the game engine's Anti-Cheat directly into the Solana transaction means cheaters instantly forfeit their wagers on-chain without any manual admin intervention.
+
+**The Tech Debt:**
+- **Manual Account Parsing:** To keep the API lightweight and avoid pulling in the massive `@coral-xyz/anchor` IDL types, `settlement.ts` manually reads the `MatchState` buffer offsets (e.g., `subarray(40, 72)` for `playerA`). If the Rust state struct changes, this manual parsing will break silently.
+- **Lack of Retry Queue:** If the Solana RPC drops the `submitSettlementTransaction` call (e.g., due to network congestion), it currently just logs to `console.error`. We need a robust background job queue (like BullMQ) to retry failed settlements until confirmed.
