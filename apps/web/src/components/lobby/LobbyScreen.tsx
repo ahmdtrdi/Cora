@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,6 +8,7 @@ import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
+import { queueMatch } from "@/lib/matchmaking/queueMatch";
 
 export type Stat = { label: string; value: number };
 
@@ -91,7 +92,12 @@ export const ARENAS: Arena[] = [
 ];
 
 type Phase = "setup" | "character-select" | "waiting" | "found";
+type MatchmakingState = "idle" | "searching" | "timeout" | "error";
+type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
+const MATCHMAKING_TIMEOUT_MS = 45_000;
+const POST_MATCH_FOUND_VERIFY_MS = 1400;
+const POST_MATCH_FOUND_PREPARE_MS = 1000;
 
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
@@ -119,6 +125,14 @@ export function LobbyScreen() {
     return ARENAS.some((arena) => arena.id === requestedArena) ? requestedArena : null;
   });
   const [selectedScientist, setSelectedScientist] = useState<Scientist | null>(null);
+  const [matchedRoomId, setMatchedRoomId] = useState<string | null>(null);
+  const [matchmakingState, setMatchmakingState] = useState<MatchmakingState>("idle");
+  const [matchmakingStage, setMatchmakingStage] = useState<MatchmakingStage>("finding");
+  const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
+  const matchmakingAbortRef = useRef<AbortController | null>(null);
+  const matchmakingRequestIdRef = useRef(0);
+  const userCancelledRef = useRef(false);
+  const foundTransitionTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -126,13 +140,121 @@ export function LobbyScreen() {
   );
 
   const walletConnected = Boolean(publicKey);
-  const walletAddr = publicKey?.toBase58() ?? "Not connected";
+  const walletAddress = publicKey?.toBase58() ?? "";
+  const walletAddr = walletAddress || "Not connected";
 
   const wagerNumber = Number(FIXED_WAGER_USD);
   const hasValidWager = Number.isFinite(wagerNumber) && wagerNumber > 0;
 
   const canStart = walletConnected && Boolean(selectedArena) && hasValidWager;
   const canQueue = Boolean(selectedScientist) && Boolean(selectedArena);
+
+  function clearFoundTransitionTimers() {
+    for (const timerId of foundTransitionTimeoutsRef.current) {
+      clearTimeout(timerId);
+    }
+    foundTransitionTimeoutsRef.current = [];
+  }
+
+  async function startMatchmakingSearch() {
+    if (!walletAddress) {
+      setMatchmakingState("error");
+      setMatchmakingError("Connect wallet before entering queue.");
+      return;
+    }
+
+    matchmakingAbortRef.current?.abort();
+    userCancelledRef.current = false;
+
+    const controller = new AbortController();
+    matchmakingAbortRef.current = controller;
+    const requestId = ++matchmakingRequestIdRef.current;
+    let timedOut = false;
+
+    setMatchmakingState("searching");
+    setMatchmakingStage("finding");
+    setMatchmakingError(null);
+    setMatchedRoomId(null);
+    clearFoundTransitionTimers();
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, MATCHMAKING_TIMEOUT_MS);
+
+    try {
+      const { roomId } = await queueMatch({
+        address: walletAddress,
+        signal: controller.signal,
+      });
+
+      if (requestId !== matchmakingRequestIdRef.current) return;
+      setMatchedRoomId(roomId);
+      setMatchmakingState("searching");
+      setMatchmakingStage("verifying");
+      clearFoundTransitionTimers();
+
+      const verifyTimer = setTimeout(() => {
+        if (requestId !== matchmakingRequestIdRef.current) return;
+        setMatchmakingStage("preparing");
+
+        const prepareTimer = setTimeout(() => {
+          if (requestId !== matchmakingRequestIdRef.current) return;
+          setMatchmakingState("idle");
+          setPhase("found");
+        }, POST_MATCH_FOUND_PREPARE_MS);
+        foundTransitionTimeoutsRef.current.push(prepareTimer);
+      }, POST_MATCH_FOUND_VERIFY_MS);
+
+      foundTransitionTimeoutsRef.current.push(verifyTimer);
+    } catch (error) {
+      if (requestId !== matchmakingRequestIdRef.current) return;
+      if (controller.signal.aborted) {
+        if (userCancelledRef.current) return;
+        if (timedOut) {
+          setMatchmakingState("timeout");
+          setMatchmakingStage("finding");
+          setMatchmakingError("No opponent found yet. Retry to keep searching.");
+        }
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : "Failed to queue matchmaking.";
+      setMatchmakingState("error");
+      setMatchmakingStage("finding");
+      setMatchmakingError(message);
+    } finally {
+      clearTimeout(timeoutId);
+      if (matchmakingAbortRef.current === controller) {
+        matchmakingAbortRef.current = null;
+      }
+    }
+  }
+
+  function beginMatchmaking() {
+    setMatchmakingState("searching");
+    setMatchmakingStage("finding");
+    setMatchmakingError(null);
+    setPhase("waiting");
+    void startMatchmakingSearch();
+  }
+
+  function cancelMatchmaking() {
+    userCancelledRef.current = true;
+    matchmakingAbortRef.current?.abort();
+    clearFoundTransitionTimers();
+    setMatchmakingState("idle");
+    setMatchmakingStage("finding");
+    setMatchmakingError(null);
+    setPhase("character-select");
+  }
+
+  useEffect(() => {
+    return () => {
+      matchmakingAbortRef.current?.abort();
+      clearFoundTransitionTimers();
+    };
+  }, []);
 
   return (
     <div
@@ -207,7 +329,7 @@ export function LobbyScreen() {
               onBack={() => setPhase("setup")}
               onContinue={() => {
                 if (canQueue) {
-                  setPhase("waiting");
+                  beginMatchmaking();
                 }
               }}
               arena={selectedArena}
@@ -232,13 +354,18 @@ export function LobbyScreen() {
               arena={selectedArena}
               wagerUsd={FIXED_WAGER_USD}
               walletAddress={walletAddr}
-              onFound={() => setPhase("found")}
-              onCancel={() => setPhase("character-select")}
+              state={matchmakingState === "idle" ? "searching" : matchmakingState}
+              stage={matchmakingStage}
+              errorMessage={matchmakingError}
+              onRetry={() => {
+                void startMatchmakingSearch();
+              }}
+              onCancel={cancelMatchmaking}
             />
           </motion.div>
         )}
 
-        {phase === "found" && selectedScientist && selectedArena && (
+        {phase === "found" && selectedScientist && selectedArena && matchedRoomId && (
           <motion.div
             key="found"
             initial={{ opacity: 0 }}
@@ -250,10 +377,14 @@ export function LobbyScreen() {
             <OpponentFound
               myScientist={selectedScientist}
               myWallet={walletAddr}
+              roomId={matchedRoomId}
               arena={selectedArena}
               wagerUsd={FIXED_WAGER_USD}
               scientists={SCIENTISTS}
-              onTimeout={() => setPhase("character-select")}
+              onTimeout={() => {
+                setMatchedRoomId(null);
+                setPhase("character-select");
+              }}
             />
           </motion.div>
         )}
