@@ -9,6 +9,7 @@ export interface EnginePlayerState {
   address: string;
   health: number;
   score: number;
+  roundsWon: number;
   hand: EngineCard[];
   characterState: CharacterState;
   lastPlayTimestamp?: number;
@@ -89,6 +90,7 @@ export interface AntiCheatVerdict {
 export type GameEngineEventMap = {
   timerSync: { remainingMs: number; phase: GamePhase };
   phaseChange: { phase: GamePhase };
+  roundOver: { winnerAddress: string | null; reason: 'hp_zero' | 'time_up' };
   gameOver: { winnerAddress: string; reason: 'hp_zero' | 'time_up' | 'forfeit'; antiCheatVerdicts?: Record<string, AntiCheatVerdict> };
   stateUpdate: {};
 };

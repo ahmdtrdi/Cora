@@ -8,6 +8,7 @@ export interface PlayerState {
   baseHealth: number;
   characterState: CharacterState;
   score: number;
+  roundsWon: number;
 }
 
 export interface TimerState {

@@ -159,3 +159,16 @@
 - **One Card at a Time:** Currently enforced that a player can only have one card open at a time. If the game design evolves to allow multiple simultaneous opened cards, the `openedCards` tracking would need to change from `Map<string, OpenedCard>` to `Map<string, Map<string, OpenedCard>>`.
 - **Rate Limit Interaction:** The engine's internal 500ms rate limit could theoretically conflict with an `expireCard` call that fires right after a manual play. In practice this is unlikely because the player can only have one card open, but worth monitoring.
 - **FE Integration:** The frontend hook (`useMatchSocket.ts`) needs to be updated by the FE team to handle the new `openCard` → `cardCountdown` → `playCard` / `cardExpired` → `scoreUpdate` flow.
+
+## 2026-04-29 - Match Result Determination: 5 rounds
+**The Change:**
+- Enhanced match engine to support multi-round gameplay, tracking \`roundsWon\` for each player via \`PlayerState\` and \`EnginePlayerState\`. Defaults to a first-to-2 points structure for a "best of 3" experience.
+- Tracked round ending conditions where a player's HP drops below 0 or by timer, emitting a new \`roundOver\` event before automatically resetting states without halting the internal game system loops.
+- Hooked \`gameOver\` inside \`RoomManager\` to ensure \`FINISHED: Winner determined server-side\` is logged to confirm the server's authoritative decision correctly aligns.
+
+**The Reasoning:**
+- **Match Format Iteration:** A round-based game is intrinsically more competitive, mitigating RNG/luck of a single good hand draw. First to 3 / 2 wins scales match intensity higher alongside the token wagers. 
+- **Separation of Concerns:** Instead of destroying the full game state on win, \`roundOver\` merely resets combat parameters while preserving score arrays & anti-cheat evaluations gracefully across multiple match phases.
+
+**The Tech Debt:**
+- **Frontend Syncs:** While the API properly emits \`roundOver\` inside the \`GameState\` stream, the frontend relies on single-session logic right now and needs UX implementation to animate round transition graphics (like screen wipes and scoreboard ticks).

@@ -237,6 +237,7 @@ export class RoomManager {
 
     engine.on('gameOver', (data) => {
       console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress} (${data.reason})`);
+      console.log('FINISHED: Winner determined server-side');
       room.status = 'finished';
 
       // --- Anti-Cheat Evaluation ---
@@ -289,6 +290,22 @@ export class RoomManager {
       }
 
       // Final state update
+      this.broadcastGameState(room);
+    });
+
+    engine.on('roundOver', (data) => {
+      console.log(`Room ${room.id} round over. Winner: ${data.winnerAddress} (${data.reason})`);
+      
+      // Clear any opened cards to reset for the next round
+      this.clearAllOpenedCards(room);
+
+      this.broadcastToRoom(room, {
+        type: 'roundOver',
+        payload: {
+          winnerAddress: data.winnerAddress,
+          reason: data.reason
+        }
+      });
       this.broadcastGameState(room);
     });
 
