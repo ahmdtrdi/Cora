@@ -127,3 +127,30 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 - [ ] The TypeScript backend (`buildSettlementMessage`) still generates a UTF-8 string payload (`SETTLE:<match_id>:<winner>`), but `settle_match.rs` now verifies a 65-byte raw binary payload (`action` + `match_id` + `target`). We MUST align the backend `settlement.ts` in the next task to prevent verification failures.
 - [ ] Devnet deployment keypair (`solana_program-keypair.json`) was generated but is safely ignored in `.gitignore`. We need to run `anchor deploy` and `anchor idl init` next.
+
+---
+
+## Entry 5 — 2026-04-29: Devnet Deployment & Client Export (Task 1.7 & 7.1 Complete)
+
+### The Change
+
+**Deployment:**
+- Successfully deployed `solana_program` to Solana Devnet.
+- **Program ID:** `9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W`
+- Initialized on-chain IDL using `anchor idl init`.
+
+**Client Export (Task 7.1):**
+- Exported the generated `solana_program.json` (IDL) and `solana_program.ts` (Types) from the git-ignored `target/` directory to `packages/solana-client/src/`.
+
+**Documentation:**
+- Created `docs/WEB3_INTEGRATION_GUIDE.md` serving as the official API contract between the Web3 team and the FE/BE teams.
+
+### The Reasoning
+
+1. **Gitignore Safety vs Availability:** The `target/` directory must remain git-ignored to prevent pushing massive binary caches and the deployment keypair. By manually copying the IDL and `.ts` types to `packages/solana-client/src`, we provide strongly-typed frontend access (Task 7.1) without compromising repository safety.
+2. **Integration Guide:** Smart contract parameters (like the 65-byte settlement signature format and dynamic timeouts) are opaque to the frontend/backend without explicit documentation. The guide serves to prevent integration friction.
+
+### The Tech Debt
+
+- [ ] Web3 phase is complete. Handing over to FE and BE teams for Task 7.2 (Integration test: FE deposit → BE settle).
+- [ ] BE needs to update their `settlement.ts` to output the correct 65-byte `Uint8Array` payload instead of the old UTF-8 string format.
