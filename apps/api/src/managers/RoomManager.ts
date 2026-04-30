@@ -245,7 +245,7 @@ export class RoomManager {
       let isRejected = false;
       let cheaterAddress: string | null = null;
       let isSuspicious = false;
-      
+
       console.log(`[Anti-Cheat] Room ${room.id} verdicts:`);
       for (const [address, verdict] of Object.entries(verdicts)) {
         console.log(` - Player ${address}: ${verdict.verdict.toUpperCase()} (Score: ${verdict.trustScore.toFixed(2)})`);
@@ -257,14 +257,14 @@ export class RoomManager {
           isSuspicious = true;
           console.warn(`[Anti-Cheat] WARNING: Player ${address} is suspicious. Flags:`, verdict.flags.map(f => f.signal).join(', '));
         }
-        
+
         // Log raw stats for future ML collection
         console.log(`[Anti-Cheat] Stats for ${address}:`, JSON.stringify(verdict.stats));
       }
 
       if (isRejected && cheaterAddress) {
         console.error(`[Anti-Cheat] Match in Room ${room.id} REJECTED. Handling anti-cheat settlement.`);
-        
+
         // Anti-cheat settlement: action = 1, target = cheaterAddress
         this.broadcastAntiCheatPenalty(room, cheaterAddress);
 
@@ -301,7 +301,7 @@ export class RoomManager {
 
     engine.on('roundOver', (data) => {
       console.log(`Room ${room.id} round over. Winner: ${data.winnerAddress} (${data.reason})`);
-      
+
       // Clear any opened cards to reset for the next round
       this.clearAllOpenedCards(room);
 
@@ -567,17 +567,17 @@ export class RoomManager {
           },
           opponent: opponentAddress
             ? {
-                address: opponentAddress,
-                baseHealth: 100,
-                characterState: 'stay',
-                score: 0,
-              }
+              address: opponentAddress,
+              baseHealth: 100,
+              characterState: 'stay',
+              score: 0,
+            }
             : {
-                address: 'Waiting for opponent...',
-                baseHealth: 100,
-                characterState: 'stay',
-                score: 0,
-              },
+              address: 'Waiting for opponent...',
+              baseHealth: 100,
+              characterState: 'stay',
+              score: 0,
+            },
           hand: [],
           timer: {
             totalDurationMs: GameEngine.MATCH_DURATION_MS,
@@ -678,19 +678,11 @@ export class RoomManager {
   private broadcastAntiCheatPenalty(room: Room, cheaterAddress: string) {
     // Anti-cheat penalty outcome: action = 1
     const action = 1;
-    
+
     // We only need to tell the contract who the cheater is. The contract will refund the honest player 
     // and send the cheater's funds to the treasury.
     submitSettlementTransaction(action, room.matchIdBytes, cheaterAddress)
       .then(tx => console.log(`[RoomManager] Anti-Cheat penalty on-chain settlement completed. Tx: ${tx}`))
       .catch(err => console.error(`[RoomManager] Anti-Cheat Auto-settlement failed:`, err));
-  }
-
-  private broadcastToRoom(room: Room, message: WsMessage) {
-    for (const client of room.clients.values()) {
-      if (client.ws) {
-        client.ws.send(JSON.stringify(message));
-      }
-    }
   }
 }
