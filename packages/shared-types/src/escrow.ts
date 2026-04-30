@@ -23,19 +23,27 @@ export const ESCROW_CONSTANTS = {
  * Settlement message format.
  * Both backend (signing) and smart contract (verification) must use the same format.
  *
- * Format: SETTLE:<match_id_hex>:<winner_pubkey_base58>
+ * Format: 65 bytes total
+ *   - action (1 byte): 0 for Normal, 1 for Anti-Cheat Penalty
+ *   - match_id (32 bytes)
+ *   - target_pubkey (32 bytes): Winner if action=0, Cheater if action=1
  *
  * The smart contract reconstructs this message from on-chain state and verifies
  * the ed25519 signature against it.
  */
-export const SETTLEMENT_MESSAGE_PREFIX = 'SETTLE';
+import bs58 from 'bs58';
 
 export function buildSettlementMessage(
+  action: number,
   matchIdBytes: Uint8Array,
-  winnerAddress: string,
-): string {
-  const matchIdHex = Buffer.from(matchIdBytes).toString('hex');
-  return `${SETTLEMENT_MESSAGE_PREFIX}:${matchIdHex}:${winnerAddress}`;
+  targetAddress: string,
+): Uint8Array {
+  const message = new Uint8Array(65);
+  message[0] = action;
+  message.set(matchIdBytes, 1);
+  const targetPubkeyBytes = bs58.decode(targetAddress);
+  message.set(targetPubkeyBytes, 33);
+  return message;
 }
 
 /**
