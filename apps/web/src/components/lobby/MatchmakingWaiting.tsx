@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Arena, Scientist } from "./LobbyScreen";
 
@@ -9,12 +9,14 @@ type MatchmakingWaitingProps = {
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
-  onFound: () => void;
+  state: "searching" | "timeout" | "error";
+  stage: "finding" | "verifying" | "preparing";
+  errorMessage?: string | null;
+  onRetry: () => void;
   onCancel: () => void;
 };
 
 const SEGMENTS = ["Finding Opponent", "Verifying Wallet", "Preparing Arena"] as const;
-const TOTAL_MS = 4200;
 
 const FLAVOR_TEXTS = [
   "Calibrating neural pathways...",
@@ -35,42 +37,63 @@ export function MatchmakingWaiting({
   arena,
   wagerUsd,
   walletAddress,
-  onFound,
+  state,
+  stage,
+  errorMessage,
+  onRetry,
   onCancel,
 }: MatchmakingWaitingProps) {
-  const [progress, setProgress] = useState(0);
+  const [activeLoopProgress, setActiveLoopProgress] = useState(0);
   const [flavorIdx, setFlavorIdx] = useState(0);
 
-  const onFoundRef = useRef(onFound);
   useEffect(() => {
-    onFoundRef.current = onFound;
-  }, [onFound]);
-
-  useEffect(() => {
-    const startedAt = Date.now();
+    if (state !== "searching") return;
     let rafId = 0;
+    const startedAt = performance.now();
+    const durationByStage: Record<"finding" | "verifying" | "preparing", number> = {
+      finding: 2600,
+      verifying: 2400,
+      preparing: 2200,
+    };
 
     const tick = () => {
-      const elapsed = Date.now() - startedAt;
-      const next = Math.min(elapsed / TOTAL_MS, 1);
-      setProgress(next);
-      if (next < 1) {
-        rafId = requestAnimationFrame(tick);
-      } else {
-        setTimeout(() => onFoundRef.current(), 300);
-      }
+      const elapsed = performance.now() - startedAt;
+      const duration = durationByStage[stage];
+      const loop = ((elapsed % duration) / duration) * 0.92 + 0.08;
+      setActiveLoopProgress(loop);
+      rafId = requestAnimationFrame(tick);
     };
 
     rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
 
-  useEffect(() => {
     const id = setInterval(() => {
       setFlavorIdx((prev) => (prev + 1) % FLAVOR_TEXTS.length);
     }, 1500);
-    return () => clearInterval(id);
-  }, []);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearInterval(id);
+    };
+  }, [state, stage]);
+
+  const isSearching = state === "searching";
+  const stageIndex = stage === "finding" ? 0 : stage === "verifying" ? 1 : 2;
+  const title =
+    state === "timeout"
+      ? "No opponent yet"
+      : state === "error"
+        ? "Matchmaking failed"
+        : stage === "finding"
+          ? "Finding your opponent"
+          : stage === "verifying"
+            ? "Verifying wallet"
+            : "Preparing arena";
+  const subtitle =
+    state === "timeout"
+      ? "Queue timed out. You can retry or go back."
+      : state === "error"
+        ? errorMessage ?? "Unable to reach matchmaking service."
+        : null;
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 text-[#1f2b24] md:px-6">
@@ -88,7 +111,10 @@ export function MatchmakingWaiting({
       <p className="font-gabarito text-[11px] uppercase tracking-[0.26em]" style={{ color: arena.accent }}>
         {arena.label} - ${wagerUsd} {arena.token}
       </p>
-      <h1 className="mt-2 font-caprasimo text-4xl text-[#1f2b24] md:text-5xl">Finding your opponent</h1>
+      <h1 className="mt-2 font-caprasimo text-4xl text-[#1f2b24] md:text-5xl">{title}</h1>
+      {subtitle && (
+        <p className="mt-2 font-gabarito text-sm text-[#5e7768]">{subtitle}</p>
+      )}
 
       <div className="mt-8 grid w-full grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div className="frame-cut p-4" style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.85)" }}>
@@ -112,16 +138,21 @@ export function MatchmakingWaiting({
       <div className="mt-8 w-full">
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
           {SEGMENTS.map((segment, idx) => {
-            const segmentSize = 1 / SEGMENTS.length;
-            const start = idx * segmentSize;
-            const ratio = Math.max(0, Math.min(1, (progress - start) / segmentSize));
+            const ratio =
+              !isSearching
+                ? 0
+                : idx < stageIndex
+                  ? 1
+                  : idx === stageIndex
+                    ? activeLoopProgress
+                    : 0;
             return (
               <div key={segment}>
                 <p className="mb-1 font-gabarito text-[11px] uppercase tracking-wide text-[#6b8274]">{segment}</p>
                 <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(39,65,55,0.14)]">
                   <div
-                    className={`h-full rounded-full ${ratio > 0 && ratio < 1 ? "shimmer-bar" : ""}`}
-                    style={{ width: `${ratio * 100}%`, backgroundColor: ratio >= 1 ? arena.accent : undefined }}
+                    className={`h-full rounded-full ${ratio > 0 ? "shimmer-bar" : ""}`}
+                    style={{ width: `${ratio * 100}%`, backgroundColor: arena.accent }}
                   />
                 </div>
               </div>
@@ -131,18 +162,31 @@ export function MatchmakingWaiting({
       </div>
 
       <div className="mt-5 h-5">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={flavorIdx}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.28 }}
-            className="font-gabarito text-xs text-[#4c6156]"
-          >
-            {FLAVOR_TEXTS[flavorIdx]}
-          </motion.p>
-        </AnimatePresence>
+        {isSearching ? (
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={flavorIdx}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.28 }}
+              className="font-gabarito text-xs text-[#4c6156]"
+            >
+              {FLAVOR_TEXTS[flavorIdx]}
+            </motion.p>
+          </AnimatePresence>
+        ) : (
+          <div className="flex items-center justify-center">
+            <button
+              type="button"
+              onClick={onRetry}
+              className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-[11px] font-bold uppercase tracking-[0.2em]"
+              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+            >
+              Keep Searching
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

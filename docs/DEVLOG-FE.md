@@ -967,3 +967,81 @@
 
 ### The Tech Debt
 - X still requires manual image attach in web composer unless we implement authenticated media upload via X API/server integration.
+
+## 2026-04-30 - Real Matchmaking Queue Wiring (API + Cancel + Timeout)
+
+### The Change
+- Added real matchmaking API client in `apps/web/src/lib/matchmaking/queueMatch.ts`:
+  - calls `POST /match` with player `address`,
+  - supports `AbortSignal` cancellation,
+  - resolves API base from `NEXT_PUBLIC_API_URL` or derived `NEXT_PUBLIC_WS_URL` fallback.
+- Documented optional `NEXT_PUBLIC_API_URL` in `apps/web/.env.example` for explicit HTTP backend routing when needed.
+- Refactored lobby orchestration in `apps/web/src/components/lobby/LobbyScreen.tsx`:
+  - replaced mock waiting->found transition with actual queue request lifecycle,
+  - added queue states (`idle/searching/timeout/error`),
+  - added cancellation via `AbortController`,
+  - added 45s timeout handling,
+  - added retry path (`Keep Searching`),
+  - stores real `matchedRoomId` and passes it into found/deposit/play flow,
+  - aborts pending queue request on unmount.
+- Updated waiting UI in `apps/web/src/components/lobby/MatchmakingWaiting.tsx`:
+  - removed fake auto-match timer,
+  - now reflects real queue state,
+  - shows retry CTA on timeout/error while keeping cancel action.
+- Updated `apps/web/src/components/lobby/OpponentFound.tsx`:
+  - accepts `roomId` prop,
+  - uses real room ID for deposit signing and `/play` navigation,
+  - removed hardcoded `mock-room-001` dependency in this flow.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- Backend already provides true matchmaking queueing (`POST /match`) and room socket routing, so FE should consume it directly instead of relying on mock room IDs.
+- Without cancellation + timeout UX, queueing appears stuck when no opponent is available.
+
+### The Tech Debt
+- Queue cancellation currently relies on aborting the HTTP request; backend has no explicit dequeue endpoint yet.
+- Timeout duration is hardcoded in FE (45s); move to shared config/env if PM tuning is expected.
+
+## 2026-04-30 - Matchmaking Micro-Progress Animation Pass
+
+### The Change
+- Refined queueing animation behavior in `apps/web/src/components/lobby/MatchmakingWaiting.tsx`:
+  - kept matchmaking in a stable “Finding your opponent” state while searching,
+  - replaced binary/step-fill segment logic with independent looping progress per segment (`Finding Opponent`, `Verifying Wallet`, `Preparing Arena`),
+  - each segment now runs its own offset/duration cycle via `requestAnimationFrame` for subtle continuous UX motion.
+- Kept flavor text rotation active while searching.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested non-jumping feedback where the screen remains in finding-opponent mode but still feels alive through small per-segment progress motion.
+- Independent loops avoid the “hard complete then stop” look and better communicate ongoing queue work.
+
+### The Tech Debt
+- Loop durations/offsets are currently hardcoded in component; if motion tuning is expected across multiple screens, extract to shared animation config constants.
+
+## 2026-04-30 - Staged Queue Animation Flow (Finding -> Verifying -> Preparing)
+
+### The Change
+- Refined matchmaking queue UX to follow staged loops exactly:
+  - while waiting for an opponent: only `Finding Opponent` loops,
+  - once matched: transition to `Verifying Wallet` loop,
+  - then transition to `Preparing Arena` loop,
+  - then continue to opponent-found/deposit screen.
+- Updated `apps/web/src/components/lobby/MatchmakingWaiting.tsx`:
+  - added `stage` prop (`finding | verifying | preparing`),
+  - previous stages render as completed bars,
+  - current stage renders looping progress only.
+- Updated `apps/web/src/components/lobby/LobbyScreen.tsx`:
+  - introduced matchmaking stage state management,
+  - added timed post-match-found transition sequencing before moving to `found` phase,
+  - added timer cleanup on cancel/unmount to prevent stale transitions.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested that the three progress segments should not all loop arbitrarily; they should advance by matchmaking milestones with per-stage micro animation.
+
+### The Tech Debt
+- Stage transition timings are currently fixed constants in FE and not synchronized with backend milestone events yet.

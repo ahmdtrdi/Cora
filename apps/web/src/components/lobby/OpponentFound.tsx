@@ -11,6 +11,7 @@ import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 type OpponentFoundProps = {
   myScientist: Scientist;
   myWallet: string;
+  roomId: string;
   arena: Arena;
   wagerUsd: string;
   scientists: Scientist[];
@@ -20,7 +21,6 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "submitting" | "success" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 15;
-const MOCK_ROOM_ID = "mock-room-001";
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -32,6 +32,7 @@ function shortWallet(address: string) {
 export function OpponentFound({
   myScientist,
   myWallet,
+  roomId,
   arena,
   wagerUsd,
   scientists,
@@ -61,7 +62,7 @@ export function OpponentFound({
   useEffect(() => {
     if (signed) {
       router.push(
-        `/play?roomId=${encodeURIComponent(MOCK_ROOM_ID)}&address=${encodeURIComponent(walletAddress)}&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}&wager=${encodeURIComponent(wagerUsd)}`,
+        `/play?roomId=${encodeURIComponent(roomId)}&address=${encodeURIComponent(walletAddress)}&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}&wager=${encodeURIComponent(wagerUsd)}`,
       );
       return;
     }
@@ -71,7 +72,7 @@ export function OpponentFound({
     }
     const id = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(id);
-  }, [signed, secondsLeft, onTimeout, router, walletAddress, arena.id, arena.token, wagerUsd]);
+  }, [signed, secondsLeft, onTimeout, router, walletAddress, roomId, arena.id, arena.token, wagerUsd]);
 
   async function onSignDeposit() {
     if (!canAttemptSign) return;
@@ -84,7 +85,7 @@ export function OpponentFound({
       const signature = await signDepositIntent({
         connection,
         wallet,
-        roomId: MOCK_ROOM_ID,
+        roomId,
         token: arena.token,
         wagerUsd,
       });
