@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -14,7 +14,6 @@ type OpponentFoundProps = {
   roomId: string;
   arena: Arena;
   wagerUsd: string;
-  scientists: Scientist[];
   onTimeout: () => void;
 };
 
@@ -35,7 +34,6 @@ export function OpponentFound({
   roomId,
   arena,
   wagerUsd,
-  scientists,
   onTimeout,
 }: OpponentFoundProps) {
   const router = useRouter();
@@ -43,6 +41,7 @@ export function OpponentFound({
   const wallet = useWallet();
   const [secondsLeft, setSecondsLeft] = useState(AGREEMENT_TIMEOUT_SECONDS);
   const [signingState, setSigningState] = useState<SigningState>("idle");
+  const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
 
@@ -54,16 +53,20 @@ export function OpponentFound({
     signingState !== "submitting" &&
     !signed;
 
-  const enemyScientist = useMemo(
-    () => scientists.find((scientist) => scientist.id !== myScientist.id) ?? scientists[0],
-    [scientists, myScientist.id],
-  );
-
   useEffect(() => {
     if (signed) {
-      router.push(
-        `/play?roomId=${encodeURIComponent(roomId)}&address=${encodeURIComponent(walletAddress)}&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}&wager=${encodeURIComponent(wagerUsd)}`,
-      );
+      const params = new URLSearchParams({
+        roomId,
+        address: walletAddress,
+        arena: arena.id,
+        token: arena.token,
+        wager: wagerUsd,
+        scientist: myScientist.id,
+      });
+      if (signedDepositSignature) {
+        params.set("depositSig", signedDepositSignature);
+      }
+      router.push(`/play?${params.toString()}`);
       return;
     }
     if (secondsLeft <= 0) {
@@ -72,7 +75,19 @@ export function OpponentFound({
     }
     const id = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(id);
-  }, [signed, secondsLeft, onTimeout, router, walletAddress, roomId, arena.id, arena.token, wagerUsd]);
+  }, [
+    signed,
+    secondsLeft,
+    onTimeout,
+    router,
+    walletAddress,
+    roomId,
+    arena.id,
+    arena.token,
+    wagerUsd,
+    myScientist.id,
+    signedDepositSignature,
+  ]);
 
   async function onSignDeposit() {
     if (!canAttemptSign) return;
@@ -96,6 +111,7 @@ export function OpponentFound({
         throw new Error("Missing transaction signature");
       }
 
+      setSignedDepositSignature(signature);
       setSigningState("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
@@ -191,9 +207,9 @@ export function OpponentFound({
           style={{ border: `1px solid ${arena.frame}`, background: "rgba(255,255,255,0.85)" }}
         >
           <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6b8274]">Opponent</p>
-          <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">{enemyScientist.name}</p>
-          <p className="mt-1 font-gabarito text-xs text-[#4c6156]">{enemyScientist.base}</p>
-          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">F3A1z...9C2B</p>
+          <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">Matched Rival</p>
+          <p className="mt-1 font-gabarito text-xs text-[#4c6156]">Identity syncs after room join.</p>
+          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">Room {roomId}</p>
         </motion.div>
       </div>
 
