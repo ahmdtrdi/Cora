@@ -699,3 +699,123 @@
 
 ### The Tech Debt
 - None additional beyond existing connect-flow route-guard follow-up.
+
+## 2026-04-30 - Play Error States + Settlement Confirmation Pass
+
+### The Change
+- Improved websocket diagnostics in `apps/web/src/hooks/useMatchSocket.ts`:
+  - added exposed `socketUrl`,
+  - added `lastSocketError`,
+  - added `lastSocketCloseInfo` (close code/reason/clean flag),
+  - added `reconnect()` trigger for UI retry.
+- Extended `apps/web/src/lib/solana/signDepositIntent.ts`:
+  - added finer wallet error mapping (`wallet_declined`, `insufficient_balance`, `rpc_error`),
+  - extracted generic memo-sign flow,
+  - added `signSettlementReleaseIntent()` for settlement confirmation UI.
+- Upgraded `apps/web/src/components/play/BattleScreen.tsx`:
+  - added server-connection error banner with endpoint visibility and retry action,
+  - improved deposit error messaging (wallet declined / insufficient balance / generic failure),
+  - added round-aware HUD/result display (`roundsWon`),
+  - expanded result modal with winner + match ID details,
+  - added fund release confirmation state machine (`idle/signing/submitting/success/error`) with signature/error feedback.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- Browser `WebSocket` error events are often opaque (`[object Event]`), so FE needs explicit close/error context to make runtime issues debuggable.
+- Settlement/result UI previously stopped at winner text only; this pass aligns it with the required “winner display + fund release confirmation” branch scope.
+- Multi-round backend changes introduced `roundsWon`, so surfacing rounds in the HUD/result keeps FE aligned with game state semantics.
+
+### The Tech Debt
+- Settlement confirmation currently signs memo intent, not the final escrow settlement instruction. This remains a temporary FE bridge until `packages/solana-client` provides full instruction builders.
+- Result flow confirms release intent locally in UI; backend/on-chain release ack callbacks are still pending cross-role integration.
+
+## 2026-04-30 - Web Env Template for Wallet/Socket Runtime Modes
+
+### The Change
+- Added `apps/web/.env.example` with documented runtime flags used by current FE flow:
+  - `NEXT_PUBLIC_WS_URL`
+  - `NEXT_PUBLIC_DEPOSIT_MODE`
+  - `NEXT_PUBLIC_SETTLEMENT_MODE`
+  - `NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK`
+
+### The Reasoning
+- The branch introduced multiple environment-driven behavior modes (mock vs phantom, fallback identity, websocket endpoint), so a checked-in template is needed for consistent local setup.
+
+### The Tech Debt
+- Values in `.env.example` are local-safe defaults. Team members still need per-environment overrides in `.env.local` for integration/staging.
+
+## 2026-04-30 - Wallet Button Hydration Mismatch Fix
+
+### The Change
+- Added `apps/web/src/components/wallet/HydratedWalletButton.tsx` as a hydration-safe wrapper around wallet adapter button using `next/dynamic` with `ssr: false`.
+- Replaced direct `WalletMultiButton` usage in:
+  - `apps/web/src/components/connect/ConnectWalletScreen.tsx`
+  - `apps/web/src/components/lobby/LobbySetup.tsx`
+  - `apps/web/src/components/lobby/OpponentFound.tsx`
+  - `apps/web/src/components/play/BattleScreen.tsx`
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- `WalletMultiButton` can render different server/client markup due to wallet runtime state, causing hydration mismatch in Next.js app routes.
+- Client-only dynamic rendering removes SSR markup drift while preserving the same UX and styles.
+
+### The Tech Debt
+- If we later need deeper wallet button customization, we should build a dedicated design-system wrapper around wallet adapter primitives, still keeping client-only render strategy.
+
+## 2026-04-30 - Unified Top-Corner Runtime Alerts (Play)
+
+### The Change
+- Refactored `apps/web/src/components/play/BattleScreen.tsx` runtime feedback into a consistent fixed top-right alert stack.
+- Unified these states into one visual system:
+  - websocket/server connection issue (with `Retry` action),
+  - deposit signing errors (with `Dismiss`),
+  - settlement confirmation errors (with `Dismiss`).
+- Removed scattered inline error text inside modal bodies and moved those messages into the shared alert stack so visibility is consistent even when overlays are open.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested consistent banner placement and reported missing retry visibility.
+- Fixed-position alert stack ensures critical runtime feedback remains visible across all play overlays.
+
+### The Tech Debt
+- Alert stack currently lives inside `BattleScreen`; if more routes need the same pattern, extract to shared UI component in `packages/ui` or `apps/web/src/components/ui`.
+
+## 2026-04-30 - Alert Timer Bar + Manual Close Controls
+
+### The Change
+- Enhanced play runtime alerts to behave like timed toasts:
+  - added auto-dismiss timers for transient warning alerts,
+  - added a progress/drain bar under each alert card,
+  - added top-right `X` close button on each alert.
+- Kept socket/server alerts persistent by default (manual close + retry) while still using the same visual container.
+- Added `@keyframes alertDrain` in `apps/web/src/app/globals.css`.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested explicit “time shown” behavior and familiar close control pattern for error banners.
+- Unified timer/close behavior improves consistency and keeps overlays readable during failure states.
+
+### The Tech Debt
+- Alert timings are currently hardcoded in `BattleScreen`; move to shared constants/config if additional screens adopt the same toast behavior.
+
+## 2026-04-30 - Lobby Deposit Error Toast Consistency
+
+### The Change
+- Updated `apps/web/src/components/lobby/OpponentFound.tsx` to replace inline error text below the sign button with the same top-corner toast style used in play:
+  - top-right fixed alert card,
+  - `X` manual close,
+  - timed auto-dismiss with progress/drain bar.
+- Removed the old inline error paragraph under the deposit button.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested consistent placement/behavior of runtime errors across signing and battle surfaces.
+- Inline button-adjacent error text was easy to miss and visually inconsistent with the new alert system.
+
+### The Tech Debt
+- Alert style logic is duplicated between `OpponentFound` and `BattleScreen`; extract to shared component if we continue adding more alert surfaces.

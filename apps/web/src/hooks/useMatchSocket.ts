@@ -14,6 +14,11 @@ import type {
 } from '@shared/websocket';
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+type SocketCloseInfo = {
+  code: number;
+  reason: string;
+  wasClean: boolean;
+};
 
 interface PlayCardResult {
   correct: boolean;
@@ -30,6 +35,10 @@ interface UseMatchSocketParams {
 
 export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [lastSocketError, setLastSocketError] = useState<string | null>(null);
+  const [lastSocketCloseInfo, setLastSocketCloseInfo] = useState<SocketCloseInfo | null>(null);
+  const [lastSocketIssueAt, setLastSocketIssueAt] = useState<number | null>(null);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [settlementResult, setSettlementResult] = useState<MatchResultPayload | null>(null);
   const [matchInvalidated, setMatchInvalidated] = useState<MatchResult | null>(null);
@@ -40,12 +49,14 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [lastScoreUpdate, setLastScoreUpdate] = useState<ScoreUpdateData | null>(null);
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
   const socketRef = useRef<WebSocket | null>(null);
+  const socketUrl = roomId && address
+    ? `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080'}/match/${roomId}?address=${encodeURIComponent(address)}`
+    : null;
 
   useEffect(() => {
-    if (!roomId || !address) return;
+    if (!socketUrl) return;
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
-    const ws = new WebSocket(`${wsUrl}/match/${roomId}?address=${encodeURIComponent(address)}`);
+    const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
     queueMicrotask(() => {
       setConnectionState('connecting');
@@ -53,6 +64,8 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
 
     ws.onopen = () => {
       setConnectionState('connected');
+      setLastSocketError(null);
+      setLastSocketCloseInfo(null);
     };
 
     ws.onmessage = (event) => {
@@ -120,12 +133,20 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setConnectionState('disconnected');
+      setLastSocketIssueAt(Date.now());
+      setLastSocketCloseInfo({
+        code: event.code,
+        reason: event.reason || '',
+        wasClean: event.wasClean,
+      });
     };
 
     ws.onerror = (error) => {
       setConnectionState('error');
+      setLastSocketIssueAt(Date.now());
+      setLastSocketError('Socket connection failed. Check API server and room join.');
       console.error('WebSocket error:', error);
     };
 
@@ -133,7 +154,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
       ws.close();
       socketRef.current = null;
     };
-  }, [roomId, address]);
+  }, [socketUrl, reconnectNonce]);
 
   const sendMessage = useCallback((type: string, payload: unknown) => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) {
@@ -163,8 +184,16 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     [sendMessage],
   );
 
+  const reconnect = useCallback(() => {
+    setReconnectNonce((prev) => prev + 1);
+  }, []);
+
   return {
     connectionState,
+    socketUrl,
+    lastSocketError,
+    lastSocketCloseInfo,
+    lastSocketIssueAt,
     gameState,
     settlementResult,
     matchInvalidated,
@@ -177,5 +206,6 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     openCard,
     playCard,
     confirmDeposit,
+    reconnect,
   };
 }

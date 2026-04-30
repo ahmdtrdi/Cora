@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -51,7 +51,7 @@ export function ConnectWalletScreen() {
         </p>
 
         <div className="mt-6 flex flex-col items-center gap-3">
-          <WalletMultiButton />
+          <HydratedWalletButton />
           {connected ? (
             <>
               <p className="font-gabarito text-xs text-[#4f6759]">

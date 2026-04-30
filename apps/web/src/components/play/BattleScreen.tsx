@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import type { Card, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { signDepositIntent } from "@/lib/solana/signDepositIntent";
+import { signDepositIntent, signSettlementReleaseIntent } from "@/lib/solana/signDepositIntent";
+import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 
 type MatchOutcome = {
   cardId: string;
@@ -20,6 +20,7 @@ const ANSWER_TIME_SEC = 10;
 const EMPTY_HAND: Card[] = [];
 const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
+const SOCKET_ALERT_DISPLAY_MS = 12000;
 
 const CARD_TRANSFORMS = [
   "translate-y-4 -rotate-6",
@@ -56,6 +57,22 @@ function getOutcomeLabel(outcome: MatchOutcome["outcome"]) {
   return "Wrong";
 }
 
+function shortenAddress(address?: string) {
+  if (!address) return "Unknown";
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
+type UiAlert = {
+  id: string;
+  title: string;
+  message: string;
+  tone: "error" | "warning";
+  autoDismissMs: number;
+  actionLabel?: string;
+  onAction?: () => void;
+};
+
 export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("roomId") ?? "mock-room-001";
@@ -72,6 +89,10 @@ export function BattleScreen() {
 
   const {
     connectionState,
+    socketUrl,
+    lastSocketError,
+    lastSocketCloseInfo,
+    lastSocketIssueAt,
     gameState,
     settlementResult,
     matchInvalidated,
@@ -82,6 +103,7 @@ export function BattleScreen() {
     openCard,
     playCard,
     confirmDeposit,
+    reconnect,
   } = useMatchSocket({ roomId, address });
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
@@ -92,6 +114,10 @@ export function BattleScreen() {
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
   const [depositState, setDepositState] = useState<"idle" | "signing" | "submitting" | "error">("idle");
   const [depositError, setDepositError] = useState<string | null>(null);
+  const [releaseState, setReleaseState] = useState<"idle" | "signing" | "submitting" | "success" | "error">("idle");
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const pendingQuestionIdRef = useRef<string | null>(null);
@@ -227,17 +253,77 @@ export function BattleScreen() {
       confirmDeposit(signature);
       setDepositState("idle");
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
+      const rawMessage = error instanceof Error ? error.message : "";
+      const lower = rawMessage.toLowerCase();
+      const message = lower.includes("insufficient")
+        ? "Insufficient balance for fees. Top up wallet and retry."
+        : lower.includes("declined")
+          ? "Wallet request declined. Approve transaction to continue."
           : "Deposit signing failed. Try again or reconnect wallet.";
       setDepositState("error");
       setDepositError(message);
     }
   }
 
+  async function onConfirmFundRelease() {
+    if (!settlementResult) return;
+    if (releaseState === "signing" || releaseState === "submitting" || releaseState === "success") {
+      return;
+    }
+
+    setReleaseError(null);
+
+    const settlementMode = process.env.NEXT_PUBLIC_SETTLEMENT_MODE ?? "mock";
+    if (settlementMode === "mock") {
+      setReleaseState("submitting");
+      const mockSignature = `mock-release-${Date.now()}`;
+      setReleaseSignature(mockSignature);
+      setReleaseState("success");
+      return;
+    }
+
+    if (!wallet.publicKey) {
+      setReleaseState("error");
+      setReleaseError("Connect wallet to confirm fund release.");
+      return;
+    }
+
+    setReleaseState("signing");
+
+    try {
+      const signature = await signSettlementReleaseIntent({
+        connection,
+        wallet,
+        matchId: settlementResult.matchId,
+        winner: settlementResult.winner,
+      });
+      setReleaseState("submitting");
+      setReleaseSignature(signature);
+      setReleaseState("success");
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : "";
+      const lower = rawMessage.toLowerCase();
+      const message = lower.includes("declined")
+        ? "Wallet request declined. Approve release confirmation to continue."
+        : lower.includes("insufficient")
+          ? "Insufficient balance for fees. Top up wallet and retry."
+          : "Release confirmation failed. Retry or return to lobby.";
+      setReleaseState("error");
+      setReleaseError(message);
+    }
+  }
+
+  function getReleaseButtonLabel() {
+    if (releaseState === "signing") return "Signing In Wallet...";
+    if (releaseState === "submitting") return "Submitting Confirmation...";
+    if (releaseState === "success") return "Release Confirmed";
+    return "Confirm Fund Release";
+  }
+
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
+  const playerRoundsWon = player?.roundsWon ?? 0;
+  const opponentRoundsWon = opponent?.roundsWon ?? 0;
   const playerBaseHp = player?.baseHealth ?? 100;
   const opponentBaseHp = opponent?.baseHealth ?? 100;
 
@@ -252,10 +338,83 @@ export function BattleScreen() {
     : matchInvalidated
       ? "Match Invalidated"
       : "Match Finished";
+  const winnerAddress = settlementResult?.winner ?? matchInvalidated?.winnerAddress ?? null;
   const displaySecondsLeft =
     activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
       : secondsLeft;
+  const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
+  const socketCloseText = lastSocketCloseInfo
+    ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
+    : null;
+  const alerts: UiAlert[] = [];
+  const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
+  if (lastSocketIssueAt) {
+    alerts.push({
+      id: `socket:${lastSocketIssueAt}`,
+      title: "Server Connection Issue",
+      message: socketMessage,
+      tone: "error",
+      autoDismissMs: SOCKET_ALERT_DISPLAY_MS,
+      actionLabel: hasSocketIssue ? "Retry" : undefined,
+      onAction: hasSocketIssue ? reconnect : undefined,
+    });
+  }
+
+  if (depositError) {
+    alerts.push({
+      id: `deposit:${depositError}`,
+      title: "Deposit Signing Error",
+      message: depositError,
+      tone: "warning",
+      autoDismissMs: 12000,
+    });
+  }
+
+  if (releaseError) {
+    alerts.push({
+      id: `release:${releaseError}`,
+      title: "Settlement Error",
+      message: releaseError,
+      tone: "warning",
+      autoDismissMs: 12000,
+    });
+  }
+  const visibleAlerts = alerts.filter((alert) => !dismissedAlerts[alert.id]);
+  const autoDismissKeys = visibleAlerts
+    .filter((alert) => alert.autoDismissMs > 0)
+    .map((alert) => `${alert.id}:${alert.autoDismissMs}`)
+    .join("|");
+
+  useEffect(() => {
+    const timerIds: Array<ReturnType<typeof setTimeout>> = [];
+
+    for (const alert of visibleAlerts) {
+      if (alert.autoDismissMs <= 0) continue;
+      const timerId = setTimeout(() => {
+        setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
+      }, alert.autoDismissMs);
+      timerIds.push(timerId);
+    }
+
+    return () => {
+      for (const timerId of timerIds) {
+        clearTimeout(timerId);
+      }
+    };
+  }, [autoDismissKeys, visibleAlerts]);
+
+  function dismissAlert(alert: UiAlert) {
+    setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
+    if (alert.id.startsWith("deposit:")) {
+      setDepositError(null);
+      setDepositState("idle");
+    }
+    if (alert.id.startsWith("release:")) {
+      setReleaseError(null);
+      setReleaseState("idle");
+    }
+  }
 
   if (requiresWalletConnect) {
     return (
@@ -274,7 +433,7 @@ export function BattleScreen() {
             Connect Phantom to enter battle and sign match deposit.
           </p>
           <div className="mt-4 flex flex-col items-center gap-3">
-            <WalletMultiButton />
+            <HydratedWalletButton />
             <Link
               href="/lobby"
               className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
@@ -297,7 +456,82 @@ export function BattleScreen() {
           "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
         backgroundSize: "42px 42px",
       }}
-    >
+      >
+      <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
+        {visibleAlerts.map((alert) => (
+          <div
+            key={alert.id}
+            className="frame-cut px-3 py-2"
+            style={{
+              border:
+                alert.tone === "error"
+                  ? "1px solid rgba(138,63,43,0.34)"
+                  : "1px solid rgba(186,105,49,0.34)",
+              background:
+                alert.tone === "error"
+                  ? "rgba(255,245,241,0.97)"
+                  : "rgba(255,250,242,0.97)",
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p
+                className="font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ color: alert.tone === "error" ? "#8a3f2b" : "#8f5a1d" }}
+              >
+                {alert.title}
+              </p>
+              <button
+                type="button"
+                onClick={() => dismissAlert(alert)}
+                className="font-gabarito text-xs font-bold leading-none text-[#7c4a36]"
+                aria-label="Close alert"
+              >
+                X
+              </button>
+            </div>
+            <p
+              className="mt-1 break-words font-gabarito text-xs"
+              style={{ color: alert.tone === "error" ? "#6f3a28" : "#73512d" }}
+            >
+              {alert.message}
+            </p>
+            {alert.id.startsWith("socket:") && socketUrl && (
+              <p className="mt-1 break-all font-gabarito text-[11px] text-[#7c4a36]">
+                {socketUrl}
+              </p>
+            )}
+            <div className="mt-2 flex gap-2">
+              {alert.actionLabel && alert.onAction && (
+                <button
+                  type="button"
+                  onClick={alert.onAction}
+                  className="frame-cut frame-cut-sm px-2 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                  style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "#fffdfa" }}
+                >
+                  {alert.actionLabel}
+                </button>
+              )}
+            </div>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(39,65,55,0.14)]">
+              <div
+                className="h-full"
+                style={{
+                  width: "100%",
+                  background:
+                    alert.tone === "error"
+                      ? "linear-gradient(90deg,#c96d47,#8a3f2b)"
+                      : "linear-gradient(90deg,#d9a85b,#ba6931)",
+                  animationName: alert.autoDismissMs > 0 ? "alertDrain" : undefined,
+                  animationDuration: alert.autoDismissMs > 0 ? `${alert.autoDismissMs}ms` : undefined,
+                  animationTimingFunction: alert.autoDismissMs > 0 ? "linear" : undefined,
+                  animationFillMode: alert.autoDismissMs > 0 ? "forwards" : undefined,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-7xl flex-col">
         <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[#5e7768]">
@@ -327,12 +561,12 @@ export function BattleScreen() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-caprasimo text-3xl text-[#1f2b24]">You</p>
-              <p className="font-gabarito text-xs text-[#5e7768]">Score {playerScore}</p>
+              <p className="font-gabarito text-xs text-[#5e7768]">Score {playerScore} - Rounds {playerRoundsWon}</p>
             </div>
             <p className="font-caprasimo text-4xl text-[#7a8f82]">VS</p>
             <div className="text-right">
               <p className="font-caprasimo text-3xl text-[#1f2b24]">Opponent</p>
-              <p className="font-gabarito text-xs text-[#5e7768]">Score {opponentScore}</p>
+              <p className="font-gabarito text-xs text-[#5e7768]">Score {opponentScore} - Rounds {opponentRoundsWon}</p>
             </div>
           </div>
 
@@ -427,11 +661,8 @@ export function BattleScreen() {
             </button>
             {!wallet.publicKey && (
               <div className="mt-3">
-                <WalletMultiButton />
+                <HydratedWalletButton />
               </div>
-            )}
-            {depositError && (
-              <p className="mt-3 font-gabarito text-xs text-[#8a3f2b]">{depositError}</p>
             )}
           </div>
         </div>
@@ -477,6 +708,19 @@ export function BattleScreen() {
           <div className="frame-cut w-full max-w-xl p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
             <p className="font-caprasimo text-4xl text-[#1f2b24]">{settlementText}</p>
             <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Resolved turns: {outcomes.length}</p>
+            {winnerAddress && (
+              <p className="mt-1 font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
+            )}
+            {settlementResult && (
+              <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
+                Match ID: {settlementResult.matchId}
+              </p>
+            )}
+            {matchInvalidated && (
+              <p className="mt-2 font-gabarito text-xs text-[#8a3f2b]">
+                Settlement halted by anti-cheat verification.
+              </p>
+            )}
 
             <div className="mt-4 grid grid-cols-3 gap-2">
               <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#edf4eb" }}>
@@ -490,6 +734,17 @@ export function BattleScreen() {
               <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f4e8e2" }}>
                 <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Wrong</p>
                 <p className="font-caprasimo text-2xl text-[#7c4a36]">{wrongCount}</p>
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#fffdfa" }}>
+                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Your Rounds</p>
+                <p className="font-caprasimo text-2xl text-[#274137]">{playerRoundsWon}</p>
+              </div>
+              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#fffdfa" }}>
+                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Opponent Rounds</p>
+                <p className="font-caprasimo text-2xl text-[#6f3a28]">{opponentRoundsWon}</p>
               </div>
             </div>
 
@@ -507,6 +762,36 @@ export function BattleScreen() {
                 </div>
               ))}
             </div>
+
+            {settlementResult && (
+              <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "#fffdfa" }}>
+                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+                  Fund Release Confirmation
+                </p>
+                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+                  Confirm release intent after winner announcement.
+                </p>
+                <button
+                  type="button"
+                  onClick={onConfirmFundRelease}
+                  disabled={releaseState === "signing" || releaseState === "submitting" || releaseState === "success"}
+                  className="frame-cut frame-cut-sm mt-3 px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                  style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+                >
+                  {getReleaseButtonLabel()}
+                </button>
+                {releaseSignature && (
+                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
+                    Signature: {releaseSignature}
+                  </p>
+                )}
+                {!wallet.publicKey && (
+                  <div className="mt-2">
+                    <HydratedWalletButton />
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-5 flex gap-2">
               <Link

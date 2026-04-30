@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { motion } from "framer-motion";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import type { Arena } from "./LobbyScreen";
 
 type LobbySetupProps = {
@@ -132,7 +132,7 @@ export function LobbySetup({
           <p className="font-gabarito text-xs text-[#6f3a28]">
             Connect wallet to unlock queue and deposit signing.
           </p>
-          <WalletMultiButton />
+          <HydratedWalletButton />
         </div>
       )}
     </div>

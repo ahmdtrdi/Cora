@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
+import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -43,6 +43,7 @@ export function OpponentFound({
   const [secondsLeft, setSecondsLeft] = useState(AGREEMENT_TIMEOUT_SECONDS);
   const [signingState, setSigningState] = useState<SigningState>("idle");
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [errorVisible, setErrorVisible] = useState(false);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
   const signed = signingState === "success";
@@ -76,6 +77,7 @@ export function OpponentFound({
     if (!canAttemptSign) return;
 
     setErrorText(null);
+    setErrorVisible(false);
     setSigningState("signing");
 
     try {
@@ -98,8 +100,19 @@ export function OpponentFound({
       const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
       setSigningState("error");
       setErrorText(message);
+      setErrorVisible(true);
     }
   }
+
+  useEffect(() => {
+    if (!errorVisible) return;
+    const timerId = setTimeout(() => {
+      setErrorVisible(false);
+      setErrorText(null);
+      setSigningState("idle");
+    }, 12000);
+    return () => clearTimeout(timerId);
+  }, [errorVisible]);
 
   function getButtonLabel() {
     if (signingState === "signing") return "Signing In Wallet...";
@@ -110,6 +123,48 @@ export function OpponentFound({
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 text-[#1f2b24] md:px-6">
+      {errorVisible && errorText && (
+        <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
+          <div
+            className="frame-cut px-3 py-2"
+            style={{ border: "1px solid rgba(186,105,49,0.34)", background: "rgba(255,250,242,0.97)" }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+                Deposit Signing Error
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorVisible(false);
+                  setErrorText(null);
+                  setSigningState("idle");
+                }}
+                className="font-gabarito text-xs font-bold leading-none text-[#7c4a36]"
+                aria-label="Close alert"
+              >
+                X
+              </button>
+            </div>
+            <p className="mt-1 break-words font-gabarito text-xs text-[#73512d]">
+              {errorText}
+            </p>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(39,65,55,0.14)]">
+              <div
+                className="h-full"
+                style={{
+                  width: "100%",
+                  background: "linear-gradient(90deg,#d9a85b,#ba6931)",
+                  animationName: "alertDrain",
+                  animationDuration: "12000ms",
+                  animationTimingFunction: "linear",
+                  animationFillMode: "forwards",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       <p className="font-gabarito text-[11px] uppercase tracking-[0.26em]" style={{ color: arena.accent }}>
         Match found - {arena.label}
       </p>
@@ -172,13 +227,8 @@ export function OpponentFound({
           </button>
           {!wallet.publicKey && (
             <div className="pt-1">
-              <WalletMultiButton />
+              <HydratedWalletButton />
             </div>
-          )}
-          {errorText && (
-            <p className="max-w-[280px] text-center font-gabarito text-xs text-[#8a3f2b]">
-              {errorText}
-            </p>
           )}
           <p className="font-gabarito text-xs text-[#6b8274]">
             Auto-cancel in {secondsLeft}s if not signed.

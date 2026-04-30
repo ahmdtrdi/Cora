@@ -254,6 +254,12 @@ body {
   100% { transform: scale(1);    opacity: 1;   filter: brightness(1); }
 }
 
+/* Toast-style alert bar drain */
+@keyframes alertDrain {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+
 /* ─── Lobby utility classes ────────────────────────────────── */
 
 /* Progress bar fill with shimmer sweep */
