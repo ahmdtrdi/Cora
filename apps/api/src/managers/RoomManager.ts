@@ -12,7 +12,7 @@ import { GameEngine } from '@cora/game-logic';
 import type { AntiCheatVerdict } from '@cora/game-logic';
 import { loadQuestions } from '../questions';
 import { deriveMatchId } from '@shared/escrow';
-import { signSettlementAuthorization, serverPublicKey } from '../utils/settlement';
+import { signSettlementAuthorization, serverPublicKey, submitSettlementTransaction } from '../utils/settlement';
 
 interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
@@ -243,6 +243,7 @@ export class RoomManager {
       // --- Anti-Cheat Evaluation ---
       const verdicts = data.antiCheatVerdicts || {};
       let isRejected = false;
+      let cheaterAddress: string | null = null;
       let isSuspicious = false;
       
       console.log(`[Anti-Cheat] Room ${room.id} verdicts:`);
@@ -250,6 +251,7 @@ export class RoomManager {
         console.log(` - Player ${address}: ${verdict.verdict.toUpperCase()} (Score: ${verdict.trustScore.toFixed(2)})`);
         if (verdict.verdict === 'rejected') {
           isRejected = true;
+          cheaterAddress = address; // Keep track of the cheater
           console.warn(`[Anti-Cheat] WARNING: Player ${address} was rejected for flags:`, verdict.flags.map(f => f.signal).join(', '));
         } else if (verdict.verdict === 'suspicious') {
           isSuspicious = true;
@@ -260,8 +262,12 @@ export class RoomManager {
         console.log(`[Anti-Cheat] Stats for ${address}:`, JSON.stringify(verdict.stats));
       }
 
-      if (isRejected) {
-        console.error(`[Anti-Cheat] Match in Room ${room.id} REJECTED. Settlement halted.`);
+      if (isRejected && cheaterAddress) {
+        console.error(`[Anti-Cheat] Match in Room ${room.id} REJECTED. Handling anti-cheat settlement.`);
+        
+        // Anti-cheat settlement: action = 1, target = cheaterAddress
+        this.broadcastAntiCheatPenalty(room, cheaterAddress);
+
         const result: MatchResult = {
           winnerAddress: data.winnerAddress,
           reason: 'anti_cheat',
@@ -638,11 +644,18 @@ export class RoomManager {
    * Broadcast settlement-signed match result to all connected clients.
    */
   private broadcastMatchResult(room: Room, winnerAddress: string) {
-    // Sign settlement authorization for on-chain verification
+    // Normal match outcome: action = 0
+    const action = 0;
     const settlementSignature = signSettlementAuthorization(
+      action,
       room.matchIdBytes,
       winnerAddress,
     );
+
+    // Call oracle to automatically submit settlement on-chain
+    submitSettlementTransaction(action, room.matchIdBytes, winnerAddress)
+      .then(tx => console.log(`[RoomManager] On-chain settlement completed. Tx: ${tx}`))
+      .catch(err => console.error(`[RoomManager] Auto-settlement failed:`, err));
 
     for (const client of room.clients.values()) {
       if (client.ws) {
@@ -657,6 +670,20 @@ export class RoomManager {
         } as WsMessage));
       }
     }
+  }
+
+  /**
+   * Settles an anti-cheat invalidated match on-chain.
+   */
+  private broadcastAntiCheatPenalty(room: Room, cheaterAddress: string) {
+    // Anti-cheat penalty outcome: action = 1
+    const action = 1;
+    
+    // We only need to tell the contract who the cheater is. The contract will refund the honest player 
+    // and send the cheater's funds to the treasury.
+    submitSettlementTransaction(action, room.matchIdBytes, cheaterAddress)
+      .then(tx => console.log(`[RoomManager] Anti-Cheat penalty on-chain settlement completed. Tx: ${tx}`))
+      .catch(err => console.error(`[RoomManager] Anti-Cheat Auto-settlement failed:`, err));
   }
 
   private broadcastToRoom(room: Room, message: WsMessage) {
