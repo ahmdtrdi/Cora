@@ -1,9 +1,12 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import type { Arena, Scientist } from "./LobbyScreen";
+import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -13,6 +16,8 @@ type OpponentFoundProps = {
   scientists: Scientist[];
   onTimeout: () => void;
 };
+
+type SigningState = "idle" | "signing" | "submitting" | "success" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 15;
 const MOCK_ROOM_ID = "mock-room-001";
@@ -33,8 +38,19 @@ export function OpponentFound({
   onTimeout,
 }: OpponentFoundProps) {
   const router = useRouter();
+  const { connection } = useConnection();
+  const wallet = useWallet();
   const [secondsLeft, setSecondsLeft] = useState(AGREEMENT_TIMEOUT_SECONDS);
-  const [hasAgreed, setHasAgreed] = useState(false);
+  const [signingState, setSigningState] = useState<SigningState>("idle");
+  const [errorText, setErrorText] = useState<string | null>(null);
+
+  const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
+  const signed = signingState === "success";
+  const canAttemptSign =
+    Boolean(wallet.publicKey) &&
+    signingState !== "signing" &&
+    signingState !== "submitting" &&
+    !signed;
 
   const enemyScientist = useMemo(
     () => scientists.find((scientist) => scientist.id !== myScientist.id) ?? scientists[0],
@@ -42,8 +58,10 @@ export function OpponentFound({
   );
 
   useEffect(() => {
-    if (hasAgreed) {
-      router.push(`/play?roomId=${MOCK_ROOM_ID}`);
+    if (signed) {
+      router.push(
+        `/play?roomId=${encodeURIComponent(MOCK_ROOM_ID)}&address=${encodeURIComponent(walletAddress)}`,
+      );
       return;
     }
     if (secondsLeft <= 0) {
@@ -52,7 +70,43 @@ export function OpponentFound({
     }
     const id = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(id);
-  }, [hasAgreed, secondsLeft, onTimeout, router]);
+  }, [signed, secondsLeft, onTimeout, router, walletAddress]);
+
+  async function onSignDeposit() {
+    if (!canAttemptSign) return;
+
+    setErrorText(null);
+    setSigningState("signing");
+
+    try {
+      const signature = await signDepositIntent({
+        connection,
+        wallet,
+        roomId: MOCK_ROOM_ID,
+        token: arena.token,
+        wagerUsd,
+      });
+
+      setSigningState("submitting");
+
+      if (!signature) {
+        throw new Error("Missing transaction signature");
+      }
+
+      setSigningState("success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
+      setSigningState("error");
+      setErrorText(message);
+    }
+  }
+
+  function getButtonLabel() {
+    if (signingState === "signing") return "Signing In Wallet...";
+    if (signingState === "submitting") return "Confirming On Chain...";
+    if (signingState === "success") return "Deposit Signed";
+    return "Sign Deposit";
+  }
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 text-[#1f2b24] md:px-6">
@@ -66,7 +120,7 @@ export function OpponentFound({
           <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6b8274]">You</p>
           <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">{myScientist.name}</p>
           <p className="mt-1 font-gabarito text-xs text-[#4c6156]">{myScientist.base}</p>
-          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">{shortWallet(myWallet)}</p>
+          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">{shortWallet(walletAddress)}</p>
         </div>
 
         <div className="grid place-items-center px-2">
@@ -89,7 +143,7 @@ export function OpponentFound({
 
       <div className="mt-8 text-center">
         <p className="font-gabarito text-xs uppercase tracking-[0.16em] text-[#6b8274]">
-          ${wagerUsd} {arena.token} - Confirm deposit intent
+          ${wagerUsd} {arena.token} - Sign deposit before battle
         </p>
         <div className="mt-3 flex flex-col items-center gap-3">
           <motion.p
@@ -104,24 +158,33 @@ export function OpponentFound({
           </motion.p>
           <button
             type="button"
-            onClick={() => setHasAgreed(true)}
-            disabled={hasAgreed}
+            onClick={onSignDeposit}
+            disabled={!canAttemptSign}
             className="frame-cut frame-cut-sm min-w-[210px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
             style={{
               border: `1px solid ${arena.frame}`,
-              background: hasAgreed ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.92)",
+              background: signed ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.92)",
               color: arena.frame,
-              opacity: hasAgreed ? 0.7 : 1,
+              opacity: signed ? 0.7 : 1,
             }}
           >
-            {hasAgreed ? "Signing..." : "Agree To Match"}
+            {getButtonLabel()}
           </button>
+          {!wallet.publicKey && (
+            <div className="pt-1">
+              <WalletMultiButton />
+            </div>
+          )}
+          {errorText && (
+            <p className="max-w-[280px] text-center font-gabarito text-xs text-[#8a3f2b]">
+              {errorText}
+            </p>
+          )}
           <p className="font-gabarito text-xs text-[#6b8274]">
-            Auto-cancel in {secondsLeft}s if not confirmed.
+            Auto-cancel in {secondsLeft}s if not signed.
           </p>
         </div>
       </div>
     </div>
   );
 }
-

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { motion } from "framer-motion";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import type { Arena } from "./LobbyScreen";
 
 type LobbySetupProps = {
@@ -127,9 +128,12 @@ export function LobbySetup({
       </main>
 
       {!walletConnected && (
-        <p className="mt-3 font-gabarito text-xs text-[#6f3a28]">
-          Connect your wallet on the landing page first. Play stays locked until connected.
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <p className="font-gabarito text-xs text-[#6f3a28]">
+            Connect wallet to unlock queue and deposit signing.
+          </p>
+          <WalletMultiButton />
+        </div>
       )}
     </div>
   );

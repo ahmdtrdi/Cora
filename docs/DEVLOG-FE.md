@@ -631,3 +631,71 @@
 
 ### The Tech Debt
 - Deterministic fallback address (`dev-preview-<roomId>`) means two local tabs on the same room will collide unless distinct `?address=` values are provided. This remains temporary until Phantom-authenticated addresses are the default path.
+
+## 2026-04-29 - Wallet Auth + Deposit Signing UI Wiring
+
+### The Change
+- Added reusable Phantom deposit-sign helper at `apps/web/src/lib/solana/signDepositIntent.ts`:
+  - builds a memo transaction (`CORA_DEPOSIT_INTENT`) on Solana Devnet,
+  - signs/sends via wallet adapter,
+  - confirms transaction and returns signature,
+  - normalizes common wallet/RPC error cases.
+- Updated `apps/web/src/components/lobby/OpponentFound.tsx`:
+  - replaced 15s `Agree To Match` action with `Sign Deposit` flow,
+  - added signing state machine (`idle -> signing -> submitting -> success/error`),
+  - added inline wallet connect button (`WalletMultiButton`) and error feedback,
+  - routes to `/play` only after successful signature.
+- Updated `apps/web/src/components/play/BattleScreen.tsx`:
+  - removed default no-wallet identity path unless explicit env fallback is enabled,
+  - added wallet-required gate UI for `/play`,
+  - replaced deposit modal mock confirm with Phantom signing action using the shared helper,
+  - added env-based deposit mode switch (`NEXT_PUBLIC_DEPOSIT_MODE=mock|phantom`).
+- Updated wallet entry touchpoints:
+  - `apps/web/src/components/landing/Navbar.tsx` now shows wallet connect UI and routes to `/lobby` when connected,
+  - `apps/web/src/components/lobby/LobbySetup.tsx` now exposes wallet connect button directly in setup phase.
+- Validation run: `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- The 15-second post-match-found UI is the correct place to communicate and execute deposit signing before entering active battle.
+- Extracting signing logic into a reusable helper avoids duplicated transaction code across lobby and play deposit surfaces.
+- Wallet-first route behavior simplifies identity consistency with backend room joins (`address` as player identity).
+
+### The Tech Debt
+- Deposit signing currently uses memo-transaction intent as FE integration scaffolding; this must be swapped to real escrow instruction construction once `packages/solana-client` is implemented.
+- Local no-wallet preview is now explicitly env-gated; full QA still needs dedicated wallet-connected test runs with two clients.
+- Matchmaking room creation is still mock-driven in lobby flow (`mock-room-001`) and must be replaced with real `/match` queue wiring for full multiplayer deposit handshake validation.
+
+## 2026-04-29 - Dedicated Connect Wallet Page (Pre-Lobby Gate)
+
+### The Change
+- Added a dedicated wallet-connect route:
+  - `apps/web/src/app/connect/page.tsx`
+  - `apps/web/src/components/connect/ConnectWalletScreen.tsx`
+- Rewired landing CTAs to route through `/connect` before gameplay flow:
+  - `apps/web/src/components/landing/Navbar.tsx` (`Enter` now goes to `/connect`)
+  - `apps/web/src/components/landing/CtaBanner.tsx` (`Enter Arena` now goes to `/connect`)
+- Removed direct wallet-connect control from the navbar so wallet login happens in a focused standalone page.
+- Connect page supports optional `next` query (defaults to `/lobby`) and exposes `Continue` once connected.
+
+### The Reasoning
+- The user requested a dedicated wallet-login surface similar in intent to signing pages, rather than inline navbar auth.
+- Routing through `/connect` creates a cleaner progression from landing CTA -> identity connection -> lobby/deposit flow.
+
+### The Tech Debt
+- Route guarding is still soft (UI flow-led); hard redirects from protected routes to `/connect` may still be added later for stricter access control.
+
+## 2026-04-29 - Connect Page Simplification (Centered Sign-In Layout)
+
+### The Change
+- Simplified `apps/web/src/components/connect/ConnectWalletScreen.tsx` to a cleaner sign-in style:
+  - reduced content density,
+  - centered all key elements,
+  - tightened copy to a straightforward wallet-login message,
+  - preserved existing connect/continue behavior.
+- Validation run: `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- The user requested a minimal sign-in page feel with centered alignment and clear padding hierarchy.
+
+### The Tech Debt
+- None additional beyond existing connect-flow route-guard follow-up.

@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import type { Card, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
+import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 
 type MatchOutcome = {
   cardId: string;
@@ -17,6 +19,7 @@ type MatchOutcome = {
 const ANSWER_TIME_SEC = 10;
 const EMPTY_HAND: Card[] = [];
 const CARD_PLACEHOLDER_COUNT = 5;
+const FIXED_WAGER_USD = "1.00";
 
 const CARD_TRANSFORMS = [
   "translate-y-4 -rotate-6",
@@ -56,12 +59,16 @@ function getOutcomeLabel(outcome: MatchOutcome["outcome"]) {
 export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomId = searchParams.get("roomId") ?? "mock-room-001";
-  const { publicKey } = useWallet();
-  const fallbackAddress = `dev-preview-${roomId}`;
-  const address =
-    publicKey?.toBase58() ??
-    searchParams.get("address") ??
-    fallbackAddress;
+  const queryAddress = searchParams.get("address");
+  const { connection } = useConnection();
+  const wallet = useWallet();
+  const { publicKey } = wallet;
+
+  const devAddressFallbackEnabled = process.env.NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK === "true";
+  const fallbackAddress =
+    devAddressFallbackEnabled ? queryAddress ?? `dev-preview-${roomId}` : null;
+  const address = publicKey?.toBase58() ?? fallbackAddress ?? "";
+  const requiresWalletConnect = !address;
 
   const {
     connectionState,
@@ -83,6 +90,8 @@ export function BattleScreen() {
   const [enemyAttackFlash, setEnemyAttackFlash] = useState(false);
   const [enemyEventText, setEnemyEventText] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
+  const [depositState, setDepositState] = useState<"idle" | "signing" | "submitting" | "error">("idle");
+  const [depositError, setDepositError] = useState<string | null>(null);
 
   const pendingCardIdRef = useRef<string | null>(null);
   const pendingQuestionIdRef = useRef<string | null>(null);
@@ -185,6 +194,48 @@ export function BattleScreen() {
     playCard(activeCard.id, optionId);
   }
 
+  async function onConfirmDeposit() {
+    if (depositState === "signing" || depositState === "submitting") {
+      return;
+    }
+
+    setDepositError(null);
+
+    const depositMode = process.env.NEXT_PUBLIC_DEPOSIT_MODE ?? "phantom";
+    if (depositMode === "mock") {
+      confirmDeposit(`mock-signature-${Date.now()}`);
+      return;
+    }
+
+    if (!wallet.publicKey) {
+      setDepositError("Connect wallet to sign deposit.");
+      return;
+    }
+
+    setDepositState("signing");
+
+    try {
+      const signature = await signDepositIntent({
+        connection,
+        wallet,
+        roomId,
+        token: "SOL",
+        wagerUsd: FIXED_WAGER_USD,
+      });
+
+      setDepositState("submitting");
+      confirmDeposit(signature);
+      setDepositState("idle");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Deposit signing failed. Try again or reconnect wallet.";
+      setDepositState("error");
+      setDepositError(message);
+    }
+  }
+
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
   const playerBaseHp = player?.baseHealth ?? 100;
@@ -206,6 +257,37 @@ export function BattleScreen() {
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
       : secondsLeft;
 
+  if (requiresWalletConnect) {
+    return (
+      <main
+        className="grid min-h-[100svh] place-items-center px-4"
+        style={{
+          backgroundColor: "#f5f1e8",
+          backgroundImage:
+            "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
+          backgroundSize: "42px 42px",
+        }}
+      >
+        <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#fffdfa" }}>
+          <p className="font-caprasimo text-3xl text-[#1f2b24]">Wallet Required</p>
+          <p className="mt-2 font-gabarito text-sm text-[#4f6759]">
+            Connect Phantom to enter battle and sign match deposit.
+          </p>
+          <div className="mt-4 flex flex-col items-center gap-3">
+            <WalletMultiButton />
+            <Link
+              href="/lobby"
+              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+            >
+              Back To Lobby
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main
       className="min-h-[100svh] px-4 py-4 md:px-6"
@@ -226,7 +308,7 @@ export function BattleScreen() {
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
             >
-              {getStatusLabel(status)} · {connectionState}
+              {getStatusLabel(status)} - {connectionState}
             </span>
             <Link
               href="/lobby"
@@ -332,12 +414,25 @@ export function BattleScreen() {
             </p>
             <button
               type="button"
-              onClick={() => confirmDeposit(`mock-signature-${Date.now()}`)}
+              onClick={onConfirmDeposit}
+              disabled={depositState === "signing" || depositState === "submitting"}
               className="frame-cut frame-cut-sm mt-4 px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.88)" }}
             >
-              Confirm Deposit
+              {depositState === "signing"
+                ? "Signing In Wallet..."
+                : depositState === "submitting"
+                  ? "Submitting Signature..."
+                  : "Sign Deposit"}
             </button>
+            {!wallet.publicKey && (
+              <div className="mt-3">
+                <WalletMultiButton />
+              </div>
+            )}
+            {depositError && (
+              <p className="mt-3 font-gabarito text-xs text-[#8a3f2b]">{depositError}</p>
+            )}
           </div>
         </div>
       )}
