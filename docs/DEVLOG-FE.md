@@ -819,3 +819,151 @@
 
 ### The Tech Debt
 - Alert style logic is duplicated between `OpponentFound` and `BattleScreen`; extract to shared component if we continue adding more alert surfaces.
+
+## 2026-04-30 - Challenge Me Share Link v1 (UI + Deep-Link Prefill)
+
+### The Change
+- Added share-link utilities in `apps/web/src/lib/challenge/createChallengeLink.ts`:
+  - `createChallengeLink()` to generate canonical challenge URLs to `/lobby` with `challenge`, `arena`, `token`, `wager`, and `ref` query params.
+  - `createChallengeTweetIntent()` to open X share composer with the generated URL.
+- Updated `apps/web/src/components/play/BattleScreen.tsx`:
+  - added `Challenge Me` panel in match-complete modal with `Copy Link` and `Share On X` actions,
+  - added short-lived inline share status feedback (copy success/failure and share-open confirmation),
+  - exposed generated challenge link for manual copy fallback,
+  - aligned deposit signing metadata with route context (`arena`/`token`/`wager`) instead of hardcoded values.
+- Updated `apps/web/src/components/lobby/OpponentFound.tsx`:
+  - forwarded `arena`, `token`, and `wager` query params when routing to `/play` so match result can build accurate challenge links.
+- Updated `apps/web/src/components/lobby/LobbyScreen.tsx`:
+  - read challenge query params on entry,
+  - prefilled selected arena from challenge URL when valid,
+  - added top-corner `Challenge Received` banner showing challenger and wager metadata.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- `MASTER.md` positions Challenge Me distribution as a core loop, so FE needs a usable v1 share path even before full Solana Actions/Blink backend endpoints are available.
+- Deep-link prefill reduces setup friction for invited players by applying the arena context immediately on lobby load.
+- Keeping share controls in the settlement modal places the action at the strongest engagement moment (right after match outcome).
+
+### The Tech Debt
+- This is a URL-based v1 and not full Blink protocol integration yet; backend still needs dedicated Solana Actions/Blink endpoints and metadata surfaces.
+- Share copy/status feedback is local to `BattleScreen`; if challenge sharing appears in more routes, we should extract a shared share-action component.
+
+## 2026-04-30 - Blink-Style Challenge Card Layout (Lobby + Post-Match)
+
+### The Change
+- Added reusable Blink-style challenge card UI in `apps/web/src/components/challenge/ChallengeShareCard.tsx`:
+  - left identity pane (challenger profile placeholder, short wallet, status tag, short description),
+  - right action pane (QR image from generated challenge URL + token/wager/arena quick facts),
+  - shared `Copy Link` and `Share On X` actions with status feedback and manual link fallback.
+- Upgraded post-match share section in `apps/web/src/components/play/BattleScreen.tsx` to use the new card:
+  - dynamic outcome copy (`Winner` vs `Rematch`),
+  - outcome-aware share text for X intent.
+- Added pre-match share surface in `apps/web/src/components/lobby/LobbySetup.tsx`:
+  - `Pre Challenge Me` card directly in lobby,
+  - uses current selected arena + fixed wager + wallet reference for link generation,
+  - supports copy/share actions before entering queue.
+- Extended `apps/web/src/lib/challenge/createChallengeLink.ts`:
+  - `createChallengeTweetIntent()` now accepts optional dynamic text.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested a Blink-card-like share layout with QR + concise metadata, and confirmed challenge sharing should exist both pre-match (lobby) and post-match (result state).
+- A reusable component keeps visual language consistent while allowing different copy contexts (`Open Challenge`, `Winner`, `Rematch`).
+
+### The Tech Debt
+- QR currently depends on an external generator URL; if we need offline reliability or stricter CSP, we should move to local QR rendering.
+- Final avatar/character art is still placeholder and should be swapped once designer assets land.
+
+## 2026-04-30 - Blink Share Trigger UX (Button -> Floating Card)
+
+### The Change
+- Refined challenge-share interaction in both pre-match and post-match flows to match requested behavior:
+  - show a single `Blink Share` button first,
+  - open the Blink-style challenge card as a floating modal overlay when clicked,
+  - include explicit `Close` action on the floating panel.
+- Updated `apps/web/src/components/lobby/LobbySetup.tsx`:
+  - replaced always-visible pre-challenge card with a `Blink Share` trigger button,
+  - disabled trigger until arena is selected,
+  - renders `ChallengeShareCard` inside fixed overlay modal.
+- Updated `apps/web/src/components/play/BattleScreen.tsx`:
+  - replaced inline post-match card with `Blink Share` trigger,
+  - renders floating challenge card modal above the result overlay,
+  - modal visibility scoped to match-complete context.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested lower visual noise and cleaner hierarchy where share UI is on demand, not always expanded.
+- Modal-based reveal keeps the battle/result layout focused while still enabling rich QR/share actions.
+
+### The Tech Debt
+- Share modal layout is duplicated across lobby and play trigger points; if we add more share surfaces, extract a dedicated `ChallengeShareModal` wrapper.
+
+## 2026-04-30 - Challenge JPG Export + Share Fallbacks + QR Layout Tuning
+
+### The Change
+- Added challenge card JPG renderer in `apps/web/src/lib/challenge/renderChallengeCardJpg.ts`:
+  - canvas-based static poster rendering from challenge card metadata,
+  - JPG blob export helper and deterministic filename generation.
+- Updated `apps/web/src/components/challenge/ChallengeShareCard.tsx`:
+  - added `Save As JPG` action button,
+  - reduced QR size from large block to a smaller centered layout for better visual balance,
+  - adjusted panel proportions for cleaner composition.
+- Updated `apps/web/src/components/lobby/LobbySetup.tsx` and `apps/web/src/components/play/BattleScreen.tsx`:
+  - wired `Save As JPG` to local file download,
+  - upgraded `Share On X` to:
+    - try native file share first when browser supports `navigator.share({ files })`,
+    - otherwise open X intent and auto-download JPG so user can attach manually.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested tweet-supportable media workflow and explicit image export, so FE now provides a practical path for both direct saving and sharing.
+- X web intent does not support pre-attaching image files purely via URL params, so fallback UX was added to avoid blocking sharing.
+- Smaller QR improves card hierarchy by keeping profile/copy and metadata readable at a glance.
+
+### The Tech Debt
+- Native file share with `navigator.share({ files })` is browser/platform-dependent; desktop web often falls back to intent + manual attach.
+- Canvas render currently uses generic browser fonts; final typography should be refined once branded social templates are finalized.
+
+## 2026-04-30 - JPG Export Font Fidelity Fix (Canvas Uses App Fonts)
+
+### The Change
+- Updated `apps/web/src/lib/challenge/renderChallengeCardJpg.ts` so canvas export uses the same app font families instead of hardcoded `Arial`.
+- Added font-resolution/loading helpers:
+  - read `--font-caprasimo` and `--font-gabarito` from root CSS variables (from `next/font` in layout),
+  - wait for `document.fonts.ready`,
+  - pre-load key font weights/sizes with `document.fonts.load(...)` before drawing text.
+- Mapped canvas typography to these stacks for title, body, labels, and metadata text.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User reported mismatch where downloaded JPG did not reflect in-app typography.
+- Canvas text rendering does not automatically guarantee runtime web-font availability unless loaded and referenced explicitly.
+
+### The Tech Debt
+- If rendering happens extremely early in slow networks, first-attempt export may still race with remote font fetch depending on browser behavior; if this appears in QA, we should add retry/backoff on export click.
+
+## 2026-04-30 - Force Direct X Share (Disable Native Share Prompt Path)
+
+### The Change
+- Updated `Share On X` handlers in:
+  - `apps/web/src/components/lobby/LobbySetup.tsx`
+  - `apps/web/src/components/play/BattleScreen.tsx`
+- Removed `navigator.share(...)` branch to avoid OS/browser app chooser prompts.
+- `Share On X` now always:
+  - opens X intent directly in a new tab,
+  - downloads generated JPG asset so user can attach it in composer.
+- Added popup-blocked feedback when browser prevents opening X.
+- Validation run:
+  - `npm.cmd run lint --workspace=web` passed.
+
+### The Reasoning
+- User requested deterministic direct navigation to X instead of cross-app share sheet behavior.
+- Keeping auto-download preserves media sharing workflow even though X web intent cannot auto-attach local files by URL alone.
+
+### The Tech Debt
+- X still requires manual image attach in web composer unless we implement authenticated media upload via X API/server integration.

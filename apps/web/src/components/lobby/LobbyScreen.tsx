@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { LobbySetup } from "./LobbySetup";
@@ -98,11 +99,25 @@ const PHASE_VARIANTS = {
   exit: { opacity: 0, scale: 1.02 },
 };
 
+function shortenAddress(address: string) {
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
 export function LobbyScreen() {
+  const searchParams = useSearchParams();
   const { publicKey } = useWallet();
+  const challengeMode = searchParams.get("challenge") === "1";
+  const challengedBy = searchParams.get("ref");
+  const requestedArena = searchParams.get("arena");
+  const requestedToken = searchParams.get("token");
+  const requestedWager = searchParams.get("wager");
 
   const [phase, setPhase] = useState<Phase>("setup");
-  const [selectedArenaId, setSelectedArenaId] = useState<string | null>(null);
+  const [selectedArenaId, setSelectedArenaId] = useState<string | null>(() => {
+    if (!challengeMode || !requestedArena) return null;
+    return ARENAS.some((arena) => arena.id === requestedArena) ? requestedArena : null;
+  });
   const [selectedScientist, setSelectedScientist] = useState<Scientist | null>(null);
 
   const selectedArena = useMemo(
@@ -129,6 +144,24 @@ export function LobbyScreen() {
         backgroundSize: "42px 42px",
       }}
     >
+      {challengeMode && (
+        <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
+          <div
+            className="frame-cut px-3 py-2"
+            style={{ border: "1px solid rgba(39,65,55,0.26)", background: "rgba(255,255,255,0.95)" }}
+          >
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+              Challenge Received
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+              {challengedBy ? `From ${shortenAddress(challengedBy)}` : "A rival challenged you."}
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+              {requestedToken ?? "SOL"} arena - ${requestedWager ?? FIXED_WAGER_USD}
+            </p>
+          </div>
+        </div>
+      )}
       <AnimatePresence mode="wait">
         {phase === "setup" && (
           <motion.div

@@ -1,7 +1,11 @@
 ﻿"use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
+import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
 import type { Arena } from "./LobbyScreen";
 
 type LobbySetupProps = {
@@ -33,6 +37,117 @@ export function LobbySetup({
   onPlay,
 }: LobbySetupProps) {
   const selectedArena = arenas.find((arena) => arena.id === selectedArenaId) ?? null;
+  const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+
+  const challengeLink = useMemo(() => {
+    if (!selectedArena) return null;
+    const origin = typeof window === "undefined" ? null : window.location.origin;
+    return createChallengeLink({
+      origin,
+      arenaId: selectedArena.id,
+      token: selectedArena.token,
+      wagerUsd,
+      refAddress: walletConnected ? walletAddress : null,
+    });
+  }, [selectedArena, wagerUsd, walletConnected, walletAddress]);
+
+  const shareDescription = selectedArena
+    ? `Think fast in ${selectedArena.label}. Scan or tap to challenge me.`
+    : "Pick an arena first, then share your challenge link.";
+
+  async function onCopyChallengeLink() {
+    if (!challengeLink) {
+      setShareNotice({ text: "Select arena to generate challenge link.", tone: "error" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(challengeLink);
+      setShareNotice({ text: "Challenge link copied.", tone: "success" });
+    } catch {
+      setShareNotice({ text: "Copy failed. Please copy from the link field.", tone: "error" });
+    }
+  }
+
+  async function buildChallengeShareImageFile() {
+    if (!challengeLink || !selectedArena) return null;
+    try {
+      const blob = await renderChallengeCardJpg({
+        title: "Pre Challenge Me",
+        challengerName: "You",
+        challengerAddress: walletAddress,
+        statusLabel: "Open Challenge",
+        description: shareDescription,
+        token: selectedArena.token,
+        wagerUsd,
+        arenaLabel: selectedArena.label,
+        challengeLink,
+      });
+      const fileName = createChallengeCardFileName({
+        title: "Pre Challenge Me",
+        challengerName: "You",
+        challengerAddress: walletAddress,
+        statusLabel: "Open Challenge",
+        description: shareDescription,
+        token: selectedArena.token,
+        wagerUsd,
+        arenaLabel: selectedArena.label,
+        challengeLink,
+      });
+      return new File([blob], fileName, { type: "image/jpeg" });
+    } catch {
+      setShareNotice({ text: "Failed to generate JPG. Try again.", tone: "error" });
+      return null;
+    }
+  }
+
+  function downloadShareFile(file: File) {
+    const objectUrl = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  async function onSaveChallengeJpg() {
+    const imageFile = await buildChallengeShareImageFile();
+    if (!imageFile) return;
+    downloadShareFile(imageFile);
+    setShareNotice({ text: "Saved challenge card JPG.", tone: "success" });
+  }
+
+  async function onShareChallengeToX() {
+    if (!challengeLink) {
+      setShareNotice({ text: "Select arena to generate challenge link.", tone: "error" });
+      return;
+    }
+    const shareText = selectedArena
+      ? `I am waiting in ${selectedArena.label}. Challenge me in CORA.`
+      : "Challenge me in CORA.";
+    const imageFile = await buildChallengeShareImageFile();
+
+    const intent = createChallengeTweetIntent(challengeLink, shareText);
+    const popup = window.open(intent, "_blank", "noopener,noreferrer");
+    if (!popup) {
+      setShareNotice({ text: "Popup blocked. Allow popups and retry.", tone: "error" });
+      return;
+    }
+    if (imageFile) {
+      downloadShareFile(imageFile);
+      setShareNotice({ text: "Opened X directly. JPG downloaded, attach it to the tweet.", tone: "success" });
+      return;
+    }
+    setShareNotice({ text: "Opened X directly.", tone: "success" });
+  }
+
+  useEffect(() => {
+    if (!shareNotice) return;
+    const id = setTimeout(() => setShareNotice(null), 5000);
+    return () => clearTimeout(id);
+  }, [shareNotice]);
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 text-[#1f2b24] md:px-6 md:py-6">
@@ -133,6 +248,52 @@ export function LobbySetup({
             Connect wallet to unlock queue and deposit signing.
           </p>
           <HydratedWalletButton />
+        </div>
+      )}
+
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShareModalOpen(true)}
+          disabled={!selectedArena}
+          className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+          style={{
+            border: "1px solid rgba(39,65,55,0.2)",
+            color: selectedArena ? "#274137" : "rgba(39,65,55,0.5)",
+            background: selectedArena ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.65)",
+          }}
+        >
+          Blink Share
+        </button>
+      </div>
+
+      {shareModalOpen && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-[rgba(20,30,24,0.45)] p-4">
+          <div className="relative w-full max-w-3xl">
+            <button
+              type="button"
+              onClick={() => setShareModalOpen(false)}
+              className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.92)" }}
+            >
+              Close
+            </button>
+            <ChallengeShareCard
+              title="Pre Challenge Me"
+              challengerName="You"
+              challengerAddress={walletAddress}
+              arenaLabel={selectedArena?.label ?? "Not Selected"}
+              token={selectedArena?.token ?? "---"}
+              wagerUsd={wagerUsd}
+              challengeLink={challengeLink}
+              description={shareDescription}
+              statusLabel="Open Challenge"
+              onCopy={onCopyChallengeLink}
+              onSaveJpg={onSaveChallengeJpg}
+              onShareX={onShareChallengeToX}
+              notice={shareNotice}
+            />
+          </div>
         </div>
       )}
     </div>
