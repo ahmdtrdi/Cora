@@ -167,4 +167,301 @@ describe('GameEngine', () => {
     const postGameResult = engine.playCard('player2', internalPlayer2.hand[0].id, internalPlayer2.hand[0].correctOptionId);
     expect(postGameResult.success).toBe(false);
   });
+
+  test('win condition - time_up determines winner by HP then score', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    let gameOverData: any = null;
+    engine.on('gameOver', (data) => {
+      gameOverData = data;
+    });
+
+    // Damage player2 so player1 has higher HP
+    const internalPlayer2 = (engine as any).players.get('player2');
+    internalPlayer2.health = 50;
+
+    // Simulate time running out by ticking through the entire match
+    const tickFn = (engine as any).tick.bind(engine);
+    for (let i = 0; i < 300; i++) {
+      setSystemTime(new Date(1000000000000 + (i + 1) * 1000));
+      tickFn();
+      if ((engine as any).finished) break;
+    }
+
+    expect(engine.isFinished()).toBe(true);
+    expect(gameOverData).not.toBeNull();
+    expect(gameOverData.reason).toBe('time_up');
+    expect(gameOverData.winnerAddress).toBe('player1'); // Higher HP wins
+  });
+
+  test('win condition - time_up tie-break by score', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    let gameOverData: any = null;
+    engine.on('gameOver', (data) => {
+      gameOverData = data;
+    });
+
+    // Same HP, but player2 has higher score
+    const internalPlayer2 = (engine as any).players.get('player2');
+    internalPlayer2.score = 30;
+
+    // Simulate time running out
+    const tickFn = (engine as any).tick.bind(engine);
+    for (let i = 0; i < 300; i++) {
+      setSystemTime(new Date(1000000000000 + (i + 1) * 1000));
+      tickFn();
+      if ((engine as any).finished) break;
+    }
+
+    expect(engine.isFinished()).toBe(true);
+    expect(gameOverData.reason).toBe('time_up');
+    expect(gameOverData.winnerAddress).toBe('player2'); // Higher score wins tie
+  });
+
+  test('extra-point phase activates at 60s remaining with x2 multiplier', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    let phaseChangeData: any = null;
+    engine.on('phaseChange', (data) => {
+      phaseChangeData = data;
+    });
+
+    // Fast-forward to just before extra-point threshold (60s remaining = 240s elapsed)
+    (engine as any).remainingMs = 61_000;
+
+    // One tick brings us to 60s → triggers extra_point
+    setSystemTime(new Date(1000000000000 + 240_000));
+    (engine as any).tick();
+
+    expect(phaseChangeData).not.toBeNull();
+    expect(phaseChangeData.phase).toBe('extra_point');
+    expect(engine.getTimerState().phase).toBe('extra_point');
+
+    // Now play a card — should deal ×2 damage
+    const internalPlayer1 = (engine as any).players.get('player1');
+    internalPlayer1.hand[0].type = 'attack';
+    const attackCard = internalPlayer1.hand[0];
+
+    setSystemTime(new Date(Date.now() + 600));
+    const result = engine.playCard('player1', attackCard.id, attackCard.correctOptionId);
+
+    expect(result.success).toBe(true);
+    expect(result.correct).toBe(true);
+    expect(result.multiplier).toBe(2);
+    expect(result.damage).toBe(20); // 10 base × 2
+    expect(engine.getHealth()['player2']).toBe(80); // 100 - 20
+  });
+
+  test('extra-point phase x2 heal', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    // Enter extra-point phase
+    (engine as any).remainingMs = 60_000;
+    (engine as any).phase = 'extra_point';
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+    internalPlayer1.health = 70;
+    internalPlayer1.hand[0].type = 'heal';
+    const healCard = internalPlayer1.hand[0];
+
+    setSystemTime(new Date(Date.now() + 600));
+    const result = engine.playCard('player1', healCard.id, healCard.correctOptionId);
+
+    expect(result.success).toBe(true);
+    expect(result.correct).toBe(true);
+    expect(result.multiplier).toBe(2);
+    expect(result.heal).toBe(20); // 10 base × 2
+    expect(engine.getHealth()['player1']).toBe(90); // 70 + 20
+  });
+
+  test('forfeit via stop() emits gameOver with forfeit reason', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    let gameOverData: any = null;
+    engine.on('gameOver', (data) => {
+      gameOverData = data;
+    });
+
+    engine.stop('player2'); // player2 forfeits
+
+    expect(engine.isFinished()).toBe(true);
+    expect(engine.isActive()).toBe(false);
+    expect(gameOverData).not.toBeNull();
+    expect(gameOverData.winnerAddress).toBe('player1');
+    expect(gameOverData.reason).toBe('forfeit');
+  });
+
+  test('stop() without forfeit address just stops (no gameOver)', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    let gameOverFired = false;
+    engine.on('gameOver', () => { gameOverFired = true; });
+
+    engine.stop(); // No forfeit address
+
+    expect(engine.isFinished()).toBe(true);
+    expect(gameOverFired).toBe(false);
+  });
+
+  test('card refill from queue after playing', () => {
+    // Use a larger question set to ensure the queue has cards beyond the initial hand
+    const manyQuestions = Array.from({ length: 20 }, (_, i) => ({
+      id: `q_refill_${i}`,
+      category: 'math' as const,
+      questionText: `Question ${i}?`,
+      options: [
+        { id: 'A', text: 'correct', score: true },
+        { id: 'B', text: 'wrong1', score: false },
+        { id: 'C', text: 'wrong2', score: false },
+        { id: 'D', text: 'wrong3', score: false },
+      ] as [any, any, any, any],
+      explanation: 'test',
+    }));
+
+    const engine = new GameEngine(['player1', 'player2'], manyQuestions);
+    engine.start();
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+    expect(internalPlayer1.hand.length).toBe(5);
+
+    const firstCard = internalPlayer1.hand[0];
+    const firstCardId = firstCard.id;
+
+    setSystemTime(new Date(Date.now() + 600));
+    engine.playCard('player1', firstCard.id, firstCard.correctOptionId);
+
+    // With 20 questions, the queue has more than 5 cards, so hand stays at 5
+    expect(internalPlayer1.hand.length).toBe(5);
+
+    // The played card should no longer be in hand
+    expect(internalPlayer1.hand.find((c: any) => c.id === firstCardId)).toBeUndefined();
+  });
+
+  test('hand shrinks when queue is exhausted', () => {
+    // With only 5 questions, queue has exactly 5 cards. Initial hand takes all 5.
+    // After playing one, no refill possible → hand = 4
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+    expect(internalPlayer1.hand.length).toBe(5);
+
+    const firstCard = internalPlayer1.hand[0];
+
+    setSystemTime(new Date(Date.now() + 600));
+    engine.playCard('player1', firstCard.id, firstCard.correctOptionId);
+
+    // Queue exhausted — hand shrinks
+    expect(internalPlayer1.hand.length).toBe(4);
+  });
+
+  test('resetCharacterStates sets all players to stay', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    // Manually set some states
+    const internalPlayer1 = (engine as any).players.get('player1');
+    const internalPlayer2 = (engine as any).players.get('player2');
+    internalPlayer1.characterState = 'action';
+    internalPlayer2.characterState = 'angry';
+
+    engine.resetCharacterStates();
+
+    expect(internalPlayer1.characterState).toBe('stay');
+    expect(internalPlayer2.characterState).toBe('stay');
+  });
+
+  test('getScores and getHealth return consistent data after plays', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    // Initial state
+    const scores0 = engine.getScores();
+    const health0 = engine.getHealth();
+    expect(scores0['player1']).toBe(0);
+    expect(scores0['player2']).toBe(0);
+    expect(health0['player1']).toBe(100);
+    expect(health0['player2']).toBe(100);
+
+    // Play a correct attack
+    const internalPlayer1 = (engine as any).players.get('player1');
+    internalPlayer1.hand[0].type = 'attack';
+    const card = internalPlayer1.hand[0];
+
+    setSystemTime(new Date(Date.now() + 600));
+    engine.playCard('player1', card.id, card.correctOptionId);
+
+    const scores1 = engine.getScores();
+    const health1 = engine.getHealth();
+    expect(scores1['player1']).toBe(10);
+    expect(health1['player2']).toBe(90);
+    // Player 1 health unchanged
+    expect(health1['player1']).toBe(100);
+  });
+
+  test('getStateForPlayer hides correct answers', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const state = engine.getStateForPlayer('player1');
+
+    // Cards should not have correctOptionId
+    for (const card of state.hand) {
+      expect((card as any).correctOptionId).toBeUndefined();
+      // But should have question with options
+      expect(card.question.options.length).toBeGreaterThan(0);
+      for (const opt of card.question.options) {
+        expect((opt as any).score).toBeUndefined();
+      }
+    }
+  });
+
+  test('getPlayerAddresses returns both addresses', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const addrs = engine.getPlayerAddresses();
+    expect(addrs).toEqual(['player1', 'player2']);
+  });
+
+  test('double start is no-op', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+    engine.start(); // Should not throw or reset
+    expect(engine.isActive()).toBe(true);
+  });
+
+  test('double stop is safe', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+    engine.stop('player1');
+    engine.stop('player1'); // Should not throw
+    expect(engine.isFinished()).toBe(true);
+  });
+
+  test('damage log is capped at DAMAGE_LOG_MAX', () => {
+    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    engine.start();
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+
+    // Play many correct attacks to fill the damage log
+    for (let i = 0; i < 25; i++) {
+      // Ensure we have cards and bypass cooldown
+      if (internalPlayer1.hand.length === 0) break;
+      internalPlayer1.hand[0].type = 'attack';
+      const card = internalPlayer1.hand[0];
+
+      setSystemTime(new Date(1000000000000 + (i + 1) * 1000));
+      engine.playCard('player1', card.id, card.correctOptionId);
+
+      if (engine.isFinished()) break;
+    }
+
+    const state = engine.getStateForPlayer('player1');
+    expect(state.damageLog.length).toBeLessThanOrEqual(GameEngine.DAMAGE_LOG_MAX);
+  });
 });
