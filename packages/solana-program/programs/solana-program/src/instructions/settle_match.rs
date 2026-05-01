@@ -184,9 +184,17 @@ fn verify_ed25519(
     require!(data.len() >= header_offset + 14, CoraError::InvalidSignature);
 
     let sig_offset = u16::from_le_bytes([data[header_offset],      data[header_offset + 1]]) as usize;
+    let sig_ix_idx = u16::from_le_bytes([data[header_offset + 2],  data[header_offset + 3]]);
     let key_offset = u16::from_le_bytes([data[header_offset + 4],  data[header_offset + 5]]) as usize;
+    let key_ix_idx = u16::from_le_bytes([data[header_offset + 6],  data[header_offset + 7]]);
     let msg_offset = u16::from_le_bytes([data[header_offset + 8],  data[header_offset + 9]]) as usize;
     let msg_size   = u16::from_le_bytes([data[header_offset + 10], data[header_offset + 11]]) as usize;
+    let msg_ix_idx = u16::from_le_bytes([data[header_offset + 12], data[header_offset + 13]]);
+
+    require!(
+        sig_ix_idx == 0xFFFF && key_ix_idx == 0xFFFF && msg_ix_idx == 0xFFFF,
+        CoraError::InvalidSignature
+    );
 
     require!(
         data.len() >= sig_offset + 64 &&

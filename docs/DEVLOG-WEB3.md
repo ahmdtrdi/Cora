@@ -223,3 +223,33 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [x] ~~Tests for `settle_match` need `config` account~~ → Fixed
 - [ ] Tests do not yet verify exact custom error codes (behavior-focused, not error-code-focused)
 - [ ] No fuzz/property tests for state machine transitions (Phase 3)
+
+---
+
+## Entry 8 — 2026-05-01: Security Hardening Phase 2 (Ed25519 + Min Wager)
+
+### The Change
+
+**Smart contract hardening (3 files):**
+
+- `constants.rs` — Added `MIN_WAGER = 10_000` constant. Prevents dust-amount matches where fee rounds to 0, and deters match spam.
+- `instructions/initialize_match.rs` — **[M-3 FIX]** Changed `require!(wager_amount > 0)` to `require!(wager_amount >= MIN_WAGER)`. Enforces minimum 10,000 smallest token units per wager.
+- `instructions/settle_match.rs` — **[M-2 FIX]** Added validation of all 3 `instruction_index` fields in the ed25519 header (`sig_ix_idx`, `key_ix_idx`, `msg_ix_idx`). All must be `0xFFFF` (data embedded in same instruction). Without this, an attacker could craft a transaction with a valid ed25519 instruction at index N, then reference it from a different ed25519 instruction at index N-1 with swapped message/key data.
+
+**Test update (1 file):**
+
+- `tests/test_initialize.rs` — Added `test_initialize_match_below_min_wager_fails` (wager = 1 lamport, should be rejected).
+
+**Total test count: 18 → 19**
+
+### The Reasoning
+
+1. **M-2 (Ed25519 instruction indices)**: The ed25519 precompile header has 3 `instruction_index` fields that specify where to find the signature, public key, and message. When these are `0xFFFF`, data is embedded in the same ed25519 instruction — this is the standard and safe usage. If any index points to a *different* instruction in the transaction, an attacker could theoretically construct a transaction that passes verification with forged message data. By requiring all indices to be `0xFFFF`, we ensure the signature, key, and message are self-contained within the single ed25519 instruction we validate.
+
+2. **M-3 (Minimum wager)**: With `FEE_BASIS_POINTS = 250` and `BASIS_POINTS_DIVISOR = 10_000`, the fee formula is `total * 250 / 10_000`. For `total = 2` (wager = 1), fee = `2 * 250 / 10_000 = 0`. Zero-fee matches are economically pointless for the platform and could be used for spam. `MIN_WAGER = 10_000` ensures minimum fee of `20_000 * 250 / 10_000 = 500` units.
+
+### The Tech Debt
+
+- [ ] Phase 3 items still pending: account closing after finalization (M-1), Anchor events (L-3), version field (L-4)
+- [ ] `MIN_WAGER` may need to be arena-specific (SOL vs BONK have different decimals/value) — for MVP, a universal minimum is acceptable
+- [ ] Must `anchor build` + `anchor deploy` to apply M-2 and M-3 changes to devnet

@@ -93,3 +93,33 @@ fn test_initialize_match_same_player_fails() {
     let res = send_tx(&mut svm, &[ix], &player_a, &[&player_a]);
     assert!(res.is_err(), "Same player as A and B should be rejected");
 }
+
+#[test]
+fn test_initialize_match_below_min_wager_fails() {
+    let (mut svm, pid) = setup();
+    let player_a = Keypair::new();
+    let player_b = Keypair::new();
+    let server = Keypair::new();
+    let token_mint = Keypair::new();
+    svm.airdrop(&player_a.pubkey(), 10_000_000_000).unwrap();
+    create_mint_account(&mut svm, &token_mint, &player_a.pubkey(), 6);
+
+    let match_id: [u8; 32] = [4u8; 32];
+    let (match_pda, _) = find_match_pda(&match_id, &pid);
+    let (vault_pda, _) = find_vault_pda(&match_id, &pid);
+
+    // Wager = 1 (below MIN_WAGER = 10_000)
+    let ix = Instruction::new_with_bytes(
+        pid,
+        &solana_program::instruction::InitializeMatch {
+            match_id, wager_amount: 1, server_pubkey: server.pubkey(),
+        }.data(),
+        solana_program::accounts::InitializeMatch {
+            player_a: player_a.pubkey(), player_b: player_b.pubkey(),
+            token_mint: token_mint.pubkey(), match_state: match_pda, vault: vault_pda,
+            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(), rent: RENT_SYSVAR_ID,
+        }.to_account_metas(None),
+    );
+    let res = send_tx(&mut svm, &[ix], &player_a, &[&player_a]);
+    assert!(res.is_err(), "Wager below MIN_WAGER should be rejected");
+}
