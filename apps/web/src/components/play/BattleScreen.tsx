@@ -11,6 +11,8 @@ import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
+import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
+import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
 
 type MatchOutcome = {
   cardId: string;
@@ -93,23 +95,35 @@ type UiAlert = {
 };
 
 export function BattleScreen() {
+  const runtimeConfig = getRuntimeConfig();
+  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
-  const roomId = searchParams.get("roomId") ?? "mock-room-001";
+  const roomIdParam = searchParams.get("roomId");
   const queryAddress = searchParams.get("address");
-  const arenaId = searchParams.get("arena") ?? "sol";
-  const arenaToken = searchParams.get("token") ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
-  const wagerUsd = searchParams.get("wager") ?? FIXED_WAGER_USD;
+  const arenaIdParam = searchParams.get("arena");
+  const tokenParam = searchParams.get("token");
+  const wagerParam = searchParams.get("wager");
+  const roomId = roomIdParam ?? "";
+  const arenaId = arenaIdParam ?? "sol";
+  const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
   const preSignedDepositSig = searchParams.get("depositSig");
   const scientistId = searchParams.get("scientist");
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
 
-  const devAddressFallbackEnabled = process.env.NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK === "true";
+  const devAddressFallbackEnabled = runtimeConfig.allowDevAddressFallback;
   const fallbackAddress =
     devAddressFallbackEnabled ? queryAddress ?? `dev-preview-${roomId}` : null;
   const address = publicKey?.toBase58() ?? fallbackAddress ?? "";
   const requiresWalletConnect = !address;
+  const hasValidWagerParam = Number.isFinite(Number(wagerParam)) && Number(wagerParam) > 0;
+  const playGuardError = !roomIdParam
+    ? "Missing roomId. Return to lobby and enter the match from the found flow."
+    : !arenaIdParam || !tokenParam || !hasValidWagerParam
+      ? "Missing arena/token/wager match context. Return to lobby and re-queue."
+      : null;
 
   const {
     connectionState,
@@ -244,7 +258,7 @@ export function BattleScreen() {
 
     setReleaseError(null);
 
-    const settlementMode = process.env.NEXT_PUBLIC_SETTLEMENT_MODE ?? "mock";
+    const settlementMode = runtimeConfig.settlementMode;
     if (settlementMode === "mock") {
       setReleaseState("submitting");
       const mockSignature = `mock-release-${Date.now()}`;
@@ -514,6 +528,40 @@ export function BattleScreen() {
     return () => clearTimeout(id);
   }, [shareNotice]);
 
+  if (playGuardError) {
+    return (
+      <main
+        className="grid min-h-[100svh] place-items-center px-4"
+        style={{
+          backgroundColor: "#f5f1e8",
+          backgroundImage:
+            "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
+          backgroundSize: "42px 42px",
+        }}
+      >
+        {showIntegrationBanner && (
+          <IntegrationModeBanner
+            depositMode={runtimeConfig.depositMode}
+            settlementMode={runtimeConfig.settlementMode}
+          />
+        )}
+        <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "#fffdfa" }}>
+          <p className="font-caprasimo text-3xl text-[#1f2b24]">Match Context Missing</p>
+          <p className="mt-2 font-gabarito text-sm text-[#73512d]">{playGuardError}</p>
+          <div className="mt-4">
+            <Link
+              href="/lobby"
+              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+            >
+              Back To Lobby
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (requiresWalletConnect) {
     return (
       <main
@@ -525,6 +573,12 @@ export function BattleScreen() {
           backgroundSize: "42px 42px",
         }}
       >
+        {showIntegrationBanner && (
+          <IntegrationModeBanner
+            depositMode={runtimeConfig.depositMode}
+            settlementMode={runtimeConfig.settlementMode}
+          />
+        )}
         <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#fffdfa" }}>
           <p className="font-caprasimo text-3xl text-[#1f2b24]">Wallet Required</p>
           <p className="mt-2 font-gabarito text-sm text-[#4f6759]">
@@ -554,7 +608,13 @@ export function BattleScreen() {
           "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
         backgroundSize: "42px 42px",
       }}
-      >
+    >
+      {showIntegrationBanner && (
+        <IntegrationModeBanner
+          depositMode={runtimeConfig.depositMode}
+          settlementMode={runtimeConfig.settlementMode}
+        />
+      )}
       <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
         {visibleAlerts.map((alert) => (
           <div

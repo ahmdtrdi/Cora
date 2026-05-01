@@ -1075,3 +1075,32 @@
 ### The Tech Debt
 - Opponent identity on the found screen is now neutral (non-mock) but still not full profile data; backend would need opponent metadata in matchmaking payload (or a pre-play room snapshot endpoint) for richer identity rendering before `/play`.
 - Round HUD currently assumes best-of-3 (`2 rounds to win`) from current game logic constants; if this becomes configurable, FE should read it from shared config/event payload.
+
+## 2026-05-01 - Integration Runtime Guards (Env Modes, /play Context Gate, Mode Banner)
+
+### The Change
+- Added runtime mode parser in [runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts):
+  - validates `NEXT_PUBLIC_DEPOSIT_MODE` and `NEXT_PUBLIC_SETTLEMENT_MODE` (`mock | phantom`),
+  - validates `NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK` (`true | false`),
+  - provides safe fallbacks with dev warnings for invalid values.
+- Added shared integration notice UI in [IntegrationModeBanner.tsx](/d:/projects/Cora/apps/web/src/components/ui/IntegrationModeBanner.tsx).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - reads runtime modes via helper,
+  - shows Integration Mode banner when deposit or settlement is still in mock mode.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - switched env reads to typed runtime config helper,
+  - added strict `/play` context guard (requires `roomId`, `arena`, `token`, valid `wager`),
+  - blocks ambiguous play entry and routes user back safely,
+  - shows Integration Mode banner in both guard and normal play surfaces.
+- Kept [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example) keys documented with explanations and empty values for local override safety.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- E2E integration testing with Web3 should fail fast when route/session context is incomplete, instead of entering partial battle state.
+- Runtime mode parsing centralizes env behavior and prevents silent misconfiguration from typos.
+- Explicit in-app “integration mode” state helps QA align expectations while BE escrow/settlement wiring is still partial.
+
+### The Tech Debt
+- Integration banner is currently non-dismissible and global; if it becomes noisy, move to a compact status chip with tooltip.
+- `/play` context guard currently enforces query params only; once shared match state storage exists, migrate guard to store/session source of truth.

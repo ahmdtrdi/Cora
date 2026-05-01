@@ -9,6 +9,8 @@ import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
 import { queueMatch } from "@/lib/matchmaking/queueMatch";
+import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
+import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
 
 export type Stat = { label: string; value: number };
 
@@ -111,6 +113,8 @@ function shortenAddress(address: string) {
 }
 
 export function LobbyScreen() {
+  const runtimeConfig = getRuntimeConfig();
+  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
   const { publicKey } = useWallet();
   const challengeMode = searchParams.get("challenge") === "1";
@@ -299,6 +303,12 @@ export function LobbyScreen() {
         backgroundSize: "42px 42px",
       }}
     >
+      {showIntegrationBanner && (
+        <IntegrationModeBanner
+          depositMode={runtimeConfig.depositMode}
+          settlementMode={runtimeConfig.settlementMode}
+        />
+      )}
       {challengeMode && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
