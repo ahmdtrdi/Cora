@@ -1158,3 +1158,23 @@
 ### The Tech Debt
 - Opponent scientist identity remains a frontend fallback until backend adds `scientistId` in room/game payloads.
 - Sequential deposit role semantics are partially backend-driven (`depositUnlocked`), but FE still lacks an explicit authoritative role field from backend for strict role-gated button enablement.
+
+## 2026-05-01 - FE Deposit UX Lock (Temporary, No-BE-Role Fallback)
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) with a frontend-only deposit lock UX:
+  - deterministic temporary lock on one side while waiting for `depositUnlocked`,
+  - fallback auto-unlock after 5 seconds to prevent deadlock when FE role inference differs from backend role assignment,
+  - lock reason surfaced in helper text (`Waiting for server unlock...`),
+  - sign button disabled while temporary lock is active.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- Backend sequential deposit is not fully hard-gated yet for early `playerB` submissions.
+- FE lock provides immediate UX guidance and reduces accidental out-of-order signing during team testing.
+- Fallback unlock keeps matches from stalling due to missing authoritative role field in current socket payloads.
+
+### The Tech Debt
+- This is a UX-level guard only; true enforcement must remain backend-side.
+- Temporary role inference should be removed once backend sends authoritative role metadata for each player.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -47,15 +47,11 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
+  const [uxLockExpired, setUxLockExpired] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
   const signed = signingState === "waiting";
-  const canAttemptSign =
-    Boolean(wallet.publicKey) &&
-    signingState !== "signing" &&
-    signingState !== "waiting" &&
-    !signed;
   const {
     connectionState,
     gameState,
@@ -71,6 +67,25 @@ export function OpponentFound({
   });
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
+  const deterministicPrimaryAddress = useMemo(() => {
+    if (!opponentAddress) return null;
+    return [walletAddress, opponentAddress].sort()[0];
+  }, [opponentAddress, walletAddress]);
+  const requiresTemporaryUnlock =
+    Boolean(opponentAddress) &&
+    deterministicPrimaryAddress !== null &&
+    walletAddress !== deterministicPrimaryAddress;
+  const isUxSignLocked =
+    !signed &&
+    requiresTemporaryUnlock &&
+    !depositUnlockedAt &&
+    !uxLockExpired;
+  const canAttemptSign =
+    Boolean(wallet.publicKey) &&
+    signingState !== "signing" &&
+    signingState !== "waiting" &&
+    !isUxSignLocked &&
+    !signed;
 
   const opponentScientist = opponentAddress
     ? scientists[Math.abs(opponentAddress.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % scientists.length]
@@ -123,6 +138,14 @@ export function OpponentFound({
     }, 1200);
     return () => clearTimeout(timerId);
   }, [opponentFailedDepositAt, onTimeout]);
+
+  useEffect(() => {
+    if (!requiresTemporaryUnlock || depositUnlockedAt) return;
+    const timerId = setTimeout(() => {
+      setUxLockExpired(true);
+    }, 5000);
+    return () => clearTimeout(timerId);
+  }, [depositUnlockedAt, requiresTemporaryUnlock]);
 
   useEffect(() => {
     if (!signedDepositSignature) return;
@@ -182,6 +205,7 @@ export function OpponentFound({
   function getSignButtonHint() {
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
+    if (isUxSignLocked) return "Waiting for server unlock...";
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
     if (signingState === "signing") return "Confirm this transaction in Phantom.";
     if (signingState === "waiting") {
