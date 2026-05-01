@@ -2,12 +2,9 @@ import type { ServerWebSocket } from 'bun';
 import type {
   GameState,
   WsMessage,
-  CharacterState,
   GameStatus,
   MatchResult,
-  Card,
   ScoreUpdateData,
-  MatchFoundData,
 } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 import type { AntiCheatVerdict } from '@cora/game-logic';
@@ -274,7 +271,7 @@ export class RoomManager {
           // When re-queued player is paired, notify them via their existing WS if still open
           const c = room.clients.get(innocentAddress);
           if (c?.ws) {
-            c.ws.send(JSON.stringify({ type: 'matchFound', payload: { roomId: newRoomId, role: 'playerA', opponentAddress: '' } } satisfies WsMessage<MatchFoundData>));
+            c.ws.send(JSON.stringify({ type: 'matchFound', payload: { roomId: newRoomId, role: 'playerA', opponentAddress: '' } } satisfies WsMessage));
           }
         },
       };
@@ -305,7 +302,41 @@ export class RoomManager {
  // True FIFO matchmaking: pairs two players and returns a shared roomId.
   // Phase 3: assigns playerA / playerB roles and uses the sequential deposit model.
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
-    // 1. Keep the nice logging from 'develop'
+    // 1. If this address already has an active (non-finished) room, return it immediately.
+    //    This handles retries where the first HTTP response was lost due to proxy/network issues.
+    for (const room of this.rooms.values()) {
+      if ((room.playerA === address || room.playerB === address) && room.status !== 'finished') {
+        this.printQueueState('♻️  RECONNECT', `${this.shortAddr(address)} already in room ${room.id}`);
+        return room.id;
+      }
+    }
+
+    // 2. If this address is already queued (from a previous dropped HTTP request),
+    //    chain this request's resolve to the existing entry instead of adding a duplicate.
+    const existingIndex = this.matchmakingQueue.findIndex(q => q.address === address);
+    if (existingIndex !== -1) {
+      this.printQueueState('♻️  RE-QUEUE', `${this.shortAddr(address)} already waiting — chaining request`);
+      const existing = this.matchmakingQueue[existingIndex];
+      return new Promise<string>((resolve) => {
+        const originalResolve = existing.resolve;
+        existing.resolve = (roomId: string) => {
+          originalResolve(roomId);
+          resolve(roomId);
+        };
+        // Update the WS reference if provided
+        if (signal) {
+          // Allow the NEW signal to cancel (removes from queue) since the old HTTP request is dead
+          signal.addEventListener('abort', () => {
+            const qIndex = this.matchmakingQueue.indexOf(existing);
+            if (qIndex !== -1) {
+              this.matchmakingQueue.splice(qIndex, 1);
+              this.printQueueState('❌ PLAYER LEFT', `${this.shortAddr(address)} aborted matchmaking`);
+            }
+          });
+        }
+      });
+    }
+
     this.printQueueState('⬆️  PLAYER JOINING', `${this.shortAddr(address)} wants to play`);
 
     // Check if there is another player in queue who isn't the same address
@@ -317,13 +348,11 @@ export class RoomManager {
       const newRoomId = `room-${Date.now()}`;
       const room = this.createRoom(newRoomId);
 
-      // 2. Keep the success log from 'develop', updated with the new variable name
       this.printQueueState(
         '✅ MATCH FOUND!',
         `${this.shortAddr(playerAEntry.address)} 🆚 ${this.shortAddr(address)} → ${newRoomId}`,
       );
 
-      // 3. Keep all the new Phase 3 sequential deposit logic from your feature branch
       // Assign roles on the room
       room.playerA = playerAEntry.address;
       room.playerB = address;
@@ -341,13 +370,24 @@ export class RoomManager {
 
     // No pair found, enter queue
     return new Promise((resolve) => {
-      const queueItem = { address, resolve };
+      const queueItem = { address, resolve, enqueuedAt: Date.now() };
       this.matchmakingQueue.push(queueItem);
 
       this.printQueueState('⏳ WAITING', `${this.shortAddr(address)} added to queue (no opponent yet)`);
 
+      // Server-side TTL: remove ghost entries after 5 minutes to prevent memory leaks.
+      // The client can always re-queue via a new POST /match request.
+      const ttlHandle = setTimeout(() => {
+        const qIndex = this.matchmakingQueue.indexOf(queueItem);
+        if (qIndex !== -1) {
+          this.matchmakingQueue.splice(qIndex, 1);
+          this.printQueueState('⏰ TTL EXPIRED', `${this.shortAddr(address)} removed after 5m timeout`);
+        }
+      }, 300_000); // 5 minutes
+
       if (signal) {
         signal.addEventListener('abort', () => {
+          clearTimeout(ttlHandle);
           const qIndex = this.matchmakingQueue.indexOf(queueItem);
           if (qIndex !== -1) {
             this.matchmakingQueue.splice(qIndex, 1);
@@ -461,19 +501,25 @@ export class RoomManager {
 
     const isPlayerA = address === room.playerA;
 
-    // Sequential unlock: after A deposits, send depositUnlocked to B and arm their shot clock
+    // Sequential unlock: after A deposits, notify B they can deposit and arm their shot clock.
+    // Only send unlock + shot clock if B hasn't already deposited.
     if (isPlayerA && !room.playerBUnlocked && room.playerB) {
       room.playerBUnlocked = true;
-      const playerBClient = room.clients.get(room.playerB);
-      if (playerBClient?.ws) {
-        playerBClient.ws.send(JSON.stringify({
-          type: 'depositUnlocked',
-          payload: { roomId: room.id },
-        } satisfies WsMessage));
+      const playerBMeta = room.playerMeta.get(room.playerB);
+      const playerBAlreadyDeposited = playerBMeta?.hasDeposited ?? false;
+
+      if (!playerBAlreadyDeposited) {
+        const playerBClient = room.clients.get(room.playerB);
+        if (playerBClient?.ws) {
+          playerBClient.ws.send(JSON.stringify({
+            type: 'depositUnlocked',
+            payload: { roomId: room.id },
+          } satisfies WsMessage));
+        }
+        this.armDepositTimeout(room, room.playerB);
       }
-      this.armDepositTimeout(room, room.playerB);
       console.log(`Room ${room.id}: Player A deposited. Player B unlocked.`);
-      return;
+      // Fall through to allDeposited check — B may have already deposited
     }
 
     // Both players have now deposited — start the game
@@ -585,7 +631,7 @@ export class RoomManager {
     });
 
     engine.on('roundOver', (data) => {
-      const roundNum = engine.getCurrentRound() - 1; // currentRound was already incremented by resetRound
+      const roundNum = engine.getCurrentRound() - 1; // currentRound is already incremented (resetRound runs before this event)
       const roundsWon = engine.getRoundsWon();
       console.log(`Room ${room.id} round ${roundNum} over. Winner: ${data.winnerAddress} (${data.reason})`);
       console.log(`  Rounds won:`, roundsWon);

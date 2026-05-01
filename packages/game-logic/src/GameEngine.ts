@@ -246,8 +246,8 @@ export class GameEngine {
           antiCheatVerdicts: verdicts
         });
       } else {
-        this.emit('roundOver', { winnerAddress: playerAddress, reason: 'hp_zero' });
         this.resetRound();
+        this.emit('roundOver', { winnerAddress: playerAddress, reason: 'hp_zero' });
       }
     }
 
@@ -281,6 +281,8 @@ export class GameEngine {
       player.health = GameEngine.STARTING_HEALTH;
       player.characterState = 'stay';
     }
+    // Broadcast updated state so frontend sees new round, reset health, and timer
+    this.emit('stateUpdate', {});
   }
 
   resetCharacterStates(): void {
@@ -455,8 +457,8 @@ export class GameEngine {
           antiCheatVerdicts: this.antiCheat.getVerdicts()
         });
       } else {
-        this.emit('roundOver', { winnerAddress: winner, reason: 'time_up' });
         this.resetRound();
+        this.emit('roundOver', { winnerAddress: winner, reason: 'time_up' });
       }
     }
   }
