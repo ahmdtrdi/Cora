@@ -67,11 +67,11 @@ pub fn find_config_pda(pid: &Pubkey) -> (Pubkey, u8) {
 
 pub fn send_tx(
     svm: &mut LiteSVM, ixs: &[Instruction], payer: &Keypair, signers: &[&Keypair],
-) -> Result<(), litesvm::error::FailedTransactionError> {
+) -> Result<(), String> {
     let bh = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(ixs, Some(&payer.pubkey()), &bh);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
-    svm.send_transaction(tx).map(|_| ())
+    svm.send_transaction(tx).map(|_| ()).map_err(|e| format!("{:?}", e))
 }
 
 pub fn do_init_config(svm: &mut LiteSVM, pid: Pubkey, admin: &Keypair, treasury_auth: Pubkey) -> Pubkey {

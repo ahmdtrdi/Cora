@@ -214,3 +214,32 @@ cp target/types/solana_program.ts packages/solana-client/src/
 # 5. Initialize config (one-time, using your deployer wallet)
 # Run via CLI or script — pass your treasury wallet pubkey as argument
 ```
+
+---
+
+## Entry 7 — 2026-05-01: Test Overhaul — Shared Helpers + Edge Case Coverage
+
+### The Change
+
+**Test infrastructure refactored (6 files):**
+
+- `tests/common/mod.rs` — **NEW**: Consolidated all duplicated test helpers (`create_mint_account`, `create_token_account`, `get_token_balance`, PDA finders) into a shared module. Added high-level helpers: `do_init_config`, `do_init_match`, `do_deposit`, `setup_active_match`. This was duplicate code across 4 files (Rule of Three per AGENTS.md).
+- `tests/test_config.rs` — **NEW**: 4 tests for `initialize_config` and `update_config` (happy path, duplicate init, update, unauthorized update).
+- `tests/test_initialize.rs` — Refactored to use `common::*`. Same 3 tests, cleaner code.
+- `tests/test_deposit.rs` — Refactored + 3 new edge cases: both players deposit, unauthorized third-party deposit, double deposit prevention.
+- `tests/test_settle_match.rs` — **Fixed** compilation error (added `config` account). Added 2 new edge cases: re-settlement prevention, treasury substitution attack.
+- `tests/test_refund.rs` — Refactored + 1 new edge case: refund after settlement fails.
+
+**Total test count: 8 → 18 (+10 edge cases)**
+
+### The Reasoning
+
+1. **Shared helpers**: 4 test files each had identical copies of `create_mint_account`, `create_token_account`, etc. Per AGENTS.md "Don't Repeat Yourself" rule, these were consolidated into `tests/common/mod.rs`.
+2. **litesvm error type**: `litesvm::error::FailedTransactionError` does not exist in litesvm 0.10.0. Used `Result<(), String>` with `format!("{:?}", e)` since tests only need `is_ok()`/`is_err()` checks.
+3. **Edge cases chosen based on audit**: The new tests directly validate the security fixes from Entry 6 — treasury substitution, re-settlement, unauthorized access, and state machine integrity.
+
+### The Tech Debt
+
+- [x] ~~Tests for `settle_match` need `config` account~~ → Fixed
+- [ ] Tests do not yet verify exact custom error codes (behavior-focused, not error-code-focused)
+- [ ] No fuzz/property tests for state machine transitions (Phase 3)
