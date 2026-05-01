@@ -38,6 +38,28 @@ function trimTrailingSlash(input: string) {
   return input.replace(/\/+$/, '');
 }
 
+function isSettlementPayload(value: unknown): value is MatchResultPayload {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    typeof payload.winner === 'string' &&
+    typeof payload.matchId === 'string' &&
+    typeof payload.settlementSignature === 'string' &&
+    typeof payload.serverPublicKey === 'string'
+  );
+}
+
+function isMatchSummaryPayload(value: unknown): value is MatchResult {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    typeof payload.winnerAddress === 'string' &&
+    typeof payload.reason === 'string' &&
+    typeof payload.finalScores === 'object' &&
+    typeof payload.finalHealth === 'object'
+  );
+}
+
 export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [lastSocketError, setLastSocketError] = useState<string | null>(null);
@@ -46,6 +68,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [reconnectNonce, setReconnectNonce] = useState(0);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [settlementResult, setSettlementResult] = useState<MatchResultPayload | null>(null);
+  const [matchSummaryResult, setMatchSummaryResult] = useState<MatchResult | null>(null);
   const [matchInvalidated, setMatchInvalidated] = useState<MatchResult | null>(null);
   const [lastDamageEvent, setLastDamageEvent] = useState<DamageEvent | null>(null);
   const [lastPlayResult, setLastPlayResult] = useState<(PlayCardResult & { at: number }) | null>(null);
@@ -54,6 +77,8 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [lastScoreUpdate, setLastScoreUpdate] = useState<ScoreUpdateData | null>(null);
   const [lastRoundOver, setLastRoundOver] = useState<(RoundOverData & { at: number }) | null>(null);
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
+  const [depositUnlockedAt, setDepositUnlockedAt] = useState<number | null>(null);
+  const [opponentFailedDepositAt, setOpponentFailedDepositAt] = useState<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
   const socketUrl = roomId && address
@@ -86,7 +111,11 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
             break;
 
           case 'matchResult':
-            setSettlementResult(message.payload as MatchResultPayload);
+            if (isSettlementPayload(message.payload)) {
+              setSettlementResult(message.payload);
+            } else if (isMatchSummaryPayload(message.payload)) {
+              setMatchSummaryResult(message.payload);
+            }
             break;
 
           case 'matchInvalidated':
@@ -109,6 +138,14 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
 
           case 'phaseChange':
             setCurrentPhase(message.payload as GamePhase);
+            break;
+
+          case 'depositUnlocked':
+            setDepositUnlockedAt(Date.now());
+            break;
+
+          case 'opponentFailedDeposit':
+            setOpponentFailedDepositAt(Date.now());
             break;
 
           case 'playCardResult':
@@ -216,6 +253,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     lastSocketIssueAt,
     gameState,
     settlementResult,
+    matchSummaryResult,
     matchInvalidated,
     lastDamageEvent,
     lastPlayResult,
@@ -224,6 +262,8 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     lastScoreUpdate,
     lastRoundOver,
     currentPhase,
+    depositUnlockedAt,
+    opponentFailedDepositAt,
     openCard,
     playCard,
     confirmDeposit,
