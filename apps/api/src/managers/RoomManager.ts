@@ -7,6 +7,7 @@ import type {
   MatchResult,
   Card,
   ScoreUpdateData,
+  MatchFoundData,
 } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 import type { AntiCheatVerdict } from '@cora/game-logic';
@@ -40,14 +41,28 @@ export interface Room {
   engine: GameEngine | null;
   /** Tracks which card each player has currently opened (one at a time per player) */
   openedCards: Map<string, OpenedCard>;
+  /** 'private' rooms are created via /match/private for Blinks; 'public' rooms come from the FIFO queue */
+  roomType: 'public' | 'private';
+  /** Role-assigned player addresses — set at pairing time, never from URL params */
+  playerA: string | null;
+  playerB: string | null;
+  /** Whether Player B has been sent their deposit_wager transaction yet (sequential unlock) */
+  playerBUnlocked: boolean;
+  /** SPL token mint for this match — stored server-side, never derived from client input */
+  tokenMint: string | null;
+  /** Wager amount in token base units (e.g. USDC: 1 USDC = 1_000_000) */
+  wagerAmount: bigint | null;
+  /** Per-player 20s shot clocks during the deposit phase */
+  depositTimeouts: Map<string, ReturnType<typeof setTimeout>>;
 }
 
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
-  private matchmakingQueue: Array<{ address: string; resolve: (roomId: string) => void }> = [];
-  private DISCONNECT_TIMEOUT_MS = 10_000; // 10 seconds
+  private matchmakingQueue: Array<{ address: string; ws?: ServerWebSocket<unknown>; resolve: (roomId: string) => void }> = [];
+  private DISCONNECT_TIMEOUT_MS = 10_000;  // 10 seconds (only during 'playing')
+  private DEPOSIT_TIMEOUT_MS = 20_000;     // 20 seconds per player during 'depositing'
   private CARD_ANSWER_TIMEOUT_MS = 10_000; // 10 seconds per card
-  private CARD_COUNTDOWN_TICK_MS = 1_000; // 1 second countdown tick
+  private CARD_COUNTDOWN_TICK_MS = 1_000;  // 1 second countdown tick
 
   // Returns the room if it exists, otherwise creates a new one
   public createRoom(roomId: string): Room {
@@ -63,6 +78,13 @@ export class RoomManager {
       playerMeta: new Map(),
       engine: null,
       openedCards: new Map(),
+      roomType: 'public',
+      playerA: null,
+      playerB: null,
+      playerBUnlocked: false,
+      tokenMint: null,
+      wagerAmount: null,
+      depositTimeouts: new Map(),
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;
@@ -72,20 +94,141 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
-  // True FIFO matchmaking: pairs two players and returns a shared roomId
+  // ─── Private Room (Blinks / Direct Challenge) ──────────────────
+
+  /**
+   * Creates a private room for a Blink challenge.
+   * Player A must sign initialize_match + deposit_wager.
+   * tokenMint and wagerAmount are stored server-side — never taken from the URL.
+   */
+  public createPrivateRoom(
+    playerAPubkey: string,
+    tokenMint: string,
+    wagerAmount: bigint,
+  ): string {
+    const roomId = `private-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const room: Room = {
+      id: roomId,
+      matchIdBytes: deriveMatchId(roomId),
+      clients: new Map(),
+      status: 'depositing',
+      playerMeta: new Map([[playerAPubkey, { hasDeposited: false }]]),
+      engine: null,
+      openedCards: new Map(),
+      roomType: 'private',
+      playerA: playerAPubkey,
+      playerB: null,
+      playerBUnlocked: false,
+      tokenMint,
+      wagerAmount,
+      depositTimeouts: new Map(),
+    };
+    this.rooms.set(roomId, room);
+    console.log(`[Private] Room ${roomId} created for Player A: ${playerAPubkey}`);
+    // Arm Player A's 20s shot clock immediately
+    this.armDepositTimeout(room, playerAPubkey);
+    return roomId;
+  }
+
+  /**
+   * Joins a private room as Player B (Blink flow).
+   * Returns a result code so the caller can return the correct HTTP response.
+   */
+  public joinPrivateRoom(
+    playerBPubkey: string,
+    roomId: string,
+  ): 'ok' | 'not_found' | 'full' | 'cancelled' {
+    const room = this.rooms.get(roomId);
+    if (!room || room.roomType !== 'private') return 'not_found';
+    if (room.status !== 'depositing') return 'cancelled';
+    if (room.playerB !== null) return 'full';
+    if (room.playerA === playerBPubkey) return 'full'; // same address
+
+    room.playerB = playerBPubkey;
+    room.playerMeta.set(playerBPubkey, { hasDeposited: false });
+    console.log(`[Private] Player B ${playerBPubkey} joined room ${roomId}`);
+    return 'ok';
+  }
+
+  /**
+   * Cancels a depositing room (shot clock fired or hard disconnect).
+   * Re-queues the innocent player at the front of the public matchmaking queue.
+   */
+  public cancelRoom(roomId: string, innocentAddress?: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'}`);
+
+    // Clear all deposit shot clocks
+    for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
+    room.depositTimeouts.clear();
+
+    // Notify and re-queue the innocent player if they are still WebSocket-connected
+    if (innocentAddress) {
+      const client = room.clients.get(innocentAddress);
+      if (client?.ws) {
+        client.ws.send(JSON.stringify({ type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage));
+      }
+      // Re-queue at the front so they are matched next
+      const queueItem = {
+        address: innocentAddress,
+        ws: client?.ws ?? undefined,
+        resolve: (newRoomId: string) => {
+          // When re-queued player is paired, notify them via their existing WS if still open
+          const c = room.clients.get(innocentAddress);
+          if (c?.ws) {
+            c.ws.send(JSON.stringify({ type: 'matchFound', payload: { roomId: newRoomId, role: 'playerA', opponentAddress: '' } } satisfies WsMessage<MatchFoundData>));
+          }
+        },
+      };
+      this.matchmakingQueue.unshift(queueItem);
+    }
+
+    this.rooms.delete(roomId);
+  }
+
+  /**
+   * Arms a 20-second deposit shot clock for the given player in the given room.
+   * If they don't confirm in time, the room is cancelled and the other player is re-queued.
+   */
+  private armDepositTimeout(room: Room, address: string): void {
+    // Clear any existing timer for this player first
+    const existing = room.depositTimeouts.get(address);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      console.log(`[ShotClock] Player ${address} timed out in room ${room.id}. Cancelling.`);
+      const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
+      this.cancelRoom(room.id, opponentAddress ?? undefined);
+    }, this.DEPOSIT_TIMEOUT_MS);
+
+    room.depositTimeouts.set(address, timer);
+  }
+
+  // True FIFO matchmaking: pairs two players and returns a shared roomId.
+  // Phase 3: assigns playerA / playerB roles and uses the sequential deposit model.
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
-    // Check if there is another player in queue who isn't the same address
     const index = this.matchmakingQueue.findIndex((q) => q.address !== address);
 
     if (index !== -1) {
-      // Pair found!
-      const pairedPlayer = this.matchmakingQueue.splice(index, 1)[0];
+      // Pair found — Player A is the waiting player (initializer), Player B is the incoming player
+      const playerAEntry = this.matchmakingQueue.splice(index, 1)[0];
       const newRoomId = `room-${Date.now()}`;
-      this.createRoom(newRoomId);
+      const room = this.createRoom(newRoomId);
 
-      // Resolve for the waiting player
-      pairedPlayer.resolve(newRoomId);
-      // Resolve for current player
+      // Assign roles on the room
+      room.playerA = playerAEntry.address;
+      room.playerB = address;
+      room.status = 'depositing';
+
+      // Arm Player A's 20s shot clock
+      this.armDepositTimeout(room, playerAEntry.address);
+
+      // Resolve Player A's pending promise — the WS handler will emit MATCH_FOUND to them
+      playerAEntry.resolve(newRoomId);
+
+      // Return the roomId to Player B — their WS handler will emit MATCH_FOUND_WAITING
       return newRoomId;
     }
 
@@ -156,14 +299,22 @@ export class RoomManager {
     if (!room) return;
 
     const client = room.clients.get(address);
-    if (client) {
-      console.log(`Player ${address} disconnected from room ${roomId}. Starting 10s timeout.`);
-      client.ws = null;
+    if (!client) return;
 
+    client.ws = null;
+
+    if (room.status === 'playing') {
+      // Only arm the 10s forfeit timer once the game is live
+      console.log(`Player ${address} disconnected from room ${roomId}. Starting 10s forfeit timer.`);
       client.disconnectTimeout = setTimeout(() => {
         console.log(`Player ${address} forfeit room ${roomId} due to timeout.`);
         this.forfeitMatch(roomId, address);
       }, this.DISCONNECT_TIMEOUT_MS);
+    } else if (room.status === 'depositing') {
+      // Hard disconnect during deposit phase = immediate cancel; shot clock would fire anyway
+      console.log(`Player ${address} disconnected during depositing in room ${roomId}. Cancelling.`);
+      const opponent = address === room.playerA ? room.playerB : room.playerA;
+      this.cancelRoom(roomId, opponent ?? undefined);
     }
   }
 
@@ -189,14 +340,39 @@ export class RoomManager {
   private handleDeposit(room: Room, address: string, signature: string) {
     console.log(`Player ${address} confirmed deposit with signature ${signature} in room ${room.id}`);
 
-    const meta = room.playerMeta.get(address);
-    if (meta) {
-      meta.hasDeposited = true;
+    // Clear this player's deposit shot clock — they paid in time
+    const timer = room.depositTimeouts.get(address);
+    if (timer) {
+      clearTimeout(timer);
+      room.depositTimeouts.delete(address);
     }
 
-    // Check if both players have deposited
+    const meta = room.playerMeta.get(address);
+    if (meta) meta.hasDeposited = true;
+
+    const isPlayerA = address === room.playerA;
+
+    // Sequential unlock: after A deposits, send depositUnlocked to B and arm their shot clock
+    if (isPlayerA && !room.playerBUnlocked && room.playerB) {
+      room.playerBUnlocked = true;
+      const playerBClient = room.clients.get(room.playerB);
+      if (playerBClient?.ws) {
+        playerBClient.ws.send(JSON.stringify({
+          type: 'depositUnlocked',
+          payload: { roomId: room.id },
+        } satisfies WsMessage));
+      }
+      this.armDepositTimeout(room, room.playerB);
+      console.log(`Room ${room.id}: Player A deposited. Player B unlocked.`);
+      return;
+    }
+
+    // Both players have now deposited — start the game
     const allDeposited = Array.from(room.playerMeta.values()).every(p => p.hasDeposited);
     if (allDeposited && room.status === 'depositing') {
+      for (const t of room.depositTimeouts.values()) clearTimeout(t);
+      room.depositTimeouts.clear();
+
       room.status = 'playing';
       console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
       this.initializeEngine(room);
