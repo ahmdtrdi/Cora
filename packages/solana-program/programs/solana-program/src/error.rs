@@ -49,5 +49,10 @@ pub enum CoraError {
 
     #[msg("Match has already been finalized")]
     MatchAlreadyFinalized,
-}
 
+    #[msg("Only the admin can perform this action")]
+    UnauthorizedAdmin,
+
+    #[msg("Treasury account does not belong to the configured authority")]
+    InvalidTreasury,
+}

@@ -6,15 +6,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Card, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { signDepositIntent, signSettlementReleaseIntent } from "@/lib/solana/signDepositIntent";
+import { signSettlementReleaseIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
+import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
+import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
 
 type MatchOutcome = {
   cardId: string;
-  questionId: string;
   outcome: "correct" | "wrong" | "timeout";
   at: number;
 };
@@ -71,6 +72,16 @@ function shortenAddress(address?: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function formatMatchClock(remainingMs?: number) {
+  if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
+    return "05:00";
+  }
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 type UiAlert = {
   id: string;
   title: string;
@@ -82,21 +93,35 @@ type UiAlert = {
 };
 
 export function BattleScreen() {
+  const runtimeConfig = getRuntimeConfig();
+  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
-  const roomId = searchParams.get("roomId") ?? "mock-room-001";
+  const roomIdParam = searchParams.get("roomId");
   const queryAddress = searchParams.get("address");
-  const arenaId = searchParams.get("arena") ?? "sol";
-  const arenaToken = searchParams.get("token") ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
-  const wagerUsd = searchParams.get("wager") ?? FIXED_WAGER_USD;
+  const arenaIdParam = searchParams.get("arena");
+  const tokenParam = searchParams.get("token");
+  const wagerParam = searchParams.get("wager");
+  const roomId = roomIdParam ?? "";
+  const arenaId = arenaIdParam ?? "sol";
+  const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
+  const preSignedDepositSig = searchParams.get("depositSig");
+  const scientistId = searchParams.get("scientist");
   const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
 
-  const devAddressFallbackEnabled = process.env.NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK === "true";
+  const devAddressFallbackEnabled = runtimeConfig.allowDevAddressFallback;
   const fallbackAddress =
     devAddressFallbackEnabled ? queryAddress ?? `dev-preview-${roomId}` : null;
   const address = publicKey?.toBase58() ?? fallbackAddress ?? "";
   const requiresWalletConnect = !address;
+  const hasValidWagerParam = Number.isFinite(Number(wagerParam)) && Number(wagerParam) > 0;
+  const playGuardError = !roomIdParam
+    ? "Missing roomId. Return to lobby and enter the match from the found flow."
+    : !arenaIdParam || !tokenParam || !hasValidWagerParam
+      ? "Missing arena/token/wager match context. Return to lobby and re-queue."
+      : null;
 
   const {
     connectionState,
@@ -123,8 +148,6 @@ export function BattleScreen() {
   const [enemyAttackFlash, setEnemyAttackFlash] = useState(false);
   const [enemyEventText, setEnemyEventText] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
-  const [depositState, setDepositState] = useState<"idle" | "signing" | "submitting" | "error">("idle");
-  const [depositError, setDepositError] = useState<string | null>(null);
   const [releaseState, setReleaseState] = useState<"idle" | "signing" | "submitting" | "success" | "error">("idle");
   const [releaseError, setReleaseError] = useState<string | null>(null);
   const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
@@ -133,10 +156,10 @@ export function BattleScreen() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
 
   const pendingCardIdRef = useRef<string | null>(null);
-  const pendingQuestionIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
   const lastProcessedExpiredAtRef = useRef(0);
   const lastDamageTimestampRef = useRef(0);
+  const depositConfirmedRef = useRef(false);
 
   const hand = gameState?.hand ?? EMPTY_HAND;
   const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
@@ -153,12 +176,10 @@ export function BattleScreen() {
     if (lastCardExpired.at === lastProcessedExpiredAtRef.current) return;
     lastProcessedExpiredAtRef.current = lastCardExpired.at;
 
-    const questionId = pendingQuestionIdRef.current ?? "unknown";
     setOutcomes((prev) => [
       ...prev,
       {
         cardId: lastCardExpired.cardId,
-        questionId,
         outcome: "timeout",
         at: lastCardExpired.at,
       },
@@ -167,7 +188,6 @@ export function BattleScreen() {
     setActiveCardId(null);
     setAnswerLocked(false);
     pendingCardIdRef.current = null;
-    pendingQuestionIdRef.current = null;
   }, [lastCardExpired]);
 
   useEffect(() => {
@@ -176,12 +196,10 @@ export function BattleScreen() {
     lastProcessedPlayAtRef.current = lastPlayResult.at;
 
     const cardId = pendingCardIdRef.current ?? "unknown";
-    const questionId = pendingQuestionIdRef.current ?? "unknown";
     setOutcomes((prev) => [
       ...prev,
       {
         cardId,
-        questionId,
         outcome: lastPlayResult.correct ? "correct" : "wrong",
         at: lastPlayResult.at,
       },
@@ -190,7 +208,6 @@ export function BattleScreen() {
     setActiveCardId(null);
     setAnswerLocked(false);
     pendingCardIdRef.current = null;
-    pendingQuestionIdRef.current = null;
   }, [lastPlayResult]);
 
   useEffect(() => {
@@ -221,7 +238,6 @@ export function BattleScreen() {
     setSecondsLeft(ANSWER_TIME_SEC);
     setAnswerLocked(false);
     pendingCardIdRef.current = card.id;
-    pendingQuestionIdRef.current = card.question.id;
     openCard(card.id);
   }
 
@@ -229,53 +245,7 @@ export function BattleScreen() {
     if (!activeCard || answerLocked || !isPlayable) return;
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
-    pendingQuestionIdRef.current = activeCard.question.id;
     playCard(activeCard.id, optionId);
-  }
-
-  async function onConfirmDeposit() {
-    if (depositState === "signing" || depositState === "submitting") {
-      return;
-    }
-
-    setDepositError(null);
-
-    const depositMode = process.env.NEXT_PUBLIC_DEPOSIT_MODE ?? "phantom";
-    if (depositMode === "mock") {
-      confirmDeposit(`mock-signature-${Date.now()}`);
-      return;
-    }
-
-    if (!wallet.publicKey) {
-      setDepositError("Connect wallet to sign deposit.");
-      return;
-    }
-
-    setDepositState("signing");
-
-    try {
-      const signature = await signDepositIntent({
-        connection,
-        wallet,
-        roomId,
-        token: arenaToken,
-        wagerUsd,
-      });
-
-      setDepositState("submitting");
-      confirmDeposit(signature);
-      setDepositState("idle");
-    } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : "";
-      const lower = rawMessage.toLowerCase();
-      const message = lower.includes("insufficient")
-        ? "Insufficient balance for fees. Top up wallet and retry."
-        : lower.includes("declined")
-          ? "Wallet request declined. Approve transaction to continue."
-          : "Deposit signing failed. Try again or reconnect wallet.";
-      setDepositState("error");
-      setDepositError(message);
-    }
   }
 
   async function onConfirmFundRelease() {
@@ -286,7 +256,7 @@ export function BattleScreen() {
 
     setReleaseError(null);
 
-    const settlementMode = process.env.NEXT_PUBLIC_SETTLEMENT_MODE ?? "mock";
+    const settlementMode = runtimeConfig.settlementMode;
     if (settlementMode === "mock") {
       setReleaseState("submitting");
       const mockSignature = `mock-release-${Date.now()}`;
@@ -362,6 +332,11 @@ export function BattleScreen() {
     activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
       : secondsLeft;
+  const roundsToWin = gameState?.roundsToWin ?? 2;
+  const maxRounds = Math.max(1, roundsToWin * 2 - 1);
+  const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
+  const roundText = `Round ${currentRound}/${maxRounds}`;
+  const remainingMatchClock = formatMatchClock(gameState?.timer?.remainingMs);
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
@@ -376,6 +351,22 @@ export function BattleScreen() {
       refAddress: address,
     });
   }, [arenaId, arenaToken, wagerUsd, address]);
+  const resumeQueueHref = useMemo(() => {
+    const params = new URLSearchParams({ resumeQueue: "1", arena: arenaId });
+    if (scientistId) {
+      params.set("scientist", scientistId);
+    }
+    return `/lobby?${params.toString()}`;
+  }, [arenaId, scientistId]);
+
+  useEffect(() => {
+    if (status !== "depositing" || connectionState !== "connected") return;
+    if (depositConfirmedRef.current) return;
+    if (!preSignedDepositSig) return;
+
+    confirmDeposit(preSignedDepositSig);
+    depositConfirmedRef.current = true;
+  }, [status, connectionState, preSignedDepositSig, confirmDeposit]);
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
   if (lastSocketIssueAt) {
@@ -390,13 +381,14 @@ export function BattleScreen() {
     });
   }
 
-  if (depositError) {
+  const missingPreSignedDeposit = status === "depositing" && connectionState === "connected" && !preSignedDepositSig;
+  if (missingPreSignedDeposit) {
     alerts.push({
-      id: `deposit:${depositError}`,
-      title: "Deposit Signing Error",
-      message: depositError,
+      id: "deposit:missing_pre_signed_intent",
+      title: "Deposit Sync Error",
+      message: "Missing pre-signed deposit intent. Return to lobby and re-queue.",
       tone: "warning",
-      autoDismissMs: 12000,
+      autoDismissMs: 0,
     });
   }
 
@@ -435,10 +427,6 @@ export function BattleScreen() {
 
   function dismissAlert(alert: UiAlert) {
     setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
-    if (alert.id.startsWith("deposit:")) {
-      setDepositError(null);
-      setDepositState("idle");
-    }
     if (alert.id.startsWith("release:")) {
       setReleaseError(null);
       setReleaseState("idle");
@@ -537,6 +525,40 @@ export function BattleScreen() {
     return () => clearTimeout(id);
   }, [shareNotice]);
 
+  if (playGuardError) {
+    return (
+      <main
+        className="grid min-h-[100svh] place-items-center px-4"
+        style={{
+          backgroundColor: "#f5f1e8",
+          backgroundImage:
+            "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
+          backgroundSize: "42px 42px",
+        }}
+      >
+        {showIntegrationBanner && (
+          <IntegrationModeBanner
+            depositMode={runtimeConfig.depositMode}
+            settlementMode={runtimeConfig.settlementMode}
+          />
+        )}
+        <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "#fffdfa" }}>
+          <p className="font-caprasimo text-3xl text-[#1f2b24]">Match Context Missing</p>
+          <p className="mt-2 font-gabarito text-sm text-[#73512d]">{playGuardError}</p>
+          <div className="mt-4">
+            <Link
+              href="/lobby"
+              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+            >
+              Back To Lobby
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (requiresWalletConnect) {
     return (
       <main
@@ -548,6 +570,12 @@ export function BattleScreen() {
           backgroundSize: "42px 42px",
         }}
       >
+        {showIntegrationBanner && (
+          <IntegrationModeBanner
+            depositMode={runtimeConfig.depositMode}
+            settlementMode={runtimeConfig.settlementMode}
+          />
+        )}
         <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#fffdfa" }}>
           <p className="font-caprasimo text-3xl text-[#1f2b24]">Wallet Required</p>
           <p className="mt-2 font-gabarito text-sm text-[#4f6759]">
@@ -577,7 +605,13 @@ export function BattleScreen() {
           "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
         backgroundSize: "42px 42px",
       }}
-      >
+    >
+      {showIntegrationBanner && (
+        <IntegrationModeBanner
+          depositMode={runtimeConfig.depositMode}
+          settlementMode={runtimeConfig.settlementMode}
+        />
+      )}
       <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
         {visibleAlerts.map((alert) => (
           <div
@@ -663,10 +697,22 @@ export function BattleScreen() {
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
             >
+              {roundText}
+            </span>
+            <span
+              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
+            >
+              {remainingMatchClock}
+            </span>
+            <span
+              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
+            >
               {getStatusLabel(status)} - {connectionState}
             </span>
             <Link
-              href="/lobby"
+              href={resumeQueueHref}
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
             >
@@ -674,6 +720,34 @@ export function BattleScreen() {
             </Link>
           </div>
         </header>
+
+        {hasSocketIssue && !gameState && (
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+              Unable to enter battle room
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#73512d]">
+              Connection to this match room failed. Retry socket or return to lobby queue without refreshing.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={reconnect}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+              >
+                Retry Room
+              </button>
+              <Link
+                href={resumeQueueHref}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+              >
+                Return And Requeue
+              </Link>
+            </div>
+          </div>
+        )}
 
         <section
           className="frame-cut relative flex flex-1 flex-col overflow-hidden px-4 py-5 md:px-6"
@@ -687,6 +761,7 @@ export function BattleScreen() {
             <p className="font-caprasimo text-4xl text-[#7a8f82]">VS</p>
             <div className="text-right">
               <p className="font-caprasimo text-3xl text-[#1f2b24]">Opponent</p>
+              <p className="font-gabarito text-[11px] text-[#5e7768]">{shortenAddress(opponent?.address)}</p>
               <p className="font-gabarito text-xs text-[#5e7768]">Score {opponentScore} - Rounds {opponentRoundsWon}</p>
             </div>
           </div>
@@ -760,42 +835,11 @@ export function BattleScreen() {
         </section>
       </div>
 
-      {status === "depositing" && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(20,30,24,0.35)] p-4">
-          <div className="frame-cut w-full max-w-lg p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
-            <p className="font-caprasimo text-3xl text-[#1f2b24]">Confirm Deposit</p>
-            <p className="mt-2 font-gabarito text-sm text-[#4f6759]">
-              Waiting for both players to confirm deposit before the battle starts.
-            </p>
-            <button
-              type="button"
-              onClick={onConfirmDeposit}
-              disabled={depositState === "signing" || depositState === "submitting"}
-              className="frame-cut frame-cut-sm mt-4 px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.88)" }}
-            >
-              {depositState === "signing"
-                ? "Signing In Wallet..."
-                : depositState === "submitting"
-                  ? "Submitting Signature..."
-                  : "Sign Deposit"}
-            </button>
-            {!wallet.publicKey && (
-              <div className="mt-3">
-                <HydratedWalletButton />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {activeCard && status === "playing" && !isMatchComplete && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(20,30,24,0.35)] p-4">
           <div className="frame-cut w-full max-w-xl p-4 md:p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
             <div className="mb-2 flex items-center justify-between">
-              <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">
-                {activeCard.question.id}
-              </p>
+              <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
               <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
             </div>
 
@@ -870,13 +914,13 @@ export function BattleScreen() {
             </div>
 
             <div className="mt-4 max-h-40 space-y-2 overflow-auto">
-              {outcomes.map((item) => (
+              {outcomes.map((item, index) => (
                 <div
                   key={`${item.cardId}-${item.at}`}
                   className="frame-cut frame-cut-sm flex items-center justify-between px-3 py-2"
                   style={{ border: "1px solid rgba(39,65,55,0.16)", background: getOutcomeColor(item.outcome) }}
                 >
-                  <p className="font-gabarito text-xs text-[#274137]">{item.questionId}</p>
+                  <p className="font-gabarito text-xs text-[#274137]">Turn {index + 1}</p>
                   <p className="font-gabarito text-xs font-semibold uppercase tracking-wide text-[#5e7768]">
                     {getOutcomeLabel(item.outcome)}
                   </p>

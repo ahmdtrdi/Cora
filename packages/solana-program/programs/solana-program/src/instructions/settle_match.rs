@@ -4,7 +4,7 @@ use anchor_spl::token_interface::{
 };
 use crate::constants::*;
 use crate::error::CoraError;
-use crate::state::{MatchState, MatchStatus};
+use crate::state::{MatchState, MatchStatus, ProgramConfig};
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
 };
@@ -63,7 +63,7 @@ pub fn handler(
         let fee = total
             .checked_mul(FEE_BASIS_POINTS)
             .ok_or(CoraError::InvalidWagerAmount)?
-            .checked_div(10_000)
+            .checked_div(BASIS_POINTS_DIVISOR)
             .ok_or(CoraError::InvalidWagerAmount)?;
 
         let winner_amount = total
@@ -237,8 +237,15 @@ pub struct SettleMatch<'info> {
     pub player_b_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+    )]
+    pub config: Box<Account<'info, ProgramConfig>>,
+
+    #[account(
         mut,
         token::mint = token_mint,
+        token::authority = config.treasury_authority,
     )]
     pub treasury: Box<InterfaceAccount<'info, TokenAccount>>,
 

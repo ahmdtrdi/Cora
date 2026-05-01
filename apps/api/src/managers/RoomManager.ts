@@ -64,6 +64,102 @@ export class RoomManager {
   private CARD_ANSWER_TIMEOUT_MS = 10_000; // 10 seconds per card
   private CARD_COUNTDOWN_TICK_MS = 1_000;  // 1 second countdown tick
 
+  // ─── FIFO Queue Debug Visualization ────────────────────────────
+
+  private shortAddr(address: string): string {
+    if (address.length <= 12) return address;
+    return `${address.slice(0, 4)}..${address.slice(-4)}`;
+  }
+
+  private printQueueState(event: string, detail: string = '') {
+    const C = {
+      reset: '\x1b[0m',
+      bold: '\x1b[1m',
+      dim: '\x1b[2m',
+      cyan: '\x1b[36m',
+      yellow: '\x1b[33m',
+      green: '\x1b[32m',
+      magenta: '\x1b[35m',
+      red: '\x1b[31m',
+      white: '\x1b[37m',
+      bgCyan: '\x1b[46m',
+      bgBlack: '\x1b[40m',
+    };
+
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const W = 56; // box width
+    const hr = C.dim + '─'.repeat(W) + C.reset;
+
+    console.log('');
+    console.log(`${C.cyan}${C.bold}┌${'─'.repeat(W)}┐${C.reset}`);
+    console.log(`${C.cyan}│${C.reset} ${C.bold}🎮 MATCHMAKING FIFO${C.reset}${' '.repeat(W - 21)}${C.cyan}│${C.reset}`);
+    console.log(`${C.cyan}│${C.reset} ${C.dim}${time}${C.reset}${' '.repeat(W - time.length - 2)}${C.cyan}│${C.reset}`);
+    console.log(`${C.cyan}├${'─'.repeat(W)}┤${C.reset}`);
+
+    // Event line
+    const eventLine = ` ${event}`;
+    const pad1 = Math.max(0, W - eventLine.length);
+    console.log(`${C.cyan}│${C.reset}${C.yellow}${C.bold}${eventLine}${C.reset}${' '.repeat(pad1)}${C.cyan}│${C.reset}`);
+
+    if (detail) {
+      const detailLine = `   ${detail}`;
+      const pad2 = Math.max(0, W - detailLine.length);
+      console.log(`${C.cyan}│${C.reset}${C.dim}${detailLine}${C.reset}${' '.repeat(pad2)}${C.cyan}│${C.reset}`);
+    }
+
+    console.log(`${C.cyan}├${'─'.repeat(W)}┤${C.reset}`);
+
+    // Queue section
+    const qLen = this.matchmakingQueue.length;
+    const qTitle = ` 🧍 Queue (${qLen} waiting)`;
+    const pad3 = Math.max(0, W - qTitle.length);
+    console.log(`${C.cyan}│${C.reset}${C.magenta}${C.bold}${qTitle}${C.reset}${' '.repeat(pad3)}${C.cyan}│${C.reset}`);
+
+    if (qLen === 0) {
+      const emptyLine = `   (empty)`;
+      const padE = Math.max(0, W - emptyLine.length);
+      console.log(`${C.cyan}│${C.reset}${C.dim}${emptyLine}${C.reset}${' '.repeat(padE)}${C.cyan}│${C.reset}`);
+    } else {
+      this.matchmakingQueue.forEach((q, i) => {
+        const addr = this.shortAddr(q.address);
+        const line = `   ${i + 1}. ${addr}`;
+        const padQ = Math.max(0, W - line.length);
+        console.log(`${C.cyan}│${C.reset}${C.white} ${line}${C.reset}${' '.repeat(padQ - 1)}${C.cyan}│${C.reset}`);
+      });
+    }
+
+    console.log(`${C.cyan}├${'─'.repeat(W)}┤${C.reset}`);
+
+    // Active rooms section
+    const activeRooms = Array.from(this.rooms.values()).filter(r => r.status !== 'finished');
+    const rTitle = ` 🏠 Active Rooms (${activeRooms.length})`;
+    const pad4 = Math.max(0, W - rTitle.length);
+    console.log(`${C.cyan}│${C.reset}${C.green}${C.bold}${rTitle}${C.reset}${' '.repeat(pad4)}${C.cyan}│${C.reset}`);
+
+    if (activeRooms.length === 0) {
+      const emptyLine = `   (none)`;
+      const padE = Math.max(0, W - emptyLine.length);
+      console.log(`${C.cyan}│${C.reset}${C.dim}${emptyLine}${C.reset}${' '.repeat(padE)}${C.cyan}│${C.reset}`);
+    } else {
+      for (const room of activeRooms) {
+        const players = Array.from(room.clients.keys()).map(a => this.shortAddr(a));
+        const statusIcon = room.status === 'waiting' ? '⏳' : room.status === 'depositing' ? '💰' : room.status === 'playing' ? '⚔️' : '🏁';
+        const roomShort = room.id.length > 20 ? room.id.slice(0, 20) + '..' : room.id;
+        const line = `   ${statusIcon} ${roomShort}`;
+        const padR = Math.max(0, W - line.length);
+        console.log(`${C.cyan}│${C.reset}${C.white} ${line}${C.reset}${' '.repeat(padR - 1)}${C.cyan}│${C.reset}`);
+        const pLine = `      ${players.join(' vs ') || '(no players yet)'}`;
+        const padP = Math.max(0, W - pLine.length);
+        console.log(`${C.cyan}│${C.reset}${C.dim}${pLine}${C.reset}${' '.repeat(padP)}${C.cyan}│${C.reset}`);
+      }
+    }
+
+    console.log(`${C.cyan}└${'─'.repeat(W)}┘${C.reset}`);
+    console.log('');
+  }
+
+  // ─── End Debug Visualization ───────────────────────────────────
+
   // Returns the room if it exists, otherwise creates a new one
   public createRoom(roomId: string): Room {
     if (this.rooms.has(roomId)) {
@@ -206,9 +302,13 @@ export class RoomManager {
     room.depositTimeouts.set(address, timer);
   }
 
-  // True FIFO matchmaking: pairs two players and returns a shared roomId.
+ // True FIFO matchmaking: pairs two players and returns a shared roomId.
   // Phase 3: assigns playerA / playerB roles and uses the sequential deposit model.
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
+    // 1. Keep the nice logging from 'develop'
+    this.printQueueState('⬆️  PLAYER JOINING', `${this.shortAddr(address)} wants to play`);
+
+    // Check if there is another player in queue who isn't the same address
     const index = this.matchmakingQueue.findIndex((q) => q.address !== address);
 
     if (index !== -1) {
@@ -217,6 +317,13 @@ export class RoomManager {
       const newRoomId = `room-${Date.now()}`;
       const room = this.createRoom(newRoomId);
 
+      // 2. Keep the success log from 'develop', updated with the new variable name
+      this.printQueueState(
+        '✅ MATCH FOUND!',
+        `${this.shortAddr(playerAEntry.address)} 🆚 ${this.shortAddr(address)} → ${newRoomId}`,
+      );
+
+      // 3. Keep all the new Phase 3 sequential deposit logic from your feature branch
       // Assign roles on the room
       room.playerA = playerAEntry.address;
       room.playerB = address;
@@ -237,12 +344,14 @@ export class RoomManager {
       const queueItem = { address, resolve };
       this.matchmakingQueue.push(queueItem);
 
+      this.printQueueState('⏳ WAITING', `${this.shortAddr(address)} added to queue (no opponent yet)`);
+
       if (signal) {
         signal.addEventListener('abort', () => {
           const qIndex = this.matchmakingQueue.indexOf(queueItem);
           if (qIndex !== -1) {
             this.matchmakingQueue.splice(qIndex, 1);
-            console.log(`Player ${address} aborted matchmaking request.`);
+            this.printQueueState('❌ PLAYER LEFT', `${this.shortAddr(address)} aborted matchmaking`);
           }
         });
       }
@@ -476,7 +585,10 @@ export class RoomManager {
     });
 
     engine.on('roundOver', (data) => {
-      console.log(`Room ${room.id} round over. Winner: ${data.winnerAddress} (${data.reason})`);
+      const roundNum = engine.getCurrentRound() - 1; // currentRound was already incremented by resetRound
+      const roundsWon = engine.getRoundsWon();
+      console.log(`Room ${room.id} round ${roundNum} over. Winner: ${data.winnerAddress} (${data.reason})`);
+      console.log(`  Rounds won:`, roundsWon);
 
       // Clear any opened cards to reset for the next round
       this.clearAllOpenedCards(room);
@@ -485,7 +597,9 @@ export class RoomManager {
         type: 'roundOver',
         payload: {
           winnerAddress: data.winnerAddress,
-          reason: data.reason
+          reason: data.reason,
+          roundNumber: roundNum,
+          roundsWon,
         }
       });
       this.broadcastGameState(room);
@@ -740,6 +854,7 @@ export class RoomManager {
             baseHealth: 100,
             characterState: 'stay',
             score: 0,
+            roundsWon: 0,
           },
           opponent: opponentAddress
             ? {
@@ -747,12 +862,14 @@ export class RoomManager {
               baseHealth: 100,
               characterState: 'stay',
               score: 0,
+              roundsWon: 0,
             }
             : {
               address: 'Waiting for opponent...',
               baseHealth: 100,
               characterState: 'stay',
               score: 0,
+              roundsWon: 0,
             },
           hand: [],
           timer: {
@@ -762,6 +879,8 @@ export class RoomManager {
             extraPointThresholdMs: GameEngine.EXTRA_POINT_THRESHOLD_MS,
           },
           damageLog: [],
+          currentRound: 1,
+          roundsToWin: GameEngine.ROUNDS_TO_WIN,
         };
       }
 
@@ -847,7 +966,6 @@ export class RoomManager {
       }
     }
   }
-
   /**
    * Settles an anti-cheat invalidated match on-chain.
    */

@@ -64,6 +64,7 @@ pub struct DepositWager<'info> {
         mut,
         seeds = [MATCH_SEED, match_state.match_id.as_ref()],
         bump = match_state.bump,
+        constraint = match_state.token_mint == token_mint.key() @ CoraError::InvalidTokenMint,
     )]
     pub match_state: Account<'info, MatchState>,
 

@@ -164,7 +164,7 @@ export async function submitSettlementTransaction(
   const tx = new Transaction().add(ed25519Ix).add(settleMatchIx);
   
   console.log(`[Settlement] Submitting settle_match for match: ${Buffer.from(matchId).toString('hex')}`);
-  console.log(`[Settlement] Winner: ${winnerAddress}`);
+  console.log(`[Settlement] Target: ${targetAddress}`);
   
   const txHash = await sendAndConfirmTransaction(connection, tx, [serverKeypair]);
   console.log(`[Settlement] Success! TxHash: ${txHash}`);

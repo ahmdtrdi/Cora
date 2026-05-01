@@ -1,351 +1,179 @@
+mod common;
+
 use {
     anchor_lang::{
         solana_program::instruction::Instruction,
         InstructionData, ToAccountMetas,
     },
     litesvm::LiteSVM,
-    solana_account::Account,
     solana_ed25519_program::new_ed25519_instruction_with_signature,
     solana_keypair::Keypair,
-    solana_message::{Message, VersionedMessage},
     solana_pubkey::Pubkey,
     solana_signer::Signer,
-    solana_transaction::versioned::VersionedTransaction,
 };
+use common::*;
 
-const TOKEN_PROGRAM_ID: Pubkey = solana_pubkey::pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-const RENT_SYSVAR_ID: Pubkey = solana_pubkey::pubkey!("SysvarRent111111111111111111111111111111111");
-const INSTRUCTIONS_SYSVAR_ID: Pubkey = solana_pubkey::pubkey!("Sysvar1nstructions1111111111111111111111111");
-
-const MINT_ACCOUNT_LEN: usize = 82;
-const TOKEN_ACCOUNT_LEN: usize = 165;
-const WAGER_AMOUNT: u64 = 1_000_000;
-
-fn create_mint_account(svm: &mut LiteSVM, mint_keypair: &Keypair, authority: &Pubkey, decimals: u8) {
-    let mut data = vec![0u8; MINT_ACCOUNT_LEN];
-    data[0..4].copy_from_slice(&1u32.to_le_bytes());
-    data[4..36].copy_from_slice(authority.as_ref());
-    data[36..44].copy_from_slice(&0u64.to_le_bytes());
-    data[44] = decimals;
-    data[45] = 1;
-    data[46..50].copy_from_slice(&0u32.to_le_bytes());
-
-    let rent_lamports = svm.minimum_balance_for_rent_exemption(MINT_ACCOUNT_LEN);
-    svm.set_account(
-        mint_keypair.pubkey(),
-        Account {
-            lamports: rent_lamports,
-            data,
-            owner: TOKEN_PROGRAM_ID,
-            executable: false,
-            rent_epoch: 0,
-        },
-    ).unwrap();
+fn setup() -> (LiteSVM, Pubkey) {
+    let pid = solana_program::id();
+    let mut svm = LiteSVM::new();
+    svm.add_program(pid, include_bytes!("../../../target/deploy/solana_program.so")).unwrap();
+    (svm, pid)
 }
 
-fn create_token_account(svm: &mut LiteSVM, token_account: &Pubkey, mint: &Pubkey, owner: &Pubkey, amount: u64) {
-    let mut data = vec![0u8; TOKEN_ACCOUNT_LEN];
-    data[0..32].copy_from_slice(mint.as_ref());
-    data[32..64].copy_from_slice(owner.as_ref());
-    data[64..72].copy_from_slice(&amount.to_le_bytes());
-    data[72..76].copy_from_slice(&0u32.to_le_bytes());
-    data[108] = 1;
+/// Build a settle instruction with ed25519 precompile
+fn build_settle_ixs(
+    pid: Pubkey, server: &Keypair, match_id: [u8; 32], action: u8, target: Pubkey,
+    match_pda: Pubkey, vault_pda: Pubkey, config_pda: Pubkey,
+    pa_tok: Pubkey, pb_tok: Pubkey, treasury_tok: Pubkey,
+    mint_pk: Pubkey,
+) -> Vec<Instruction> {
+    let mut message = [0u8; 65];
+    message[0] = action;
+    message[1..33].copy_from_slice(&match_id);
+    message[33..65].copy_from_slice(&target.to_bytes());
+    let signature = server.sign_message(&message);
+    let sig_bytes: [u8; 64] = signature.into();
 
-    let rent = svm.minimum_balance_for_rent_exemption(TOKEN_ACCOUNT_LEN);
-    svm.set_account(
-        *token_account,
-        Account {
-            lamports: rent,
-            data,
-            owner: TOKEN_PROGRAM_ID,
-            executable: false,
-            rent_epoch: 0,
-        },
-    ).unwrap();
-}
+    let ed25519_ix = new_ed25519_instruction_with_signature(
+        &message, &sig_bytes, &server.pubkey().to_bytes(),
+    );
 
-fn get_token_balance(svm: &mut LiteSVM, token_account: &Pubkey) -> u64 {
-    let acc = svm.get_account(token_account).unwrap();
-    let mut amount_bytes = [0u8; 8];
-    amount_bytes.copy_from_slice(&acc.data[64..72]);
-    u64::from_le_bytes(amount_bytes)
-}
-
-fn find_match_pda(match_id: &[u8; 32], program_id: &Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[b"match", match_id.as_ref()], program_id)
-}
-
-fn find_vault_pda(match_id: &[u8; 32], program_id: &Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[b"vault", match_id.as_ref()], program_id)
+    let settle_ix = Instruction::new_with_bytes(
+        pid,
+        &solana_program::instruction::SettleMatch { action, target, signature: sig_bytes }.data(),
+        solana_program::accounts::SettleMatch {
+            caller: server.pubkey(), match_state: match_pda, vault: vault_pda,
+            player_a_token_account: pa_tok, player_b_token_account: pb_tok,
+            config: config_pda, treasury: treasury_tok,
+            token_mint: mint_pk, token_program: TOKEN_PROGRAM_ID,
+            instructions_sysvar: INSTRUCTIONS_SYSVAR_ID,
+        }.to_account_metas(None),
+    );
+    vec![ed25519_ix, settle_ix]
 }
 
 #[test]
 fn test_settle_match_happy_path() {
-    let program_id = solana_program::id();
+    let (mut svm, pid) = setup();
     let player_a = Keypair::new();
     let player_b = Keypair::new();
     let server = Keypair::new();
     let token_mint = Keypair::new();
-
     let treasury = Keypair::new();
-
-    let mut svm = LiteSVM::new();
-    let bytes = include_bytes!("../../../target/deploy/solana_program.so");
-    svm.add_program(program_id, bytes).unwrap();
     svm.airdrop(&player_a.pubkey(), 10_000_000_000).unwrap();
     svm.airdrop(&player_b.pubkey(), 10_000_000_000).unwrap();
     svm.airdrop(&server.pubkey(), 10_000_000_000).unwrap();
 
-    create_mint_account(&mut svm, &token_mint, &player_a.pubkey(), 6);
+    let match_id: [u8; 32] = [20u8; 32];
+    let am = setup_active_match(&mut svm, pid, &player_a, &player_b, &server, &token_mint, &treasury, match_id);
 
-    let match_id: [u8; 32] = [5u8; 32];
-    let (match_pda, _) = find_match_pda(&match_id, &program_id);
-    let (vault_pda, _) = find_vault_pda(&match_id, &program_id);
-
-    // Initialize Match
-    let init_accounts = solana_program::accounts::InitializeMatch {
-        player_a: player_a.pubkey(),
-        player_b: player_b.pubkey(),
-        token_mint: token_mint.pubkey(),
-        match_state: match_pda,
-        vault: vault_pda,
-        token_program: TOKEN_PROGRAM_ID,
-        system_program: Pubkey::default(),
-        rent: RENT_SYSVAR_ID,
-    };
-    let init_data = solana_program::instruction::InitializeMatch {
-        match_id,
-        wager_amount: WAGER_AMOUNT,
-        server_pubkey: server.pubkey(),
-    };
-    let init_ix = Instruction::new_with_bytes(program_id, &init_data.data(), init_accounts.to_account_metas(None));
-    let init_tx = VersionedTransaction::try_new(
-        VersionedMessage::Legacy(Message::new_with_blockhash(&[init_ix], Some(&player_a.pubkey()), &svm.latest_blockhash())),
-        &[&player_a]
-    ).unwrap();
-    svm.send_transaction(init_tx).unwrap();
-
-    // Create token accounts
-    let player_a_token = Keypair::new();
-    let player_b_token = Keypair::new();
-    let treasury_token = Keypair::new();
-    
-    // Instead of doing actual DepositWager instruction which requires valid CPI from depositors,
-    // we can just mock the state of the deposit by minting tokens directly into the vault and updating match state,
-    // BUT actually it's safer to just call deposit_wager to properly transition the state machine to Active.
-    create_token_account(&mut svm, &player_a_token.pubkey(), &token_mint.pubkey(), &player_a.pubkey(), 5_000_000);
-    create_token_account(&mut svm, &player_b_token.pubkey(), &token_mint.pubkey(), &player_b.pubkey(), 5_000_000);
-    create_token_account(&mut svm, &treasury_token.pubkey(), &token_mint.pubkey(), &treasury.pubkey(), 0);
-
-    // Deposit A
-    let deposit_a_ix = Instruction::new_with_bytes(
-        program_id,
-        &solana_program::instruction::DepositWager {}.data(),
-        solana_program::accounts::DepositWager {
-            depositor: player_a.pubkey(),
-            match_state: match_pda,
-            depositor_token_account: player_a_token.pubkey(),
-            vault: vault_pda,
-            token_mint: token_mint.pubkey(),
-            token_program: TOKEN_PROGRAM_ID,
-            system_program: Pubkey::default(),
-        }.to_account_metas(None),
+    let ixs = build_settle_ixs(
+        pid, &server, match_id, 0, player_a.pubkey(),
+        am.match_pda, am.vault_pda, am.config_pda,
+        am.player_a_token, am.player_b_token, am.treasury_token,
+        token_mint.pubkey(),
     );
-    let deposit_a_tx = VersionedTransaction::try_new(
-        VersionedMessage::Legacy(Message::new_with_blockhash(&[deposit_a_ix], Some(&player_a.pubkey()), &svm.latest_blockhash())),
-        &[&player_a]
-    ).unwrap();
-    svm.send_transaction(deposit_a_tx).unwrap();
+    let res = send_tx(&mut svm, &ixs, &server, &[&server]);
+    assert!(res.is_ok(), "Settle should succeed: {:?}", res.err());
 
-    // Deposit B
-    let deposit_b_ix = Instruction::new_with_bytes(
-        program_id,
-        &solana_program::instruction::DepositWager {}.data(),
-        solana_program::accounts::DepositWager {
-            depositor: player_b.pubkey(),
-            match_state: match_pda,
-            depositor_token_account: player_b_token.pubkey(),
-            vault: vault_pda,
-            token_mint: token_mint.pubkey(),
-            token_program: TOKEN_PROGRAM_ID,
-            system_program: Pubkey::default(),
-        }.to_account_metas(None),
-    );
-    let deposit_b_tx = VersionedTransaction::try_new(
-        VersionedMessage::Legacy(Message::new_with_blockhash(&[deposit_b_ix], Some(&player_b.pubkey()), &svm.latest_blockhash())),
-        &[&player_b]
-    ).unwrap();
-    svm.send_transaction(deposit_b_tx).unwrap();
-
-    // Now Match is Active and Vault has 2 * WAGER_AMOUNT.
-    // Let's settle the match
-    let action: u8 = 0;
-    let target = player_a.pubkey();
-    let mut message = [0u8; 65];
-    message[0] = action;
-    message[1..33].copy_from_slice(&match_id);
-    message[33..65].copy_from_slice(&target.to_bytes());
-    let signature = server.sign_message(&message);
-    
-    let sig_bytes: [u8; 64] = signature.into();
-    let pubkey_bytes = server.pubkey().to_bytes();
-    
-    let ed25519_ix = new_ed25519_instruction_with_signature(
-        &message,
-        &sig_bytes,
-        &pubkey_bytes,
-    );
-
-    let settle_accounts = solana_program::accounts::SettleMatch {
-        caller: server.pubkey(),
-        match_state: match_pda,
-        vault: vault_pda,
-        player_a_token_account: player_a_token.pubkey(),
-        player_b_token_account: player_b_token.pubkey(),
-        treasury: treasury_token.pubkey(),
-        token_mint: token_mint.pubkey(),
-        token_program: TOKEN_PROGRAM_ID,
-        instructions_sysvar: INSTRUCTIONS_SYSVAR_ID,
-    };
-    let settle_data = solana_program::instruction::SettleMatch {
-        action,
-        target,
-        signature: sig_bytes,
-    };
-    let settle_ix = Instruction::new_with_bytes(
-        program_id,
-        &settle_data.data(),
-        settle_accounts.to_account_metas(None),
-    );
-
-    let settle_tx = VersionedTransaction::try_new(
-        VersionedMessage::Legacy(Message::new_with_blockhash(&[ed25519_ix, settle_ix], Some(&server.pubkey()), &svm.latest_blockhash())),
-        &[&server]
-    ).unwrap();
-    
-    let res = svm.send_transaction(settle_tx);
-    assert!(res.is_ok(), "SettleMatch should succeed: {:?}", res.err());
-
-    // Verify payouts
     let total = WAGER_AMOUNT * 2;
-    let fee = total * 250 / 10_000; // FEE_BASIS_POINTS = 250
+    let fee = total * 250 / 10_000;
     let winner_payout = total - fee;
-
-    let treasury_bal = get_token_balance(&mut svm, &treasury_token.pubkey());
-    assert_eq!(treasury_bal, fee, "Treasury should receive 2.5% fee");
-
-    let player_a_bal = get_token_balance(&mut svm, &player_a_token.pubkey());
-    assert_eq!(player_a_bal, 5_000_000 - WAGER_AMOUNT + winner_payout, "Player A should receive winnings");
+    assert_eq!(get_token_balance(&mut svm, &am.treasury_token), fee);
+    assert_eq!(get_token_balance(&mut svm, &am.player_a_token), 5_000_000 - WAGER_AMOUNT + winner_payout);
 }
 
 #[test]
 fn test_settle_match_cheater_penalty() {
-    let program_id = solana_program::id();
+    let (mut svm, pid) = setup();
     let player_a = Keypair::new();
     let player_b = Keypair::new();
     let server = Keypair::new();
     let token_mint = Keypair::new();
-
     let treasury = Keypair::new();
-
-    let mut svm = LiteSVM::new();
-    let bytes = include_bytes!("../../../target/deploy/solana_program.so");
-    svm.add_program(program_id, bytes).unwrap();
     svm.airdrop(&player_a.pubkey(), 10_000_000_000).unwrap();
     svm.airdrop(&player_b.pubkey(), 10_000_000_000).unwrap();
     svm.airdrop(&server.pubkey(), 10_000_000_000).unwrap();
 
-    create_mint_account(&mut svm, &token_mint, &player_a.pubkey(), 6);
+    let match_id: [u8; 32] = [21u8; 32];
+    let am = setup_active_match(&mut svm, pid, &player_a, &player_b, &server, &token_mint, &treasury, match_id);
 
-    let match_id: [u8; 32] = [6u8; 32];
-    let (match_pda, _) = find_match_pda(&match_id, &program_id);
-    let (vault_pda, _) = find_vault_pda(&match_id, &program_id);
-
-    // Initialize Match
-    let init_accounts = solana_program::accounts::InitializeMatch {
-        player_a: player_a.pubkey(),
-        player_b: player_b.pubkey(),
-        token_mint: token_mint.pubkey(),
-        match_state: match_pda,
-        vault: vault_pda,
-        token_program: TOKEN_PROGRAM_ID,
-        system_program: Pubkey::default(),
-        rent: RENT_SYSVAR_ID,
-    };
-    let init_data = solana_program::instruction::InitializeMatch {
-        match_id,
-        wager_amount: WAGER_AMOUNT,
-        server_pubkey: server.pubkey(),
-    };
-    let init_ix = Instruction::new_with_bytes(program_id, &init_data.data(), init_accounts.to_account_metas(None));
-    let init_tx = VersionedTransaction::try_new(
-        VersionedMessage::Legacy(Message::new_with_blockhash(&[init_ix], Some(&player_a.pubkey()), &svm.latest_blockhash())),
-        &[&player_a]
-    ).unwrap();
-    svm.send_transaction(init_tx).unwrap();
-
-    let player_a_token = Keypair::new();
-    let player_b_token = Keypair::new();
-    let treasury_token = Keypair::new();
-    
-    create_token_account(&mut svm, &player_a_token.pubkey(), &token_mint.pubkey(), &player_a.pubkey(), 5_000_000);
-    create_token_account(&mut svm, &player_b_token.pubkey(), &token_mint.pubkey(), &player_b.pubkey(), 5_000_000);
-    create_token_account(&mut svm, &treasury_token.pubkey(), &token_mint.pubkey(), &treasury.pubkey(), 0);
-
-    // Deposit A
-    let deposit_a_ix = Instruction::new_with_bytes(
-        program_id,
-        &solana_program::instruction::DepositWager {}.data(),
-        solana_program::accounts::DepositWager { depositor: player_a.pubkey(), match_state: match_pda, depositor_token_account: player_a_token.pubkey(), vault: vault_pda, token_mint: token_mint.pubkey(), token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default() }.to_account_metas(None),
+    // action=1, target=cheater (player_b)
+    let ixs = build_settle_ixs(
+        pid, &server, match_id, 1, player_b.pubkey(),
+        am.match_pda, am.vault_pda, am.config_pda,
+        am.player_a_token, am.player_b_token, am.treasury_token,
+        token_mint.pubkey(),
     );
-    svm.send_transaction(VersionedTransaction::try_new(VersionedMessage::Legacy(Message::new_with_blockhash(&[deposit_a_ix], Some(&player_a.pubkey()), &svm.latest_blockhash())), &[&player_a]).unwrap()).unwrap();
+    let res = send_tx(&mut svm, &ixs, &server, &[&server]);
+    assert!(res.is_ok(), "Penalty settle should succeed: {:?}", res.err());
 
-    // Deposit B
-    let deposit_b_ix = Instruction::new_with_bytes(
-        program_id,
-        &solana_program::instruction::DepositWager {}.data(),
-        solana_program::accounts::DepositWager { depositor: player_b.pubkey(), match_state: match_pda, depositor_token_account: player_b_token.pubkey(), vault: vault_pda, token_mint: token_mint.pubkey(), token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default() }.to_account_metas(None),
+    assert_eq!(get_token_balance(&mut svm, &am.treasury_token), WAGER_AMOUNT, "Treasury gets cheater's wager");
+    assert_eq!(get_token_balance(&mut svm, &am.player_a_token), 5_000_000, "Honest player gets full refund");
+}
+
+#[test]
+fn test_settle_after_settled_fails() {
+    let (mut svm, pid) = setup();
+    let player_a = Keypair::new();
+    let player_b = Keypair::new();
+    let server = Keypair::new();
+    let token_mint = Keypair::new();
+    let treasury = Keypair::new();
+    svm.airdrop(&player_a.pubkey(), 10_000_000_000).unwrap();
+    svm.airdrop(&player_b.pubkey(), 10_000_000_000).unwrap();
+    svm.airdrop(&server.pubkey(), 10_000_000_000).unwrap();
+
+    let match_id: [u8; 32] = [22u8; 32];
+    let am = setup_active_match(&mut svm, pid, &player_a, &player_b, &server, &token_mint, &treasury, match_id);
+
+    // First settle succeeds
+    let ixs = build_settle_ixs(
+        pid, &server, match_id, 0, player_a.pubkey(),
+        am.match_pda, am.vault_pda, am.config_pda,
+        am.player_a_token, am.player_b_token, am.treasury_token,
+        token_mint.pubkey(),
     );
-    svm.send_transaction(VersionedTransaction::try_new(VersionedMessage::Legacy(Message::new_with_blockhash(&[deposit_b_ix], Some(&player_b.pubkey()), &svm.latest_blockhash())), &[&player_b]).unwrap()).unwrap();
+    send_tx(&mut svm, &ixs, &server, &[&server]).unwrap();
 
-    // Settle the match with Anti-Cheat Penalty
-    let action: u8 = 1; // 1 = Penalty
-    let target = player_b.pubkey(); // B is the cheater
-    let mut message = [0u8; 65];
-    message[0] = action;
-    message[1..33].copy_from_slice(&match_id);
-    message[33..65].copy_from_slice(&target.to_bytes());
-    let signature = server.sign_message(&message);
-    
-    let sig_bytes: [u8; 64] = signature.into();
-    let pubkey_bytes = server.pubkey().to_bytes();
-    
-    let ed25519_ix = new_ed25519_instruction_with_signature(&message, &sig_bytes, &pubkey_bytes);
+    // Second settle should fail (match already Settled, not Active)
+    let ixs2 = build_settle_ixs(
+        pid, &server, match_id, 0, player_b.pubkey(),
+        am.match_pda, am.vault_pda, am.config_pda,
+        am.player_a_token, am.player_b_token, am.treasury_token,
+        token_mint.pubkey(),
+    );
+    let res = send_tx(&mut svm, &ixs2, &server, &[&server]);
+    assert!(res.is_err(), "Re-settlement should fail");
+}
 
-    let settle_accounts = solana_program::accounts::SettleMatch {
-        caller: server.pubkey(),
-        match_state: match_pda,
-        vault: vault_pda,
-        player_a_token_account: player_a_token.pubkey(),
-        player_b_token_account: player_b_token.pubkey(),
-        treasury: treasury_token.pubkey(),
-        token_mint: token_mint.pubkey(),
-        token_program: TOKEN_PROGRAM_ID,
-        instructions_sysvar: INSTRUCTIONS_SYSVAR_ID,
-    };
-    let settle_data = solana_program::instruction::SettleMatch { action, target, signature: sig_bytes };
-    let settle_ix = Instruction::new_with_bytes(program_id, &settle_data.data(), settle_accounts.to_account_metas(None));
+#[test]
+fn test_settle_wrong_treasury_authority_fails() {
+    let (mut svm, pid) = setup();
+    let player_a = Keypair::new();
+    let player_b = Keypair::new();
+    let server = Keypair::new();
+    let token_mint = Keypair::new();
+    let treasury = Keypair::new();
+    let attacker = Keypair::new();
+    svm.airdrop(&player_a.pubkey(), 10_000_000_000).unwrap();
+    svm.airdrop(&player_b.pubkey(), 10_000_000_000).unwrap();
+    svm.airdrop(&server.pubkey(), 10_000_000_000).unwrap();
 
-    let settle_tx = VersionedTransaction::try_new(VersionedMessage::Legacy(Message::new_with_blockhash(&[ed25519_ix, settle_ix], Some(&server.pubkey()), &svm.latest_blockhash())), &[&server]).unwrap();
-    svm.send_transaction(settle_tx).unwrap();
+    let match_id: [u8; 32] = [23u8; 32];
+    let am = setup_active_match(&mut svm, pid, &player_a, &player_b, &server, &token_mint, &treasury, match_id);
 
-    // Verify payouts
-    let treasury_bal = get_token_balance(&mut svm, &treasury_token.pubkey());
-    assert_eq!(treasury_bal, WAGER_AMOUNT, "Treasury should receive 100% of cheater's wager");
+    // Attacker creates their own token account to steal fees
+    let fake_treasury = Keypair::new();
+    create_token_account(&mut svm, &fake_treasury.pubkey(), &token_mint.pubkey(), &attacker.pubkey(), 0);
 
-    let player_a_bal = get_token_balance(&mut svm, &player_a_token.pubkey());
-    assert_eq!(player_a_bal, 5_000_000, "Player A (honest) should receive their wager back");
-
-    let player_b_bal = get_token_balance(&mut svm, &player_b_token.pubkey());
-    assert_eq!(player_b_bal, 5_000_000 - WAGER_AMOUNT, "Player B (cheater) should lose their wager");
+    // Try to settle with attacker's treasury — should fail because authority doesn't match config
+    let ixs = build_settle_ixs(
+        pid, &server, match_id, 0, player_a.pubkey(),
+        am.match_pda, am.vault_pda, am.config_pda,
+        am.player_a_token, am.player_b_token, fake_treasury.pubkey(),
+        token_mint.pubkey(),
+    );
+    let res = send_tx(&mut svm, &ixs, &server, &[&server]);
+    assert!(res.is_err(), "Settlement with wrong treasury authority should fail");
 }
