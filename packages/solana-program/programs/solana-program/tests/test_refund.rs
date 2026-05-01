@@ -78,6 +78,10 @@ fn test_refund_waiting_deposit_timeout() {
     let res = send_tx(&mut svm, &[refund_ix], &player_b, &[&player_b, &player_a]);
     assert!(res.is_ok(), "Refund after timeout should succeed: {:?}", res.err());
     assert_eq!(get_token_balance(&mut svm, &pa_tok.pubkey()), 5_000_000, "Player A gets full refund");
+
+    // Verify accounts are closed
+    assert!(svm.get_account(&match_pda).is_none(), "match_state should be closed");
+    assert!(svm.get_account(&vault_pda).is_none(), "vault should be closed");
 }
 
 #[test]
@@ -118,6 +122,10 @@ fn test_refund_active_match_timeout() {
     assert!(res.is_ok(), "Refund after match timeout should succeed: {:?}", res.err());
     assert_eq!(get_token_balance(&mut svm, &pa_tok.pubkey()), 5_000_000);
     assert_eq!(get_token_balance(&mut svm, &pb_tok.pubkey()), 5_000_000);
+
+    // Verify accounts are closed
+    assert!(svm.get_account(&match_pda).is_none(), "match_state should be closed");
+    assert!(svm.get_account(&vault_pda).is_none(), "vault should be closed");
 }
 
 #[test]
