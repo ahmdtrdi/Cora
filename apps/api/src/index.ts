@@ -5,6 +5,7 @@ import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
 import { RoomManager } from './managers/RoomManager';
 import { rateLimiter } from './middleware/rateLimiter';
+import { actionsRouter } from './routes/actions';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
@@ -13,6 +14,26 @@ const roomManager = new RoomManager();
 // Global Middlewares
 app.use('/*', cors()); // Enable CORS for all routes (frontend communication)
 app.use('/*', rateLimiter); // Basic in-memory rate limiting
+
+// Solana Blink Discovery
+app.get('/actions.json', (c) => {
+  // Required by X/Twitter and Wallets to discover Actions on this domain
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Encoding, Accept-Encoding');
+  
+  return c.json({
+    rules: [
+      {
+        pathPattern: "/api/actions/*",
+        apiPath: "/api/actions/*"
+      }
+    ]
+  });
+});
+
+// Mounted Routers
+app.route('/api/actions', actionsRouter);
 
 // Basic health check route
 app.get('/health', (c) => {
