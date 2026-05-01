@@ -14,6 +14,7 @@ export interface EnginePlayerState {
   characterState: CharacterState;
   lastPlayTimestamp?: number;
   queueIndex: number;
+  characterId: string;
 }
 
 /**
