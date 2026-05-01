@@ -4,20 +4,37 @@ pub mod instructions;
 pub mod state;
 
 use anchor_lang::prelude::*;
-pub use instructions::{DepositWager, InitializeMatch, Refund, SettleMatch};
+pub use instructions::{
+    DepositWager, InitializeConfig, InitializeMatch, Refund, SettleMatch, UpdateConfig,
+};
 pub(crate) use instructions::{
     __client_accounts_deposit_wager,
+    __client_accounts_initialize_config,
     __client_accounts_initialize_match,
     __client_accounts_refund,
     __client_accounts_settle_match,
+    __client_accounts_update_config,
 };
-
 
 declare_id!("9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W");
 
 #[program]
 pub mod solana_program {
     use super::*;
+
+    pub fn initialize_config(
+        ctx: Context<InitializeConfig>,
+        treasury_authority: Pubkey,
+    ) -> Result<()> {
+        instructions::initialize_config::handler(ctx, treasury_authority)
+    }
+
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        new_treasury_authority: Pubkey,
+    ) -> Result<()> {
+        instructions::update_config::handler(ctx, new_treasury_authority)
+    }
 
     pub fn initialize_match(
         ctx: Context<InitializeMatch>,

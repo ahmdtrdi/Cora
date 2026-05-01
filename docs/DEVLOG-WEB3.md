@@ -154,3 +154,72 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 - [ ] Web3 phase is complete. Handing over to FE and BE teams for Task 7.2 (Integration test: FE deposit → BE settle).
 - [ ] BE needs to update their `settlement.ts` to output the correct 65-byte `Uint8Array` payload instead of the old UTF-8 string format.
+
+---
+
+## Entry 6 — 2026-05-01: Security Hardening Phase 1 (Treasury Validation + Deposit Constraint)
+
+### The Change
+
+**Security audit conducted** — full code review of all 4 instructions, state, constants, and tests. Produced `smart_contract_security_audit.md` (v2). Key findings: 0 critical, 2 high, 5 medium, 4 low.
+
+**Smart contract hardening (7 files touched):**
+
+- `state.rs` — NEW: `ProgramConfig` account struct (admin + treasury_authority + bump, 73 bytes). Global config PDA for program-wide settings.
+- `constants.rs` — Added `CONFIG_SEED = b"config"` for ProgramConfig PDA derivation.
+- `error.rs` — Added `UnauthorizedAdmin` and `InvalidTreasury` error codes.
+- `instructions/initialize_config.rs` — NEW: One-time setup instruction. Creates config PDA, stores admin and treasury authority. PDA seed guarantees singleton.
+- `instructions/update_config.rs` — NEW: Admin-only instruction to rotate treasury authority without redeploying.
+- `instructions/settle_match.rs` — **[H-1 FIX]** Added `config` account (ProgramConfig PDA) and `token::authority = config.treasury_authority` constraint on treasury. Previously, any token account with the correct mint could be passed as treasury — now only token accounts owned by the configured treasury authority are accepted. Also replaced magic number `10_000` with `BASIS_POINTS_DIVISOR` constant.
+- `instructions/deposit_wager.rs` — **[H-2 FIX]** Added `constraint = match_state.token_mint == token_mint.key()` to validate the token mint passed matches the one stored in match state. This was already present in `settle_match` and `refund` but was missing here.
+- `instructions.rs` + `lib.rs` — Updated module re-exports and program instruction registration for the 2 new instructions.
+
+### The Reasoning
+
+1. **Config PDA over hardcode**: The treasury authority is stored in a PDA (`seeds = [b"config"]`) rather than hardcoded. This is the industry standard pattern (used by Jupiter, Raydium, etc.) because:
+   - No redeployment needed to rotate treasury wallet
+   - Scales naturally for multi-arena (one authority, many per-mint token accounts)
+   - PDA derivation is deterministic — anyone can verify the config address
+   - Admin-gated updates via `update_config` prevent unauthorized changes
+
+2. **`token::authority` over custom constraint**: Using Anchor's built-in `token::authority = config.treasury_authority` is preferred over a manual `constraint = treasury.owner == ...` because Anchor validates this during account deserialization, catching invalid accounts earlier in the pipeline and producing clearer error messages.
+
+3. **H-2 (deposit token_mint)**: This was an inconsistency — `settle_match` and `refund` both validated `match_state.token_mint == token_mint.key()`, but `deposit_wager` did not. While the vault's `token::mint` constraint provides indirect protection, explicit validation is defense-in-depth.
+
+### The Tech Debt
+
+- [ ] **Must run `anchor build` and `anchor deploy` before this takes effect on devnet**. See deployment steps below.
+- [ ] **Must call `initialize_config` once after redeployment** to create the config PDA with the treasury authority pubkey.
+- [ ] **Must copy updated IDL to `packages/solana-client/src/`** — the IDL now includes 2 new instructions (`initializeConfig`, `updateConfig`), 1 new account type (`ProgramConfig`), and 2 new error codes.
+- [ ] Existing tests in `test_settle_match.rs` need to be updated to include the `config` account. Tests will fail until this is done.
+- [ ] Phase 2 hardening items still pending: ed25519 instruction_index validation (M-2), minimum wager amount (M-3), account closing after finalization (M-1).
+
+
+---
+
+## Entry 7 — 2026-05-01: Test Overhaul — Shared Helpers + Edge Case Coverage
+
+### The Change
+
+**Test infrastructure refactored (6 files):**
+
+- `tests/common/mod.rs` — **NEW**: Consolidated all duplicated test helpers (`create_mint_account`, `create_token_account`, `get_token_balance`, PDA finders) into a shared module. Added high-level helpers: `do_init_config`, `do_init_match`, `do_deposit`, `setup_active_match`. This was duplicate code across 4 files (Rule of Three per AGENTS.md).
+- `tests/test_config.rs` — **NEW**: 4 tests for `initialize_config` and `update_config` (happy path, duplicate init, update, unauthorized update).
+- `tests/test_initialize.rs` — Refactored to use `common::*`. Same 3 tests, cleaner code.
+- `tests/test_deposit.rs` — Refactored + 3 new edge cases: both players deposit, unauthorized third-party deposit, double deposit prevention.
+- `tests/test_settle_match.rs` — **Fixed** compilation error (added `config` account). Added 2 new edge cases: re-settlement prevention, treasury substitution attack.
+- `tests/test_refund.rs` — Refactored + 1 new edge case: refund after settlement fails.
+
+**Total test count: 8 → 18 (+10 edge cases)**
+
+### The Reasoning
+
+1. **Shared helpers**: 4 test files each had identical copies of `create_mint_account`, `create_token_account`, etc. Per AGENTS.md "Don't Repeat Yourself" rule, these were consolidated into `tests/common/mod.rs`.
+2. **litesvm error type**: `litesvm::error::FailedTransactionError` does not exist in litesvm 0.10.0. Used `Result<(), String>` with `format!("{:?}", e)` since tests only need `is_ok()`/`is_err()` checks.
+3. **Edge cases chosen based on audit**: The new tests directly validate the security fixes from Entry 6 — treasury substitution, re-settlement, unauthorized access, and state machine integrity.
+
+### The Tech Debt
+
+- [x] ~~Tests for `settle_match` need `config` account~~ → Fixed
+- [ ] Tests do not yet verify exact custom error codes (behavior-focused, not error-code-focused)
+- [ ] No fuzz/property tests for state machine transitions (Phase 3)

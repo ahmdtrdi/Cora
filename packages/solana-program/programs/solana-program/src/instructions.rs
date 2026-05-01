@@ -1,3 +1,11 @@
+pub mod initialize_config;
+pub use initialize_config::InitializeConfig;
+pub(crate) use initialize_config::__client_accounts_initialize_config;
+
+pub mod update_config;
+pub use update_config::UpdateConfig;
+pub(crate) use update_config::__client_accounts_update_config;
+
 pub mod initialize_match;
 pub use initialize_match::InitializeMatch;
 pub(crate) use initialize_match::__client_accounts_initialize_match;
