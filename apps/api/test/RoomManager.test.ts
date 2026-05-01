@@ -189,15 +189,24 @@ describe('RoomManager', () => {
     });
 
     test('player reconnect clears disconnect timeout', () => {
+      // disconnectTimeout is only armed during 'playing' status
       manager.createRoom('room-reconnect');
       const mock1 = createMockWs();
+      const mock2 = createMockWs();
 
       manager.joinRoom('room-reconnect', 'playerA', mock1.ws);
+      manager.joinRoom('room-reconnect', 'playerB', mock2.ws);
 
-      // Simulate disconnect
-      manager.leaveRoom('room-reconnect', 'playerA');
+      // Both deposit to reach 'playing'
+      manager.handleMessage('room-reconnect', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sig' } });
+      manager.handleMessage('room-reconnect', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sig' } });
 
       const room = manager.getRoom('room-reconnect')!;
+      expect(room.status).toBe('playing');
+
+      // Simulate disconnect during playing
+      manager.leaveRoom('room-reconnect', 'playerA');
+
       const client = room.clients.get('playerA')!;
       expect(client.ws).toBeNull();
       expect(client.disconnectTimeout).not.toBeNull();
@@ -222,14 +231,23 @@ describe('RoomManager', () => {
   // ─── Leave Room ──────────────────────────────────────────────
 
   describe('leaveRoom', () => {
-    test('sets ws to null and starts disconnect timeout', () => {
+    test('sets ws to null and starts disconnect timeout during playing', () => {
+      // disconnectTimeout is only armed during 'playing' status
       manager.createRoom('room-leave');
-      const mockWs = createMockWs();
-      manager.joinRoom('room-leave', 'playerA', mockWs.ws);
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+      manager.joinRoom('room-leave', 'playerA', mock1.ws);
+      manager.joinRoom('room-leave', 'playerB', mock2.ws);
+
+      // Both deposit to reach 'playing'
+      manager.handleMessage('room-leave', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sig' } });
+      manager.handleMessage('room-leave', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sig' } });
+
+      const room = manager.getRoom('room-leave')!;
+      expect(room.status).toBe('playing');
 
       manager.leaveRoom('room-leave', 'playerA');
 
-      const room = manager.getRoom('room-leave')!;
       const client = room.clients.get('playerA')!;
       expect(client.ws).toBeNull();
       expect(client.disconnectTimeout).not.toBeNull();
