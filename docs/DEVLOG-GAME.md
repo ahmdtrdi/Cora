@@ -109,3 +109,46 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 
 **Tech Debt:**
 - The `POST /match` endpoint still uses HTTP long-polling, which is inherently fragile with reverse proxies. A more robust approach would be to return `{ status: 'queued' }` immediately and notify via WebSocket when a match is found. This is deferred for now since the resilience layers mitigate the issue.
+
+---
+
+## 7. Bugfix — Deposit Freeze & Engine Crash (2026-05-01)
+
+**The Bug:**
+After both players deposited, the room would freeze and then get cancelled by a shot clock. Server logs showed `TypeError: undefined is not an object (evaluating 'player.address')` in `GameEngine.toPlayerState`.
+
+**Root Cause (3 interlinked issues):**
+1. **`allDeposited` checked `room.playerMeta.values()`** — which only contains players who connected via WebSocket (`joinRoom` populates it). If only 1 player connected, the check trivially passed with a single `true` entry.
+2. **`initializeEngine` used `room.clients.keys()`** as the player address list — with only 1 client, the `GameEngine` was created with a 1-element array despite expecting a tuple of 2. The opponent lookup then returned `undefined`, crashing `toPlayerState`.
+3. **No guard for 2-player connectivity** — the game could start before both WebSocket connections were established.
+
+**The Fix:**
+*Files touched:* `apps/api/src/managers/RoomManager.ts`
+
+1. `allDeposited` now explicitly checks `room.playerA` and `room.playerB` deposits, not an arbitrary iteration of `playerMeta`.
+2. `initializeEngine` now uses `[room.playerA, room.playerB]` (the authoritative role assignments from matchmaking), not `room.clients.keys()`.
+3. Added a `room.clients.size < 2` guard before starting the engine.
+4. Added a catch-up check in `joinRoom`: when the second player finally connects and both have already deposited, the game starts immediately.
+
+**Tech Debt:**
+- None introduced. This was a correctness fix that made the deposit flow resilient to connection timing.
+
+---
+
+## 8. Settlement — Graceful Skip Without RPC (2026-05-01)
+
+**The Bug:**
+After a match ended, the server spammed noisy retry errors and full stack traces trying to submit an on-chain settlement transaction to `http://127.0.0.1:8899` — a local Solana validator that wasn't running.
+
+**Root Cause:**
+No `.env` file existed (only `.env.example`), so `SOLANA_RPC_URL` was undefined and the fallback `http://127.0.0.1:8899` was unreachable. The `withRetry` helper tried 3 times before printing a massive error, even though the game itself was unaffected.
+
+**The Fix:**
+*Files touched:* `apps/api/src/utils/settlement.ts`
+
+- Added `hasExplicitRpc` flag that checks if `SOLANA_RPC_URL` is set in the environment.
+- `submitSettlementTransaction` now returns `'SKIPPED_NO_RPC'` immediately when no RPC is configured, with a clean one-line log.
+- The server startup log now indicates when the default (unconfigured) RPC is being used.
+
+**Tech Debt:**
+- When ready for mainnet/devnet testing, create `apps/api/.env` with `SOLANA_RPC_URL=https://api.devnet.solana.com` to enable real on-chain settlement.

@@ -440,6 +440,21 @@ export class RoomManager {
       console.log(`Room ${roomId} has 2 players. Transitioning to depositing!`);
     }
 
+    // If both players already deposited but the game didn't start (because a WebSocket wasn't
+    // connected yet), start now that we have both connections.
+    if (room.status === 'depositing' && room.clients.size === 2 && room.playerA && room.playerB) {
+      const metaA = room.playerMeta.get(room.playerA);
+      const metaB = room.playerMeta.get(room.playerB);
+      if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false)) {
+        for (const t of room.depositTimeouts.values()) clearTimeout(t);
+        room.depositTimeouts.clear();
+        room.status = 'playing';
+        console.log(`Room ${roomId}: Late join triggered game start — both already deposited!`);
+        this.initializeEngine(room);
+        return; // broadcastGameState is called inside initializeEngine
+      }
+    }
+
     this.broadcastGameState(room);
   }
 
@@ -522,9 +537,19 @@ export class RoomManager {
       // Fall through to allDeposited check — B may have already deposited
     }
 
-    // Both players have now deposited — start the game
-    const allDeposited = Array.from(room.playerMeta.values()).every(p => p.hasDeposited);
+    // Both players must be assigned, connected, AND have deposited before starting
+    if (!room.playerA || !room.playerB) return;
+    const metaA = room.playerMeta.get(room.playerA);
+    const metaB = room.playerMeta.get(room.playerB);
+    const allDeposited = (metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false);
+
     if (allDeposited && room.status === 'depositing') {
+      // Ensure both players are actually WebSocket-connected
+      if (room.clients.size < 2) {
+        console.log(`Room ${room.id}: Both deposited but only ${room.clients.size} player(s) connected. Waiting for both.`);
+        return;
+      }
+
       for (const t of room.depositTimeouts.values()) clearTimeout(t);
       room.depositTimeouts.clear();
 
@@ -537,7 +562,12 @@ export class RoomManager {
   // ─── Engine Initialization ────────────────────────────────────
 
   private initializeEngine(room: Room) {
-    const addresses = Array.from(room.clients.keys()) as [string, string];
+    if (!room.playerA || !room.playerB) {
+      console.error(`Room ${room.id} missing player assignments. Cannot start.`);
+      return;
+    }
+
+    const addresses: [string, string] = [room.playerA, room.playerB];
     const questions = loadQuestions();
 
     if (questions.length === 0) {
