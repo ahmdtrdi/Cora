@@ -1,6 +1,7 @@
 
 pub const MATCH_SEED: &[u8] = b"match";
 pub const VAULT_SEED: &[u8] = b"vault";
+pub const CONFIG_SEED: &[u8] = b"config";
 
 pub const DEPOSIT_TIMEOUT: i64 = 15;      // 15 seconds to deposit
 pub const MATCH_TIMEOUT: i64 = 600;       // 10 minutes for active match
