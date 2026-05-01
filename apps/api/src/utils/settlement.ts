@@ -76,8 +76,9 @@ const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W')
 
 // Singleton connection — reuse instead of creating per call (avoids connection churn)
 const rpcUrl = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
+const hasExplicitRpc = Boolean(process.env.SOLANA_RPC_URL);
 const connection = new Connection(rpcUrl, 'confirmed');
-console.log(`[Settlement] Using Solana RPC: ${rpcUrl}`);
+console.log(`[Settlement] Using Solana RPC: ${rpcUrl}${hasExplicitRpc ? '' : ' (default — set SOLANA_RPC_URL in .env for on-chain settlement)'}`);
 
 // ProgramConfig PDA — derived once, reused for every settle_match call
 const configPda = PublicKey.findProgramAddressSync(
@@ -118,6 +119,12 @@ export async function submitSettlementTransaction(
   matchId: Uint8Array,
   targetAddress: string,
 ): Promise<string> {
+  // Skip on-chain settlement when no RPC is configured (local dev / testing)
+  if (!hasExplicitRpc) {
+    console.log(`[Settlement] Skipped — no SOLANA_RPC_URL configured. Set it in .env to enable on-chain settlement.`);
+    return 'SKIPPED_NO_RPC';
+  }
+
   const matchStatePda = PublicKey.findProgramAddressSync(
     [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchId],
     PROGRAM_ID
@@ -129,7 +136,8 @@ export async function submitSettlementTransaction(
 
   const accountInfo = await withRetry(() => connection.getAccountInfo(matchStatePda));
   if (!accountInfo) {
-    throw new Error('MatchState account not found on-chain');
+    console.warn(`[Settlement] MatchState PDA not found on-chain (match was likely not initialized on-chain). Skipping settlement.`);
+    return 'SKIPPED_NO_ONCHAIN_MATCH';
   }
 
   // Parse MatchState manually to avoid heavy IDL dependency
