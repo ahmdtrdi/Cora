@@ -215,3 +215,43 @@
 - **Memo-Only Transaction:** The POST handler currently builds a Memo instruction as a placeholder. The real flow should call `initialize_match` + `deposit_wager` on the Anchor escrow program once the Web3 team's IDL is stable. This is the next step for wiring the Blink → on-chain escrow pipeline.
 - **Icon URL:** We're using a generic Arweave-hosted image. The Designer should provide a branded CORA challenge card image and we should update the `iconUrl` constant.
 - **Dialect Registry:** For the Blink to auto-unfurl on X/Twitter, we need to register the domain at [dial.to/register](https://dial.to/register). Until then, the Blink only works via [dial.to](https://dial.to) interstitial or direct Action URL (`solana-action:https://...`).
+
+## 2026-05-01 - Hybrid Matchmaking & Blinks: Full Phase 1-4 Implementation
+
+**The Change:**
+
+- **`packages/shared-types/src/websocket.ts`:**
+  - Added `MatchFoundData` interface (`roomId`, `role: 'playerA' | 'playerB'`, `opponentAddress`).
+  - Added four new `ServerToClientEvents`: `matchFound`, `matchFoundWaiting`, `depositUnlocked`, `opponentFailedDeposit`.
+
+- **`apps/api/src/managers/RoomManager.ts`:**
+  - Extended `Room` interface with: `roomType`, `playerA`, `playerB`, `playerBUnlocked`, `tokenMint`, `wagerAmount`, `depositTimeouts`.
+  - Added `DEPOSIT_TIMEOUT_MS = 20_000` constant (the "shot clock").
+  - Added `createPrivateRoom(playerAPubkey, tokenMint, wagerAmount)`: creates a `depositing` room for Blinks/private invites, stores token config server-side, arms Player A's 20s shot clock immediately.
+  - Added `joinPrivateRoom(playerBPubkey, roomId)`: validates room, assigns Player B, returns a result code (`ok | not_found | full | cancelled`) for clean HTTP error mapping.
+  - Added `cancelRoom(roomId, innocentAddress?)`: clears all shot clocks, emits `opponentFailedDeposit` to the innocent player, re-queues them at the front of the public matchmaking queue.
+  - Added `armDepositTimeout(room, address)`: private helper that fires `cancelRoom` after 20s if `confirmDeposit` is not received.
+  - Updated `queueMatch()`: when pairing two players, assigns `playerA` (the waiting player) and `playerB` (the incoming player), transitions room to `depositing`, arms Player A's shot clock.
+  - Updated `handleDeposit()`: sequential unlock model — after Player A deposits, clears their shot clock, sends `depositUnlocked` to Player B, arms Player B's 20s shot clock. Only transitions to `playing` after both confirm.
+  - Updated `leaveRoom()`: the 10s forfeit timer is now **only armed during `playing`**. A disconnect during `depositing` triggers an immediate `cancelRoom` instead (the shot clock would fire anyway, but we cancel eagerly to free the opponent sooner).
+
+- **`apps/api/src/index.ts`:**
+  - Changed `actionsRouter` from a static import to a `createActionsRouter(roomManager)` factory call so the Blink handler shares the live `RoomManager` instance.
+  - Added `POST /match/private` endpoint: accepts `{ address, tokenMint, wagerAmount }`, calls `createPrivateRoom`, returns `{ roomId, blinkUrl }`. `tokenMint` and `wagerAmount` are never in the URL — only in server memory.
+
+- **`apps/api/src/routes/actions.ts`:**
+  - Fully rewrote as a factory function `createActionsRouter(roomManager)`.
+  - **GET `/api/actions/challenge?roomId=<id>`**: when `roomId` is present, checks room state — returns `ActionError` for dead/cancelled/full rooms, returns targeted single-button Blink metadata for valid open rooms.
+  - **POST `/api/actions/challenge?roomId=<id>`**: calls `joinPrivateRoom`, maps result codes to HTTP status codes, then builds the **real Anchor `deposit_wager` instruction** — derives `matchState` and `vault` PDAs from `ESCROW_CONSTANTS` seeds, derives the depositor's ATA via `getAssociatedTokenAddressSync`, hand-encodes the discriminator `[234, 73, 235, 136, 168, 103, 239, 207]`, serializes the `Transaction` as base64. The Memo stub is deleted.
+
+**The Reasoning:**
+- **Spoofing Prevention:** `tokenMint` and `wagerAmount` are locked into the `Room` at creation time (`POST /match/private`) and read back by the Blink handler directly from server state. This prevents a malicious actor from crafting a Blink URL with a different token mint or zero wager to drain a different vault.
+- **Sequential Deposit Model:** The original simultaneous-deposit approach had a Solana race condition — both players could try to sign their transactions at the same moment, but only one can be the `initialize_match` initiator. The sequential model (A initializes + deposits first, B deposits after receiving `depositUnlocked`) matches the on-chain contract's `WaitingDeposit` state machine exactly.
+- **Shot Clock as Safety Net:** The 20s deposit timeout prevents a room from being held open indefinitely if a player drops their wallet or navigates away after being paired. The innocent player is immediately re-queued at the front so they don't lose their place.
+- **`leaveRoom` Gating:** Previously the 10s forfeit timer fired regardless of game state, which meant a player who closed the tab during the deposit screen would trigger a `forfeitMatch` call that tries to run the settlement oracle on a game that never started. The gate to `playing` prevents that.
+
+**The Tech Debt:**
+- **`queueMatch` role assignment**: The sequential model emits `matchFound` / `matchFoundWaiting` via the WebSocket connection that exists *after* the HTTP `/match` response. The current implementation relies on the FE immediately connecting the WebSocket after receiving `roomId` from `POST /match`. If the WS connects late, Player B could miss the `matchFoundWaiting` event. A `broadcastGameState` on WS open will catch them up, but the FE team should also handle a `gameStateUpdate` with `status: 'depositing'` and no deposit tx yet as the "waiting" signal.
+- **Re-queued player WS**: When `cancelRoom` re-queues the innocent player, the resolve closure uses the room's client map which is about to be deleted. The FE will need to call `POST /match` again (new HTTP request) to properly re-enter the queue; the re-queue in `cancelRoom` is a best-effort convenience for same-session re-pairing, not a hard guarantee.
+- **`winnerAddress` typo in `settlement.ts:167`**: Pre-existing bug — `winnerAddress` should be `targetAddress`. Flagged for BE to fix separately.
+
