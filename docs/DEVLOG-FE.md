@@ -1045,3 +1045,33 @@
 
 ### The Tech Debt
 - Stage transition timings are currently fixed constants in FE and not synchronized with backend milestone events yet.
+
+## 2026-04-30 - Match Entry Polish (Timer/Rounds, Real Opponent Identity, No Double Deposit, Requeue Recovery)
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - supports `resumeQueue=1` deep-link recovery,
+  - preloads `arena` + `scientist` from query,
+  - auto-resumes queue from character-select when returning from failed `/play` entry.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - removed fake/static opponent scientist + mock wallet text,
+  - pushes `/play` with `scientist` and pre-signed `depositSig` query params after successful signing.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added live match clock (`mm:ss`) from socket timer,
+  - added round HUD (`Round X/3`) that starts at round 1 and advances from `roundsWon`,
+  - removed question ID from question modal and post-match outcome list,
+  - shows real opponent wallet address from live game state,
+  - removed in-`/play` duplicate deposit modal,
+  - auto-sends pre-signed deposit signature on `depositing` status,
+  - added no-refresh recovery CTA (`Return And Requeue`) when room connection fails.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- Team test feedback showed friction around duplicate deposit signing, missing match HUD context (time/round), mock-looking opponent info, and needing manual refresh after play-entry failure.
+- Passing `depositSig` from lobby signing to `/play` keeps deposit signing in one place and removes redundant wallet prompts.
+- Resume queue params (`resumeQueue`, `arena`, `scientist`) allow fast recovery paths without restarting browser state.
+
+### The Tech Debt
+- Opponent identity on the found screen is now neutral (non-mock) but still not full profile data; backend would need opponent metadata in matchmaking payload (or a pre-play room snapshot endpoint) for richer identity rendering before `/play`.
+- Round HUD currently assumes best-of-3 (`2 rounds to win`) from current game logic constants; if this becomes configurable, FE should read it from shared config/event payload.
