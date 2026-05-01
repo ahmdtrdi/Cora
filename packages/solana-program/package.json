@@ -1,4 +1,6 @@
 {
+  "name": "solana-program",
+  "version": "1.0.0",
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",

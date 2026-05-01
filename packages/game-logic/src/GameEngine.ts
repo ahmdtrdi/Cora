@@ -36,7 +36,7 @@ export class GameEngine {
   static readonly MATCH_DURATION_MS = 300_000;          // 5 minutes
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
   static readonly ROUNDS_TO_WIN = 2;
-  static readonly BASE_DAMAGE = 10;
+  static readonly BASE_DAMAGE = 50;
   static readonly BASE_HEAL = 10;
   static readonly STARTING_HEALTH = 100;
   static readonly HAND_SIZE = 5;
@@ -56,6 +56,7 @@ export class GameEngine {
   private started = false;
   private finished = false;
   private matchQueue: EngineCard[] = [];
+  private currentRound: number = 1;
 
   // ─── Events ───────────────────────────────────────────────────
   private listeners: Map<string, Function[]> = new Map();
@@ -71,7 +72,7 @@ export class GameEngine {
     // Initialize both players
     for (const address of playerAddresses) {
       // Both players start with a copy of the first 5 cards
-      const hand = this.matchQueue.slice(0, GameEngine.HAND_SIZE).map(c => ({...c}));
+      const hand = this.matchQueue.slice(0, GameEngine.HAND_SIZE).map(c => ({ ...c }));
       this.players.set(address, {
         address,
         health: GameEngine.STARTING_HEALTH,
@@ -110,8 +111,8 @@ export class GameEngine {
 
     if (forfeitAddress) {
       const winnerAddress = this.playerAddresses.find(a => a !== forfeitAddress)!;
-      this.emit('gameOver', { 
-        winnerAddress, 
+      this.emit('gameOver', {
+        winnerAddress,
         reason: 'forfeit',
         antiCheatVerdicts: this.antiCheat.getVerdicts()
       });
@@ -150,16 +151,16 @@ export class GameEngine {
 
     const now = Date.now();
     const lastPlay = player.lastPlayTimestamp || 0;
-    
+
     // Check cooldown but don't return immediately, log to anti-cheat first
     const isCooldownHit = now - lastPlay < 500;
-    
+
     if (isCooldownHit) {
       // Rate limit: 500ms cooldown
       this.antiCheat.recordPlay(playerAddress, false, true);
       return this.failResult(playerAddress, opponentAddress);
     }
-    
+
     player.lastPlayTimestamp = now;
 
     // Find the card in the player's hand
@@ -239,10 +240,10 @@ export class GameEngine {
         this.finished = true;
         this.clearTimer();
         const verdicts = this.antiCheat.getVerdicts();
-        this.emit('gameOver', { 
-          winnerAddress: playerAddress, 
+        this.emit('gameOver', {
+          winnerAddress: playerAddress,
           reason: 'hp_zero',
-          antiCheatVerdicts: verdicts 
+          antiCheatVerdicts: verdicts
         });
       } else {
         this.emit('roundOver', { winnerAddress: playerAddress, reason: 'hp_zero' });
@@ -273,6 +274,7 @@ export class GameEngine {
    * Reset character states to 'stay'. Called by caller (e.g. RoomManager) after animations.
    */
   resetRound(): void {
+    this.currentRound += 1;
     this.remainingMs = GameEngine.MATCH_DURATION_MS;
     this.phase = 'normal';
     for (const player of this.players.values()) {
@@ -314,6 +316,8 @@ export class GameEngine {
       hand: this.toClientCards(player.hand),
       timer: this.getTimerState(),
       damageLog: [...this.damageLog],
+      currentRound: this.currentRound,
+      roundsToWin: GameEngine.ROUNDS_TO_WIN,
     };
   }
 
@@ -349,6 +353,24 @@ export class GameEngine {
       health[addr] = state.health;
     }
     return health;
+  }
+
+  /**
+   * Get rounds won for all players.
+   */
+  getRoundsWon(): Record<string, number> {
+    const rounds: Record<string, number> = {};
+    for (const [addr, state] of this.players) {
+      rounds[addr] = state.roundsWon;
+    }
+    return rounds;
+  }
+
+  /**
+   * Get current round number (1-based).
+   */
+  getCurrentRound(): number {
+    return this.currentRound;
   }
 
   /**
@@ -420,15 +442,15 @@ export class GameEngine {
         const winnerPlayer = this.players.get(winner);
         if (winnerPlayer) winnerPlayer.roundsWon += 1;
       }
-      
+
       const p1 = this.players.get(this.playerAddresses[0])!;
       const p2 = this.players.get(this.playerAddresses[1])!;
-      
+
       if (p1.roundsWon >= GameEngine.ROUNDS_TO_WIN || p2.roundsWon >= GameEngine.ROUNDS_TO_WIN) {
         this.finished = true;
         this.clearTimer();
-        this.emit('gameOver', { 
-          winnerAddress: winner!, 
+        this.emit('gameOver', {
+          winnerAddress: winner!,
           reason: 'time_up',
           antiCheatVerdicts: this.antiCheat.getVerdicts()
         });
@@ -478,6 +500,7 @@ export class GameEngine {
       baseHealth: player.health,
       characterState: player.characterState,
       score: player.score,
+      roundsWon: player.roundsWon,
     };
   }
 

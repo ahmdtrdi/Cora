@@ -55,6 +55,10 @@ export interface GameState {
   hand: Card[];
   timer: TimerState;
   damageLog: DamageEvent[];
+  /** Current round number (1-based) */
+  currentRound: number;
+  /** Number of rounds needed to win the match */
+  roundsToWin: number;
 }
 
 // ─── Card Countdown Pipeline Types ────────────────────────────
@@ -77,6 +81,17 @@ export interface ScoreUpdateData {
   opponentScore: number;
   playerHealth: number;
   opponentHealth: number;
+}
+
+export interface RoundOverData {
+  /** Address of the player who won this round */
+  winnerAddress: string | null;
+  /** Why the round ended */
+  reason: 'hp_zero' | 'time_up';
+  /** What round just finished (1-based) */
+  roundNumber: number;
+  /** Rounds won by each player after this round */
+  roundsWon: Record<string, number>;
 }
 
 // Messages sent from Client -> Server
@@ -105,6 +120,7 @@ export type ServerToClientEvents = {
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
   phaseChange: (phase: GamePhase) => void;
+  roundOver: (data: RoundOverData) => void;
   playCardResult: (result: { correct: boolean; damage: number; heal: number; multiplier: number; cardType: CardType }) => void;
   cardCountdown: (data: CardCountdownData) => void;
   cardExpired: (data: CardExpiredData) => void;
