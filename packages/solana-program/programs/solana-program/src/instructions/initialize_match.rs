@@ -47,10 +47,7 @@ pub struct InitializeMatch<'info> {
     #[account(mut)]
     pub player_a: Signer<'info>,
 
-    /// CHECK: player_b pubkey stored for later validation during deposit
     pub player_b: UncheckedAccount<'info>,
-
-    /// Token mint — pakai InterfaceAccount untuk support Token & Token-2022
     pub token_mint: InterfaceAccount<'info, Mint>,
 
     #[account(
@@ -62,7 +59,6 @@ pub struct InitializeMatch<'info> {
     )]
     pub match_state: Account<'info, MatchState>,
 
-    /// Vault — pakai InterfaceAccount untuk support Token & Token-2022
     #[account(
         init,
         payer = player_a,
