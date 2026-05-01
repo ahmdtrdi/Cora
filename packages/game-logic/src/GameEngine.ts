@@ -61,8 +61,8 @@ export class GameEngine {
   // ─── Events ───────────────────────────────────────────────────
   private listeners: Map<string, Function[]> = new Map();
 
-  constructor(playerAddresses: [string, string], questions: SchemaQuestion[]) {
-    this.playerAddresses = playerAddresses;
+  constructor(players: [{ address: string; characterId: string }, { address: string; characterId: string }], questions: SchemaQuestion[]) {
+    this.playerAddresses = [players[0].address, players[1].address];
     this.dealer = new QuestionDealer(questions);
     this.antiCheat = new AntiCheatAnalyzer();
 
@@ -70,17 +70,18 @@ export class GameEngine {
     this.matchQueue = this.dealer.dealHand(100);
 
     // Initialize both players
-    for (const address of playerAddresses) {
+    for (const p of players) {
       // Both players start with a copy of the first 5 cards
       const hand = this.matchQueue.slice(0, GameEngine.HAND_SIZE).map(c => ({ ...c }));
-      this.players.set(address, {
-        address,
+      this.players.set(p.address, {
+        address: p.address,
         health: GameEngine.STARTING_HEALTH,
         score: 0,
         roundsWon: 0,
         hand,
         characterState: 'stay',
         queueIndex: GameEngine.HAND_SIZE, // Next card to draw is at index 5
+        characterId: p.characterId,
       });
     }
   }
@@ -501,6 +502,7 @@ export class GameEngine {
       characterState: player.characterState,
       score: player.score,
       roundsWon: player.roundsWon,
+      characterId: player.characterId,
     };
   }
 

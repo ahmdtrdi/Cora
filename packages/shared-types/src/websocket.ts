@@ -9,6 +9,7 @@ export interface PlayerState {
   characterState: CharacterState;
   score: number;
   roundsWon: number;
+  characterId: string;
 }
 
 export interface TimerState {
