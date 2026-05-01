@@ -1,9 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
-    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
+    close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
+    TransferChecked,
 };
 use crate::constants::*;
 use crate::error::CoraError;
+use crate::events::MatchSettledEvent;
 use crate::state::{MatchState, MatchStatus, ProgramConfig};
 use solana_instructions_sysvar::{
     load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
@@ -98,7 +100,7 @@ pub fn handler(
                     from:      ctx.accounts.vault.to_account_info(),
                     mint:      ctx.accounts.token_mint.to_account_info(),
                     to:        ctx.accounts.treasury.to_account_info(),
-                    authority: match_state_info,
+                    authority: match_state_info.clone(),
                 },
                 seeds,
             ),
@@ -139,7 +141,7 @@ pub fn handler(
                     from:      ctx.accounts.vault.to_account_info(),
                     mint:      ctx.accounts.token_mint.to_account_info(),
                     to:        ctx.accounts.treasury.to_account_info(),
-                    authority: match_state_info,
+                    authority: match_state_info.clone(),
                 },
                 seeds,
             ),
@@ -150,7 +152,24 @@ pub fn handler(
         msg!("Match penalized! Cheater: {}", target);
     }
 
-    ctx.accounts.match_state.status = MatchStatus::Settled;
+    emit!(MatchSettledEvent {
+        match_id,
+        action,
+        target,
+    });
+
+    // Close the token vault and return rent to the caller
+    close_account(CpiContext::new_with_signer(
+        ctx.accounts.token_program.key(),
+        CloseAccount {
+            account: ctx.accounts.vault.to_account_info(),
+            destination: ctx.accounts.caller.to_account_info(),
+            authority: match_state_info,
+        },
+        seeds,
+    ))?;
+
+    msg!("Match state and vault closed. Rent returned to caller.");
 
     Ok(())
 }
@@ -219,7 +238,8 @@ pub struct SettleMatch<'info> {
         mut,
         seeds = [MATCH_SEED, match_state.match_id.as_ref()],
         bump = match_state.bump,
-        constraint = match_state.token_mint == token_mint.key() @ CoraError::InvalidTokenMint
+        constraint = match_state.token_mint == token_mint.key() @ CoraError::InvalidTokenMint,
+        close = caller
     )]
     pub match_state: Box<Account<'info, MatchState>>,
 

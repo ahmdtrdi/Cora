@@ -5,6 +5,7 @@ use anchor_spl::token_interface::{
 };
 use crate::constants::*;
 use crate::error::CoraError;
+use crate::events::WagerDepositedEvent;
 use crate::state::{MatchState, MatchStatus};
 
 pub fn handler(ctx: Context<DepositWager>) -> Result<()> {
@@ -51,6 +52,13 @@ pub fn handler(ctx: Context<DepositWager>) -> Result<()> {
         match_state.active_at = now;
         msg!("Both players deposited. Match is now ACTIVE!");
     }
+
+    emit!(WagerDepositedEvent {
+        match_id: match_state.match_id,
+        depositor,
+        amount: match_state.wager_amount,
+        match_active: match_state.status == MatchStatus::Active,
+    });
 
     Ok(())
 }

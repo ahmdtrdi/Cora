@@ -282,4 +282,27 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [x] ~~All Phase 2 security findings~~ → Fixed
 - [x] ~~All code quality findings~~ → Fixed
 - [ ] **IDL changed** — `rent` removed from `initialize_match`, `system_program` removed from `deposit_wager`. Must rebuild + redeploy + copy to `solana-client`.
-- [ ] Phase 3 items remain: account closing (M-1), Anchor events (L-3), version field (L-4)
+
+---
+
+## Entry 10 — 2026-05-01: Phase 3 (Account Closing, Events, Versioning)
+
+### The Change
+
+**Phase 3 implementation complete (7 files modified):**
+
+- `events.rs` — **[L-3]** Created new module containing Anchor events (`ConfigInitializedEvent`, `MatchInitializedEvent`, `MatchSettledEvent`, dll).
+- `instructions/*.rs` — Emitted corresponding events across all 6 instructions.
+- `state.rs` — **[L-4]** Added `version: u8` field to `ProgramConfig` and `MatchState`.
+- `settle_match.rs` & `refund.rs` — **[M-1]** Implemented account closing to prevent state bloat and rent leaks. `match_state` is now closed natively via Anchor's `close = caller` constraint, and the `vault` token account is closed via `anchor_spl::token_interface::close_account` CPI. Rent is returned to the caller.
+
+### The Reasoning
+
+1. **M-1 (Account Closing)**: Once a match is settled or refunded, the `MatchState` PDA and `Vault` token account are no longer needed. By closing them, we delete the data from Validator RAM (reducing state bloat) and refund the 0.002 SOL rent back to the user/server (preventing rent leaks). Any attempt to double-settle or refund a closed match will now fail automatically at the Anchor constraint level (`AccountNotInitialized`).
+2. **L-3 (Events)**: `msg!` logs are hard for backends to parse. Anchor `emit!` creates structured, typed events that our NestJS server can listen to via WebSockets efficiently.
+3. **L-4 (Versioning)**: Adding `version: u8` ensures we can safely upgrade data structures in the future without breaking existing accounts.
+
+### The Tech Debt
+
+- [x] ~~Phase 3 items remain: account closing (M-1), Anchor events (L-3), version field (L-4)~~ → Fixed
+- [ ] **IDL changed significantly** — Events added, account lengths changed. Backend must be updated to consume new IDL and listen to events.

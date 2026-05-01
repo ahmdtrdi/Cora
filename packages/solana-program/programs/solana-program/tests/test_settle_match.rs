@@ -81,6 +81,10 @@ fn test_settle_match_happy_path() {
     let winner_payout = total - fee;
     assert_eq!(get_token_balance(&mut svm, &am.treasury_token), fee);
     assert_eq!(get_token_balance(&mut svm, &am.player_a_token), 5_000_000 - WAGER_AMOUNT + winner_payout);
+
+    // Verify accounts are closed
+    assert!(svm.get_account(&am.match_pda).is_none(), "match_state should be closed");
+    assert!(svm.get_account(&am.vault_pda).is_none(), "vault should be closed");
 }
 
 #[test]
@@ -110,6 +114,10 @@ fn test_settle_match_cheater_penalty() {
 
     assert_eq!(get_token_balance(&mut svm, &am.treasury_token), WAGER_AMOUNT, "Treasury gets cheater's wager");
     assert_eq!(get_token_balance(&mut svm, &am.player_a_token), 5_000_000, "Honest player gets full refund");
+
+    // Verify accounts are closed
+    assert!(svm.get_account(&am.match_pda).is_none(), "match_state should be closed");
+    assert!(svm.get_account(&am.vault_pda).is_none(), "vault should be closed");
 }
 
 #[test]
