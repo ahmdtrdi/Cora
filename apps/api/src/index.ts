@@ -115,6 +115,7 @@ app.post('/match/private', async (c) => {
 app.get('/match/:roomId', upgradeWebSocket((c) => {
   const roomId = c.req.param('roomId');
   const address = c.req.query('address');
+  const characterId = c.req.query('characterId') || 'einstein'; // Default if not provided
 
   if (!roomId || !address) {
     return {
@@ -126,7 +127,7 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
 
   return {
     onOpen(event, ws: any) {
-      roomManager.joinRoom(roomId, address, ws);
+      roomManager.joinRoom(roomId, address, ws, characterId);
     },
     onMessage(event: MessageEvent) {
       try {
