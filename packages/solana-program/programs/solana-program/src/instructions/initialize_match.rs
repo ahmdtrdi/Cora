@@ -10,8 +10,7 @@ pub fn handler(
     wager_amount: u64,
     server_pubkey: Pubkey,  
 ) -> Result<()> {
-    // Validasi: wager tidak boleh 0
-    require!(wager_amount > 0, CoraError::InvalidWagerAmount);
+    require!(wager_amount >= MIN_WAGER, CoraError::InvalidWagerAmount);
 
     require!(
         ctx.accounts.player_a.key() != ctx.accounts.player_b.key(),
