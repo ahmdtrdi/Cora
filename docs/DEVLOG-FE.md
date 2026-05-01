@@ -1178,3 +1178,19 @@
 ### The Tech Debt
 - This is a UX-level guard only; true enforcement must remain backend-side.
 - Temporary role inference should be removed once backend sends authoritative role metadata for each player.
+
+## 2026-05-01 - Found-Phase Lock Visual + Timeout Tuning
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - lock-state sign button now uses an explicit gray background and muted text color (not text-only indicator),
+  - extended found-phase signing timeout from 15s to 30s.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- Team testing feedback requested clearer visual distinction for lock state to reduce confusion during sequential deposit wait.
+- A 30s window is more forgiving for real-wallet interaction latency and teammate coordination during match entry.
+
+### The Tech Debt
+- Timeout value is still hardcoded in FE; once BE timing is finalized, move to shared config/contract to prevent drift.

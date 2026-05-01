@@ -21,7 +21,7 @@ type OpponentFoundProps = {
 
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
-const AGREEMENT_TIMEOUT_SECONDS = 15;
+const AGREEMENT_TIMEOUT_SECONDS = 30;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -318,9 +318,13 @@ export function OpponentFound({
             className="frame-cut frame-cut-sm min-w-[210px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
             style={{
               border: `1px solid ${arena.frame}`,
-              background: signed ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.92)",
-              color: arena.frame,
-              opacity: signed ? 0.7 : 1,
+              background: isUxSignLocked
+                ? "rgba(214,214,208,0.96)"
+                : signed
+                  ? "rgba(255,255,255,0.72)"
+                  : "rgba(255,255,255,0.92)",
+              color: isUxSignLocked ? "#5f695f" : arena.frame,
+              opacity: signed ? 0.7 : isUxSignLocked ? 0.95 : 1,
             }}
           >
             {getButtonLabel()}
