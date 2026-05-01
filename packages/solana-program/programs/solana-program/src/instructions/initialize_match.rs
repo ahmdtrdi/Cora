@@ -47,6 +47,7 @@ pub struct InitializeMatch<'info> {
     #[account(mut)]
     pub player_a: Signer<'info>,
 
+    /// CHECK: player_b pubkey is only stored here for later validation during the deposit phase. No data is read or written.
     pub player_b: UncheckedAccount<'info>,
     pub token_mint: InterfaceAccount<'info, Mint>,
 
