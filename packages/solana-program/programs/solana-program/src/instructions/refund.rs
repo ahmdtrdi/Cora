@@ -1,9 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{
-    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
+    close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
+    TransferChecked,
 };
 use crate::constants::*;
 use crate::error::CoraError;
+use crate::events::MatchRefundedEvent;
 use crate::state::{MatchState, MatchStatus};
 
 pub fn handler(ctx: Context<Refund>) -> Result<()> {
@@ -77,7 +79,7 @@ pub fn handler(ctx: Context<Refund>) -> Result<()> {
                     from:      ctx.accounts.vault.to_account_info(),
                     mint:      ctx.accounts.token_mint.to_account_info(),
                     to:        ctx.accounts.player_b_token_account.to_account_info(),
-                    authority: match_state_info,
+                    authority: match_state_info.clone(),
                 },
                 seeds,
             ),
@@ -87,8 +89,22 @@ pub fn handler(ctx: Context<Refund>) -> Result<()> {
         msg!("Refunded player B: {}", wager_amount);
     }
 
-    ctx.accounts.match_state.status = MatchStatus::Refunded;
-    msg!("Match refunded after {} seconds", elapsed);
+    emit!(MatchRefundedEvent {
+        match_id,
+    });
+
+    // Close the token vault and return rent to the caller
+    close_account(CpiContext::new_with_signer(
+        ctx.accounts.token_program.key(),
+        CloseAccount {
+            account: ctx.accounts.vault.to_account_info(),
+            destination: ctx.accounts.caller.to_account_info(),
+            authority: match_state_info,
+        },
+        seeds,
+    ))?;
+
+    msg!("Match refunded after {} seconds. State and vault closed.", elapsed);
 
     Ok(())
 }
@@ -102,7 +118,8 @@ pub struct Refund<'info> {
         mut,
         seeds = [MATCH_SEED, match_state.match_id.as_ref()],
         bump = match_state.bump,
-        constraint = match_state.token_mint == token_mint.key() @ CoraError::InvalidTokenMint
+        constraint = match_state.token_mint == token_mint.key() @ CoraError::InvalidTokenMint,
+        close = caller
     )]
     pub match_state: Box<Account<'info, MatchState>>,
 

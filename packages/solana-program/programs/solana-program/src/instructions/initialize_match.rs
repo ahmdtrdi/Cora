@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use crate::constants::*;
 use crate::error::CoraError;
+use crate::events::MatchInitializedEvent;
 use crate::state::{MatchState, MatchStatus};
 
 pub fn handler(
@@ -20,6 +21,7 @@ pub fn handler(
     let match_state = &mut ctx.accounts.match_state;
     let clock = Clock::get()?;
 
+    match_state.version            = 1;
     match_state.match_id           = match_id;
     match_state.player_a           = ctx.accounts.player_a.key();
     match_state.player_b           = ctx.accounts.player_b.key();
@@ -32,6 +34,14 @@ pub fn handler(
     match_state.active_at          = 0;
     match_state.player_a_deposited = false;
     match_state.player_b_deposited = false;
+
+    emit!(MatchInitializedEvent {
+        match_id,
+        player_a: match_state.player_a,
+        player_b: match_state.player_b,
+        token_mint: match_state.token_mint,
+        wager_amount,
+    });
 
     msg!("CORA: Match initialized");
     msg!("Player A: {}", match_state.player_a);
