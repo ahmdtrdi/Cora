@@ -5,11 +5,12 @@ import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
 import { RoomManager } from './managers/RoomManager';
 import { rateLimiter } from './middleware/rateLimiter';
-import { actionsRouter } from './routes/actions';
+import { createActionsRouter } from './routes/actions';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
 const roomManager = new RoomManager();
+const actionsRouter = createActionsRouter(roomManager);
 
 // Global Middlewares
 app.use('/*', cors()); // Enable CORS for all routes (frontend communication)
@@ -80,6 +81,34 @@ app.post('/match', async (c) => {
 
   const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
   return c.json({ roomId });
+});
+
+// Private room creation — for Blinks / direct challenge invites
+// tokenMint and wagerAmount are stored server-side; never exposed in the Blink URL
+app.post('/match/private', async (c) => {
+  let address: string;
+  let tokenMint: string;
+  let wagerAmount: number;
+
+  try {
+    const body = await c.req.json();
+    address = body.address;
+    tokenMint = body.tokenMint;
+    wagerAmount = body.wagerAmount;
+  } catch (e) {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!address || !tokenMint || !wagerAmount) {
+    return c.json({ error: 'address, tokenMint, and wagerAmount are required' }, 400);
+  }
+
+  const roomId = roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
+
+  const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 8080}`;
+  const blinkUrl = `${baseUrl}/api/actions/challenge?roomId=${roomId}`;
+
+  return c.json({ roomId, blinkUrl });
 });
 
 // WebSocket match route
