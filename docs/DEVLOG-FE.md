@@ -1104,3 +1104,27 @@
 ### The Tech Debt
 - Integration banner is currently non-dismissible and global; if it becomes noisy, move to a compact status chip with tooltip.
 - `/play` context guard currently enforces query params only; once shared match state storage exists, migrate guard to store/session source of truth.
+
+## 2026-05-01 - Matchmaking To Game Sync Fixes (Found-Phase Gating + Round Source Alignment)
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - replaced static `Matched Rival` with socket-backed opponent identity display (wallet + deterministic scientist profile selection),
+  - added found-phase room socket usage via `useMatchSocket` so deposit confirmation is sent to backend from lobby found-phase,
+  - changed play entry gating so FE routes to `/play` only when backend status is `playing` (both deposits confirmed),
+  - added retryable connection warning card in found-phase when room socket drops.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - passes full scientist roster into found-phase for opponent scientist presentation.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - switched round HUD source from FE-derived `roundsWon` math to backend-provided `gameState.currentRound` and `gameState.roundsToWin`.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- Team testing exposed a sync gap where one player could enter battle UI before the second player finished deposit confirmation.
+- Backend already owns authoritative room status transitions (`depositing -> playing`), so FE should wait for that transition before routing.
+- Round display desync was caused by FE-side inference; using server-emitted round fields keeps both players aligned.
+
+### The Tech Debt
+- Opponent scientist shown in found-phase is still a deterministic FE fallback derived from opponent address. True opponent-selected scientist should come from backend matchmaking/room metadata when available.
+- Found-phase uses room socket directly now; if lobby socket responsibilities expand, we should extract this into a dedicated pre-play session hook to avoid duplicate flow logic.

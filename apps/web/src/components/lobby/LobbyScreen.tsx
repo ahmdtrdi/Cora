@@ -419,6 +419,7 @@ export function LobbyScreen() {
           >
             <OpponentFound
               myScientist={selectedScientist}
+              scientists={SCIENTISTS}
               myWallet={walletAddr}
               roomId={matchedRoomId}
               arena={selectedArena}

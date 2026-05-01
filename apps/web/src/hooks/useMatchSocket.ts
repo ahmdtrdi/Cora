@@ -34,6 +34,10 @@ interface UseMatchSocketParams {
   address: string;
 }
 
+function trimTrailingSlash(input: string) {
+  return input.replace(/\/+$/, '');
+}
+
 export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [lastSocketError, setLastSocketError] = useState<string | null>(null);
@@ -51,13 +55,15 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [lastRoundOver, setLastRoundOver] = useState<(RoundOverData & { at: number }) | null>(null);
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
   const socketRef = useRef<WebSocket | null>(null);
+  const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
   const socketUrl = roomId && address
-    ? `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080'}/match/${roomId}?address=${encodeURIComponent(address)}`
+    ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}`
     : null;
 
   useEffect(() => {
     if (!socketUrl) return;
 
+    let isCleaningUp = false;
     const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
     queueMicrotask(() => {
@@ -143,6 +149,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     };
 
     ws.onclose = (event) => {
+      if (isCleaningUp || socketRef.current !== ws) return;
       setConnectionState('disconnected');
       setLastSocketIssueAt(Date.now());
       setLastSocketCloseInfo({
@@ -153,6 +160,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     };
 
     ws.onerror = (error) => {
+      if (isCleaningUp || socketRef.current !== ws) return;
       setConnectionState('error');
       setLastSocketIssueAt(Date.now());
       setLastSocketError('Socket connection failed. Check API server and room join.');
@@ -160,8 +168,11 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     };
 
     return () => {
+      isCleaningUp = true;
       ws.close();
-      socketRef.current = null;
+      if (socketRef.current === ws) {
+        socketRef.current = null;
+      }
     };
   }, [socketUrl, reconnectNonce]);
 
