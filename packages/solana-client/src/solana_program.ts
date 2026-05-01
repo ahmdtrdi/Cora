@@ -514,6 +514,86 @@ export type SolanaProgram = {
       ]
     }
   ],
+  "events": [
+    {
+      "name": "configInitializedEvent",
+      "discriminator": [
+        22,
+        167,
+        192,
+        50,
+        220,
+        20,
+        10,
+        71
+      ]
+    },
+    {
+      "name": "configUpdatedEvent",
+      "discriminator": [
+        245,
+        158,
+        129,
+        99,
+        60,
+        100,
+        214,
+        220
+      ]
+    },
+    {
+      "name": "matchInitializedEvent",
+      "discriminator": [
+        75,
+        64,
+        91,
+        119,
+        84,
+        109,
+        244,
+        34
+      ]
+    },
+    {
+      "name": "matchRefundedEvent",
+      "discriminator": [
+        15,
+        197,
+        212,
+        55,
+        111,
+        154,
+        77,
+        158
+      ]
+    },
+    {
+      "name": "matchSettledEvent",
+      "discriminator": [
+        56,
+        219,
+        213,
+        131,
+        79,
+        126,
+        13,
+        227
+      ]
+    },
+    {
+      "name": "wagerDepositedEvent",
+      "discriminator": [
+        54,
+        33,
+        14,
+        83,
+        152,
+        191,
+        114,
+        255
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -593,10 +673,121 @@ export type SolanaProgram = {
   ],
   "types": [
     {
+      "name": "configInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasuryAuthority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "configUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "newTreasuryAuthority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "matchInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "playerA",
+            "type": "pubkey"
+          },
+          {
+            "name": "playerB",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wagerAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "matchRefundedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "matchSettledEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "target",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "matchState",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
           {
             "name": "matchId",
             "type": {
@@ -683,6 +874,10 @@ export type SolanaProgram = {
         "kind": "struct",
         "fields": [
           {
+            "name": "version",
+            "type": "u8"
+          },
+          {
             "name": "admin",
             "type": "pubkey"
           },
@@ -693,6 +888,35 @@ export type SolanaProgram = {
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wagerDepositedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "matchActive",
+            "type": "bool"
           }
         ]
       }

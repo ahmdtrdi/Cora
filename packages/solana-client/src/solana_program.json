@@ -508,6 +508,86 @@
       ]
     }
   ],
+  "events": [
+    {
+      "name": "ConfigInitializedEvent",
+      "discriminator": [
+        22,
+        167,
+        192,
+        50,
+        220,
+        20,
+        10,
+        71
+      ]
+    },
+    {
+      "name": "ConfigUpdatedEvent",
+      "discriminator": [
+        245,
+        158,
+        129,
+        99,
+        60,
+        100,
+        214,
+        220
+      ]
+    },
+    {
+      "name": "MatchInitializedEvent",
+      "discriminator": [
+        75,
+        64,
+        91,
+        119,
+        84,
+        109,
+        244,
+        34
+      ]
+    },
+    {
+      "name": "MatchRefundedEvent",
+      "discriminator": [
+        15,
+        197,
+        212,
+        55,
+        111,
+        154,
+        77,
+        158
+      ]
+    },
+    {
+      "name": "MatchSettledEvent",
+      "discriminator": [
+        56,
+        219,
+        213,
+        131,
+        79,
+        126,
+        13,
+        227
+      ]
+    },
+    {
+      "name": "WagerDepositedEvent",
+      "discriminator": [
+        54,
+        33,
+        14,
+        83,
+        152,
+        191,
+        114,
+        255
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -587,10 +667,121 @@
   ],
   "types": [
     {
+      "name": "ConfigInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_treasury_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "player_a",
+            "type": "pubkey"
+          },
+          {
+            "name": "player_b",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchRefundedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchSettledEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "target",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "MatchState",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
           {
             "name": "match_id",
             "type": {
@@ -677,6 +868,10 @@
         "kind": "struct",
         "fields": [
           {
+            "name": "version",
+            "type": "u8"
+          },
+          {
             "name": "admin",
             "type": "pubkey"
           },
@@ -687,6 +882,35 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WagerDepositedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "match_active",
+            "type": "bool"
           }
         ]
       }
