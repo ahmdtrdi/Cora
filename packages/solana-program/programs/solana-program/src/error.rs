@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum CoraError {
-    #[msg("Wager amount must be greater than zero")]
+    #[msg("Wager amount must be greater than min_wager")]
     InvalidWagerAmount,
 
     #[msg("Player A and Player B cannot be the same")]
@@ -23,9 +23,6 @@ pub enum CoraError {
     #[msg("Match is not waiting for deposits")]
     NotWaitingDeposit,
 
-    #[msg("Invalid match status for this operation")]
-    InvalidMatchStatus,
-
     #[msg("Invalid action parameter")]
     InvalidAction,
 
@@ -38,17 +35,11 @@ pub enum CoraError {
     #[msg("Timeout has not been reached yet")]
     TimeoutNotReached,
 
-    #[msg("Match has not timed out yet")]
-    MatchNotTimedOut,
-
     #[msg("Token mint does not match match state")]
     InvalidTokenMint,
 
     #[msg("Match state is inconsistent for refund")]
     InvalidRefundState,
-
-    #[msg("Match has already been finalized")]
-    MatchAlreadyFinalized,
 
     #[msg("Only the admin can perform this action")]
     UnauthorizedAdmin,

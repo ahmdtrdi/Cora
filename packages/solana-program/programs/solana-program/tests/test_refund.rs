@@ -69,9 +69,9 @@ fn test_refund_waiting_deposit_timeout() {
     let res = send_tx(&mut svm, &[refund_ix.clone()], &player_a, &[&player_a]);
     assert!(res.is_err(), "Refund before timeout should fail");
 
-    // Advance clock past DEPOSIT_TIMEOUT (15s)
+    // Advance clock past DEPOSIT_TIMEOUT (30s)
     let mut clock = svm.get_sysvar::<Clock>();
-    clock.unix_timestamp += 20;
+    clock.unix_timestamp += 35;
     svm.set_sysvar(&clock);
 
     // After timeout — should succeed (use player_b as payer to change tx signature)

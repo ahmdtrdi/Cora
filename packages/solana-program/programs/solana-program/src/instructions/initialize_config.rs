@@ -2,9 +2,6 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::state::ProgramConfig;
 
-/// One-time setup: creates the global config PDA that stores the treasury
-/// authority. Only the deployer (payer) can call this, and the PDA seed
-/// ensures it can only ever exist once.
 pub fn handler(ctx: Context<InitializeConfig>, treasury_authority: Pubkey) -> Result<()> {
     let config = &mut ctx.accounts.config;
     config.admin = ctx.accounts.admin.key();

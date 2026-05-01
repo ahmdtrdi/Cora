@@ -10,8 +10,7 @@ pub fn handler(
     wager_amount: u64,
     server_pubkey: Pubkey,  
 ) -> Result<()> {
-    // Validasi: wager tidak boleh 0
-    require!(wager_amount > 0, CoraError::InvalidWagerAmount);
+    require!(wager_amount >= MIN_WAGER, CoraError::InvalidWagerAmount);
 
     require!(
         ctx.accounts.player_a.key() != ctx.accounts.player_b.key(),
@@ -48,10 +47,8 @@ pub struct InitializeMatch<'info> {
     #[account(mut)]
     pub player_a: Signer<'info>,
 
-    /// CHECK: player_b pubkey stored for later validation during deposit
+    /// CHECK: player_b pubkey is only stored here for later validation during the deposit phase. No data is read or written.
     pub player_b: UncheckedAccount<'info>,
-
-    /// Token mint — pakai InterfaceAccount untuk support Token & Token-2022
     pub token_mint: InterfaceAccount<'info, Mint>,
 
     #[account(
@@ -63,7 +60,6 @@ pub struct InitializeMatch<'info> {
     )]
     pub match_state: Account<'info, MatchState>,
 
-    /// Vault — pakai InterfaceAccount untuk support Token & Token-2022
     #[account(
         init,
         payer = player_a,
@@ -77,5 +73,4 @@ pub struct InitializeMatch<'info> {
 
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
 }

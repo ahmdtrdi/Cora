@@ -86,10 +86,6 @@ export type SolanaProgram = {
         },
         {
           "name": "tokenProgram"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -165,10 +161,7 @@ export type SolanaProgram = {
           "name": "playerB"
         },
         {
-          "name": "tokenMint",
-          "docs": [
-            "Token mint — pakai InterfaceAccount untuk support Token & Token-2022"
-          ]
+          "name": "tokenMint"
         },
         {
           "name": "matchState",
@@ -194,9 +187,6 @@ export type SolanaProgram = {
         },
         {
           "name": "vault",
-          "docs": [
-            "Vault — pakai InterfaceAccount untuk support Token & Token-2022"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -223,10 +213,6 @@ export type SolanaProgram = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
@@ -532,7 +518,7 @@ export type SolanaProgram = {
     {
       "code": 6000,
       "name": "invalidWagerAmount",
-      "msg": "Wager amount must be greater than zero"
+      "msg": "Wager amount must be greater than min_wager"
     },
     {
       "code": 6001,
@@ -566,56 +552,41 @@ export type SolanaProgram = {
     },
     {
       "code": 6007,
-      "name": "invalidMatchStatus",
-      "msg": "Invalid match status for this operation"
-    },
-    {
-      "code": 6008,
       "name": "invalidAction",
       "msg": "Invalid action parameter"
     },
     {
-      "code": 6009,
+      "code": 6008,
       "name": "invalidSignature",
       "msg": "Invalid settlement signature"
     },
     {
-      "code": 6010,
+      "code": 6009,
       "name": "invalidWinner",
       "msg": "Winner must be a match participant"
     },
     {
-      "code": 6011,
+      "code": 6010,
       "name": "timeoutNotReached",
       "msg": "Timeout has not been reached yet"
     },
     {
-      "code": 6012,
-      "name": "matchNotTimedOut",
-      "msg": "Match has not timed out yet"
-    },
-    {
-      "code": 6013,
+      "code": 6011,
       "name": "invalidTokenMint",
       "msg": "Token mint does not match match state"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "invalidRefundState",
       "msg": "Match state is inconsistent for refund"
     },
     {
-      "code": 6015,
-      "name": "matchAlreadyFinalized",
-      "msg": "Match has already been finalized"
-    },
-    {
-      "code": 6016,
+      "code": 6013,
       "name": "unauthorizedAdmin",
       "msg": "Only the admin can perform this action"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "invalidTreasury",
       "msg": "Treasury account does not belong to the configured authority"
     }
@@ -623,10 +594,6 @@ export type SolanaProgram = {
   "types": [
     {
       "name": "matchState",
-      "docs": [
-        "Per-match escrow state — created by `initialize_match`, finalized by",
-        "`settle_match` or `refund`."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -712,33 +679,19 @@ export type SolanaProgram = {
     },
     {
       "name": "programConfig",
-      "docs": [
-        "Global program configuration — initialized once by the deployer.",
-        "Stores admin authority and treasury authority for fee routing."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "admin",
-            "docs": [
-              "Admin who can update this config (typically the deployer)."
-            ],
             "type": "pubkey"
           },
           {
             "name": "treasuryAuthority",
-            "docs": [
-              "Authority that owns all treasury token accounts per arena.",
-              "Settlement validates `treasury.authority == treasury_authority`."
-            ],
             "type": "pubkey"
           },
           {
             "name": "bump",
-            "docs": [
-              "PDA bump seed for deterministic derivation."
-            ],
             "type": "u8"
           }
         ]

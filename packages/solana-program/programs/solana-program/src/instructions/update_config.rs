@@ -3,8 +3,6 @@ use crate::constants::*;
 use crate::error::CoraError;
 use crate::state::ProgramConfig;
 
-/// Allows the current admin to update the treasury authority.
-/// This enables rotating the treasury wallet without redeploying.
 pub fn handler(ctx: Context<UpdateConfig>, new_treasury_authority: Pubkey) -> Result<()> {
     let config = &mut ctx.accounts.config;
     config.treasury_authority = new_treasury_authority;

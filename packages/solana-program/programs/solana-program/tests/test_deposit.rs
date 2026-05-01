@@ -100,7 +100,6 @@ fn test_deposit_unauthorized_player_fails() {
             depositor: attacker.pubkey(), match_state: match_pda,
             depositor_token_account: attacker_tok.pubkey(), vault: vault_pda,
             token_mint: token_mint.pubkey(), token_program: TOKEN_PROGRAM_ID,
-            system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     let res = send_tx(&mut svm, &[ix], &attacker, &[&attacker]);
@@ -137,7 +136,6 @@ fn test_deposit_double_deposit_fails() {
             depositor: player_a.pubkey(), match_state: match_pda,
             depositor_token_account: pa_tok.pubkey(), vault: vault_pda,
             token_mint: token_mint.pubkey(), token_program: TOKEN_PROGRAM_ID,
-            system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     let res = send_tx(&mut svm, &[ix], &player_a, &[&player_a]);
