@@ -80,3 +80,32 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 
 **Tech Debt:**
 - We are currently using static, educated-guess thresholds for penalties (e.g., < 1500ms average response time is penalized). We need to review the logged data over the first few thousand matches to fine-tune these thresholds, eventually transitioning to an ML-based approach.
+
+---
+
+## 6. Bugfixes — Matchmaking & Round Timer (2026-05-01)
+
+**The Bugs:**
+1. **Matchmaking order-dependent failure:** When using port forwarding (public URL), the first player to enter the queue would silently drop out before the second player joined. Matches only worked if the friend entered first.
+2. **Round timer reset without round change:** When the 5-minute timer expired, the clock reset to 5:00 but the round number, health, and game state never updated on the frontend.
+
+**The Change:**
+
+*Files touched:* `packages/game-logic/src/GameEngine.ts`, `apps/api/src/managers/RoomManager.ts`
+
+**Bug 1 (Matchmaking):**
+- Root cause: `POST /match` used HTTP long-polling — the server held the request open until a match was found. Port forwarding proxies killed idle HTTP connections, firing the request's `AbortSignal` and removing the player from the queue before their opponent joined.
+- Fix: Added three resilience layers to `queueMatch()`:
+  1. **Room existence check:** If the player already has an active room (from a lost HTTP response), return it immediately.
+  2. **Duplicate queue check:** If the player is already queued (from a dropped connection), chain the new request's resolve to the existing entry instead of adding a duplicate.
+  3. **Server-side TTL:** Queue entries auto-expire after 5 minutes to prevent memory leaks from ghost entries.
+- Also cleaned up pre-existing dead imports (`MatchFoundData`, `CharacterState`, `Card`).
+
+**Bug 2 (Round Timer):**
+- Root cause: `resetRound()` reset the timer, health, and round number internally but never emitted a `stateUpdate` event. The `roundOver` event handler in `RoomManager` broadcast the game state *before* `resetRound()` was called, so the frontend received stale data.
+- Fix:
+  1. Reordered: `resetRound()` is now called *before* emitting `roundOver`, so the broadcasted state reflects the new round.
+  2. `resetRound()` now emits `stateUpdate` at the end, ensuring the frontend receives the updated round number, reset health, and reset timer.
+
+**Tech Debt:**
+- The `POST /match` endpoint still uses HTTP long-polling, which is inherently fragile with reverse proxies. A more robust approach would be to return `{ status: 'queued' }` immediately and notify via WebSocket when a match is found. This is deferred for now since the resilience layers mitigate the issue.
