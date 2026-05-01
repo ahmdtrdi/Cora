@@ -80,10 +80,6 @@
         },
         {
           "name": "token_program"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -159,10 +155,7 @@
           "name": "player_b"
         },
         {
-          "name": "token_mint",
-          "docs": [
-            "Token mint — pakai InterfaceAccount untuk support Token & Token-2022"
-          ]
+          "name": "token_mint"
         },
         {
           "name": "match_state",
@@ -188,9 +181,6 @@
         },
         {
           "name": "vault",
-          "docs": [
-            "Vault — pakai InterfaceAccount untuk support Token & Token-2022"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -217,10 +207,6 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
@@ -526,7 +512,7 @@
     {
       "code": 6000,
       "name": "InvalidWagerAmount",
-      "msg": "Wager amount must be greater than zero"
+      "msg": "Wager amount must be greater than min_wager"
     },
     {
       "code": 6001,
@@ -560,56 +546,41 @@
     },
     {
       "code": 6007,
-      "name": "InvalidMatchStatus",
-      "msg": "Invalid match status for this operation"
-    },
-    {
-      "code": 6008,
       "name": "InvalidAction",
       "msg": "Invalid action parameter"
     },
     {
-      "code": 6009,
+      "code": 6008,
       "name": "InvalidSignature",
       "msg": "Invalid settlement signature"
     },
     {
-      "code": 6010,
+      "code": 6009,
       "name": "InvalidWinner",
       "msg": "Winner must be a match participant"
     },
     {
-      "code": 6011,
+      "code": 6010,
       "name": "TimeoutNotReached",
       "msg": "Timeout has not been reached yet"
     },
     {
-      "code": 6012,
-      "name": "MatchNotTimedOut",
-      "msg": "Match has not timed out yet"
-    },
-    {
-      "code": 6013,
+      "code": 6011,
       "name": "InvalidTokenMint",
       "msg": "Token mint does not match match state"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "InvalidRefundState",
       "msg": "Match state is inconsistent for refund"
     },
     {
-      "code": 6015,
-      "name": "MatchAlreadyFinalized",
-      "msg": "Match has already been finalized"
-    },
-    {
-      "code": 6016,
+      "code": 6013,
       "name": "UnauthorizedAdmin",
       "msg": "Only the admin can perform this action"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "InvalidTreasury",
       "msg": "Treasury account does not belong to the configured authority"
     }
@@ -617,10 +588,6 @@
   "types": [
     {
       "name": "MatchState",
-      "docs": [
-        "Per-match escrow state — created by `initialize_match`, finalized by",
-        "`settle_match` or `refund`."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -706,33 +673,19 @@
     },
     {
       "name": "ProgramConfig",
-      "docs": [
-        "Global program configuration — initialized once by the deployer.",
-        "Stores admin authority and treasury authority for fee routing."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "admin",
-            "docs": [
-              "Admin who can update this config (typically the deployer)."
-            ],
             "type": "pubkey"
           },
           {
             "name": "treasury_authority",
-            "docs": [
-              "Authority that owns all treasury token accounts per arena.",
-              "Settlement validates `treasury.authority == treasury_authority`."
-            ],
             "type": "pubkey"
           },
           {
             "name": "bump",
-            "docs": [
-              "PDA bump seed for deterministic derivation."
-            ],
             "type": "u8"
           }
         ]
