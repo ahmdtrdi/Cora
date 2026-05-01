@@ -131,11 +131,13 @@ export function BattleScreen() {
     lastSocketIssueAt,
     gameState,
     settlementResult,
+    matchSummaryResult,
     matchInvalidated,
     lastDamageEvent,
     lastPlayResult,
     lastCardCountdown,
     lastCardExpired,
+    currentPhase,
     openCard,
     playCard,
     confirmDeposit,
@@ -154,12 +156,14 @@ export function BattleScreen() {
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [phaseToastVisible, setPhaseToastVisible] = useState(false);
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
   const lastProcessedExpiredAtRef = useRef(0);
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
+  const extraPointShownRef = useRef(false);
 
   const hand = gameState?.hand ?? EMPTY_HAND;
   const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
@@ -314,14 +318,15 @@ export function BattleScreen() {
   const timeoutCount = outcomes.filter((item) => item.outcome === "timeout").length;
   const wrongCount = outcomes.filter((item) => item.outcome === "wrong").length;
 
-  const settlementText = settlementResult
-    ? settlementResult.winner === player?.address
+  const winnerAddress =
+    settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
+  const settlementText = winnerAddress
+    ? winnerAddress === player?.address
       ? "You Win"
       : "You Lose"
     : matchInvalidated
       ? "Match Invalidated"
       : "Match Finished";
-  const winnerAddress = settlementResult?.winner ?? matchInvalidated?.winnerAddress ?? null;
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
@@ -367,6 +372,20 @@ export function BattleScreen() {
     confirmDeposit(preSignedDepositSig);
     depositConfirmedRef.current = true;
   }, [status, connectionState, preSignedDepositSig, confirmDeposit]);
+
+  useEffect(() => {
+    const phase = gameState?.timer?.phase ?? currentPhase;
+    if (phase !== "extra_point") return;
+    if (extraPointShownRef.current) return;
+
+    extraPointShownRef.current = true;
+    setPhaseToastVisible(true);
+    const timerId = setTimeout(() => {
+      setPhaseToastVisible(false);
+    }, 5000);
+    return () => clearTimeout(timerId);
+  }, [currentPhase, gameState?.timer?.phase]);
+
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
   if (lastSocketIssueAt) {
@@ -613,6 +632,16 @@ export function BattleScreen() {
         />
       )}
       <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
+        {phaseToastVisible && (
+          <div className="frame-cut px-3 py-2" style={{ border: "1px solid rgba(39,65,55,0.24)", background: "rgba(236,248,228,0.97)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#275d34]">
+              Extra Point Activated
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+              Phase changed. Card effects are now x2.
+            </p>
+          </div>
+        )}
         {visibleAlerts.map((alert) => (
           <div
             key={alert.id}
@@ -710,6 +739,19 @@ export function BattleScreen() {
               style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
             >
               {getStatusLabel(status)} - {connectionState}
+            </span>
+            <span
+              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              style={{
+                border: "1px solid rgba(39,65,55,0.2)",
+                background:
+                  (gameState?.timer?.phase ?? currentPhase) === "extra_point"
+                    ? "rgba(236,248,228,0.95)"
+                    : "rgba(255,255,255,0.9)",
+                color: (gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "#275d34" : "#274137",
+              }}
+            >
+              {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
             </span>
             <Link
               href={resumeQueueHref}

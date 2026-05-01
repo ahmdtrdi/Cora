@@ -1128,3 +1128,33 @@
 ### The Tech Debt
 - Opponent scientist shown in found-phase is still a deterministic FE fallback derived from opponent address. True opponent-selected scientist should come from backend matchmaking/room metadata when available.
 - Found-phase uses room socket directly now; if lobby socket responsibilities expand, we should extract this into a dedicated pre-play session hook to avoid duplicate flow logic.
+
+## 2026-05-01 - Match Sync Reliability Pass (Winner Mapping + Phase HUD + Deposit Flow UX)
+
+### The Change
+- Updated [useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts):
+  - hardened `matchResult` parsing to support two backend payload shapes currently emitted:
+    - settlement payload (`winner`, `matchId`, `settlementSignature`, `serverPublicKey`)
+    - summary payload (`winnerAddress`, `reason`, `finalScores`, `finalHealth`)
+  - added separate `matchSummaryResult` state so winner derivation no longer depends on a single payload shape,
+  - added socket event capture for `depositUnlocked` and `opponentFailedDeposit` timestamps.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - winner/result text now resolves from settlement payload OR summary payload OR invalidation payload (in that order),
+  - added a dedicated game phase badge near status (`Phase: Normal` / `Phase: Extra Point x2`),
+  - added one-time top-corner toast when phase switches to `extra_point`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - keeps deposit countdown running after local sign (so signed players still time out/requeue if room does not advance),
+  - reacts to `opponentFailedDeposit` by auto-returning to queue flow,
+  - improved sign button helper text to explain disabled/waiting reasons (wallet not connected, socket issue, waiting opponent).
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- Team test sessions exposed two consistency gaps:
+  - winner banner could show wrong outcome because backend currently emits multiple `matchResult` payload shapes,
+  - phase transitions (`normal` -> `extra_point`) were not explicit in HUD/feedback.
+- Deposit-phase UX needed clearer state signaling to reduce confusion around Phantom prompt timing and waiting behavior.
+
+### The Tech Debt
+- Opponent scientist identity remains a frontend fallback until backend adds `scientistId` in room/game payloads.
+- Sequential deposit role semantics are partially backend-driven (`depositUnlocked`), but FE still lacks an explicit authoritative role field from backend for strict role-gated button enablement.

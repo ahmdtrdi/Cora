@@ -61,6 +61,8 @@ export function OpponentFound({
     gameState,
     lastSocketCloseInfo,
     lastSocketError,
+    depositUnlockedAt,
+    opponentFailedDepositAt,
     confirmDeposit,
     reconnect,
   } = useMatchSocket({
@@ -91,8 +93,6 @@ export function OpponentFound({
       return;
     }
 
-    if (signed) return;
-
     if (secondsLeft <= 0) {
       onTimeout();
       return;
@@ -115,6 +115,14 @@ export function OpponentFound({
     signedDepositSignature,
     gameState?.status,
   ]);
+
+  useEffect(() => {
+    if (!opponentFailedDepositAt) return;
+    const timerId = setTimeout(() => {
+      onTimeout();
+    }, 1200);
+    return () => clearTimeout(timerId);
+  }, [opponentFailedDepositAt, onTimeout]);
 
   useEffect(() => {
     if (!signedDepositSignature) return;
@@ -169,6 +177,18 @@ export function OpponentFound({
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     return "Sign Deposit";
+  }
+
+  function getSignButtonHint() {
+    if (!wallet.publicKey) return "Connect Phantom wallet first.";
+    if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
+    if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
+    if (signingState === "signing") return "Confirm this transaction in Phantom.";
+    if (signingState === "waiting") {
+      if (depositUnlockedAt) return "Deposit signed. Waiting for opponent confirmation.";
+      return "Deposit signed. Waiting for room confirmation.";
+    }
+    return `Auto-cancel in ${secondsLeft}s if not signed.`;
   }
 
   return (
@@ -287,9 +307,7 @@ export function OpponentFound({
             </div>
           )}
           <p className="font-gabarito text-xs text-[#6b8274]">
-            {signed
-              ? "Deposit signed. Entering battle once both players are ready."
-              : `Auto-cancel in ${secondsLeft}s if not signed.`}
+            {getSignButtonHint()}
           </p>
           {(connectionState === "error" || connectionState === "disconnected") && (
             <div className="mt-2 frame-cut px-3 py-2" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
