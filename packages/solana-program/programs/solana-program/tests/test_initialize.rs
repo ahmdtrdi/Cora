@@ -59,7 +59,7 @@ fn test_initialize_match_zero_wager_fails() {
         solana_program::accounts::InitializeMatch {
             player_a: player_a.pubkey(), player_b: player_b.pubkey(),
             token_mint: token_mint.pubkey(), match_state: match_pda, vault: vault_pda,
-            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(), rent: RENT_SYSVAR_ID,
+            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     let res = send_tx(&mut svm, &[ix], &player_a, &[&player_a]);
@@ -87,7 +87,7 @@ fn test_initialize_match_same_player_fails() {
         solana_program::accounts::InitializeMatch {
             player_a: player_a.pubkey(), player_b: player_a.pubkey(),
             token_mint: token_mint.pubkey(), match_state: match_pda, vault: vault_pda,
-            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(), rent: RENT_SYSVAR_ID,
+            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     let res = send_tx(&mut svm, &[ix], &player_a, &[&player_a]);
@@ -117,7 +117,7 @@ fn test_initialize_match_below_min_wager_fails() {
         solana_program::accounts::InitializeMatch {
             player_a: player_a.pubkey(), player_b: player_b.pubkey(),
             token_mint: token_mint.pubkey(), match_state: match_pda, vault: vault_pda,
-            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(), rent: RENT_SYSVAR_ID,
+            token_program: TOKEN_PROGRAM_ID, system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     let res = send_tx(&mut svm, &[ix], &player_a, &[&player_a]);

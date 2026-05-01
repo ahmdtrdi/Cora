@@ -15,7 +15,6 @@ use {
 };
 
 pub const TOKEN_PROGRAM_ID: Pubkey = solana_pubkey::pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-pub const RENT_SYSVAR_ID: Pubkey = solana_pubkey::pubkey!("SysvarRent111111111111111111111111111111111");
 pub const INSTRUCTIONS_SYSVAR_ID: Pubkey = solana_pubkey::pubkey!("Sysvar1nstructions1111111111111111111111111");
 pub const MINT_ACCOUNT_LEN: usize = 82;
 pub const TOKEN_ACCOUNT_LEN: usize = 165;
@@ -99,7 +98,7 @@ pub fn do_init_match(
         solana_program::accounts::InitializeMatch {
             player_a: player_a.pubkey(), player_b: player_b_pk, token_mint: mint_pk,
             match_state: match_pda, vault: vault_pda, token_program: TOKEN_PROGRAM_ID,
-            system_program: Pubkey::default(), rent: RENT_SYSVAR_ID,
+            system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     send_tx(svm, &[ix], player_a, &[player_a]).unwrap();
@@ -117,7 +116,6 @@ pub fn do_deposit(
             depositor: depositor.pubkey(), match_state: match_pda,
             depositor_token_account: depositor_token, vault: vault_pda,
             token_mint: mint_pk, token_program: TOKEN_PROGRAM_ID,
-            system_program: Pubkey::default(),
         }.to_account_metas(None),
     );
     send_tx(svm, &[ix], depositor, &[depositor]).unwrap();

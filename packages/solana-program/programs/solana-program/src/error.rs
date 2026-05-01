@@ -35,17 +35,11 @@ pub enum CoraError {
     #[msg("Timeout has not been reached yet")]
     TimeoutNotReached,
 
-    #[msg("Match has not timed out yet")]
-    MatchNotTimedOut,
-
     #[msg("Token mint does not match match state")]
     InvalidTokenMint,
 
     #[msg("Match state is inconsistent for refund")]
     InvalidRefundState,
-
-    #[msg("Match has already been finalized")]
-    MatchAlreadyFinalized,
 
     #[msg("Only the admin can perform this action")]
     UnauthorizedAdmin,

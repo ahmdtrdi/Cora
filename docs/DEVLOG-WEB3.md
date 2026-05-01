@@ -253,3 +253,33 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] Phase 3 items still pending: account closing after finalization (M-1), Anchor events (L-3), version field (L-4)
 - [ ] `MIN_WAGER` may need to be arena-specific (SOL vs BONK have different decimals/value) — for MVP, a universal minimum is acceptable
 - [ ] Must `anchor build` + `anchor deploy` to apply M-2 and M-3 changes to devnet
+
+---
+
+## Entry 9 — 2026-05-01: Code Quality Audit — Final Cleanup (Q-1 through Q-5)
+
+### The Change
+
+**Post-hardening audit v3 conducted** — full re-review after Phase 1 + 2. Result: 0 Critical, 0 High, 0 Medium security findings. 5 code quality items found and fixed.
+
+**Smart contract cleanup (5 files):**
+
+- `error.rs` — **[Q-1]** Updated `InvalidWagerAmount` message to reference `min_wager`. **[Q-2]** Removed 3 unused error codes: `InvalidMatchStatus`, `MatchNotTimedOut`, `MatchAlreadyFinalized`.
+- `instructions/settle_match.rs` — **[Q-3]** Added `token::mint` and `token::authority` constraints to vault for consistency with `refund.rs`. Defense-in-depth.
+- `instructions/initialize_match.rs` — **[Q-4]** Removed deprecated `Sysvar<Rent>`. Anchor's `init` auto-resolves rent since 0.30+.
+- `instructions/deposit_wager.rs` — **[Q-5]** Removed unnecessary `system_program` (no `init` in this instruction).
+- `tests/common/mod.rs`, `test_initialize.rs`, `test_deposit.rs` — Updated to match removed accounts.
+
+### The Reasoning
+
+1. **Q-2 (Dead error codes)**: 3 error variants were defined but never used — they bloat the IDL and confuse FE/BE developers who see codes that can never actually be returned.
+2. **Q-3 (Vault constraint consistency)**: Both `settle_match` and `refund` transfer from the vault. `refund` validated `token::authority = match_state` on vault, but `settle_match` didn't. While PDA seeds guarantee correctness, defense-in-depth is industry standard.
+3. **Q-4 + Q-5 (Unnecessary accounts)**: Each removed account saves ~32 bytes per transaction (one fewer `AccountMeta`). Over thousands of matches, this reduces cost.
+
+### The Tech Debt
+
+- [x] ~~All Phase 1 security findings~~ → Fixed
+- [x] ~~All Phase 2 security findings~~ → Fixed
+- [x] ~~All code quality findings~~ → Fixed
+- [ ] **IDL changed** — `rent` removed from `initialize_match`, `system_program` removed from `deposit_wager`. Must rebuild + redeploy + copy to `solana-client`.
+- [ ] Phase 3 items remain: account closing (M-1), Anchor events (L-3), version field (L-4)

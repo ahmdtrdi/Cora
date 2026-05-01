@@ -227,6 +227,8 @@ pub struct SettleMatch<'info> {
         mut,
         seeds = [VAULT_SEED, match_state.match_id.as_ref()],
         bump,
+        token::mint = token_mint,
+        token::authority = match_state,
     )]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
