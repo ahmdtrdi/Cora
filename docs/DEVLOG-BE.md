@@ -191,3 +191,27 @@
 **The Tech Debt:**
 - **Manual Account Parsing:** To keep the API lightweight and avoid pulling in the massive `@coral-xyz/anchor` IDL types, `settlement.ts` manually reads the `MatchState` buffer offsets (e.g., `subarray(40, 72)` for `playerA`). If the Rust state struct changes, this manual parsing will break silently.
 - **Lack of Retry Queue:** If the Solana RPC drops the `submitSettlementTransaction` call (e.g., due to network congestion), it currently just logs to `console.error`. We need a robust background job queue (like BullMQ) to retry failed settlements until confirmed.
+
+## 2026-05-01 - Solana Actions: GET /api/actions/challenge (Blink Metadata)
+
+**The Change:**
+- Rewrote `apps/api/src/routes/actions.ts` to be fully compliant with the [Solana Actions specification](https://solana.com/docs/advanced/actions).
+- **GET `/api/actions/challenge`:** Returns an `ActionGetResponse` with:
+  - `type: "action"` (required by spec, was missing before).
+  - `icon` (absolute Arweave URL), `title`, `description`, `label`.
+  - `links.actions[]` with three preset stake tiers (`5`, `10`, `25` USDC) plus a custom amount input.
+  - Each `LinkedAction` now includes `type: "transaction"` (spec requirement).
+  - Custom stake parameter uses `type: "number"` with `min`/`max` bounds and a `patternDescription`.
+- **POST `/api/actions/challenge`:** Updated to read `account` from the POST body (spec says `{ "account": "<base58>" }`), replacing the previous `payer` field. Added `message` to the POST response. Error responses follow the `ActionError` interface (`{ message: string }`).
+- CORS middleware updated: added `X-Blockchain-Ids` header for Solana Devnet chain identification.
+- `actions.json` discovery endpoint in `index.ts` was already in place and correct.
+
+**The Reasoning:**
+- **Spec Compliance:** The previous scaffold was functional but missing several required fields (`type` on both the root response and `LinkedAction` objects). X/Twitter Blink renderers and Dialect's registry require these to properly unfurl the Blink card.
+- **Preset Tiers + Custom:** Offering quick-click preset amounts (5, 10, 25 USDC) alongside a custom input follows best UX practices seen in the Solana Actions examples (e.g., `Stake 1 SOL` / `Stake 5 SOL` / custom). This reduces friction for first-time users.
+- **POST Body `account`:** The spec mandates the client wallet sends `{ "account": "<base58 pubkey>" }` — not a custom `payer` param. Aligning with the spec means standard Blink clients (Phantom, Backpack, Dialect) will work out of the box.
+
+**The Tech Debt:**
+- **Memo-Only Transaction:** The POST handler currently builds a Memo instruction as a placeholder. The real flow should call `initialize_match` + `deposit_wager` on the Anchor escrow program once the Web3 team's IDL is stable. This is the next step for wiring the Blink → on-chain escrow pipeline.
+- **Icon URL:** We're using a generic Arweave-hosted image. The Designer should provide a branded CORA challenge card image and we should update the `iconUrl` constant.
+- **Dialect Registry:** For the Blink to auto-unfurl on X/Twitter, we need to register the domain at [dial.to/register](https://dial.to/register). Until then, the Blink only works via [dial.to](https://dial.to) interstitial or direct Action URL (`solana-action:https://...`).

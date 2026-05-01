@@ -95,6 +95,55 @@ export type SolanaProgram = {
       "args": []
     },
     {
+      "name": "initializeConfig",
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "treasuryAuthority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "initializeMatch",
       "discriminator": [
         156,
@@ -354,6 +403,24 @@ export type SolanaProgram = {
           "writable": true
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "treasury",
           "writable": true
         },
@@ -387,6 +454,50 @@ export type SolanaProgram = {
           }
         }
       ]
+    },
+    {
+      "name": "updateConfig",
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "newTreasuryAuthority",
+          "type": "pubkey"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -401,6 +512,19 @@ export type SolanaProgram = {
         96,
         121,
         216
+      ]
+    },
+    {
+      "name": "programConfig",
+      "discriminator": [
+        196,
+        210,
+        90,
+        231,
+        144,
+        149,
+        140,
+        63
       ]
     }
   ],
@@ -484,11 +608,25 @@ export type SolanaProgram = {
       "code": 6015,
       "name": "matchAlreadyFinalized",
       "msg": "Match has already been finalized"
+    },
+    {
+      "code": 6016,
+      "name": "unauthorizedAdmin",
+      "msg": "Only the admin can perform this action"
+    },
+    {
+      "code": 6017,
+      "name": "invalidTreasury",
+      "msg": "Treasury account does not belong to the configured authority"
     }
   ],
   "types": [
     {
       "name": "matchState",
+      "docs": [
+        "Per-match escrow state — created by `initialize_match`, finalized by",
+        "`settle_match` or `refund`."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -568,6 +706,40 @@ export type SolanaProgram = {
           },
           {
             "name": "refunded"
+          }
+        ]
+      }
+    },
+    {
+      "name": "programConfig",
+      "docs": [
+        "Global program configuration — initialized once by the deployer.",
+        "Stores admin authority and treasury authority for fee routing."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Admin who can update this config (typically the deployer)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasuryAuthority",
+            "docs": [
+              "Authority that owns all treasury token accounts per arena.",
+              "Settlement validates `treasury.authority == treasury_authority`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed for deterministic derivation."
+            ],
+            "type": "u8"
           }
         ]
       }

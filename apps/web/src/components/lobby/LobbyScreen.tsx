@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -9,6 +9,8 @@ import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
 import { queueMatch } from "@/lib/matchmaking/queueMatch";
+import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
+import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
 
 export type Stat = { label: string; value: number };
 
@@ -111,6 +113,8 @@ function shortenAddress(address: string) {
 }
 
 export function LobbyScreen() {
+  const runtimeConfig = getRuntimeConfig();
+  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
   const { publicKey } = useWallet();
   const challengeMode = searchParams.get("challenge") === "1";
@@ -118,13 +122,18 @@ export function LobbyScreen() {
   const requestedArena = searchParams.get("arena");
   const requestedToken = searchParams.get("token");
   const requestedWager = searchParams.get("wager");
+  const requestedScientist = searchParams.get("scientist");
+  const resumeQueue = searchParams.get("resumeQueue") === "1";
+  const hasRequestedArena = requestedArena ? ARENAS.some((arena) => arena.id === requestedArena) : false;
+  const initialScientist =
+    requestedScientist ? SCIENTISTS.find((scientist) => scientist.id === requestedScientist) ?? null : null;
 
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>(() => (resumeQueue && hasRequestedArena ? "character-select" : "setup"));
   const [selectedArenaId, setSelectedArenaId] = useState<string | null>(() => {
-    if (!challengeMode || !requestedArena) return null;
+    if (!requestedArena) return null;
     return ARENAS.some((arena) => arena.id === requestedArena) ? requestedArena : null;
   });
-  const [selectedScientist, setSelectedScientist] = useState<Scientist | null>(null);
+  const [selectedScientist, setSelectedScientist] = useState<Scientist | null>(initialScientist);
   const [matchedRoomId, setMatchedRoomId] = useState<string | null>(null);
   const [matchmakingState, setMatchmakingState] = useState<MatchmakingState>("idle");
   const [matchmakingStage, setMatchmakingStage] = useState<MatchmakingStage>("finding");
@@ -133,6 +142,7 @@ export function LobbyScreen() {
   const matchmakingRequestIdRef = useRef(0);
   const userCancelledRef = useRef(false);
   const foundTransitionTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const autoRequeueStartedRef = useRef(false);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -149,14 +159,14 @@ export function LobbyScreen() {
   const canStart = walletConnected && Boolean(selectedArena) && hasValidWager;
   const canQueue = Boolean(selectedScientist) && Boolean(selectedArena);
 
-  function clearFoundTransitionTimers() {
+  const clearFoundTransitionTimers = useCallback(() => {
     for (const timerId of foundTransitionTimeoutsRef.current) {
       clearTimeout(timerId);
     }
     foundTransitionTimeoutsRef.current = [];
-  }
+  }, []);
 
-  async function startMatchmakingSearch() {
+  const startMatchmakingSearch = useCallback(async () => {
     if (!walletAddress) {
       setMatchmakingState("error");
       setMatchmakingError("Connect wallet before entering queue.");
@@ -229,7 +239,15 @@ export function LobbyScreen() {
         matchmakingAbortRef.current = null;
       }
     }
-  }
+  }, [
+    walletAddress,
+    clearFoundTransitionTimers,
+    setMatchmakingState,
+    setMatchmakingError,
+    setMatchedRoomId,
+    setMatchmakingStage,
+    setPhase,
+  ]);
 
   function beginMatchmaking() {
     setMatchmakingState("searching");
@@ -252,9 +270,28 @@ export function LobbyScreen() {
   useEffect(() => {
     return () => {
       matchmakingAbortRef.current?.abort();
-      clearFoundTransitionTimers();
+      for (const timerId of foundTransitionTimeoutsRef.current) {
+        clearTimeout(timerId);
+      }
+      foundTransitionTimeoutsRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    if (!resumeQueue || autoRequeueStartedRef.current) return;
+    if (phase !== "character-select") return;
+    if (!canQueue || matchmakingState !== "idle") return;
+
+    const timeoutId = setTimeout(() => {
+      autoRequeueStartedRef.current = true;
+      setMatchmakingState("searching");
+      setMatchmakingStage("finding");
+      setMatchmakingError(null);
+      setPhase("waiting");
+      void startMatchmakingSearch();
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, [resumeQueue, phase, canQueue, matchmakingState, startMatchmakingSearch]);
 
   return (
     <div
@@ -266,6 +303,12 @@ export function LobbyScreen() {
         backgroundSize: "42px 42px",
       }}
     >
+      {showIntegrationBanner && (
+        <IntegrationModeBanner
+          depositMode={runtimeConfig.depositMode}
+          settlementMode={runtimeConfig.settlementMode}
+        />
+      )}
       {challengeMode && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
@@ -380,7 +423,6 @@ export function LobbyScreen() {
               roomId={matchedRoomId}
               arena={selectedArena}
               wagerUsd={FIXED_WAGER_USD}
-              scientists={SCIENTISTS}
               onTimeout={() => {
                 setMatchedRoomId(null);
                 setPhase("character-select");

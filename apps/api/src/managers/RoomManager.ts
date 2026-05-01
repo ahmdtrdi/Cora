@@ -799,5 +799,4 @@ export class RoomManager {
       .then(tx => console.log(`[RoomManager] Anti-Cheat penalty on-chain settlement completed. Tx: ${tx}`))
       .catch(err => console.error(`[RoomManager] Anti-Cheat Auto-settlement failed:`, err));
   }
-
 }

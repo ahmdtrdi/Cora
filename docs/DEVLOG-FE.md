@@ -1045,3 +1045,62 @@
 
 ### The Tech Debt
 - Stage transition timings are currently fixed constants in FE and not synchronized with backend milestone events yet.
+
+## 2026-04-30 - Match Entry Polish (Timer/Rounds, Real Opponent Identity, No Double Deposit, Requeue Recovery)
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - supports `resumeQueue=1` deep-link recovery,
+  - preloads `arena` + `scientist` from query,
+  - auto-resumes queue from character-select when returning from failed `/play` entry.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - removed fake/static opponent scientist + mock wallet text,
+  - pushes `/play` with `scientist` and pre-signed `depositSig` query params after successful signing.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added live match clock (`mm:ss`) from socket timer,
+  - added round HUD (`Round X/3`) that starts at round 1 and advances from `roundsWon`,
+  - removed question ID from question modal and post-match outcome list,
+  - shows real opponent wallet address from live game state,
+  - removed in-`/play` duplicate deposit modal,
+  - auto-sends pre-signed deposit signature on `depositing` status,
+  - added no-refresh recovery CTA (`Return And Requeue`) when room connection fails.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- Team test feedback showed friction around duplicate deposit signing, missing match HUD context (time/round), mock-looking opponent info, and needing manual refresh after play-entry failure.
+- Passing `depositSig` from lobby signing to `/play` keeps deposit signing in one place and removes redundant wallet prompts.
+- Resume queue params (`resumeQueue`, `arena`, `scientist`) allow fast recovery paths without restarting browser state.
+
+### The Tech Debt
+- Opponent identity on the found screen is now neutral (non-mock) but still not full profile data; backend would need opponent metadata in matchmaking payload (or a pre-play room snapshot endpoint) for richer identity rendering before `/play`.
+- Round HUD currently assumes best-of-3 (`2 rounds to win`) from current game logic constants; if this becomes configurable, FE should read it from shared config/event payload.
+
+## 2026-05-01 - Integration Runtime Guards (Env Modes, /play Context Gate, Mode Banner)
+
+### The Change
+- Added runtime mode parser in [runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts):
+  - validates `NEXT_PUBLIC_DEPOSIT_MODE` and `NEXT_PUBLIC_SETTLEMENT_MODE` (`mock | phantom`),
+  - validates `NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK` (`true | false`),
+  - provides safe fallbacks with dev warnings for invalid values.
+- Added shared integration notice UI in [IntegrationModeBanner.tsx](/d:/projects/Cora/apps/web/src/components/ui/IntegrationModeBanner.tsx).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - reads runtime modes via helper,
+  - shows Integration Mode banner when deposit or settlement is still in mock mode.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - switched env reads to typed runtime config helper,
+  - added strict `/play` context guard (requires `roomId`, `arena`, `token`, valid `wager`),
+  - blocks ambiguous play entry and routes user back safely,
+  - shows Integration Mode banner in both guard and normal play surfaces.
+- Kept [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example) keys documented with explanations and empty values for local override safety.
+- Validation run:
+  - `npm run lint` in `apps/web` passed.
+
+### The Reasoning
+- E2E integration testing with Web3 should fail fast when route/session context is incomplete, instead of entering partial battle state.
+- Runtime mode parsing centralizes env behavior and prevents silent misconfiguration from typos.
+- Explicit in-app “integration mode” state helps QA align expectations while BE escrow/settlement wiring is still partial.
+
+### The Tech Debt
+- Integration banner is currently non-dismissible and global; if it becomes noisy, move to a compact status chip with tooltip.
+- `/play` context guard currently enforces query params only; once shared match state storage exists, migrate guard to store/session source of truth.
