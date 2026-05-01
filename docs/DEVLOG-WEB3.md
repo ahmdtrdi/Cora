@@ -194,26 +194,6 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] Existing tests in `test_settle_match.rs` need to be updated to include the `config` account. Tests will fail until this is done.
 - [ ] Phase 2 hardening items still pending: ed25519 instruction_index validation (M-2), minimum wager amount (M-3), account closing after finalization (M-1).
 
-### Post-Hardening Deployment Checklist
-
-```bash
-# 1. Build
-anchor build
-
-# 2. Deploy/upgrade to devnet (same program ID)
-anchor deploy --provider.cluster devnet
-# Or: anchor upgrade target/deploy/solana_program.so --program-id 9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W
-
-# 3. Update on-chain IDL
-anchor idl upgrade -f target/idl/solana_program.json 9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W
-
-# 4. Copy IDL to client package
-cp target/idl/solana_program.json packages/solana-client/src/
-cp target/types/solana_program.ts packages/solana-client/src/
-
-# 5. Initialize config (one-time, using your deployer wallet)
-# Run via CLI or script — pass your treasury wallet pubkey as argument
-```
 
 ---
 
