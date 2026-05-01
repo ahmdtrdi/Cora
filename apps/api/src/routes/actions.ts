@@ -210,7 +210,6 @@ export function createActionsRouter(roomManager: RoomManager) {
           { pubkey: vaultPDA,       isSigner: false, isWritable: true  }, // vault PDA
           { pubkey: tokenMint,      isSigner: false, isWritable: false }, // tokenMint
           { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // tokenProgram
-          { pubkey: new PublicKey('11111111111111111111111111111111'), isSigner: false, isWritable: false }, // systemProgram
         ],
       });
 

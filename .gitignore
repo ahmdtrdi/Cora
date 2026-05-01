@@ -26,6 +26,7 @@ out/
 Thumbs.db
 
 # Docs
+docs-archive/
 production_readiness.md
 SPRINT_CORA.md
 # Questions Database

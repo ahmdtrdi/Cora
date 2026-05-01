@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 export const ESCROW_CONSTANTS = {
   MATCH_SEED: 'match',
   VAULT_SEED: 'vault',
+  CONFIG_SEED: 'config',
   DEPOSIT_TIMEOUT_SECONDS: 300,
   MATCH_TIMEOUT_SECONDS: 1800,
   FEE_BASIS_POINTS: 250,
