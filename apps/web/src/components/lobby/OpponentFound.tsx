@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { useMatchSocket } from "@/hooks/useMatchSocket";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
+  scientists: Scientist[];
   myWallet: string;
   roomId: string;
   arena: Arena;
@@ -17,7 +19,7 @@ type OpponentFoundProps = {
   onTimeout: () => void;
 };
 
-type SigningState = "idle" | "signing" | "submitting" | "success" | "error";
+type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 15;
 
@@ -30,6 +32,7 @@ function shortWallet(address: string) {
 
 export function OpponentFound({
   myScientist,
+  scientists,
   myWallet,
   roomId,
   arena,
@@ -44,17 +47,35 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
+  const depositIntentConfirmedRef = useRef(false);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
-  const signed = signingState === "success";
+  const signed = signingState === "waiting";
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
     signingState !== "signing" &&
-    signingState !== "submitting" &&
+    signingState !== "waiting" &&
     !signed;
+  const {
+    connectionState,
+    gameState,
+    lastSocketCloseInfo,
+    lastSocketError,
+    confirmDeposit,
+    reconnect,
+  } = useMatchSocket({
+    roomId,
+    address: walletAddress,
+  });
+  const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
+  const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
+
+  const opponentScientist = opponentAddress
+    ? scientists[Math.abs(opponentAddress.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % scientists.length]
+    : null;
 
   useEffect(() => {
-    if (signed) {
+    if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
       const params = new URLSearchParams({
         roomId,
         address: walletAddress,
@@ -69,14 +90,19 @@ export function OpponentFound({
       router.push(`/play?${params.toString()}`);
       return;
     }
+
+    if (signed) return;
+
     if (secondsLeft <= 0) {
       onTimeout();
       return;
     }
+
     const id = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(id);
   }, [
     signed,
+    signingState,
     secondsLeft,
     onTimeout,
     router,
@@ -87,7 +113,17 @@ export function OpponentFound({
     wagerUsd,
     myScientist.id,
     signedDepositSignature,
+    gameState?.status,
   ]);
+
+  useEffect(() => {
+    if (!signedDepositSignature) return;
+    if (connectionState !== "connected") return;
+    if (depositIntentConfirmedRef.current) return;
+
+    confirmDeposit(signedDepositSignature);
+    depositIntentConfirmedRef.current = true;
+  }, [confirmDeposit, connectionState, signedDepositSignature]);
 
   async function onSignDeposit() {
     if (!canAttemptSign) return;
@@ -105,14 +141,12 @@ export function OpponentFound({
         wagerUsd,
       });
 
-      setSigningState("submitting");
-
       if (!signature) {
         throw new Error("Missing transaction signature");
       }
 
       setSignedDepositSignature(signature);
-      setSigningState("success");
+      setSigningState("waiting");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
       setSigningState("error");
@@ -133,8 +167,7 @@ export function OpponentFound({
 
   function getButtonLabel() {
     if (signingState === "signing") return "Signing In Wallet...";
-    if (signingState === "submitting") return "Confirming On Chain...";
-    if (signingState === "success") return "Deposit Signed";
+    if (signingState === "waiting") return "Waiting For Opponent...";
     return "Sign Deposit";
   }
 
@@ -207,9 +240,15 @@ export function OpponentFound({
           style={{ border: `1px solid ${arena.frame}`, background: "rgba(255,255,255,0.85)" }}
         >
           <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6b8274]">Opponent</p>
-          <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">Matched Rival</p>
-          <p className="mt-1 font-gabarito text-xs text-[#4c6156]">Identity syncs after room join.</p>
-          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">Room {roomId}</p>
+          <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">
+            {opponentScientist?.name ?? "Syncing Rival..."}
+          </p>
+          <p className="mt-1 font-gabarito text-xs text-[#4c6156]">
+            {opponentScientist?.base ?? "Waiting for opponent identity sync."}
+          </p>
+          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">
+            {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+          </p>
         </motion.div>
       </div>
 
@@ -248,8 +287,30 @@ export function OpponentFound({
             </div>
           )}
           <p className="font-gabarito text-xs text-[#6b8274]">
-            Auto-cancel in {secondsLeft}s if not signed.
+            {signed
+              ? "Deposit signed. Entering battle once both players are ready."
+              : `Auto-cancel in ${secondsLeft}s if not signed.`}
           </p>
+          {(connectionState === "error" || connectionState === "disconnected") && (
+            <div className="mt-2 frame-cut px-3 py-2" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
+              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+                Connection issue while waiting
+              </p>
+              <p className="mt-1 break-words font-gabarito text-xs text-[#73512d]">
+                {lastSocketCloseInfo
+                  ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
+                  : lastSocketError ?? "Socket disconnected."}
+              </p>
+              <button
+                type="button"
+                onClick={reconnect}
+                className="frame-cut frame-cut-sm mt-2 px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

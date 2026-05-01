@@ -26,8 +26,6 @@ const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
-const ROUNDS_TO_WIN = 2;
-const MAX_ROUNDS = ROUNDS_TO_WIN * 2 - 1;
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
@@ -334,11 +332,10 @@ export function BattleScreen() {
     activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
       : secondsLeft;
-  const totalCompletedRounds = playerRoundsWon + opponentRoundsWon;
-  const currentRound = isMatchComplete
-    ? Math.min(MAX_ROUNDS, Math.max(1, totalCompletedRounds))
-    : Math.min(MAX_ROUNDS, totalCompletedRounds + 1);
-  const roundText = `Round ${currentRound}/${MAX_ROUNDS}`;
+  const roundsToWin = gameState?.roundsToWin ?? 2;
+  const maxRounds = Math.max(1, roundsToWin * 2 - 1);
+  const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
+  const roundText = `Round ${currentRound}/${maxRounds}`;
   const remainingMatchClock = formatMatchClock(gameState?.timer?.remainingMs);
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
   const socketCloseText = lastSocketCloseInfo
