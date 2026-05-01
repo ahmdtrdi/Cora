@@ -154,3 +154,63 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 - [ ] Web3 phase is complete. Handing over to FE and BE teams for Task 7.2 (Integration test: FE deposit → BE settle).
 - [ ] BE needs to update their `settlement.ts` to output the correct 65-byte `Uint8Array` payload instead of the old UTF-8 string format.
+
+---
+
+## Entry 6 — 2026-05-01: Security Hardening Phase 1 (Treasury Validation + Deposit Constraint)
+
+### The Change
+
+**Security audit conducted** — full code review of all 4 instructions, state, constants, and tests. Produced `smart_contract_security_audit.md` (v2). Key findings: 0 critical, 2 high, 5 medium, 4 low.
+
+**Smart contract hardening (7 files touched):**
+
+- `state.rs` — NEW: `ProgramConfig` account struct (admin + treasury_authority + bump, 73 bytes). Global config PDA for program-wide settings.
+- `constants.rs` — Added `CONFIG_SEED = b"config"` for ProgramConfig PDA derivation.
+- `error.rs` — Added `UnauthorizedAdmin` and `InvalidTreasury` error codes.
+- `instructions/initialize_config.rs` — NEW: One-time setup instruction. Creates config PDA, stores admin and treasury authority. PDA seed guarantees singleton.
+- `instructions/update_config.rs` — NEW: Admin-only instruction to rotate treasury authority without redeploying.
+- `instructions/settle_match.rs` — **[H-1 FIX]** Added `config` account (ProgramConfig PDA) and `token::authority = config.treasury_authority` constraint on treasury. Previously, any token account with the correct mint could be passed as treasury — now only token accounts owned by the configured treasury authority are accepted. Also replaced magic number `10_000` with `BASIS_POINTS_DIVISOR` constant.
+- `instructions/deposit_wager.rs` — **[H-2 FIX]** Added `constraint = match_state.token_mint == token_mint.key()` to validate the token mint passed matches the one stored in match state. This was already present in `settle_match` and `refund` but was missing here.
+- `instructions.rs` + `lib.rs` — Updated module re-exports and program instruction registration for the 2 new instructions.
+
+### The Reasoning
+
+1. **Config PDA over hardcode**: The treasury authority is stored in a PDA (`seeds = [b"config"]`) rather than hardcoded. This is the industry standard pattern (used by Jupiter, Raydium, etc.) because:
+   - No redeployment needed to rotate treasury wallet
+   - Scales naturally for multi-arena (one authority, many per-mint token accounts)
+   - PDA derivation is deterministic — anyone can verify the config address
+   - Admin-gated updates via `update_config` prevent unauthorized changes
+
+2. **`token::authority` over custom constraint**: Using Anchor's built-in `token::authority = config.treasury_authority` is preferred over a manual `constraint = treasury.owner == ...` because Anchor validates this during account deserialization, catching invalid accounts earlier in the pipeline and producing clearer error messages.
+
+3. **H-2 (deposit token_mint)**: This was an inconsistency — `settle_match` and `refund` both validated `match_state.token_mint == token_mint.key()`, but `deposit_wager` did not. While the vault's `token::mint` constraint provides indirect protection, explicit validation is defense-in-depth.
+
+### The Tech Debt
+
+- [ ] **Must run `anchor build` and `anchor deploy` before this takes effect on devnet**. See deployment steps below.
+- [ ] **Must call `initialize_config` once after redeployment** to create the config PDA with the treasury authority pubkey.
+- [ ] **Must copy updated IDL to `packages/solana-client/src/`** — the IDL now includes 2 new instructions (`initializeConfig`, `updateConfig`), 1 new account type (`ProgramConfig`), and 2 new error codes.
+- [ ] Existing tests in `test_settle_match.rs` need to be updated to include the `config` account. Tests will fail until this is done.
+- [ ] Phase 2 hardening items still pending: ed25519 instruction_index validation (M-2), minimum wager amount (M-3), account closing after finalization (M-1).
+
+### Post-Hardening Deployment Checklist
+
+```bash
+# 1. Build
+anchor build
+
+# 2. Deploy/upgrade to devnet (same program ID)
+anchor deploy --provider.cluster devnet
+# Or: anchor upgrade target/deploy/solana_program.so --program-id 9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W
+
+# 3. Update on-chain IDL
+anchor idl upgrade -f target/idl/solana_program.json 9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W
+
+# 4. Copy IDL to client package
+cp target/idl/solana_program.json packages/solana-client/src/
+cp target/types/solana_program.ts packages/solana-client/src/
+
+# 5. Initialize config (one-time, using your deployer wallet)
+# Run via CLI or script — pass your treasury wallet pubkey as argument
+```
