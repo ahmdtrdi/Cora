@@ -10,6 +10,7 @@ import type {
   CardCountdownData,
   CardExpiredData,
   ScoreUpdateData,
+  RoundOverData,
   CardType,
 } from '@shared/websocket';
 
@@ -47,6 +48,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [lastCardCountdown, setLastCardCountdown] = useState<CardCountdownData | null>(null);
   const [lastCardExpired, setLastCardExpired] = useState<(CardExpiredData & { at: number }) | null>(null);
   const [lastScoreUpdate, setLastScoreUpdate] = useState<ScoreUpdateData | null>(null);
+  const [lastRoundOver, setLastRoundOver] = useState<(RoundOverData & { at: number }) | null>(null);
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
   const socketRef = useRef<WebSocket | null>(null);
   const socketUrl = roomId && address
@@ -123,6 +125,13 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
 
           case 'scoreUpdate':
             setLastScoreUpdate(message.payload as ScoreUpdateData);
+            break;
+
+          case 'roundOver':
+            setLastRoundOver({
+              ...(message.payload as RoundOverData),
+              at: Date.now(),
+            });
             break;
 
           default:
@@ -202,6 +211,7 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     lastCardCountdown,
     lastCardExpired,
     lastScoreUpdate,
+    lastRoundOver,
     currentPhase,
     openCard,
     playCard,
