@@ -74,6 +74,36 @@ export function signSettlementAuthorization(
 
 const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
 
+// Singleton connection — reuse instead of creating per call (avoids connection churn)
+const rpcUrl = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
+const connection = new Connection(rpcUrl, 'confirmed');
+console.log(`[Settlement] Using Solana RPC: ${rpcUrl}`);
+
+// ProgramConfig PDA — derived once, reused for every settle_match call
+const configPda = PublicKey.findProgramAddressSync(
+  [Buffer.from(ESCROW_CONSTANTS.CONFIG_SEED)],
+  PROGRAM_ID
+)[0];
+
+/**
+ * Retry helper with exponential backoff for transient RPC errors.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isLast = attempt === maxRetries;
+      if (isLast) throw err;
+
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      console.warn(`[Settlement] Attempt ${attempt}/${maxRetries} failed. Retrying in ${delay}ms...`, (err as Error).message);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 /**
  * Submits the settle_match transaction directly to the Solana blockchain,
  * handling the funds movement entirely server-side.
@@ -88,9 +118,6 @@ export async function submitSettlementTransaction(
   matchId: Uint8Array,
   targetAddress: string,
 ): Promise<string> {
-  const rpcUrl = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
-  const connection = new Connection(rpcUrl, 'confirmed');
-
   const matchStatePda = PublicKey.findProgramAddressSync(
     [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchId],
     PROGRAM_ID
@@ -100,7 +127,7 @@ export async function submitSettlementTransaction(
     PROGRAM_ID
   )[0];
 
-  const accountInfo = await connection.getAccountInfo(matchStatePda);
+  const accountInfo = await withRetry(() => connection.getAccountInfo(matchStatePda));
   if (!accountInfo) {
     throw new Error('MatchState account not found on-chain');
   }
@@ -145,6 +172,17 @@ export async function submitSettlementTransaction(
   data.set(targetPubkey.toBytes(), 9);
   data.set(signatureBytes, 41);
 
+  // Account order must match the IDL exactly:
+  // 0: caller (signer, writable)
+  // 1: matchState PDA (writable)
+  // 2: vault PDA (writable)
+  // 3: playerATokenAccount (writable)
+  // 4: playerBTokenAccount (writable)
+  // 5: config PDA (read-only) — ProgramConfig, added in Entry 6
+  // 6: treasury (writable)
+  // 7: tokenMint (read-only)
+  // 8: tokenProgram (read-only)
+  // 9: instructionsSysvar (read-only)
   const settleMatchIx = new TransactionInstruction({
     programId: PROGRAM_ID,
     data,
@@ -154,6 +192,7 @@ export async function submitSettlementTransaction(
       { pubkey: vaultPda, isSigner: false, isWritable: true },
       { pubkey: playerATa, isSigner: false, isWritable: true },
       { pubkey: playerBTa, isSigner: false, isWritable: true },
+      { pubkey: configPda, isSigner: false, isWritable: false },
       { pubkey: treasuryTa, isSigner: false, isWritable: true },
       { pubkey: tokenMint, isSigner: false, isWritable: false },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
@@ -166,9 +205,8 @@ export async function submitSettlementTransaction(
   console.log(`[Settlement] Submitting settle_match for match: ${Buffer.from(matchId).toString('hex')}`);
   console.log(`[Settlement] Target: ${targetAddress}`);
   
-  const txHash = await sendAndConfirmTransaction(connection, tx, [serverKeypair]);
+  const txHash = await withRetry(() => sendAndConfirmTransaction(connection, tx, [serverKeypair]));
   console.log(`[Settlement] Success! TxHash: ${txHash}`);
   
   return txHash;
 }
-

@@ -255,3 +255,41 @@
 - **Re-queued player WS**: When `cancelRoom` re-queues the innocent player, the resolve closure uses the room's client map which is about to be deleted. The FE will need to call `POST /match` again (new HTTP request) to properly re-enter the queue; the re-queue in `cancelRoom` is a best-effort convenience for same-session re-pairing, not a hard guarantee.
 - **`winnerAddress` typo in `settlement.ts:167`**: Pre-existing bug — `winnerAddress` should be `targetAddress`. Flagged for BE to fix separately.
 
+## 2026-05-01 - IDL Sync: Web3 Security Hardening (Entries 6–9) + Settlement Retry
+
+**The Change:**
+
+- **`packages/shared-types/src/escrow.ts`:**
+  - Added `CONFIG_SEED: 'config'` to `ESCROW_CONSTANTS`. This matches the new `CONFIG_SEED` in `constants.rs` (Web3 Entry 6) used for the `ProgramConfig` PDA.
+
+- **`apps/api/src/utils/settlement.ts`:**
+  - **Added `config` PDA account** to `settle_match` instruction keys (position 5, between `playerBTokenAccount` and `treasury`). The Web3 team added `ProgramConfig` as a required read-only account in Entry 6 (H-1 fix — treasury validation). Without this, every `settle_match` transaction would fail with an Anchor account mismatch error.
+  - **Singleton `Connection`** — replaced per-call `new Connection()` with a module-level singleton. Avoids connection churn and makes the RPC URL visible at startup via log.
+  - **Retry with exponential backoff** (`withRetry`) — wraps `getAccountInfo` and `sendAndConfirmTransaction` in a 3-attempt retry loop (1s → 2s → 4s delays). Fixes the `Unable to connect` crash when RPC is transiently unreachable.
+  - **Startup log** — prints `[Settlement] Using Solana RPC: <url>` at module load so misconfigured `.env` is immediately obvious.
+
+- **`apps/api/src/routes/actions.ts`:**
+  - **Removed `systemProgram`** from `deposit_wager` instruction keys. Web3 Entry 9 (Q-5) removed this unnecessary account from the Anchor instruction — `deposit_wager` has no `init`, so `system_program` was dead weight. Instruction now has 6 accounts (was 7).
+
+- **`apps/api/.env`:**
+  - Created with all required variables: `PORT`, `API_BASE_URL`, `SOLANA_RPC_URL` (pointing to devnet), `SERVER_KEYPAIR`, `TREASURY_PUBKEY`.
+  - **Root cause of the `Unable to connect` error:** `SOLANA_RPC_URL` was missing, causing `settlement.ts` to fall back to `http://127.0.0.1:8899` (local validator) which wasn't running.
+
+- **`apps/api/.env.example`:**
+  - Updated to document all env vars the API reads, including `SOLANA_RPC_URL`, `API_BASE_URL`, and `TREASURY_PUBKEY`.
+
+**The Reasoning:**
+
+1. **Config PDA (H-1):** The Web3 team's security audit found that `settle_match` previously accepted *any* token account as treasury. The fix adds a `ProgramConfig` PDA (seeds = `["config"]`) that stores the admin-configured treasury authority. The on-chain program now validates `token::authority = config.treasury_authority` on the treasury account. Our backend must pass this PDA or the transaction is rejected.
+
+2. **`systemProgram` removal (Q-5):** `deposit_wager` does not create any new accounts (`init`), so `system_program` was an unnecessary account meta. Removing it saves ~32 bytes per transaction.
+
+3. **Retry logic:** Devnet RPC endpoints have transient availability issues. A fire-and-forget `submitSettlementTransaction` that crashes on first failure means real match results never settle. Exponential backoff with 3 retries handles the common case of a momentary TCP hiccup without over-taxing the RPC.
+
+4. **`initialize_match` not built by backend:** Confirmed by searching the entire codebase — no TS code constructs `initialize_match`. This is a frontend/Blink concern. The Web3 team's removal of `rent` from `initialize_match` (Q-4) does **not** require backend changes.
+
+**The Tech Debt:**
+
+- [ ] **Manual MatchState parsing** — `settlement.ts` still reads raw buffer offsets (`subarray(40, 72)`) instead of using the IDL. If the Rust struct layout changes, this will silently break. Consider using `@coral-xyz/anchor` for proper deserialization.
+- [ ] **No settlement retry queue** — the retry wraps a single attempt cycle. If all 3 attempts fail, the settlement is lost. A persistent job queue (BullMQ / Bun-native) should be added for production.
+- [ ] **`initialize_match` in Blink flow** — currently the POST `/api/actions/challenge` only builds `deposit_wager`. Player A's `initialize_match` is not wired yet — this needs frontend or a separate Blink action endpoint.
