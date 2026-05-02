@@ -1436,3 +1436,69 @@
 - This surface is mock-only and does not validate backend contracts/events; once shared room-state payloads stabilize, we should add a contract-mock adapter layer.
 - The preview route includes inline mock data; if more dev previews are added, centralizing mock fixtures would reduce duplication.
 - This normalization currently lives in the dev preview page only; if we add more state labs, we should extract shared preview state helpers.
+
+## 2026-05-02 - Landing Polish Pass (DESIGN.md Alignment + Scientist Roster Refactor)
+
+### The Change
+- Reworked global design tokens in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css):
+  - added explicit `DESIGN.md` palette primitives (`#274137`, `#9db496`, `#cbe3c1`, `#f8d694`, `#ba6931`, `#6f3a28`),
+  - remapped semantic landing/UI tokens to the new palette,
+  - preserved backward-compatible `--amber` / `--teal` aliases to avoid breaking non-landing screens,
+  - switched default body/UI typography to `Gabarito` and kept `Caprasimo` for display classes.
+- Added reusable landing domain modules:
+  - [content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts)
+  - [visuals.ts](/d:/projects/Cora/apps/web/src/components/landing/visuals.ts)
+- Refactored landing sections to consume shared content/style helpers and match design direction:
+  - [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx)
+  - [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx)
+  - [TokenMarquee.tsx](/d:/projects/Cora/apps/web/src/components/landing/TokenMarquee.tsx)
+  - [HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx)
+  - [Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx)
+  - [VideoSlot.tsx](/d:/projects/Cora/apps/web/src/components/landing/VideoSlot.tsx)
+  - [CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx)
+  - [Footer.tsx](/d:/projects/Cora/apps/web/src/components/landing/Footer.tsx)
+  - [CursorGlow.tsx](/d:/projects/Cora/apps/web/src/components/landing/CursorGlow.tsx)
+- Replaced animal roster copy/structure with the agreed scientist lineup:
+  - Einstein
+  - Marie Curie
+  - Alan Turing
+  - included scientist-specific base concepts (Relativity Lab, Radium Reactor, Cipher Engine).
+- Preserved angular `frame-cut` component language while softening borders/shadows to match warm-vintage direction.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- `DESIGN.md` requires vintage-warm palette + explicit font pairing (`Caprasimo` headline/logo and `Gabarito` body/UI), so token and typography alignment needed to happen at global level first.
+- Extracting landing copy/state into `content.ts` and accent mappings into `visuals.ts` reduces duplication and keeps future branch work (flow-order changes, scientist detail tuning, localized copy) low-risk and centralized.
+- Keeping angular frames while softening border tone/shadows supports the desired contrast: cute chibi scientist identity inside a still-structured competitive arena shell.
+
+### The Tech Debt
+- Scientist visuals are still text/initial placeholders in landing cards. Once designer assets are available, these should be replaced with actual chibi portraits/illustrations.
+- Landing roster/base descriptions are FE-side content constants only; when backend/shared contracts include canonical scientist/base metadata, this content should be sourced from shared-types or API payloads.
+- Some non-landing surfaces still inherit legacy visual assumptions through compatibility aliases. After broader UI migration, we should retire alias tokens and use only semantic DESIGN.md tokens.
+
+## 2026-05-02 - Landing Encoding Hotfix (UTF-8 Parse Failure)
+
+### The Change
+- Normalized landing and related style files to UTF-8 (no BOM) to resolve Next.js parser failure (`invalid utf-8 sequence`) triggered from [Footer.tsx](/d:/projects/Cora/apps/web/src/components/landing/Footer.tsx).
+- Re-encoded the updated landing stack and shared landing modules:
+  - [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css)
+  - [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx)
+  - [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx)
+  - [TokenMarquee.tsx](/d:/projects/Cora/apps/web/src/components/landing/TokenMarquee.tsx)
+  - [HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx)
+  - [Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx)
+  - [VideoSlot.tsx](/d:/projects/Cora/apps/web/src/components/landing/VideoSlot.tsx)
+  - [CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx)
+  - [Footer.tsx](/d:/projects/Cora/apps/web/src/components/landing/Footer.tsx)
+  - [CursorGlow.tsx](/d:/projects/Cora/apps/web/src/components/landing/CursorGlow.tsx)
+  - [content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts)
+  - [visuals.ts](/d:/projects/Cora/apps/web/src/components/landing/visuals.ts)
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- The runtime error indicates source decoding failure before compilation. Re-encoding to UTF-8 restores parser compatibility and prevents cross-platform editor/CLI encoding drift.
+
+### The Tech Debt
+- The repo currently lacks an explicit encoding guardrail. Add `.editorconfig` and/or a pre-commit check to enforce UTF-8 on TS/TSX/CSS files.

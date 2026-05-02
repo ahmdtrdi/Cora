@@ -15,17 +15,17 @@ export function Footer() {
       <div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <span className="frame-cut frame-cut-sm grid h-8 w-8 place-items-center border border-[var(--color-border)] text-xs font-black text-[var(--amber)]">
+            <span className="frame-cut frame-cut-sm grid h-8 w-8 place-items-center border border-[var(--color-border)] text-xs font-black text-[var(--accent-primary)]">
               C
             </span>
-            <span className="text-xl font-black">CORA</span>
+            <span className="font-caprasimo text-xl leading-none">CORA</span>
           </div>
-          <p className="mt-2 text-sm text-[var(--color-muted)]">
-            © 2026 Cora Esports. Cognitive arena prototype.
+          <p className="font-gabarito mt-2 text-sm text-[var(--color-muted)]">
+            � 2026 Cora Esports. Vintage cognitive arena prototype.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-6 text-sm font-bold text-[var(--color-muted)]">
+        <div className="font-gabarito flex flex-wrap items-center gap-6 text-sm font-bold text-[var(--color-muted)]">
           {[
             { label: "Discord", href: "#" },
             { label: "X / Twitter", href: "#" },
@@ -34,7 +34,7 @@ export function Footer() {
             <Link
               key={link.label}
               href={link.href}
-              className="transition-colors duration-150 hover:text-[var(--amber)]"
+              className="transition-colors duration-150 hover:text-[var(--accent-primary)]"
             >
               {link.label}
             </Link>

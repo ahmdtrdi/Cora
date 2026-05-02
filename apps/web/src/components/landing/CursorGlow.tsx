@@ -30,28 +30,26 @@ export function CursorGlow() {
       document.body.removeEventListener("mouseleave", handleMouseLeave);
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!isVisible) return null;
 
   return (
     <>
-      {/* Large ambient orb */}
       <div
         className="pointer-events-none fixed inset-0 z-0"
         style={{
-          background: `radial-gradient(600px circle at ${position.x}px ${position.y}px, rgba(217,119,6,0.07), transparent 50%)`,
+          background: `radial-gradient(620px circle at ${position.x}px ${position.y}px, rgba(186,105,49,0.08), transparent 50%)`,
         }}
       />
-      {/* Small sharp dot */}
       <div
-        className="pointer-events-none fixed z-0 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        className="pointer-events-none fixed z-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           left: position.x,
           top: position.y,
-          background: "rgba(217,119,6,0.22)",
-          boxShadow: "0 0 14px 4px rgba(217,119,6,0.16)",
+          background: "rgba(157,180,150,0.34)",
+          boxShadow: "0 0 12px 3px rgba(157,180,150,0.2)",
         }}
       />
     </>

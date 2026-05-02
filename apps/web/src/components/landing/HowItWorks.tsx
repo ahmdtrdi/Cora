@@ -1,58 +1,15 @@
 "use client";
 
-import { motion, useMotionValueEvent, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { useRef, useState } from "react";
-
-const stages = [
-  {
-    id: "01",
-    label: "Matchmaking",
-    domain: "Off-chain",
-    color: "var(--amber)",
-    colorDim: "var(--amber-dim)",
-    colorGlow: "var(--amber-glow)",
-    title: "Queue, pair, open room",
-    summary:
-      "Player joins queue from app or Blink. FIFO pairs two players and opens a WebSocket room.",
-    stat: "WebSocket",
-  },
-  {
-    id: "02",
-    label: "Escrow",
-    domain: "On-chain",
-    color: "var(--teal)",
-    colorDim: "var(--teal-dim)",
-    colorGlow: "var(--teal-glow)",
-    title: "Both players deposit",
-    summary:
-      "Both players sign the deposit in Phantom. Anchor contract locks funds in a PDA vault.",
-    stat: "Tx #1",
-  },
-  {
-    id: "03",
-    label: "Battle",
-    domain: "Off-chain",
-    color: "var(--amber)",
-    colorDim: "var(--amber-dim)",
-    colorGlow: "var(--amber-glow)",
-    title: "3-round card battle",
-    summary:
-      "Players use randomized Action Cards (Heal/Attack). Correct GAT answers damage enemy or heal own Base HP.",
-    stat: "3 rounds",
-  },
-  {
-    id: "04",
-    label: "Settlement",
-    domain: "On-chain",
-    color: "var(--teal)",
-    colorDim: "var(--teal-dim)",
-    colorGlow: "var(--teal-glow)",
-    title: "Signed result, funds released",
-    summary:
-      "Server signs settlement authorization. Contract verifies signature and releases 97.5% to winner, 2.5% treasury.",
-    stat: "Tx #2",
-  },
-];
+import {
+  AnimatePresence,
+  motion,
+  useMotionValueEvent,
+  useScroll,
+  useTransform,
+} from "framer-motion";
+import { useMemo, useRef, useState } from "react";
+import { LANDING_STAGES } from "./content";
+import { getLandingAccentStyle } from "./visuals";
 
 export function HowItWorks() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,11 +23,12 @@ export function HowItWorks() {
   const progressWidth = useTransform(scrollYProgress, [0.05, 0.92], ["0%", "100%"]);
 
   useMotionValueEvent(scrollYProgress, "change", (latest) => {
-    const idx = Math.min(stages.length - 1, Math.floor(latest * stages.length * 0.98));
+    const idx = Math.min(LANDING_STAGES.length - 1, Math.floor(latest * LANDING_STAGES.length * 0.98));
     setActive(Math.max(0, idx));
   });
 
-  const stage = stages[active];
+  const stage = LANDING_STAGES[active];
+  const stageStyle = useMemo(() => getLandingAccentStyle(stage.accent), [stage.accent]);
 
   return (
     <section
@@ -88,34 +46,33 @@ export function HowItWorks() {
           className="mb-12 text-center"
         >
           <p className="font-mono text-xs font-bold uppercase tracking-widest text-[var(--color-muted)]">
-            How it works
+            Match Architecture
           </p>
-          <h2 className="mt-3 text-3xl font-black leading-tight md:text-5xl">
+          <h2 className="font-caprasimo mt-3 text-3xl leading-tight md:text-5xl">
             4 phases, 2 on-chain transactions.
           </h2>
         </motion.div>
 
         <div className="mb-10 flex items-center gap-2">
-          {stages.map((s, i) => (
+          {LANDING_STAGES.map((s, i) => (
             <div key={s.id} className="flex items-center gap-2">
-              <button
-                onClick={() => {}}
-                className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-black transition-all duration-300 ${
+              <div
+                className={`font-gabarito flex h-8 w-8 items-center justify-center rounded-full border text-xs font-black transition-all duration-300 ${
                   i === active
-                    ? "border-[var(--amber)] bg-[var(--amber)] text-white shadow-[0_0_14px_var(--amber-glow)]"
+                    ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[#fffaf0] shadow-[0_0_14px_var(--accent-primary-glow)]"
                     : i < active
-                    ? "border-[var(--color-border)] bg-[var(--color-surface-alt)] text-[var(--foreground)]"
-                    : "border-[var(--color-border)] bg-transparent text-[var(--color-muted)]"
+                      ? "border-[var(--color-border)] bg-[var(--color-surface-alt)] text-[var(--foreground)]"
+                      : "border-[var(--color-border)] bg-transparent text-[var(--color-muted)]"
                 }`}
               >
                 {i < active ? "OK" : s.id}
-              </button>
-              {i < stages.length - 1 && (
+              </div>
+              {i < LANDING_STAGES.length - 1 && (
                 <div className="h-px w-8 bg-[var(--color-border)]">
                   {i < active && (
                     <motion.div
                       layoutId={`connector-${i}`}
-                      className="h-full bg-[var(--amber)]"
+                      className="h-full bg-[var(--accent-primary)]"
                       initial={{ scaleX: 0 }}
                       animate={{ scaleX: 1 }}
                       style={{ transformOrigin: "left" }}
@@ -135,13 +92,13 @@ export function HowItWorks() {
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               exit={{ opacity: 0, y: -16, filter: "blur(4px)" }}
               transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-              className="frame-cut relative overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_20px_60px_rgba(24,23,19,0.08)]"
+              className="frame-cut relative overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_20px_60px_rgba(111,58,40,0.12)]"
             >
-              <div className="h-1 w-full accent-bar-slide" style={{ background: stage.color }} />
+              <div className="h-1 w-full accent-bar-slide" style={{ background: stageStyle.accent }} />
               <div className="pointer-events-none absolute inset-0 arena-grid opacity-[0.16]" />
               <div
                 className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full blur-3xl"
-                style={{ background: stage.colorDim }}
+                style={{ background: stageStyle.dim }}
               />
 
               <div className="relative p-8 md:p-10">
@@ -150,10 +107,10 @@ export function HowItWorks() {
                     <div
                       className="frame-cut frame-cut-sm flex h-12 w-12 items-center justify-center border font-mono text-sm font-black tracking-wider"
                       style={{
-                        borderColor: stage.color,
-                        color: stage.color,
-                        background: stage.colorDim,
-                        boxShadow: `0 0 20px ${stage.colorGlow}`,
+                        borderColor: stageStyle.accent,
+                        color: stageStyle.accent,
+                        background: stageStyle.dim,
+                        boxShadow: `0 0 20px ${stageStyle.glow}`,
                       }}
                     >
                       #{Number(stage.id)}
@@ -164,10 +121,10 @@ export function HowItWorks() {
                         {stage.label}
                       </p>
                       <span
-                        className="mt-1 inline-flex rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-widest"
+                        className="font-gabarito mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest"
                         style={{
-                          background: stage.colorDim,
-                          color: stage.color,
+                          background: stageStyle.dim,
+                          color: stageStyle.accent,
                         }}
                       >
                         {stage.domain}
@@ -176,18 +133,14 @@ export function HowItWorks() {
                   </div>
 
                   <div className="frame-cut frame-cut-sm border border-[var(--color-border)] bg-[var(--color-surface-alt)] px-4 py-3 text-right">
-                    <p
-                      className="font-mono text-sm font-black uppercase tracking-wide"
-                      style={{ color: stage.color }}
-                    >
+                    <p className="font-mono text-sm font-black uppercase tracking-wide" style={{ color: stageStyle.accent }}>
                       {stage.stat}
                     </p>
                   </div>
                 </div>
 
-                <h3 className="mt-7 max-w-3xl text-3xl font-black leading-tight md:text-4xl">{stage.title}</h3>
-                <p className="mt-4 max-w-3xl text-base leading-7 text-[var(--color-muted)]">{stage.summary}</p>
-
+                <h3 className="font-caprasimo mt-7 max-w-3xl text-3xl leading-tight md:text-4xl">{stage.title}</h3>
+                <p className="font-gabarito mt-4 max-w-3xl text-base leading-7 text-[var(--tone-bark)]">{stage.summary}</p>
               </div>
             </motion.div>
           </AnimatePresence>
@@ -196,11 +149,11 @@ export function HowItWorks() {
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-alt)]">
               <motion.div
                 className="h-full rounded-full"
-                style={{ width: progressWidth, background: "var(--amber)" }}
+                style={{ width: progressWidth, background: "var(--accent-primary)" }}
               />
             </div>
             <span className="font-mono text-xs text-[var(--color-muted)]">
-              {active + 1} / {stages.length}
+              {active + 1} / {LANDING_STAGES.length}
             </span>
           </div>
         </div>
