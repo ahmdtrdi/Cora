@@ -1272,3 +1272,30 @@
 
 ### The Tech Debt
 - Header ownership is now host-driven in shell compositions and component-driven in standalone compositions. We should document this pattern in UI component conventions to avoid future mixed-header regressions.
+
+## 2026-05-02 - Deposit Panel Refactor (Character-Agnostic UI + Status Types)
+
+### The Change
+- Added reusable deposit status contract:
+  - [depositTypes.ts](/d:/projects/Cora/apps/web/src/components/deposit/depositTypes.ts)
+  - introduced `DepositStatus` union (`idle`, `wallet_required`, `signing`, `submitted`, `confirmed`, `waiting_opponent`, `opponent_failed`, `expired`, `error`).
+- Added reusable deposit UI primitives:
+  - [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx)
+  - [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx)
+- Refactored lobby found-phase deposit UI in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - replaced inline deposit block with `DepositPanel`.
+  - mapped existing wallet/signing/socket states into shared `DepositStatus`.
+  - wired retry and cancel action slots.
+  - surfaced deposit signature via dedicated signature slot.
+  - kept component fully unaware of character mechanics.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- Deposit UX is needed in multiple contexts and should not be tied to one lobby screen implementation.
+- Moving status semantics into shared types reduces drift between “what state we are in” and “what UI we render.”
+- Slot-based actions (`retry`, `cancel`, wallet slot, extra slot) let the host screen inject flow-specific controls while keeping the panel reusable.
+
+### The Tech Debt
+- `OpponentFound` currently maps local state to `DepositStatus`; once backend exposes stronger authoritative deposit state fields, this mapping should move to a shared adapter/helper.
+- `/play` still contains settlement confirmation UI that follows a similar state pattern but is not yet migrated to shared deposit/transaction panel primitives.

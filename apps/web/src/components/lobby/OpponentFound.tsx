@@ -8,6 +8,8 @@ import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
+import { DepositPanel } from "@/components/deposit/DepositPanel";
+import type { DepositStatus } from "@/components/deposit/depositTypes";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -196,13 +198,7 @@ export function OpponentFound({
     return () => clearTimeout(timerId);
   }, [errorVisible]);
 
-  function getButtonLabel() {
-    if (signingState === "signing") return "Signing In Wallet...";
-    if (signingState === "waiting") return "Waiting For Opponent...";
-    return "Sign Deposit";
-  }
-
-  function getSignButtonHint() {
+  function getDepositHint() {
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
     if (isUxSignLocked) return "Waiting for server unlock...";
@@ -213,6 +209,24 @@ export function OpponentFound({
       return "Deposit signed. Waiting for room confirmation.";
     }
     return `Auto-cancel in ${secondsLeft}s if not signed.`;
+  }
+
+  function getDepositStatus(): DepositStatus {
+    if (opponentFailedDepositAt) return "opponent_failed";
+    if (signingState === "error") return "error";
+    if (!wallet.publicKey) return "wallet_required";
+    if (signingState === "signing") return "signing";
+    if (gameState?.status === "playing" && signedDepositSignature) return "confirmed";
+    if (signingState === "waiting") return "waiting_opponent";
+    if (signedDepositSignature) return "submitted";
+    return "idle";
+  }
+
+  function getPrimaryButtonLabel() {
+    if (signingState === "signing") return "Signing In Wallet...";
+    if (signingState === "waiting") return "Waiting For Opponent...";
+    if (signingState === "error") return "Retry Deposit";
+    return "Sign Deposit";
   }
 
   return (
@@ -296,48 +310,47 @@ export function OpponentFound({
         </motion.div>
       </div>
 
-      <div className="mt-8 text-center">
-        <p className="font-gabarito text-xs uppercase tracking-[0.16em] text-[#6b8274]">
-          ${wagerUsd} {arena.token} - Sign deposit before battle
-        </p>
-        <div className="mt-3 flex flex-col items-center gap-3">
-          <motion.p
-            key={secondsLeft}
-            initial={{ scale: 1.25, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.24 }}
-            className="font-caprasimo text-6xl"
-            style={{ color: arena.accent }}
-          >
-            {secondsLeft}
-          </motion.p>
-          <button
-            type="button"
-            onClick={onSignDeposit}
-            disabled={!canAttemptSign}
-            className="frame-cut frame-cut-sm min-w-[210px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
-            style={{
-              border: `1px solid ${arena.frame}`,
-              background: isUxSignLocked
-                ? "rgba(214,214,208,0.96)"
-                : signed
-                  ? "rgba(255,255,255,0.72)"
-                  : "rgba(255,255,255,0.92)",
-              color: isUxSignLocked ? "#5f695f" : arena.frame,
-              opacity: signed ? 0.7 : isUxSignLocked ? 0.95 : 1,
-            }}
-          >
-            {getButtonLabel()}
-          </button>
-          {!wallet.publicKey && (
+      <DepositPanel
+        token={arena.token}
+        wagerUsd={wagerUsd}
+        status={getDepositStatus()}
+        helperText={getDepositHint()}
+        countdownSeconds={secondsLeft}
+        signature={signedDepositSignature}
+        canPrimaryAction={canAttemptSign}
+        primaryActionLabel={getPrimaryButtonLabel()}
+        onPrimaryAction={onSignDeposit}
+        walletSlot={
+          !wallet.publicKey ? (
             <div className="pt-1">
               <HydratedWalletButton />
             </div>
-          )}
-          <p className="font-gabarito text-xs text-[#6b8274]">
-            {getSignButtonHint()}
-          </p>
-          {(connectionState === "error" || connectionState === "disconnected") && (
+          ) : null
+        }
+        retrySlot={
+          connectionState === "error" || connectionState === "disconnected" ? (
+            <button
+              type="button"
+              onClick={reconnect}
+              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+            >
+              Retry Connection
+            </button>
+          ) : null
+        }
+        cancelSlot={
+          <button
+            type="button"
+            onClick={onTimeout}
+            className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+            style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+          >
+            Cancel Match
+          </button>
+        }
+        extraSlot={
+          connectionState === "error" || connectionState === "disconnected" ? (
             <div className="mt-2 frame-cut px-3 py-2" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
               <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
                 Connection issue while waiting
@@ -347,18 +360,10 @@ export function OpponentFound({
                   ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
                   : lastSocketError ?? "Socket disconnected."}
               </p>
-              <button
-                type="button"
-                onClick={reconnect}
-                className="frame-cut frame-cut-sm mt-2 px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
-              >
-                Retry
-              </button>
             </div>
-          )}
-        </div>
-      </div>
+          ) : null
+        }
+      />
     </div>
   );
 }
