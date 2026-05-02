@@ -18,6 +18,10 @@ export const ESCROW_CONSTANTS = {
   BASIS_POINTS_DIVISOR: 10_000,
   /** The exact fee percentage as a readable number */
   FEE_PERCENTAGE: 2.5,
+  /** Current version of MatchState struct (must match state.rs) */
+  MATCH_STATE_VERSION: 1,
+  /** Current version of ProgramConfig struct (must match state.rs) */
+  PROGRAM_CONFIG_VERSION: 1,
 } as const;
 
 /**

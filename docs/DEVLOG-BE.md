@@ -293,3 +293,44 @@
 - [ ] **Manual MatchState parsing** — `settlement.ts` still reads raw buffer offsets (`subarray(40, 72)`) instead of using the IDL. If the Rust struct layout changes, this will silently break. Consider using `@coral-xyz/anchor` for proper deserialization.
 - [ ] **No settlement retry queue** — the retry wraps a single attempt cycle. If all 3 attempts fail, the settlement is lost. A persistent job queue (BullMQ / Bun-native) should be added for production.
 - [ ] **`initialize_match` in Blink flow** — currently the POST `/api/actions/challenge` only builds `deposit_wager`. Player A's `initialize_match` is not wired yet — this needs frontend or a separate Blink action endpoint.
+
+## 2026-05-02 - Web3 Phase 3 Compatibility (Account Closing, Events, Versioning)
+
+**The Change:**
+
+- **`packages/shared-types/src/escrow.ts`:**
+  - Added `MATCH_STATE_VERSION: 1` and `PROGRAM_CONFIG_VERSION: 1` to `ESCROW_CONSTANTS`. Mirrors the `version: u8` field the Web3 team added to `MatchState` and `ProgramConfig` in `state.rs` (Entry 10, L-4).
+
+- **`apps/api/src/utils/settlement.ts`:**
+  - **[BREAKING FIX]** Fixed MatchState binary parser byte offsets. The `version: u8` field (1 byte) was prepended to MatchState at offset 8 (after discriminator), shifting all subsequent fields by +1: `playerA` is now at `41..73` (was `40..72`), `playerB` at `73..105` (was `72..104`), `tokenMint` at `105..137` (was `104..136`). Without this fix, on-chain settlement would extract the wrong public keys and fail.
+  - Updated "not found" log to mention account closing as a possible cause (match already settled/refunded → PDA purged).
+  - Added post-settlement log confirming MatchState PDA and Vault closure.
+
+- **`apps/api/src/utils/eventListener.ts` (NEW):**
+  - Embedded Anchor event listener that subscribes to program logs via Solana WebSocket (`onLogs`). Decodes 6 structured events (`MatchInitializedEvent`, `WagerDepositedEvent`, `MatchSettledEvent`, `MatchRefundedEvent`, `ConfigInitializedEvent`, `ConfigUpdatedEvent`) using IDL discriminators. Parses event payloads (match IDs, pubkeys, amounts, booleans) and logs them. No external dependencies beyond `@solana/web3.js`.
+
+- **`apps/api/src/index.ts`:**
+  - Wired event listener on server boot — only activates when `SOLANA_RPC_URL` is set (skipped in local dev without RPC).
+
+- **`apps/api/test/settlement.test.ts`:**
+  - Added `MatchState v2 layout (version field)` test suite: verifies correct byte offsets using a synthetic MatchState buffer, confirms version constants default to 1.
+
+- **`apps/api/test/RoomManager.test.ts` (Boy Scout Rule):**
+  - Fixed 8 pre-existing test failures caused by missing `room.playerA`/`room.playerB` role assignments. The sequential deposit model (Phase 1-4 PR) requires roles to be set before `handleDeposit` can transition to `playing`. All `setupPlayingRoom` helpers and inline deposit setups now assign roles before depositing.
+
+**The Reasoning:**
+
+1. **Byte offset fix:** The Web3 PR (Entry 10, L-4) prepended `version: u8` to `MatchState`. Our settlement oracle manually parses the account buffer at hardcoded offsets to extract `playerA`, `playerB`, and `tokenMint`. A 1-byte shift in the struct silently causes the parser to read the wrong bytes — the last byte of `match_id` becomes the first byte of `playerA`, etc. This would cause every on-chain settlement to fail with `InvalidWinner` or create transactions to the wrong addresses.
+
+2. **Account closing awareness (M-1):** The `settle_match` and `refund` instructions now use Anchor's `close = caller` constraint and a CPI `close_account` on the vault. After finalization, the MatchState PDA and Vault are permanently purged. Any subsequent `getAccountInfo` returns `null`. Our oracle already skipped if `accountInfo` is null, but the log message was misleading — it implied the match was never initialized. Updated to mention account closure as a valid reason.
+
+3. **Event listener (L-3):** Previously the backend had no way to observe on-chain events in real-time. The Web3 PR replaced `msg!` logs with structured `emit!` events. The new listener subscribes to program logs, matches 8-byte discriminators from the IDL, and parses the Borsh-serialized fields. Embedded in the API process per team decision (vs. standalone service) for simplicity at this stage.
+
+4. **Test fixes (Boy Scout Rule):** The 8 failing RoomManager tests were caused by the Phase 1-4 PR introducing `playerA`/`playerB` role assignment on rooms. The tests used `createRoom` directly (which doesn't assign roles) and then tried to deposit. The `handleDeposit` method checks `room.playerA`/`room.playerB` and bails early if null, preventing the transition to `playing`. Fixed by assigning roles after room creation in all affected tests.
+
+**The Tech Debt:**
+
+- [ ] **Event listener is observe-only** — it logs events but doesn't trigger any backend side-effects (e.g., auto-confirming deposits, updating room state). For production, `WagerDepositedEvent` should cross-reference with the `confirmDeposit` WebSocket message to verify on-chain deposit truth.
+- [ ] **Manual MatchState parsing remains** — while we've corrected the offsets, the fundamental fragility persists. If the Web3 team adds another field before `token_mint`, offsets break again. Consider using `@coral-xyz/anchor` IDL-based deserialization for robustness.
+- [ ] **Event listener reconnection** — if the WebSocket connection drops, `onLogs` does not auto-reconnect. Need a heartbeat/reconnect wrapper for production reliability.
+- [ ] **`prevents self-matching` test** — pre-existing timeout failure. The test chains two `queueMatch` calls for the same address, but the second call attaches to the first's promise. When `player2` pairs with the first, the second promise resolves to the same room — leaving `player3` with nobody to pair with and `p2Promise` never resolving.

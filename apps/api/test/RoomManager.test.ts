@@ -197,11 +197,15 @@ describe('RoomManager', () => {
       manager.joinRoom('room-reconnect', 'playerA', mock1.ws);
       manager.joinRoom('room-reconnect', 'playerB', mock2.ws);
 
+      // Assign roles (required by sequential deposit model)
+      const room = manager.getRoom('room-reconnect')!;
+      room.playerA = 'playerA';
+      room.playerB = 'playerB';
+
       // Both deposit to reach 'playing'
       manager.handleMessage('room-reconnect', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sig' } });
       manager.handleMessage('room-reconnect', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sig' } });
 
-      const room = manager.getRoom('room-reconnect')!;
       expect(room.status).toBe('playing');
 
       // Simulate disconnect during playing
@@ -239,11 +243,15 @@ describe('RoomManager', () => {
       manager.joinRoom('room-leave', 'playerA', mock1.ws);
       manager.joinRoom('room-leave', 'playerB', mock2.ws);
 
+      // Assign roles (required by sequential deposit model)
+      const room = manager.getRoom('room-leave')!;
+      room.playerA = 'playerA';
+      room.playerB = 'playerB';
+
       // Both deposit to reach 'playing'
       manager.handleMessage('room-leave', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sig' } });
       manager.handleMessage('room-leave', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sig' } });
 
-      const room = manager.getRoom('room-leave')!;
       expect(room.status).toBe('playing');
 
       manager.leaveRoom('room-leave', 'playerA');
@@ -289,6 +297,11 @@ describe('RoomManager', () => {
       manager.joinRoom('room-dep2', 'pA', mock1.ws);
       manager.joinRoom('room-dep2', 'pB', mock2.ws);
 
+      // Assign roles (required by sequential deposit model)
+      const room = manager.getRoom('room-dep2')!;
+      room.playerA = 'pA';
+      room.playerB = 'pB';
+
       manager.handleMessage('room-dep2', 'pA', {
         type: 'confirmDeposit',
         payload: { signature: 'sigA' },
@@ -298,7 +311,6 @@ describe('RoomManager', () => {
         payload: { signature: 'sigB' },
       });
 
-      const room = manager.getRoom('room-dep2')!;
       expect(room.status).toBe('playing');
       expect(room.engine).not.toBeNull();
 
@@ -320,6 +332,11 @@ describe('RoomManager', () => {
       manager.joinRoom('room-card', 'pA', mock1.ws);
       manager.joinRoom('room-card', 'pB', mock2.ws);
 
+      // Assign roles (required by sequential deposit model)
+      const room = manager.getRoom('room-card')!;
+      room.playerA = 'pA';
+      room.playerB = 'pB';
+
       // Deposit both
       manager.handleMessage('room-card', 'pA', {
         type: 'confirmDeposit',
@@ -330,7 +347,6 @@ describe('RoomManager', () => {
         payload: { signature: 'sig' },
       });
 
-      const room = manager.getRoom('room-card')!;
       return { room, mock1, mock2 };
     }
 
@@ -404,6 +420,11 @@ describe('RoomManager', () => {
       manager.joinRoom('room-play', 'pA', mock1.ws);
       manager.joinRoom('room-play', 'pB', mock2.ws);
 
+      // Assign roles (required by sequential deposit model)
+      const room = manager.getRoom('room-play')!;
+      room.playerA = 'pA';
+      room.playerB = 'pB';
+
       manager.handleMessage('room-play', 'pA', {
         type: 'confirmDeposit',
         payload: { signature: 'sig' },
@@ -413,7 +434,7 @@ describe('RoomManager', () => {
         payload: { signature: 'sig' },
       });
 
-      return { room: manager.getRoom('room-play')!, mock1, mock2 };
+      return { room, mock1, mock2 };
     }
 
     test('playing card without opening it first is rejected', () => {
@@ -515,6 +536,11 @@ describe('RoomManager', () => {
       const mock2 = createMockWs();
       manager.joinRoom('room-broadcast', 'pA', mock1.ws);
       manager.joinRoom('room-broadcast', 'pB', mock2.ws);
+
+      // Assign roles (required by sequential deposit model)
+      const room = manager.getRoom('room-broadcast')!;
+      room.playerA = 'pA';
+      room.playerB = 'pB';
 
       // Both deposited → playing
       manager.handleMessage('room-broadcast', 'pA', {
