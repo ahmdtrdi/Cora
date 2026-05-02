@@ -13,7 +13,11 @@ import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
 import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
-import type { CharacterOption } from "@/components/character/characterTypes";
+import type {
+  CharacterOption,
+  CharacterSelectionState,
+  OpponentCharacterStatus,
+} from "@/components/character/characterTypes";
 
 export type Stat = { label: string; value: number };
 
@@ -127,6 +131,8 @@ export function LobbyScreen() {
   const requestedWager = searchParams.get("wager");
   const requestedScientist = searchParams.get("scientist");
   const previewPhase = searchParams.get("previewPhase");
+  const previewSelectStateParam = searchParams.get("previewSelectState");
+  const previewOpponentStatusParam = searchParams.get("previewOpponentStatus");
   const resumeQueue = searchParams.get("resumeQueue") === "1";
   const hasRequestedArena = requestedArena ? ARENAS.some((arena) => arena.id === requestedArena) : false;
   const initialScientist =
@@ -156,6 +162,26 @@ export function LobbyScreen() {
     () => SCIENTISTS.map((scientist) => ({ ...scientist, stats: [...scientist.stats] })),
     [],
   );
+  const previewSelectionState: CharacterSelectionState =
+    previewSelectStateParam === "selected" ||
+    previewSelectStateParam === "locked" ||
+    previewSelectStateParam === "auto_assigned" ||
+    previewSelectStateParam === "expired"
+      ? previewSelectStateParam
+      : "idle";
+  const previewOpponentStatus: OpponentCharacterStatus =
+    previewOpponentStatusParam === "hidden" ||
+    previewOpponentStatusParam === "picked" ||
+    previewOpponentStatusParam === "locked" ||
+    previewOpponentStatusParam === "auto_assigned"
+      ? previewOpponentStatusParam
+      : "waiting";
+  const previewSelectionId =
+    previewSelectionState === "auto_assigned" ? undefined : selectedScientist?.id;
+  const previewAutoAssignedCharacterId =
+    previewSelectionState === "auto_assigned"
+      ? selectedScientist?.id ?? SCIENTISTS[0]?.id
+      : undefined;
   const isSelectingCharacterPreview = previewPhase === "selecting_character" && Boolean(selectedArena);
 
   const walletConnected = Boolean(publicKey);
@@ -361,9 +387,12 @@ export function LobbyScreen() {
           <CharacterSelectPanel
             mode="post_deposit"
             characters={characterOptions}
-            selectedCharacterId={selectedScientist?.id}
+            selectedCharacterId={previewSelectionId}
+            selectionState={previewSelectionState}
+            autoAssignedCharacterId={previewAutoAssignedCharacterId}
+            neutralDefaultCharacterId={SCIENTISTS[0]?.id}
             deadlineMs={18_000}
-            opponentStatus="waiting"
+            opponentStatus={previewOpponentStatus}
             onSelect={(characterId) => {
               const next = SCIENTISTS.find((scientist) => scientist.id === characterId) ?? null;
               setSelectedScientist(next);

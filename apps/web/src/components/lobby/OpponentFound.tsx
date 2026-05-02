@@ -10,6 +10,8 @@ import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
+import { RoomStatusRail } from "@/components/room/RoomStatusRail";
+import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -229,6 +231,26 @@ export function OpponentFound({
     return "Sign Deposit";
   }
 
+  function getPlayerBadges(): RoomStatusBadge[] {
+    if (gameState?.status === "playing") {
+      return ["connected", "matched", "deposited", "ready"];
+    }
+    if (signedDepositSignature) {
+      return ["connected", "matched", "deposited"];
+    }
+    if (signingState === "signing") {
+      return ["connected", "matched", "selecting"];
+    }
+    return ["connected", "matched", "selecting"];
+  }
+
+  function getOpponentBadges(): RoomStatusBadge[] {
+    if (opponentFailedDepositAt) return ["connected", "matched"];
+    if (gameState?.status === "playing") return ["connected", "matched", "deposited", "ready"];
+    if (depositUnlockedAt || signingState === "waiting") return ["connected", "matched", "deposited"];
+    return ["connected", "matched", "selecting"];
+  }
+
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 text-[#1f2b24] md:px-6">
       {errorVisible && errorText && (
@@ -308,6 +330,25 @@ export function OpponentFound({
             {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
           </p>
         </motion.div>
+      </div>
+
+      <div className="mt-4 w-full">
+        <RoomStatusRail
+          rows={[
+            {
+              id: "you",
+              label: "You",
+              subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
+              badges: getPlayerBadges(),
+            },
+            {
+              id: "opponent",
+              label: "Opponent",
+              subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
+              badges: getOpponentBadges(),
+            },
+          ]}
+        />
       </div>
 
       <DepositPanel
