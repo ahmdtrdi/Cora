@@ -1371,3 +1371,28 @@
 - Lobby draft persistence is FE-only session storage and not authoritative; long-term we should move to backend/session-backed room snapshots.
 - Play-state gate currently relies on FE interpretation of `gameState.status`; if BE emits a dedicated room readiness field, we should switch to that source-of-truth.
 - Opponent metadata fallback remains a temporary UI safeguard until backend guarantees richer opponent payload consistency at all pre-play/play phases.
+
+## 2026-05-02 - Dev-Only Fallback Gating (Explicit Env Flags)
+
+### The Change
+- Extended runtime config in [runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts):
+  - added `allowDevCharacterFallback`,
+  - added `allowDevRoomPreview`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - deterministic opponent scientist fallback now runs only when `NEXT_PUBLIC_ALLOW_DEV_CHARACTER_FALLBACK=true`.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - `?previewPhase=selecting_character` rendering now requires `NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW=true`.
+- Updated env documentation in [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example):
+  - documented `NEXT_PUBLIC_ALLOW_DEV_CHARACTER_FALLBACK`,
+  - documented `NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW`.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- Demo and judge-facing runs should not silently depend on synthetic FE fallbacks.
+- Dev tooling (preview states, deterministic placeholders) is still useful, but must be opt-in and explicit.
+- Centralizing these toggles in runtime config keeps behavior predictable across environments.
+
+### The Tech Debt
+- Opponent character remains non-authoritative until backend includes opponent character payload in pre-play room state.
+- Dev-preview query params still share the lobby route; if they expand, we should move them into a dedicated `/dev` surface.

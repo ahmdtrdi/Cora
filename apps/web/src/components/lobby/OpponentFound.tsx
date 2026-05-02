@@ -12,6 +12,7 @@ import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
 import { RoomStatusRail } from "@/components/room/RoomStatusRail";
 import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
+import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -43,6 +44,8 @@ export function OpponentFound({
   wagerUsd,
   onTimeout,
 }: OpponentFoundProps) {
+  const runtimeConfig = getRuntimeConfig();
+  const allowDevCharacterFallback = runtimeConfig.allowDevCharacterFallback;
   const router = useRouter();
   const { connection } = useConnection();
   const wallet = useWallet();
@@ -92,7 +95,7 @@ export function OpponentFound({
     !isUxSignLocked &&
     !signed;
 
-  const opponentScientist = opponentAddress
+  const opponentScientist = allowDevCharacterFallback && opponentAddress
     ? scientists[Math.abs(opponentAddress.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % scientists.length]
     : null;
 

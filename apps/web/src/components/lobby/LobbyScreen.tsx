@@ -169,6 +169,7 @@ export function LobbyScreen() {
     () => SCIENTISTS.map((scientist) => ({ ...scientist, stats: [...scientist.stats] })),
     [],
   );
+  const previewEnabled = runtimeConfig.allowDevRoomPreview;
   const previewSelectionState: CharacterSelectionState =
     previewSelectStateParam === "selected" ||
     previewSelectStateParam === "locked" ||
@@ -189,7 +190,10 @@ export function LobbyScreen() {
     previewSelectionState === "auto_assigned"
       ? selectedScientist?.id ?? SCIENTISTS[0]?.id
       : undefined;
-  const isSelectingCharacterPreview = previewPhase === "selecting_character" && Boolean(selectedArena);
+  const isSelectingCharacterPreview =
+    previewEnabled &&
+    previewPhase === "selecting_character" &&
+    Boolean(selectedArena);
 
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
