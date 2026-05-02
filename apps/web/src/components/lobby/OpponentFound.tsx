@@ -86,6 +86,7 @@ export function OpponentFound({
     !uxLockExpired;
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
+    connectionState === "connected" &&
     signingState !== "signing" &&
     signingState !== "waiting" &&
     !isUxSignLocked &&
@@ -202,6 +203,7 @@ export function OpponentFound({
 
   function getDepositHint() {
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
+    if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
     if (isUxSignLocked) return "Waiting for server unlock...";
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
@@ -369,7 +371,7 @@ export function OpponentFound({
           ) : null
         }
         retrySlot={
-          connectionState === "error" || connectionState === "disconnected" ? (
+          connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
             <button
               type="button"
               onClick={reconnect}
@@ -391,13 +393,15 @@ export function OpponentFound({
           </button>
         }
         extraSlot={
-          connectionState === "error" || connectionState === "disconnected" ? (
+          connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
             <div className="mt-2 frame-cut px-3 py-2" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
               <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
-                Connection issue while waiting
+                {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
               </p>
               <p className="mt-1 break-words font-gabarito text-xs text-[#73512d]">
-                {lastSocketCloseInfo
+                {connectionState === "reconnecting"
+                  ? "Trying to restore room state. Keep this page open."
+                  : lastSocketCloseInfo
                   ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
                   : lastSocketError ?? "Socket disconnected."}
               </p>

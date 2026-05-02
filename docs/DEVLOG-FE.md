@@ -1340,3 +1340,34 @@
 ### The Tech Debt
 - Badge state mapping in `OpponentFound` still derives from local FE heuristics. Once BE emits authoritative character/deposit readiness fields, these mappings should be replaced by contract-driven adapters.
 - The default status rail inside shared `CharacterSelect` is useful for preview and scaffolding, but final product screens may want host-specific rails for tighter density and copy control.
+
+## 2026-05-02 - Runtime Room/Play Hardening (State Guards + Failure Recovery)
+
+### The Change
+- Updated socket runtime state handling in [useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts):
+  - added explicit `reconnecting` connection state,
+  - improved reconnect lifecycle state transitions and issue reset behavior.
+- Hardened lobby runtime guards in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - added phase-context recovery surface to prevent blank render when required room context is missing,
+  - added wallet-disconnected warning while in `waiting`/`found` phases,
+  - added session-based draft restore/persist (`arenaId` + `scientistId`) to reduce refresh damage during demo/testing.
+- Hardened found/deposit runtime behavior in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - requires active socket connection before allowing deposit signing,
+  - added reconnecting-specific helper copy and retry surfaces.
+- Hardened play runtime failure UX in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added reconnecting alert state,
+  - added room-sync loading card after refresh/rejoin,
+  - added explicit play-state gate (`room not in playing state yet`) with recovery actions,
+  - improved opponent metadata fallback labels when payload is not yet available.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- We needed to avoid demo-breaking “silent” states (blank/ambiguous room surfaces) when refresh, socket instability, or partial route context occurs.
+- Explicit reconnecting and play-state gating reduces confusion for judges/testers by turning hidden runtime transitions into clear UI states with recovery actions.
+- Persisting lobby draft inputs keeps user intent (arena + character choice) across refresh so recovery is faster and less destructive.
+
+### The Tech Debt
+- Lobby draft persistence is FE-only session storage and not authoritative; long-term we should move to backend/session-backed room snapshots.
+- Play-state gate currently relies on FE interpretation of `gameState.status`; if BE emits a dedicated room readiness field, we should switch to that source-of-truth.
+- Opponent metadata fallback remains a temporary UI safeguard until backend guarantees richer opponent payload consistency at all pre-play/play phases.
