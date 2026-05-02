@@ -136,20 +136,16 @@ export async function submitSettlementTransaction(
 
   const accountInfo = await withRetry(() => connection.getAccountInfo(matchStatePda));
   if (!accountInfo) {
-    console.warn(`[Settlement] MatchState PDA not found on-chain (match was likely not initialized on-chain). Skipping settlement.`);
+    console.warn(`[Settlement] MatchState PDA not found on-chain. Either the match was never initialized, or it was already settled/refunded (account closed). Skipping.`);
     return 'SKIPPED_NO_ONCHAIN_MATCH';
   }
 
   // Parse MatchState manually to avoid heavy IDL dependency
-  // Discriminator: 8 bytes
-  // match_id: 32 bytes (offset 8)
-  // player_a: 32 bytes (offset 40)
-  // player_b: 32 bytes (offset 72)
-  // token_mint: 32 bytes (offset 104)
+  // Layout (v1): 8 (discriminator) + 1 (version) + 32 (match_id) + 32 (player_a) + 32 (player_b) + 32 (token_mint) + ...
   const matchStateData = accountInfo.data;
-  const playerA = new PublicKey(matchStateData.subarray(40, 72));
-  const playerB = new PublicKey(matchStateData.subarray(72, 104));
-  const tokenMint = new PublicKey(matchStateData.subarray(104, 136));
+  const playerA = new PublicKey(matchStateData.subarray(41, 73));
+  const playerB = new PublicKey(matchStateData.subarray(73, 105));
+  const tokenMint = new PublicKey(matchStateData.subarray(105, 137));
 
   const targetPubkey = new PublicKey(targetAddress);
   
@@ -215,6 +211,7 @@ export async function submitSettlementTransaction(
   
   const txHash = await withRetry(() => sendAndConfirmTransaction(connection, tx, [serverKeypair]));
   console.log(`[Settlement] Success! TxHash: ${txHash}`);
+  console.log(`[Settlement] MatchState PDA and Vault closed on-chain. Rent reclaimed by caller.`);
   
   return txHash;
 }

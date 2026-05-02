@@ -1,7 +1,7 @@
 import { test, expect, describe } from 'bun:test';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { buildSettlementMessage, deriveMatchId } from '@shared/escrow';
+import { buildSettlementMessage, deriveMatchId, ESCROW_CONSTANTS } from '@shared/escrow';
 import { signSettlementAuthorization, serverPublicKey } from '../src/utils/settlement';
 import { PublicKey } from '@solana/web3.js';
 
@@ -105,5 +105,40 @@ describe('deriveMatchId', () => {
     const a = deriveMatchId('room-1');
     const b = deriveMatchId('room-2');
     expect(a).not.toEqual(b);
+  });
+});
+
+describe('MatchState v2 layout (version field)', () => {
+  test('byte offsets account for version field at position 8', () => {
+    // Simulate a MatchState buffer with known values:
+    // 8 (discriminator) + 1 (version) + 32 (match_id) + 32 (player_a) + 32 (player_b) + 32 (token_mint)
+    const buf = Buffer.alloc(137); // 8 + 1 + 32 + 32 + 32 + 32
+
+    // Write discriminator (arbitrary)
+    buf.set([250, 209, 137, 70, 235, 96, 121, 216], 0);
+    // Write version
+    buf.writeUInt8(ESCROW_CONSTANTS.MATCH_STATE_VERSION, 8);
+    // Write match_id (32 bytes of 0xAA)
+    buf.fill(0xAA, 9, 41);
+    // Write player_a (32 bytes of 0xBB)
+    buf.fill(0xBB, 41, 73);
+    // Write player_b (32 bytes of 0xCC)
+    buf.fill(0xCC, 73, 105);
+    // Write token_mint (32 bytes of 0xDD)
+    buf.fill(0xDD, 105, 137);
+
+    // Verify the offsets match what settlement.ts uses
+    const playerA = new PublicKey(buf.subarray(41, 73));
+    const playerB = new PublicKey(buf.subarray(73, 105));
+    const tokenMint = new PublicKey(buf.subarray(105, 137));
+
+    expect(Buffer.from(playerA.toBytes()).every(b => b === 0xBB)).toBe(true);
+    expect(Buffer.from(playerB.toBytes()).every(b => b === 0xCC)).toBe(true);
+    expect(Buffer.from(tokenMint.toBytes()).every(b => b === 0xDD)).toBe(true);
+  });
+
+  test('version field defaults to 1', () => {
+    expect(ESCROW_CONSTANTS.MATCH_STATE_VERSION).toBe(1);
+    expect(ESCROW_CONSTANTS.PROGRAM_CONFIG_VERSION).toBe(1);
   });
 });

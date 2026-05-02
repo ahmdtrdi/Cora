@@ -6,6 +6,7 @@ import type { WsMessage } from '@shared/websocket';
 import { RoomManager } from './managers/RoomManager';
 import { rateLimiter } from './middleware/rateLimiter';
 import { createActionsRouter } from './routes/actions';
+import { startEventListener } from './utils/eventListener';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
@@ -146,6 +147,13 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
 // Start the server
 const port = parseInt(process.env.PORT || '8080', 10);
 console.log(`Server is running on port ${port}`);
+
+// Start Anchor event listener when RPC is configured
+if (process.env.SOLANA_RPC_URL) {
+  startEventListener(process.env.SOLANA_RPC_URL);
+} else {
+  console.log('[EventListener] Skipped — no SOLANA_RPC_URL configured.');
+}
 
 export default {
   port,
