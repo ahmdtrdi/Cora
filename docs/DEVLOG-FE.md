@@ -1194,3 +1194,32 @@
 
 ### The Tech Debt
 - Timeout value is still hardcoded in FE; once BE timing is finalized, move to shared config/contract to prevent drift.
+
+## 2026-05-02 - Reusable Character Select Extraction (Flow-Agnostic Refactor)
+
+### The Change
+- Added a new shared character module:
+  - [characterTypes.ts](/d:/projects/Cora/apps/web/src/components/character/characterTypes.ts)
+  - [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx)
+  - [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx)
+- Refactored lobby character screen to consume the shared selector:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx)
+- The shared selector is now controlled by props and supports:
+  - `selectedCharacterId` + `onSelect(characterId)`
+  - `locked` state
+  - `disabled` state
+  - selected visual badge
+  - optional countdown slot / `deadlineMs`
+  - optional opponent status slot / `opponentStatus`
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- The team has not finalized whether character selection lives pre-queue or post-deposit. Extracting a reusable, controlled selector now keeps UI work reusable across both flow options.
+- Decoupling selection UI from lobby orchestration prevents coupling to queue/deposit behavior and reduces rework when BE finalizes room phases.
+- Building slot-based metadata surfaces (countdown/opponent status) gives us a single component that can cover both normal flow and future locked/timeout selection phases.
+
+### The Tech Debt
+- The current lobby still maps between `Scientist` (lobby-local type) and shared character option props; we should converge on a single shared character domain type once BE/shared-types contract is finalized.
+- Countdown and opponent status are currently optional UI hooks only; they are not yet wired to authoritative backend events.
+- Character selection remains visual/UI-level in this refactor; no gameplay stat integration is included yet.
