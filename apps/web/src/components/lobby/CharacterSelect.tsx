@@ -3,6 +3,7 @@
 import type { Arena, Scientist } from "./LobbyScreen";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import type { CharacterOption } from "@/components/character/characterTypes";
+import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 
 type CharacterSelectProps = {
   scientists: Scientist[];
@@ -38,17 +39,12 @@ export function CharacterSelect({
   }));
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 text-[#1f2b24] md:px-6 md:py-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#274137]"
-          style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
-        >
-          Back
-        </button>
-
+    <RoomPhaseShell
+      withTransition={false}
+      phase="setup"
+      title="Choose your character"
+      subtitle="Pick one scientist before entering matchmaking."
+      statusSlot={
         <div className="flex flex-wrap items-center gap-2">
           <span
             className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide"
@@ -69,34 +65,46 @@ export function CharacterSelect({
             {trimWallet(walletAddress)}
           </span>
         </div>
-      </header>
-
+      }
+      rightPanelSlot={
+        <button
+          type="button"
+          onClick={onBack}
+          className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#274137]"
+          style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+        >
+          Back
+        </button>
+      }
+      footerSlot={
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={onContinue}
+            disabled={!selected}
+            className="frame-cut frame-cut-sm min-w-[170px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
+            style={{
+              border: selected ? `1px solid ${arena.frame}` : "1px solid rgba(39,65,55,0.2)",
+              background: selected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.65)",
+              color: selected ? arena.frame : "rgba(39,65,55,0.45)",
+            }}
+          >
+            Enter Queue
+          </button>
+        </div>
+      }
+    >
       <CharacterSelectPanel
         mode="pre_queue"
         characters={characters}
         selectedCharacterId={selected?.id}
+        showHeading={false}
         onSelect={(characterId) => {
           const next = scientists.find((scientist) => scientist.id === characterId);
           if (!next) return;
           onSelect(next);
         }}
       />
-
-      <footer className="mt-5 flex items-center justify-end">
-        <button
-          type="button"
-          onClick={onContinue}
-          disabled={!selected}
-          className="frame-cut frame-cut-sm min-w-[170px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
-          style={{
-            border: selected ? `1px solid ${arena.frame}` : "1px solid rgba(39,65,55,0.2)",
-            background: selected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.65)",
-            color: selected ? arena.frame : "rgba(39,65,55,0.45)",
-          }}
-        >
-          Enter Queue
-        </button>
-      </footer>
-    </div>
+    </RoomPhaseShell>
   );
 }

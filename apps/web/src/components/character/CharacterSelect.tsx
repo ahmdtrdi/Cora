@@ -12,6 +12,7 @@ export type CharacterSelectProps = {
   mode?: CharacterSelectMode;
   characters: CharacterOption[];
   selectedCharacterId?: string;
+  showHeading?: boolean;
   locked?: boolean;
   disabled?: boolean;
   deadlineMs?: number;
@@ -48,6 +49,7 @@ export function CharacterSelect({
   mode = "pre_queue",
   characters,
   selectedCharacterId,
+  showHeading = true,
   locked = false,
   disabled = false,
   deadlineMs,
@@ -62,12 +64,14 @@ export function CharacterSelect({
 
   return (
     <section className="flex flex-1 flex-col">
-      <div className="mb-4">
-        <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">
-          {mode === "post_deposit" ? "Character Lock" : "Character Select"}
-        </p>
-        <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#1f2b24] md:text-5xl">{title}</h1>
-      </div>
+      {showHeading && (
+        <div className="mb-4">
+          <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">
+            {mode === "post_deposit" ? "Character Lock" : "Character Select"}
+          </p>
+          <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#1f2b24] md:text-5xl">{title}</h1>
+        </div>
+      )}
 
       {showMeta && (
         <div className="mb-4 flex flex-wrap gap-2">

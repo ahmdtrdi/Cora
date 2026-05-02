@@ -1223,3 +1223,52 @@
 - The current lobby still maps between `Scientist` (lobby-local type) and shared character option props; we should converge on a single shared character domain type once BE/shared-types contract is finalized.
 - Countdown and opponent status are currently optional UI hooks only; they are not yet wired to authoritative backend events.
 - Character selection remains visual/UI-level in this refactor; no gameplay stat integration is included yet.
+
+## 2026-05-02 - Room Phase Shell + Shared Phase Labels (Flow-Agnostic Foundation)
+
+### The Change
+- Added reusable room phase type contract in [roomPhaseTypes.ts](/d:/projects/Cora/apps/web/src/components/room/roomPhaseTypes.ts):
+  - `RoomPhase` union includes `setup`, `matchmaking`, `depositing`, `selecting_character`, `playing`, `finished`, `error`.
+  - `ROOM_PHASE_LABELS` map centralizes default eyebrow/title/subtitle metadata per phase.
+- Added reusable phase header in [RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx) with:
+  - title/subtitle slots
+  - status slot
+  - optional right-side panel slot
+- Added reusable phase wrapper in [RoomPhaseShell.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseShell.tsx) with:
+  - shared container/layout
+  - header integration
+  - footer slot
+  - optional motion transition wrapper reusing existing lobby easing/timing profile
+- Integrated shell into lobby character selection screen:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx)
+  - kept existing behavior, only changed composition.
+- Added local preview-only mocked `selecting_character` phase in lobby:
+  - [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - enabled by query param `?previewPhase=selecting_character`.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- Flow order is still under team decision, so we need a phase-driven UI foundation that can mount either sequence without rewriting screen scaffolding.
+- Centralizing phase labels removes repeated copy decisions across screens and gives FE/BE a clearer shared language for room states.
+- Query-param preview gives quick local validation for a future `selecting_character` state while avoiding premature runtime wiring in production flow.
+
+### The Tech Debt
+- The preview phase is intentionally FE-only and not connected to backend room state; it should be removed or moved to a dedicated `/dev` surface once BE emits authoritative `selecting_character` status.
+- `RoomPhase` currently lives in FE-only types; once backend/shared-types settles, we should align this with cross-team contracts to prevent terminology drift.
+
+## 2026-05-02 - Character Select Header Duplication Fix (Post-Refactor)
+
+### The Change
+- Updated shared selector in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - added `showHeading?: boolean` prop (default `true`) to allow host screens to suppress internal heading rendering when wrapped by a phase shell.
+- Updated lobby wrapper usage in [lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - passed `showHeading={false}` so the room phase header is the only heading source.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- After introducing `RoomPhaseShell`, the lobby character screen rendered two headings (`RoomPhaseHeader` + shared `CharacterSelect` heading). The new heading toggle keeps shared component portability while avoiding duplicate hierarchy in shell-based layouts.
+
+### The Tech Debt
+- Header ownership is now host-driven in shell compositions and component-driven in standalone compositions. We should document this pattern in UI component conventions to avoid future mixed-header regressions.

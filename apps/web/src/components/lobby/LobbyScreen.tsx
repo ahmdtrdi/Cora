@@ -11,6 +11,9 @@ import { OpponentFound } from "./OpponentFound";
 import { queueMatch } from "@/lib/matchmaking/queueMatch";
 import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
 import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
+import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
+import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
+import type { CharacterOption } from "@/components/character/characterTypes";
 
 export type Stat = { label: string; value: number };
 
@@ -123,6 +126,7 @@ export function LobbyScreen() {
   const requestedToken = searchParams.get("token");
   const requestedWager = searchParams.get("wager");
   const requestedScientist = searchParams.get("scientist");
+  const previewPhase = searchParams.get("previewPhase");
   const resumeQueue = searchParams.get("resumeQueue") === "1";
   const hasRequestedArena = requestedArena ? ARENAS.some((arena) => arena.id === requestedArena) : false;
   const initialScientist =
@@ -148,6 +152,11 @@ export function LobbyScreen() {
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
     [selectedArenaId],
   );
+  const characterOptions = useMemo<CharacterOption[]>(
+    () => SCIENTISTS.map((scientist) => ({ ...scientist, stats: [...scientist.stats] })),
+    [],
+  );
+  const isSelectingCharacterPreview = previewPhase === "selecting_character" && Boolean(selectedArena);
 
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
@@ -327,6 +336,42 @@ export function LobbyScreen() {
           </div>
         </div>
       )}
+      {isSelectingCharacterPreview && selectedArena && (
+        <RoomPhaseShell
+          phase="selecting_character"
+          title="Lock your character"
+          subtitle="Preview-only phase shell. Final flow is not wired yet."
+          statusSlot={
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide"
+                style={{ border: `1px solid ${selectedArena.frame}`, color: selectedArena.frame, background: "rgba(255,255,255,0.82)" }}
+              >
+                {selectedArena.label}
+              </span>
+              <span
+                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#6f3a28]"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+              >
+                ${FIXED_WAGER_USD} {selectedArena.token}
+              </span>
+            </div>
+          }
+        >
+          <CharacterSelectPanel
+            mode="post_deposit"
+            characters={characterOptions}
+            selectedCharacterId={selectedScientist?.id}
+            deadlineMs={18_000}
+            opponentStatus="waiting"
+            onSelect={(characterId) => {
+              const next = SCIENTISTS.find((scientist) => scientist.id === characterId) ?? null;
+              setSelectedScientist(next);
+            }}
+          />
+        </RoomPhaseShell>
+      )}
+      {!isSelectingCharacterPreview && (
       <AnimatePresence mode="wait">
         {phase === "setup" && (
           <motion.div
@@ -432,6 +477,7 @@ export function LobbyScreen() {
           </motion.div>
         )}
       </AnimatePresence>
+      )}
     </div>
   );
 }
