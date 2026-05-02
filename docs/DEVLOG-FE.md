@@ -1396,3 +1396,43 @@
 ### The Tech Debt
 - Opponent character remains non-authoritative until backend includes opponent character payload in pre-play room state.
 - Dev-preview query params still share the lobby route; if they expand, we should move them into a dedicated `/dev` surface.
+
+## 2026-05-02 - Flow-Safe Room State Preview Surface (/dev/room-states)
+
+### The Change
+- Added a dedicated local preview route:
+  - [apps/web/src/app/dev/room-states/page.tsx](/d:/projects/Cora/apps/web/src/app/dev/room-states/page.tsx)
+- Built a mock-driven room-state lab using existing reusable components:
+  - `RoomPhaseShell`
+  - shared `CharacterSelect`
+  - shared `DepositPanel`
+  - `RoomStatusRail`
+- Included quick presets for both flow contexts:
+  - Old flow style (`pre_queue`)
+  - New flow style (`post_deposit`)
+  - timeout auto-assign
+  - locked/ready
+- Added manual controls to switch:
+  - room phase
+  - selection state
+  - opponent status
+  - deposit status
+  - countdown presence/value
+- Added selection-state normalization in preview controls:
+  - switching to `idle` clears `selectedCharacterId` and `autoAssignedCharacterId`
+  - switching to `auto_assigned` clears selected id and ensures a default auto-assigned id exists
+- Route respects the explicit dev flag:
+  - shows disabled gate unless `NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW=true`.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- FE needed a stable UI test surface that does not depend on live opponents, socket timing, or unresolved flow-order decisions.
+- Reusing extracted components verifies that recent refactors are truly flow-agnostic and portable.
+- Presets plus manual controls support both quick regression checks and deeper UI-state QA before BE contracts are finalized.
+- Selection normalization keeps manual test combinations semantically correct (`idle` no longer shows a stale selected character).
+
+### The Tech Debt
+- This surface is mock-only and does not validate backend contracts/events; once shared room-state payloads stabilize, we should add a contract-mock adapter layer.
+- The preview route includes inline mock data; if more dev previews are added, centralizing mock fixtures would reduce duplication.
+- This normalization currently lives in the dev preview page only; if we add more state labs, we should extract shared preview state helpers.
