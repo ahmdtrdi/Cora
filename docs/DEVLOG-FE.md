@@ -1194,3 +1194,108 @@
 
 ### The Tech Debt
 - Timeout value is still hardcoded in FE; once BE timing is finalized, move to shared config/contract to prevent drift.
+
+## 2026-05-02 - Reusable Character Select Extraction (Flow-Agnostic Refactor)
+
+### The Change
+- Added a new shared character module:
+  - [characterTypes.ts](/d:/projects/Cora/apps/web/src/components/character/characterTypes.ts)
+  - [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx)
+  - [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx)
+- Refactored lobby character screen to consume the shared selector:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx)
+- The shared selector is now controlled by props and supports:
+  - `selectedCharacterId` + `onSelect(characterId)`
+  - `locked` state
+  - `disabled` state
+  - selected visual badge
+  - optional countdown slot / `deadlineMs`
+  - optional opponent status slot / `opponentStatus`
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- The team has not finalized whether character selection lives pre-queue or post-deposit. Extracting a reusable, controlled selector now keeps UI work reusable across both flow options.
+- Decoupling selection UI from lobby orchestration prevents coupling to queue/deposit behavior and reduces rework when BE finalizes room phases.
+- Building slot-based metadata surfaces (countdown/opponent status) gives us a single component that can cover both normal flow and future locked/timeout selection phases.
+
+### The Tech Debt
+- The current lobby still maps between `Scientist` (lobby-local type) and shared character option props; we should converge on a single shared character domain type once BE/shared-types contract is finalized.
+- Countdown and opponent status are currently optional UI hooks only; they are not yet wired to authoritative backend events.
+- Character selection remains visual/UI-level in this refactor; no gameplay stat integration is included yet.
+
+## 2026-05-02 - Room Phase Shell + Shared Phase Labels (Flow-Agnostic Foundation)
+
+### The Change
+- Added reusable room phase type contract in [roomPhaseTypes.ts](/d:/projects/Cora/apps/web/src/components/room/roomPhaseTypes.ts):
+  - `RoomPhase` union includes `setup`, `matchmaking`, `depositing`, `selecting_character`, `playing`, `finished`, `error`.
+  - `ROOM_PHASE_LABELS` map centralizes default eyebrow/title/subtitle metadata per phase.
+- Added reusable phase header in [RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx) with:
+  - title/subtitle slots
+  - status slot
+  - optional right-side panel slot
+- Added reusable phase wrapper in [RoomPhaseShell.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseShell.tsx) with:
+  - shared container/layout
+  - header integration
+  - footer slot
+  - optional motion transition wrapper reusing existing lobby easing/timing profile
+- Integrated shell into lobby character selection screen:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx)
+  - kept existing behavior, only changed composition.
+- Added local preview-only mocked `selecting_character` phase in lobby:
+  - [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - enabled by query param `?previewPhase=selecting_character`.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- Flow order is still under team decision, so we need a phase-driven UI foundation that can mount either sequence without rewriting screen scaffolding.
+- Centralizing phase labels removes repeated copy decisions across screens and gives FE/BE a clearer shared language for room states.
+- Query-param preview gives quick local validation for a future `selecting_character` state while avoiding premature runtime wiring in production flow.
+
+### The Tech Debt
+- The preview phase is intentionally FE-only and not connected to backend room state; it should be removed or moved to a dedicated `/dev` surface once BE emits authoritative `selecting_character` status.
+- `RoomPhase` currently lives in FE-only types; once backend/shared-types settles, we should align this with cross-team contracts to prevent terminology drift.
+
+## 2026-05-02 - Character Select Header Duplication Fix (Post-Refactor)
+
+### The Change
+- Updated shared selector in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - added `showHeading?: boolean` prop (default `true`) to allow host screens to suppress internal heading rendering when wrapped by a phase shell.
+- Updated lobby wrapper usage in [lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - passed `showHeading={false}` so the room phase header is the only heading source.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- After introducing `RoomPhaseShell`, the lobby character screen rendered two headings (`RoomPhaseHeader` + shared `CharacterSelect` heading). The new heading toggle keeps shared component portability while avoiding duplicate hierarchy in shell-based layouts.
+
+### The Tech Debt
+- Header ownership is now host-driven in shell compositions and component-driven in standalone compositions. We should document this pattern in UI component conventions to avoid future mixed-header regressions.
+
+## 2026-05-02 - Deposit Panel Refactor (Character-Agnostic UI + Status Types)
+
+### The Change
+- Added reusable deposit status contract:
+  - [depositTypes.ts](/d:/projects/Cora/apps/web/src/components/deposit/depositTypes.ts)
+  - introduced `DepositStatus` union (`idle`, `wallet_required`, `signing`, `submitted`, `confirmed`, `waiting_opponent`, `opponent_failed`, `expired`, `error`).
+- Added reusable deposit UI primitives:
+  - [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx)
+  - [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx)
+- Refactored lobby found-phase deposit UI in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - replaced inline deposit block with `DepositPanel`.
+  - mapped existing wallet/signing/socket states into shared `DepositStatus`.
+  - wired retry and cancel action slots.
+  - surfaced deposit signature via dedicated signature slot.
+  - kept component fully unaware of character mechanics.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- Deposit UX is needed in multiple contexts and should not be tied to one lobby screen implementation.
+- Moving status semantics into shared types reduces drift between “what state we are in” and “what UI we render.”
+- Slot-based actions (`retry`, `cancel`, wallet slot, extra slot) let the host screen inject flow-specific controls while keeping the panel reusable.
+
+### The Tech Debt
+- `OpponentFound` currently maps local state to `DepositStatus`; once backend exposes stronger authoritative deposit state fields, this mapping should move to a shared adapter/helper.
+- `/play` still contains settlement confirmation UI that follows a similar state pattern but is not yet migrated to shared deposit/transaction panel primitives.
