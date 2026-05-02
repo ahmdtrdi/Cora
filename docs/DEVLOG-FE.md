@@ -1299,3 +1299,44 @@
 ### The Tech Debt
 - `OpponentFound` currently maps local state to `DepositStatus`; once backend exposes stronger authoritative deposit state fields, this mapping should move to a shared adapter/helper.
 - `/play` still contains settlement confirmation UI that follows a similar state pattern but is not yet migrated to shared deposit/transaction panel primitives.
+
+## 2026-05-02 - Room Status Indicators + Character Select State Surfaces
+
+### The Change
+- Added reusable room status primitives:
+  - [CountdownBar.tsx](/d:/projects/Cora/apps/web/src/components/room/CountdownBar.tsx)
+  - [PlayerRoomStatus.tsx](/d:/projects/Cora/apps/web/src/components/room/PlayerRoomStatus.tsx)
+  - [RoomStatusRail.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomStatusRail.tsx)
+- Added compact room badges and styling support for:
+  - `Connected`, `Matched`, `Deposited`, `Selecting`, `Locked`, `Auto-assigned`, `Ready`
+- Expanded shared character types in [characterTypes.ts](/d:/projects/Cora/apps/web/src/components/character/characterTypes.ts):
+  - added `CharacterSelectionState` union
+  - added `locked` to `OpponentCharacterStatus`
+- Upgraded shared character components:
+  - [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+    - added `autoAssigned` badge path
+    - added neutral default badge path
+  - [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+    - added selection state copy (`idle/selected/locked/auto_assigned/expired`)
+    - integrated reusable countdown bar
+    - added auto-pick helper copy
+    - added default selection status rail with player/opponent status rows
+    - added neutral default + auto-assigned character support
+- Updated selecting-character preview in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - supports query-driven UI state previews:
+    - `?previewPhase=selecting_character`
+    - optional `previewSelectState=selected|locked|auto_assigned|expired`
+    - optional `previewOpponentStatus=waiting|picked|locked|auto_assigned|hidden`
+- Updated found/deposit screen in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - integrated `RoomStatusRail` with player/opponent deposit readiness rows.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- We need deterministic, flow-agnostic UI surfaces that allow QA and demo rehearsal without waiting on live opponent timing.
+- Shared status/badge primitives make room progress legible to judges and testers while reducing duplicated screen-specific UI logic.
+- Character state visuals were expanded as pure FE state presentation without introducing BE contract assumptions.
+
+### The Tech Debt
+- Badge state mapping in `OpponentFound` still derives from local FE heuristics. Once BE emits authoritative character/deposit readiness fields, these mappings should be replaced by contract-driven adapters.
+- The default status rail inside shared `CharacterSelect` is useful for preview and scaffolding, but final product screens may want host-specific rails for tighter density and copy control.

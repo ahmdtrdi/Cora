@@ -19,4 +19,12 @@ export type OpponentCharacterStatus =
   | "hidden"
   | "waiting"
   | "picked"
+  | "locked"
   | "auto_assigned";
+
+export type CharacterSelectionState =
+  | "idle"
+  | "selected"
+  | "locked"
+  | "auto_assigned"
+  | "expired";

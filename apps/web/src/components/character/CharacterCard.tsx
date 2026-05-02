@@ -8,6 +8,8 @@ type CharacterCardProps = {
   selected: boolean;
   disabled?: boolean;
   locked?: boolean;
+  autoAssigned?: boolean;
+  showNeutralDefault?: boolean;
   index: number;
   onSelect: (characterId: string) => void;
 };
@@ -17,6 +19,8 @@ export function CharacterCard({
   selected,
   disabled = false,
   locked = false,
+  autoAssigned = false,
+  showNeutralDefault = false,
   index,
   onSelect,
 }: CharacterCardProps) {
@@ -71,7 +75,7 @@ export function CharacterCard({
         ))}
       </div>
 
-      {selected && (
+      {selected && !autoAssigned && (
         <span
           className="frame-cut frame-cut-sm absolute right-3 top-3 px-2 py-1 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#6f3a28]"
           style={{ border: "1px solid rgba(186,105,49,0.35)", background: "rgba(255,248,236,0.95)" }}
@@ -79,12 +83,28 @@ export function CharacterCard({
           Selected
         </span>
       )}
-      {locked && selected && (
+      {autoAssigned && (
+        <span
+          className="frame-cut frame-cut-sm absolute right-3 top-3 px-2 py-1 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#8f5a1d]"
+          style={{ border: "1px solid rgba(186,105,49,0.35)", background: "rgba(255,244,236,0.95)" }}
+        >
+          Auto-assigned
+        </span>
+      )}
+      {locked && selected && !autoAssigned && (
         <span
           className="frame-cut frame-cut-sm absolute bottom-3 right-3 px-2 py-1 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#274137]"
           style={{ border: "1px solid rgba(39,65,55,0.28)", background: "rgba(244,250,246,0.95)" }}
         >
           Locked
+        </span>
+      )}
+      {showNeutralDefault && !selected && !autoAssigned && (
+        <span
+          className="frame-cut frame-cut-sm absolute bottom-3 right-3 px-2 py-1 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#5e7768]"
+          style={{ border: "1px solid rgba(39,65,55,0.24)", background: "rgba(246,250,247,0.95)" }}
+        >
+          Balanced default
         </span>
       )}
     </motion.button>
