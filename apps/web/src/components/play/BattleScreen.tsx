@@ -342,10 +342,22 @@ export function BattleScreen() {
   const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
   const roundText = `Round ${currentRound}/${maxRounds}`;
   const remainingMatchClock = formatMatchClock(gameState?.timer?.remainingMs);
+  const isSocketRecovering = connectionState === "connecting" || connectionState === "reconnecting";
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
+  const isRoomStateLoading = !gameState && isSocketRecovering;
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
+  const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
+  const shouldShowPlayStateGate = !isPlayStateReady;
+  const opponentIdentityLabel = opponent?.address
+    ? shortenAddress(opponent.address)
+    : isRoomStateLoading
+      ? "Syncing..."
+      : "Unknown";
+  const opponentMetaLabel = opponent?.address
+    ? `Score ${opponentScore} - Rounds ${opponentRoundsWon}`
+    : "Waiting for opponent metadata";
   const challengeLink = useMemo(() => {
     const origin = typeof window === "undefined" ? null : window.location.origin;
     return createChallengeLink({
@@ -397,6 +409,15 @@ export function BattleScreen() {
       autoDismissMs: SOCKET_ALERT_DISPLAY_MS,
       actionLabel: hasSocketIssue ? "Retry" : undefined,
       onAction: hasSocketIssue ? reconnect : undefined,
+    });
+  }
+  if (connectionState === "reconnecting") {
+    alerts.push({
+      id: "socket:reconnecting",
+      title: "Reconnecting",
+      message: "Restoring room connection. Keep this page open.",
+      tone: "warning",
+      autoDismissMs: 0,
     });
   }
 
@@ -763,6 +784,17 @@ export function BattleScreen() {
           </div>
         </header>
 
+        {isRoomStateLoading && (
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "rgba(255,255,255,0.92)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+              Syncing room state
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+              Rejoining battle room after refresh. Waiting for server snapshot.
+            </p>
+          </div>
+        )}
+
         {hasSocketIssue && !gameState && (
           <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
             <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
@@ -791,6 +823,36 @@ export function BattleScreen() {
           </div>
         )}
 
+        {shouldShowPlayStateGate && (
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+              Room not in playing state yet
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+              Current room status: {getStatusLabel(status)}. Keep this page open or return to lobby and resume queue.
+            </p>
+            <div className="mt-2 flex gap-2">
+              {hasSocketIssue && (
+                <button
+                  type="button"
+                  onClick={reconnect}
+                  className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                  style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                >
+                  Retry Room
+                </button>
+              )}
+              <Link
+                href={resumeQueueHref}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+              >
+                Return And Requeue
+              </Link>
+            </div>
+          </div>
+        )}
+
         <section
           className="frame-cut relative flex flex-1 flex-col overflow-hidden px-4 py-5 md:px-6"
           style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,255,255,0.84)" }}
@@ -803,8 +865,8 @@ export function BattleScreen() {
             <p className="font-caprasimo text-4xl text-[#7a8f82]">VS</p>
             <div className="text-right">
               <p className="font-caprasimo text-3xl text-[#1f2b24]">Opponent</p>
-              <p className="font-gabarito text-[11px] text-[#5e7768]">{shortenAddress(opponent?.address)}</p>
-              <p className="font-gabarito text-xs text-[#5e7768]">Score {opponentScore} - Rounds {opponentRoundsWon}</p>
+              <p className="font-gabarito text-[11px] text-[#5e7768]">{opponentIdentityLabel}</p>
+              <p className="font-gabarito text-xs text-[#5e7768]">{opponentMetaLabel}</p>
             </div>
           </div>
 

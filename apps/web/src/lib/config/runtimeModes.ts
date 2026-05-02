@@ -4,6 +4,8 @@ type RuntimeConfig = {
   depositMode: RuntimeMode;
   settlementMode: RuntimeMode;
   allowDevAddressFallback: boolean;
+  allowDevCharacterFallback: boolean;
+  allowDevRoomPreview: boolean;
 };
 
 function readMode(value: string | undefined, fallback: RuntimeMode): RuntimeMode {
@@ -35,6 +37,14 @@ export function getRuntimeConfig(): RuntimeConfig {
     settlementMode: readMode(process.env.NEXT_PUBLIC_SETTLEMENT_MODE, "mock"),
     allowDevAddressFallback: readBoolean(
       process.env.NEXT_PUBLIC_ALLOW_DEV_ADDRESS_FALLBACK,
+      false,
+    ),
+    allowDevCharacterFallback: readBoolean(
+      process.env.NEXT_PUBLIC_ALLOW_DEV_CHARACTER_FALLBACK,
+      false,
+    ),
+    allowDevRoomPreview: readBoolean(
+      process.env.NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW,
       false,
     ),
   };

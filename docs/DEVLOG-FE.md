@@ -1340,3 +1340,99 @@
 ### The Tech Debt
 - Badge state mapping in `OpponentFound` still derives from local FE heuristics. Once BE emits authoritative character/deposit readiness fields, these mappings should be replaced by contract-driven adapters.
 - The default status rail inside shared `CharacterSelect` is useful for preview and scaffolding, but final product screens may want host-specific rails for tighter density and copy control.
+
+## 2026-05-02 - Runtime Room/Play Hardening (State Guards + Failure Recovery)
+
+### The Change
+- Updated socket runtime state handling in [useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts):
+  - added explicit `reconnecting` connection state,
+  - improved reconnect lifecycle state transitions and issue reset behavior.
+- Hardened lobby runtime guards in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - added phase-context recovery surface to prevent blank render when required room context is missing,
+  - added wallet-disconnected warning while in `waiting`/`found` phases,
+  - added session-based draft restore/persist (`arenaId` + `scientistId`) to reduce refresh damage during demo/testing.
+- Hardened found/deposit runtime behavior in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - requires active socket connection before allowing deposit signing,
+  - added reconnecting-specific helper copy and retry surfaces.
+- Hardened play runtime failure UX in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added reconnecting alert state,
+  - added room-sync loading card after refresh/rejoin,
+  - added explicit play-state gate (`room not in playing state yet`) with recovery actions,
+  - improved opponent metadata fallback labels when payload is not yet available.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- We needed to avoid demo-breaking “silent” states (blank/ambiguous room surfaces) when refresh, socket instability, or partial route context occurs.
+- Explicit reconnecting and play-state gating reduces confusion for judges/testers by turning hidden runtime transitions into clear UI states with recovery actions.
+- Persisting lobby draft inputs keeps user intent (arena + character choice) across refresh so recovery is faster and less destructive.
+
+### The Tech Debt
+- Lobby draft persistence is FE-only session storage and not authoritative; long-term we should move to backend/session-backed room snapshots.
+- Play-state gate currently relies on FE interpretation of `gameState.status`; if BE emits a dedicated room readiness field, we should switch to that source-of-truth.
+- Opponent metadata fallback remains a temporary UI safeguard until backend guarantees richer opponent payload consistency at all pre-play/play phases.
+
+## 2026-05-02 - Dev-Only Fallback Gating (Explicit Env Flags)
+
+### The Change
+- Extended runtime config in [runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts):
+  - added `allowDevCharacterFallback`,
+  - added `allowDevRoomPreview`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - deterministic opponent scientist fallback now runs only when `NEXT_PUBLIC_ALLOW_DEV_CHARACTER_FALLBACK=true`.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - `?previewPhase=selecting_character` rendering now requires `NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW=true`.
+- Updated env documentation in [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example):
+  - documented `NEXT_PUBLIC_ALLOW_DEV_CHARACTER_FALLBACK`,
+  - documented `NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW`.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- Demo and judge-facing runs should not silently depend on synthetic FE fallbacks.
+- Dev tooling (preview states, deterministic placeholders) is still useful, but must be opt-in and explicit.
+- Centralizing these toggles in runtime config keeps behavior predictable across environments.
+
+### The Tech Debt
+- Opponent character remains non-authoritative until backend includes opponent character payload in pre-play room state.
+- Dev-preview query params still share the lobby route; if they expand, we should move them into a dedicated `/dev` surface.
+
+## 2026-05-02 - Flow-Safe Room State Preview Surface (/dev/room-states)
+
+### The Change
+- Added a dedicated local preview route:
+  - [apps/web/src/app/dev/room-states/page.tsx](/d:/projects/Cora/apps/web/src/app/dev/room-states/page.tsx)
+- Built a mock-driven room-state lab using existing reusable components:
+  - `RoomPhaseShell`
+  - shared `CharacterSelect`
+  - shared `DepositPanel`
+  - `RoomStatusRail`
+- Included quick presets for both flow contexts:
+  - Old flow style (`pre_queue`)
+  - New flow style (`post_deposit`)
+  - timeout auto-assign
+  - locked/ready
+- Added manual controls to switch:
+  - room phase
+  - selection state
+  - opponent status
+  - deposit status
+  - countdown presence/value
+- Added selection-state normalization in preview controls:
+  - switching to `idle` clears `selectedCharacterId` and `autoAssignedCharacterId`
+  - switching to `auto_assigned` clears selected id and ensures a default auto-assigned id exists
+- Route respects the explicit dev flag:
+  - shows disabled gate unless `NEXT_PUBLIC_ALLOW_DEV_ROOM_PREVIEW=true`.
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- FE needed a stable UI test surface that does not depend on live opponents, socket timing, or unresolved flow-order decisions.
+- Reusing extracted components verifies that recent refactors are truly flow-agnostic and portable.
+- Presets plus manual controls support both quick regression checks and deeper UI-state QA before BE contracts are finalized.
+- Selection normalization keeps manual test combinations semantically correct (`idle` no longer shows a stale selected character).
+
+### The Tech Debt
+- This surface is mock-only and does not validate backend contracts/events; once shared room-state payloads stabilize, we should add a contract-mock adapter layer.
+- The preview route includes inline mock data; if more dev previews are added, centralizing mock fixtures would reduce duplication.
+- This normalization currently lives in the dev preview page only; if we add more state labs, we should extract shared preview state helpers.

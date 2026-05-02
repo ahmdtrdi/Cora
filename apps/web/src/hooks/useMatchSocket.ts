@@ -14,7 +14,7 @@ import type {
   CardType,
 } from '@shared/websocket';
 
-type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+type ConnectionState = 'connecting' | 'reconnecting' | 'connected' | 'disconnected' | 'error';
 type SocketCloseInfo = {
   code: number;
   reason: string;
@@ -92,13 +92,19 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
     const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
     queueMicrotask(() => {
-      setConnectionState('connecting');
+      setConnectionState((prev) => {
+        if (reconnectNonce > 0 || prev === 'reconnecting') {
+          return 'reconnecting';
+        }
+        return 'connecting';
+      });
     });
 
     ws.onopen = () => {
       setConnectionState('connected');
       setLastSocketError(null);
       setLastSocketCloseInfo(null);
+      setLastSocketIssueAt(null);
     };
 
     ws.onmessage = (event) => {
@@ -242,6 +248,9 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   );
 
   const reconnect = useCallback(() => {
+    setConnectionState('reconnecting');
+    setLastSocketError(null);
+    setLastSocketCloseInfo(null);
     setReconnectNonce((prev) => prev + 1);
   }, []);
 

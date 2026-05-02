@@ -107,6 +107,7 @@ const FIXED_WAGER_USD = "1.00";
 const MATCHMAKING_TIMEOUT_MS = 45_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
+const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
 
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
@@ -118,6 +119,11 @@ function shortenAddress(address: string) {
   if (address.length <= 12) return address;
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
+
+type LobbyDraftSnapshot = {
+  arenaId?: string | null;
+  scientistId?: string | null;
+};
 
 export function LobbyScreen() {
   const runtimeConfig = getRuntimeConfig();
@@ -153,6 +159,7 @@ export function LobbyScreen() {
   const userCancelledRef = useRef(false);
   const foundTransitionTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const autoRequeueStartedRef = useRef(false);
+  const draftHydratedRef = useRef(false);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -162,6 +169,7 @@ export function LobbyScreen() {
     () => SCIENTISTS.map((scientist) => ({ ...scientist, stats: [...scientist.stats] })),
     [],
   );
+  const previewEnabled = runtimeConfig.allowDevRoomPreview;
   const previewSelectionState: CharacterSelectionState =
     previewSelectStateParam === "selected" ||
     previewSelectStateParam === "locked" ||
@@ -182,7 +190,10 @@ export function LobbyScreen() {
     previewSelectionState === "auto_assigned"
       ? selectedScientist?.id ?? SCIENTISTS[0]?.id
       : undefined;
-  const isSelectingCharacterPreview = previewPhase === "selecting_character" && Boolean(selectedArena);
+  const isSelectingCharacterPreview =
+    previewEnabled &&
+    previewPhase === "selecting_character" &&
+    Boolean(selectedArena);
 
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
@@ -193,6 +204,20 @@ export function LobbyScreen() {
 
   const canStart = walletConnected && Boolean(selectedArena) && hasValidWager;
   const canQueue = Boolean(selectedScientist) && Boolean(selectedArena);
+  const waitingMissingContext = phase === "waiting" && (!selectedArena || !selectedScientist);
+  const foundMissingContext =
+    phase === "found" && (!selectedArena || !selectedScientist || !matchedRoomId);
+  const phaseContextIssue = waitingMissingContext
+    ? {
+        title: "Queue session missing context",
+        detail: "Room setup was refreshed before queue state finished syncing.",
+      }
+    : foundMissingContext
+      ? {
+          title: "Match room context missing",
+          detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
+        }
+      : null;
 
   const clearFoundTransitionTimers = useCallback(() => {
     for (const timerId of foundTransitionTimeoutsRef.current) {
@@ -328,6 +353,41 @@ export function LobbyScreen() {
     return () => clearTimeout(timeoutId);
   }, [resumeQueue, phase, canQueue, matchmakingState, startMatchmakingSearch]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (draftHydratedRef.current) return;
+    draftHydratedRef.current = true;
+    try {
+      const raw = window.sessionStorage.getItem(LOBBY_DRAFT_STORAGE_KEY);
+      if (!raw) return;
+      const snapshot = JSON.parse(raw) as LobbyDraftSnapshot;
+
+      queueMicrotask(() => {
+        if (!selectedArenaId && snapshot.arenaId && ARENAS.some((arena) => arena.id === snapshot.arenaId)) {
+          setSelectedArenaId(snapshot.arenaId);
+        }
+
+        if (!selectedScientist && snapshot.scientistId) {
+          const restoredScientist = SCIENTISTS.find((scientist) => scientist.id === snapshot.scientistId) ?? null;
+          if (restoredScientist) {
+            setSelectedScientist(restoredScientist);
+          }
+        }
+      });
+    } catch {
+      // Ignore malformed draft state.
+    }
+  }, [selectedArenaId, selectedScientist]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const snapshot: LobbyDraftSnapshot = {
+      arenaId: selectedArenaId,
+      scientistId: selectedScientist?.id ?? null,
+    };
+    window.sessionStorage.setItem(LOBBY_DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
+  }, [selectedArenaId, selectedScientist?.id]);
+
   return (
     <div
       className="relative min-h-[100svh] overflow-hidden"
@@ -358,6 +418,21 @@ export function LobbyScreen() {
             </p>
             <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
               {requestedToken ?? "SOL"} arena - ${requestedWager ?? FIXED_WAGER_USD}
+            </p>
+          </div>
+        </div>
+      )}
+      {!walletConnected && (phase === "waiting" || phase === "found") && (
+        <div className="fixed left-4 top-4 z-[70] w-full max-w-sm md:left-6 md:top-6">
+          <div
+            className="frame-cut px-3 py-2"
+            style={{ border: "1px solid rgba(186,105,49,0.34)", background: "rgba(255,250,242,0.97)" }}
+          >
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+              Wallet disconnected
+            </p>
+            <p className="mt-1 font-gabarito text-xs text-[#73512d]">
+              Reconnect wallet before continuing queue or deposit confirmation.
             </p>
           </div>
         </div>
@@ -401,6 +476,48 @@ export function LobbyScreen() {
         </RoomPhaseShell>
       )}
       {!isSelectingCharacterPreview && (
+      phaseContextIssue ? (
+        <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
+          <div
+            className="frame-cut w-full p-5 md:p-6"
+            style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[#1f2b24]">{phaseContextIssue.title}</p>
+            <p className="mt-2 font-gabarito text-sm text-[#73512d]">{phaseContextIssue.detail}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMatchedRoomId(null);
+                  setMatchmakingState("idle");
+                  setMatchmakingStage("finding");
+                  setMatchmakingError(null);
+                  setPhase("character-select");
+                }}
+                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+              >
+                Back To Character Select
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMatchedRoomId(null);
+                  setSelectedScientist(initialScientist);
+                  setMatchmakingState("idle");
+                  setMatchmakingStage("finding");
+                  setMatchmakingError(null);
+                  setPhase("setup");
+                }}
+                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+              >
+                Restart Lobby
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <AnimatePresence mode="wait">
         {phase === "setup" && (
           <motion.div
@@ -506,6 +623,7 @@ export function LobbyScreen() {
           </motion.div>
         )}
       </AnimatePresence>
+      )
       )}
     </div>
   );
