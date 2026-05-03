@@ -21,11 +21,11 @@ export function CtaBanner() {
 
       {/* floating decorative cards (right side) */}
       <div className="pointer-events-none absolute -right-4 top-1/2 hidden -translate-y-1/2 md:block">
-        {LANDING_SCIENTISTS.slice(0, 2).map((s, i) => (
+        {LANDING_SCIENTISTS.map((s, i) => (
           <div
             key={s.id}
             className="animate-float-card mb-6 flex w-[110px] flex-col items-center rounded-2xl border-[3px] border-[rgba(248,214,148,0.2)] bg-[rgba(255,255,255,0.04)] p-3 backdrop-blur-sm"
-            style={{ "--float-rot": i === 0 ? "4deg" : "-3deg", animationDelay: `${i * 1.2}s`, opacity: 0.5 } as React.CSSProperties}
+            style={{ "--float-rot": i === 0 ? "4deg" : i === 1 ? "-3deg" : "2deg", animationDelay: `${i * 1.2}s`, opacity: 0.5 } as React.CSSProperties}
           >
             <div className="mb-1 grid h-12 w-12 place-items-center rounded-full border border-[rgba(248,214,148,0.25)] bg-[rgba(248,214,148,0.06)]">
               <span className="text-xl">{s.emoji}</span>

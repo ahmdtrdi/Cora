@@ -1690,3 +1690,15 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The marquee speed is hardcoded to 34s in `globals.css`. If we add significantly more tokens in the future, the track width will increase, which would cause the apparent scroll speed to increase. We may need to dynamically calculate duration based on item count later.
+
+## 2026-05-03 - CtaBanner Floating Cards Include Turing
+
+### The Change
+- Updated `apps/web/src/components/landing/CtaBanner.tsx` to display all scientists from the `LANDING_SCIENTISTS` array instead of slicing to the first two.
+- Mapped a third rotation value (`2deg`) for the newly added third floating card.
+
+### The Reasoning
+- The user requested the third scientist (Alan Turing) to be visible alongside Einstein and Marie Curie in the floating cards decoration block.
+
+### The Tech Debt
+- The rotation mapping `i === 0 ? "4deg" : i === 1 ? "-3deg" : "2deg"` is hardcoded for exactly 3 items. If more scientists are added in the future, a generic function or looping sequence for `--float-rot` will be needed.
