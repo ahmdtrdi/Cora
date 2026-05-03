@@ -1,126 +1,180 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f1e8;
-  --foreground: #181713;
-  --font-display: "Space Grotesk", "Aptos Display", "Segoe UI", sans-serif;
+  /* DESIGN.md palette — main colors */
+  --tone-forest: #274137;
+  --tone-sage: #9db496;
+  --tone-mint: #cbe3c1;
+  --tone-cream: #f8d694;
+  --tone-clay: #ba6931;
+  --tone-bark: #6f3a28;
+
+  /* DESIGN.md — additional accent tokens (see DESIGN.md § Additional Accent Tokens) */
+  --tone-dark: #121919;   /* near-black from Palette 2 — deep bg anchor */
+  --tone-teal: #3c5c5f;   /* dark teal from Palette 1 — authoritative secondary accent */
+  --tone-ecru: #e0ddaa;   /* warm ecru from Palette 3 — vintage surface highlight */
+
+  --background: #0f1a14;
+  --foreground: #f4f0e6;
+  --font-display: var(--font-caprasimo), "Caprasimo", serif;
+  --font-ui: var(--font-gabarito), "Gabarito", "Segoe UI", sans-serif;
   --font-code: "IBM Plex Mono", "Cascadia Mono", "Consolas", monospace;
 
-  /* — Accent system — */
-  --amber: #d97706;
-  --amber-light: #fbbf24;
-  --amber-dim: rgba(217, 119, 6, 0.12);
-  --amber-glow: rgba(217, 119, 6, 0.28);
+  /* Semantic accent system mapped to DESIGN.md palette */
+  --accent-primary: var(--tone-clay);
+  --accent-primary-light: #cf8450;
+  --accent-primary-dim: rgba(186, 105, 49, 0.16);
+  --accent-primary-glow: rgba(186, 105, 49, 0.26);
 
-  --teal: #0f766e;
-  --teal-light: #14b8a6;
-  --teal-dim: rgba(15, 118, 110, 0.12);
-  --teal-glow: rgba(15, 118, 110, 0.22);
+  /* Secondary accent: upgraded from sage to dark teal for readable contrast on cream */
+  --accent-secondary: var(--tone-teal);
+  --accent-secondary-light: #4e7073;
+  --accent-secondary-dim: rgba(60, 92, 95, 0.16);
+  --accent-secondary-glow: rgba(60, 92, 95, 0.28);
+
+  /* Warm section tokens — cream/parchment surfaces */
+  --warm-bg: #faf3e6;
+  --warm-surface: #f0e8d4;
+  --warm-border: rgba(111, 58, 40, 0.18);
+  --warm-text: #3a2518;
+  --warm-muted: #8a7a68;
+  --warm-card-shadow: rgba(111, 58, 40, 0.12);
+
+  /* Backward compatible aliases for existing components */
+  --amber: var(--accent-primary);
+  --amber-light: var(--accent-primary-light);
+  --amber-dim: var(--accent-primary-dim);
+  --amber-glow: var(--accent-primary-glow);
+  --teal: var(--accent-secondary);
+  --teal-light: var(--accent-secondary-light);
+  --teal-dim: var(--accent-secondary-dim);
+  --teal-glow: var(--accent-secondary-glow);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-display);
+  --font-sans: var(--font-ui);
   --font-mono: var(--font-code);
 
-  --color-surface: #fffdf7;
-  --color-surface-alt: #ebe6dc;
-  --color-border: rgba(24, 23, 19, 0.14);
-  --color-muted: #7a7167;
-  --color-accent: var(--amber);
-  --color-accent-fg: #fffdf7;
-  --color-accent-2: var(--teal);
-  --color-accent-2-fg: #fffdf7;
-  --color-accent-3: #8f8778;
-  --color-gold: #b45309;
-  --color-accent-glow: var(--amber-glow);
+  --color-surface: #172318;
+  --color-surface-alt: #1d2d23;
+  --color-surface-highlight: #1a2a1c;
+  --color-border: rgba(157, 180, 150, 0.22);
+  --color-muted: #8fa897;
+  --color-accent: var(--accent-primary);
+  --color-accent-fg: #f4f0e6;
+  --color-accent-2: var(--accent-secondary);
+  --color-accent-2-fg: #f4f0e6;
+  --color-accent-3: var(--tone-sage);
+  --color-gold: var(--tone-cream);
+  --color-accent-glow: var(--accent-primary-glow);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-display), "Space Grotesk", "Segoe UI", sans-serif;
+  font-family: var(--font-ui), "Segoe UI", sans-serif;
   overflow-x: hidden;
 }
 
 ::selection {
-  background: var(--amber);
-  color: #fffdf7;
+  background: var(--accent-primary);
+  color: #fffaf0;
 }
 
-/* ─── Animations ─────────────────────────────────────────── */
+/* Animations */
 
 @keyframes marquee {
-  0%   { transform: translateX(0); }
+  0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
 
+@keyframes marqueeCentered {
+  0% { transform: translateX(-25%); }
+  100% { transform: translateX(-75%); }
+}
+
 @keyframes scanline {
-  0%   { transform: translateY(-100%); opacity: 0; }
-  12%  { opacity: 0.24; }
-  55%  { opacity: 0.08; }
+  0% { transform: translateY(-100%); opacity: 0; }
+  12% { opacity: 0.24; }
+  55% { opacity: 0.08; }
   100% { transform: translateY(100%); opacity: 0; }
 }
 
 @keyframes signalPulse {
   0%, 100% { opacity: 0.35; transform: scaleX(0.72); }
-  50%       { opacity: 1;    transform: scaleX(1); }
+  50% { opacity: 1; transform: scaleX(1); }
 }
 
 @keyframes focusOrbit {
-  0%   { transform: rotate(0deg)   translateX(7px) rotate(0deg); }
+  0% { transform: rotate(0deg) translateX(7px) rotate(0deg); }
   100% { transform: rotate(360deg) translateX(7px) rotate(-360deg); }
 }
 
 @keyframes floatHud {
   0%, 100% { transform: translateY(0px); }
-  50%      { transform: translateY(-10px); }
+  50% { transform: translateY(-10px); }
 }
 
-/* HP drain animation for VideoSlot */
 @keyframes hpDrain {
-  0%   { width: 100%; }
-  60%  { width: 74%; }
+  0% { width: 100%; }
+  60% { width: 74%; }
   100% { width: 74%; }
 }
 
 @keyframes hpDrain2 {
-  0%   { width: 100%; }
-  80%  { width: 61%; }
+  0% { width: 100%; }
+  80% { width: 61%; }
   100% { width: 61%; }
 }
 
-/* Timer pulse */
 @keyframes timerPulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.55; }
+  50% { opacity: 0.55; }
 }
 
-/* Orb breathing */
 @keyframes orbBreath {
-  0%, 100% { transform: scale(1);    opacity: 0.72; }
-  50%       { transform: scale(1.08); opacity: 1; }
+  0%, 100% { transform: scale(1); opacity: 0.72; }
+  50% { transform: scale(1.08); opacity: 1; }
 }
 
-/* Card appear */
 @keyframes cardReveal {
-  0%   { opacity: 0; transform: translateY(10px) rotateX(6deg); }
-  100% { opacity: 1; transform: translateY(0)    rotateX(0deg); }
+  0% { opacity: 0; transform: translateY(10px) rotateX(6deg); }
+  100% { opacity: 1; transform: translateY(0) rotateX(0deg); }
 }
 
-/* Accent bar slide */
 @keyframes accentSlide {
-  0%   { transform: scaleX(0); }
+  0% { transform: scaleX(0); }
   100% { transform: scaleX(1); }
 }
 
-/* ─── Utility classes ─────────────────────────────────────── */
+@keyframes floatCard {
+  0%, 100% { transform: translateY(0) rotate(var(--float-rot, 0deg)); }
+  50% { transform: translateY(-14px) rotate(var(--float-rot, 0deg)); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slowSpin {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes driftX {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(12px); }
+}
+
+/* Utility classes */
 
 .arena-grid {
   background:
-    linear-gradient(rgba(24, 23, 19, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(24, 23, 19, 0.05) 1px, transparent 1px);
+    linear-gradient(rgba(157, 180, 150, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(157, 180, 150, 0.1) 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: linear-gradient(to bottom, black, black 68%, transparent);
 }
@@ -144,6 +198,10 @@ body {
 
 .animate-marquee {
   animation: marquee 34s linear infinite;
+}
+
+.animate-marquee-centered {
+  animation: marqueeCentered 34s linear infinite;
 }
 
 .animate-hp-drain {
@@ -191,7 +249,7 @@ body {
   pointer-events: none;
   position: absolute;
   inset: 1px;
-  border: 1px solid rgba(24, 23, 19, 0.08);
+  border: 1px solid rgba(157, 180, 150, 0.28);
   clip-path: polygon(
     calc(var(--frame-cut) - 1px) 0,
     100% 0,
@@ -207,80 +265,178 @@ body {
   --frame-cut: 10px;
 }
 
-/* ─── Wallet adapter overrides ────────────────────────────── */
+/* Game-style rounded card for warm sections */
+.game-card {
+  position: relative;
+  border-radius: 20px;
+  border: 3px solid var(--tone-bark);
+  background: var(--warm-surface);
+  box-shadow:
+    0 4px 0 var(--warm-card-shadow),
+    0 8px 24px var(--warm-card-shadow);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.game-card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 8px 0 var(--warm-card-shadow),
+    0 16px 36px var(--warm-card-shadow);
+}
+
+/* Chunky game-style button */
+.btn-game {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 32px;
+  border-radius: 14px;
+  font-family: var(--font-ui);
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
+  border: 3px solid transparent;
+}
+
+.btn-game:hover {
+  transform: translateY(-3px);
+}
+
+.btn-game-primary {
+  background: linear-gradient(140deg, #ba6931 0%, #6f3a28 100%);
+  color: #fffaf0;
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow:
+    0 4px 0 #5a2e1e,
+    0 8px 28px rgba(186, 105, 49, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-game-primary:hover {
+  box-shadow:
+    0 6px 0 #5a2e1e,
+    0 14px 40px rgba(186, 105, 49, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-game-secondary {
+  background: transparent;
+  color: #fffaf0;
+  border-color: rgba(248, 214, 148, 0.45);
+  box-shadow: 0 4px 0 rgba(39, 65, 55, 0.4);
+}
+
+.btn-game-secondary:hover {
+  background: rgba(248, 214, 148, 0.08);
+  border-color: rgba(248, 214, 148, 0.65);
+  box-shadow: 0 6px 0 rgba(39, 65, 55, 0.5);
+}
+
+/* Paper grain texture for warm sections */
+.paper-grain {
+  position: relative;
+}
+
+.paper-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
+/* Floating animation classes */
+.animate-float-card {
+  animation: floatCard 4.5s ease-in-out infinite;
+}
+
+.animate-sparkle {
+  animation: sparkle 2.2s ease-in-out infinite;
+}
+
+.animate-slow-spin {
+  animation: slowSpin 90s linear infinite;
+}
+
+.animate-drift-x {
+  animation: driftX 6s ease-in-out infinite;
+}
+
+/* Wallet adapter overrides */
 
 .wallet-adapter-button-trigger {
-  background: var(--amber) !important;
-  color: #fffdf7 !important;
+  background: var(--accent-primary) !important;
+  color: #fffaf0 !important;
   border-radius: 999px !important;
-  font-family: var(--font-display), "Segoe UI", sans-serif !important;
+  font-family: var(--font-ui), "Segoe UI", sans-serif !important;
   font-weight: 800 !important;
   height: 44px !important;
-  box-shadow: 0 16px 36px var(--amber-glow) !important;
+  box-shadow: 0 16px 36px var(--accent-primary-glow) !important;
 }
 
 .wallet-adapter-button-trigger:hover {
-  background: #b45309 !important;
+  background: #a85f2b !important;
 }
 
 .wallet-adapter-modal-wrapper {
   background: var(--color-surface) !important;
 }
 
-/* ─── DESIGN.md font utilities ────────────────────────────── */
+/* DESIGN.md font utilities */
 
-.font-caprasimo { font-family: var(--font-caprasimo, 'Caprasimo'), serif; }
-.font-gabarito  { font-family: var(--font-gabarito, 'Gabarito'), sans-serif; }
+.font-caprasimo { font-family: var(--font-caprasimo, "Caprasimo"), serif; }
+.font-gabarito { font-family: var(--font-gabarito, "Gabarito"), sans-serif; }
 
-/* ─── Lobby keyframes ──────────────────────────────────────── */
+/* Lobby keyframes */
 
-/* Shimmer sweep for the matchmaking progress bar */
 @keyframes shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position:  200% center; }
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
 }
 
-/* Expanding glow ring from the VS badge */
 @keyframes vsRing {
-  0%   { transform: scale(1);   opacity: 0.9; }
-  70%  { transform: scale(1.8); opacity: 0; }
+  0% { transform: scale(1); opacity: 0.9; }
+  70% { transform: scale(1.8); opacity: 0; }
   100% { transform: scale(1.8); opacity: 0; }
 }
 
-/* Enemy pod materialise: scale-pop + brightness flash */
 @keyframes matIn {
-  0%   { transform: scale(0.82); opacity: 0;   filter: brightness(2.5); }
-  55%  {                                         filter: brightness(1.5); }
-  100% { transform: scale(1);    opacity: 1;   filter: brightness(1); }
+  0% { transform: scale(0.82); opacity: 0; filter: brightness(2.5); }
+  55% { filter: brightness(1.5); }
+  100% { transform: scale(1); opacity: 1; filter: brightness(1); }
 }
 
-/* Toast-style alert bar drain */
 @keyframes alertDrain {
   from { width: 100%; }
-  to   { width: 0%; }
+  to { width: 0%; }
 }
 
-/* ─── Lobby utility classes ────────────────────────────────── */
+/* Lobby utility classes */
 
-/* Progress bar fill with shimmer sweep */
 .shimmer-bar {
   background: linear-gradient(
     90deg,
-    #b45309 0%,
+    #ba6931 0%,
     #f8d694 35%,
-    #fef9c3 50%,
+    #fff6e0 50%,
     #f8d694 65%,
-    #b45309 100%
+    #ba6931 100%
   );
   background-size: 200% 100%;
   animation: shimmer 2s linear infinite;
 }
 
-/* Lobby full-viewport dark green background with arena grid */
 .lobby-bg {
-  background-color: #1b2e26;
+  background-color: #1f342c;
   background-image:
-    linear-gradient(rgba(155, 180, 150, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(155, 180, 150, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(157, 180, 150, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(157, 180, 150, 0.08) 1px, transparent 1px);
   background-size: 42px 42px;
 }

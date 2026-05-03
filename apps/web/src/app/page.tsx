@@ -55,8 +55,8 @@ export default function Home() {
       <main key={sceneKey} className="flex w-full flex-col">
         <Hero />
         <TokenMarquee />
-        <HowItWorks />
         <Features />
+        <HowItWorks />
         <VideoSlot />
         <CtaBanner />
       </main>
