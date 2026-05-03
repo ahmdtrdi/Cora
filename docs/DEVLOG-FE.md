@@ -1649,3 +1649,30 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - **Inline Styles**: Used inline styles for `backdropFilter` and `textShadow` for rapid iteration. These should eventually be moved to `globals.css` as utility classes (e.g., `.glass-heavy`) to keep the component clean.
+
+## 2026-05-03 - Hero Token Hints, Copy Tightening & CTA Cleanup
+
+### The Change
+- Added `WagerToken` type and `WAGER_TOKENS` constant to `apps/web/src/components/landing/content.ts` — SOL (`#9945FF`) and BONK (`#F7931A`) as initial entries.
+- Patched `apps/web/src/components/landing/Hero.tsx` to import `WAGER_TOKENS` and render a token pill strip in the hero. Each pill is a glassy rounded capsule styled with inline `borderColor`, `background`, and `boxShadow` derived from the token's brand color, with a subtle hover scale effect.
+- Changed the hero token label from “Wager with” to “Arena tokens” so the token hint feels more game-native and less finance/gambling-coded.
+- Removed the main `Enter Arena` and `Meet the Minds` CTA buttons from `apps/web/src/components/landing/Hero.tsx` to keep the hero closer to a cinematic game splash screen.
+- Tightened the hero copy to reduce repetition and make it feel more premium:
+  - Eyebrow: “A collectible battle game of brilliant minds”
+  - Title: “CORA”
+  - Tagline: “Collect scientists. Break bases. Outsmart rivals.”
+  - Supporting line: “Pick your mind. Predict the move. Shatter the base.”
+- Updated the Navbar CTA button in `apps/web/src/components/landing/Navbar.tsx` to use the `.btn-game-primary` class so the main app entry point still has the established chunky game-button styling, while keeping a smaller padding profile.
+
+### The Reasoning
+- The hero should act more like a game-fi splash screen / world reveal than a SaaS conversion block. Removing the large hero CTAs keeps focus on the title, fantasy, floating cards, and token elements.
+- Token hints still answer “what tokens are available?” without turning the hero into a finance dashboard or overloading it with competing actions.
+- “Arena tokens” fits the game-world language better than “Wager with,” while still making SOL and BONK visible near the first impression.
+- The single Navbar CTA now acts as the main entry point to the application, reducing hero clutter while preserving a clear path to enter.
+- Token data lives in `content.ts` alongside other landing data, keeping it as the single source of truth. Adding a new token later is a one-line array push.
+- Inline style for token brand colors avoids extending the Tailwind config for two hex values; the pattern stays consistent with how existing accent glows are handled in other hero layers.
+
+### The Tech Debt
+- Token icons are emoji/Unicode glyphs (`◎` for SOL, `🐶` for BONK). Replace with proper SVG token logos once assets are available.
+- Only SOL and BONK are wired; any new token the backend accepts should be reflected here simultaneously to avoid UI/backend drift.
+- The Navbar CTA overrides padding locally using Tailwind classes (`!px-5 !py-2 !text-sm`) because `.btn-game` is intrinsically quite large. If we use this smaller button variant often, extract a `.btn-game-sm` utility.

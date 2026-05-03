@@ -142,3 +142,16 @@ export const LANDING_TICKER_ITEMS: LandingTickerItem[] = [
   { label: "Vault", detail: "Wager locked", accent: "secondary" },
   { label: "Battle", detail: "3 rounds live", accent: "primary" },
 ];
+
+export type WagerToken = {
+  symbol: string;
+  name: string;
+  icon: string;
+  /** Tailwind-compatible hex or CSS colour used for the pill glow + border */
+  color: string;
+};
+
+export const WAGER_TOKENS: WagerToken[] = [
+  { symbol: "SOL",  name: "Solana", icon: "◎", color: "#9945FF" },
+  { symbol: "BONK", name: "Bonk",   icon: "🐶", color: "#F7931A" },
+];
