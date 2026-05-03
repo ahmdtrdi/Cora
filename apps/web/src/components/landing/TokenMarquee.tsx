@@ -16,8 +16,8 @@ export function TokenMarquee() {
         <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 w-24 bg-gradient-to-r from-[#111d17] to-transparent" />
         <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 w-24 bg-gradient-to-l from-[#111d17] to-transparent" />
 
-        <div className="flex w-full items-center justify-center">
-          <div className="animate-marquee-centered inline-flex w-max items-center whitespace-nowrap font-mono text-xs uppercase leading-none">
+        <div className="flex w-full items-center">
+          <div className="animate-marquee inline-flex w-max items-center whitespace-nowrap font-mono text-xs uppercase leading-none">
             {loop.map((item, index) => {
               const color = LANDING_TICKER_ACCENT_COLOR[item.accent];
 

@@ -1676,3 +1676,17 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 - Token icons are emoji/Unicode glyphs (`◎` for SOL, `🐶` for BONK). Replace with proper SVG token logos once assets are available.
 - Only SOL and BONK are wired; any new token the backend accepts should be reflected here simultaneously to avoid UI/backend drift.
 - The Navbar CTA overrides padding locally using Tailwind classes (`!px-5 !py-2 !text-sm`) because `.btn-game` is intrinsically quite large. If we use this smaller button variant often, extract a `.btn-game-sm` utility.
+
+## 2026-05-03 - Token Marquee Infinite Scroll Fix
+
+### The Change
+- Fixed infinite scrolling in `apps/web/src/components/landing/TokenMarquee.tsx`.
+- Changed the animation class from `.animate-marquee-centered` back to `.animate-marquee` (which transforms `translateX(0)` to `translateX(-50%)`).
+- Removed `justify-center` from the track's parent container to allow standard left-aligned overflow.
+
+### The Reasoning
+- The `animate-marquee-centered` approach (translating from `-25%` to `-75%`) was prone to visual jumping or right-side starvation when coupled with `justify-center` flex alignment, depending on the viewport width and total element width.
+- Standard left-aligned `animate-marquee` (`0` to `-50%` over 4 copies of content) is the canonical way to achieve a seamless, jumping-free infinite scroll.
+
+### The Tech Debt
+- The marquee speed is hardcoded to 34s in `globals.css`. If we add significantly more tokens in the future, the track width will increase, which would cause the apparent scroll speed to increase. We may need to dynamically calculate duration based on item count later.
