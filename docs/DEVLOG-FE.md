@@ -1633,3 +1633,19 @@ Full art-direction overhaul of the landing page. Shifted from dark Web3/dev dash
 - **FloatingCard positions**: Hard-coded absolute positions for hero floating cards. May need responsive tuning at unusual viewport sizes.
 - **Warm/dark transitions**: The seam between warm sections (Features/HowItWorks) and dark sections (TokenMarquee above, VideoSlot below) could benefit from gradient transition strips if the hard color shift feels too abrupt.
 - **paper-grain SVG**: Using inline SVG data URL for noise texture. If performance is a concern on low-end devices, this could be replaced with a static PNG or removed.
+
+---
+
+## 2026-05-03 — Navbar Polish: High-Blur Glassmorphism
+
+### The Change
+Updated the navbar to handle the new section-based color transitions (Dark Hero → Warm Roster) more smoothly.
+
+- **`Navbar.tsx`**: Increased backdrop blur from standard `xl` to a heavy `28px` (custom inline style). Switched the scrolled background from a near-solid forest green to a semi-transparent dark tint (`rgba(10,18,14,0.55)`). Forced all nav text (logo and links) to white with a subtle drop shadow (`text-shadow`) to maintain legibility regardless of the background color behind the blur.
+
+### The Reasoning
+- Standard backdrop blur was insufficient to mask the high-contrast transition when moving from the dark Hero to the light-cream Features section.
+- Permanent white text with a shadow prevents the need for complex "scroll-aware" text color switching logic. The semi-transparent dark tint behind the white text ensures it pops even when over the warm parchment backgrounds.
+
+### The Tech Debt
+- **Inline Styles**: Used inline styles for `backdropFilter` and `textShadow` for rapid iteration. These should eventually be moved to `globals.css` as utility classes (e.g., `.glass-heavy`) to keep the component clean.

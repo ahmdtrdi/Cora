@@ -29,18 +29,18 @@ export function Navbar() {
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-      className={`fixed left-0 right-0 top-0 z-50 px-4 py-3 transition-all duration-300 md:px-6 ${
-        solid
-          ? "border-b border-[var(--color-border)] bg-[var(--background)]/90 shadow-[0_10px_30px_rgba(111,58,40,0.12)] backdrop-blur-xl"
-          : "border-b border-transparent bg-transparent"
-      }`}
+      className={`fixed left-0 right-0 top-0 z-50 px-4 py-3 transition-all duration-500 md:px-6 ${solid
+        ? "border-b border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.18)]"
+        : "border-b border-transparent"
+        }`}
+      style={solid ? { backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)", backgroundColor: "rgba(99, 99, 99, 0.55)" } : undefined}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
         <Link href="/" className="group flex items-center gap-3" aria-label="Cora home">
           <span className="frame-cut frame-cut-sm grid h-9 w-9 place-items-center border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-black text-[var(--accent-primary)] transition-all duration-200 group-hover:border-[var(--accent-primary)] group-hover:bg-[var(--accent-primary-dim)]">
             C
           </span>
-          <span className="font-caprasimo text-xl leading-none tracking-tight">CORA</span>
+          <span className="font-caprasimo text-xl leading-none tracking-tight text-white" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>CORA</span>
         </Link>
 
         <div
@@ -52,7 +52,8 @@ export function Navbar() {
               key={link.href}
               href={link.href}
               onMouseEnter={() => setHovered(link.href)}
-              className="font-gabarito relative z-10 px-4 py-2 text-xs font-bold uppercase tracking-wide text-[var(--color-muted)] transition-colors duration-150 hover:text-[var(--foreground)]"
+              className="font-gabarito relative z-10 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white/80 transition-colors duration-150 hover:text-white"
+              style={{ textShadow: "0 1px 6px rgba(0,0,0,0.55)" }}
             >
               <AnimatePresence>
                 {hovered === link.href && (
