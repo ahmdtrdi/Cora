@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  /* DESIGN.md palette */
+  /* DESIGN.md palette — main colors */
   --tone-forest: #274137;
   --tone-sage: #9db496;
   --tone-mint: #cbe3c1;
@@ -9,8 +9,13 @@
   --tone-clay: #ba6931;
   --tone-bark: #6f3a28;
 
-  --background: #fbf4df;
-  --foreground: var(--tone-forest);
+  /* DESIGN.md — additional accent tokens (see DESIGN.md § Additional Accent Tokens) */
+  --tone-dark: #121919;   /* near-black from Palette 2 — deep bg anchor */
+  --tone-teal: #3c5c5f;   /* dark teal from Palette 1 — authoritative secondary accent */
+  --tone-ecru: #e0ddaa;   /* warm ecru from Palette 3 — vintage surface highlight */
+
+  --background: #0f1a14;
+  --foreground: #f4f0e6;
   --font-display: var(--font-caprasimo), "Caprasimo", serif;
   --font-ui: var(--font-gabarito), "Gabarito", "Segoe UI", sans-serif;
   --font-code: "IBM Plex Mono", "Cascadia Mono", "Consolas", monospace;
@@ -21,10 +26,19 @@
   --accent-primary-dim: rgba(186, 105, 49, 0.16);
   --accent-primary-glow: rgba(186, 105, 49, 0.26);
 
-  --accent-secondary: var(--tone-sage);
-  --accent-secondary-light: #c3d7bc;
-  --accent-secondary-dim: rgba(157, 180, 150, 0.2);
-  --accent-secondary-glow: rgba(157, 180, 150, 0.3);
+  /* Secondary accent: upgraded from sage to dark teal for readable contrast on cream */
+  --accent-secondary: var(--tone-teal);
+  --accent-secondary-light: #4e7073;
+  --accent-secondary-dim: rgba(60, 92, 95, 0.16);
+  --accent-secondary-glow: rgba(60, 92, 95, 0.28);
+
+  /* Warm section tokens — cream/parchment surfaces */
+  --warm-bg: #faf3e6;
+  --warm-surface: #f0e8d4;
+  --warm-border: rgba(111, 58, 40, 0.18);
+  --warm-text: #3a2518;
+  --warm-muted: #8a7a68;
+  --warm-card-shadow: rgba(111, 58, 40, 0.12);
 
   /* Backward compatible aliases for existing components */
   --amber: var(--accent-primary);
@@ -43,16 +57,17 @@
   --font-sans: var(--font-ui);
   --font-mono: var(--font-code);
 
-  --color-surface: #fffaf0;
-  --color-surface-alt: #f3e7cd;
-  --color-border: rgba(203, 227, 193, 0.8);
-  --color-muted: #6e6a58;
+  --color-surface: #172318;
+  --color-surface-alt: #1d2d23;
+  --color-surface-highlight: #1a2a1c;
+  --color-border: rgba(157, 180, 150, 0.22);
+  --color-muted: #8fa897;
   --color-accent: var(--accent-primary);
-  --color-accent-fg: #fffaf0;
+  --color-accent-fg: #f4f0e6;
   --color-accent-2: var(--accent-secondary);
-  --color-accent-2-fg: #274137;
-  --color-accent-3: var(--tone-bark);
-  --color-gold: var(--tone-clay);
+  --color-accent-2-fg: #f4f0e6;
+  --color-accent-3: var(--tone-sage);
+  --color-gold: var(--tone-cream);
   --color-accent-glow: var(--accent-primary-glow);
 }
 
@@ -73,6 +88,11 @@ body {
 @keyframes marquee {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
+}
+
+@keyframes marqueeCentered {
+  0% { transform: translateX(-25%); }
+  100% { transform: translateX(-75%); }
 }
 
 @keyframes scanline {
@@ -129,12 +149,32 @@ body {
   100% { transform: scaleX(1); }
 }
 
+@keyframes floatCard {
+  0%, 100% { transform: translateY(0) rotate(var(--float-rot, 0deg)); }
+  50% { transform: translateY(-14px) rotate(var(--float-rot, 0deg)); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slowSpin {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes driftX {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(12px); }
+}
+
 /* Utility classes */
 
 .arena-grid {
   background:
-    linear-gradient(rgba(39, 65, 55, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(39, 65, 55, 0.08) 1px, transparent 1px);
+    linear-gradient(rgba(157, 180, 150, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(157, 180, 150, 0.1) 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: linear-gradient(to bottom, black, black 68%, transparent);
 }
@@ -158,6 +198,10 @@ body {
 
 .animate-marquee {
   animation: marquee 34s linear infinite;
+}
+
+.animate-marquee-centered {
+  animation: marqueeCentered 34s linear infinite;
 }
 
 .animate-hp-drain {
@@ -205,7 +249,7 @@ body {
   pointer-events: none;
   position: absolute;
   inset: 1px;
-  border: 1px solid rgba(203, 227, 193, 0.72);
+  border: 1px solid rgba(157, 180, 150, 0.28);
   clip-path: polygon(
     calc(var(--frame-cut) - 1px) 0,
     100% 0,
@@ -219,6 +263,110 @@ body {
 
 .frame-cut-sm {
   --frame-cut: 10px;
+}
+
+/* Game-style rounded card for warm sections */
+.game-card {
+  position: relative;
+  border-radius: 20px;
+  border: 3px solid var(--tone-bark);
+  background: var(--warm-surface);
+  box-shadow:
+    0 4px 0 var(--warm-card-shadow),
+    0 8px 24px var(--warm-card-shadow);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.game-card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 8px 0 var(--warm-card-shadow),
+    0 16px 36px var(--warm-card-shadow);
+}
+
+/* Chunky game-style button */
+.btn-game {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 32px;
+  border-radius: 14px;
+  font-family: var(--font-ui);
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  position: relative;
+  border: 3px solid transparent;
+}
+
+.btn-game:hover {
+  transform: translateY(-3px);
+}
+
+.btn-game-primary {
+  background: linear-gradient(140deg, #ba6931 0%, #6f3a28 100%);
+  color: #fffaf0;
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow:
+    0 4px 0 #5a2e1e,
+    0 8px 28px rgba(186, 105, 49, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-game-primary:hover {
+  box-shadow:
+    0 6px 0 #5a2e1e,
+    0 14px 40px rgba(186, 105, 49, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-game-secondary {
+  background: transparent;
+  color: #fffaf0;
+  border-color: rgba(248, 214, 148, 0.45);
+  box-shadow: 0 4px 0 rgba(39, 65, 55, 0.4);
+}
+
+.btn-game-secondary:hover {
+  background: rgba(248, 214, 148, 0.08);
+  border-color: rgba(248, 214, 148, 0.65);
+  box-shadow: 0 6px 0 rgba(39, 65, 55, 0.5);
+}
+
+/* Paper grain texture for warm sections */
+.paper-grain {
+  position: relative;
+}
+
+.paper-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
+/* Floating animation classes */
+.animate-float-card {
+  animation: floatCard 4.5s ease-in-out infinite;
+}
+
+.animate-sparkle {
+  animation: sparkle 2.2s ease-in-out infinite;
+}
+
+.animate-slow-spin {
+  animation: slowSpin 90s linear infinite;
+}
+
+.animate-drift-x {
+  animation: driftX 6s ease-in-out infinite;
 }
 
 /* Wallet adapter overrides */

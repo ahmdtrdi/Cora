@@ -10,9 +10,9 @@ import {
 import Link from "next/link";
 
 const links = [
-  { href: "#how-it-works", label: "Flow" },
-  { href: "#roster", label: "Roster" },
-  { href: "#replay", label: "Replay" },
+  { href: "#roster", label: "Minds" },
+  { href: "#how-it-works", label: "How It Works" },
+  { href: "#replay", label: "Arena" },
 ];
 
 export function Navbar() {

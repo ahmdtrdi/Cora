@@ -1,4 +1,4 @@
-﻿# FE Dev Log
+# FE Dev Log
 
 ## 2026-04-25 - Frontend stack setup verification and stabilization
 
@@ -1502,3 +1502,134 @@
 
 ### The Tech Debt
 - The repo currently lacks an explicit encoding guardrail. Add `.editorconfig` and/or a pre-commit check to enforce UTF-8 on TS/TSX/CSS files.
+
+## 2026-05-02 - Landing Multi-Vibe Color Pass (Divider-Deemphasis)
+
+### The Change
+- Kept landing composition divider-free in [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) (no section-divider coupling in the main flow).
+- Reworked section atmospheres with distinct palette-driven backgrounds while preserving readability:
+  - [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx): layered warm-cream/sage/clay radial + linear blend for intro identity.
+  - [TokenMarquee.tsx](/d:/projects/Cora/apps/web/src/components/landing/TokenMarquee.tsx): white card-like ticker lane with subtle side-tinted radial wash and centered marquee track.
+  - [HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx): structured sage-leaning gradient scene plus soft ambient blobs.
+  - [Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx): warm clay/cream spotlight treatment to differentiate roster zone.
+  - [VideoSlot.tsx](/d:/projects/Cora/apps/web/src/components/landing/VideoSlot.tsx): cooler green-to-cream cinematic field to separate replay section tone.
+- Added centered marquee keyframes/utilities in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css):
+  - `@keyframes marqueeCentered`
+  - `.animate-marquee-centered`
+- Validation run:
+  - `npm run lint --workspace=web` passed.
+
+### The Reasoning
+- The previous landing read as visually flat because large sections shared nearly identical base surfaces.
+- Assigning each section a unique but related color atmosphere creates stronger narrative rhythm without abandoning the approved warm-vintage system.
+- Keeping transitions implicit via background contrast (instead of decorative dividers) better matches the requested “different vibes” direction.
+
+### The Tech Debt
+- Gradient recipes are still inline per section; if this style direction stabilizes, we should extract them into reusable semantic theme tokens (e.g., `--landing-hero-bg`, `--landing-flow-bg`) for easier iteration.
+- Marquee centering assumes current ticker density; if content count/width changes heavily, motion duration and phase may need re-tuning.
+
+## 2026-05-03 - Landing Palette Accent Expansion (3 Surgical Additions from DESIGN.md Palettes)
+
+### The Change
+- Added `## Additional Accent Tokens` section to `docs/DESIGN.md` documenting which colors were pulled from which palette and why.
+- Added 3 new CSS primitive tokens to `apps/web/src/app/globals.css`:
+  - `--tone-dark: #121919` (near-black from Palette 2)
+  - `--tone-teal: #3c5c5f` (dark teal from Palette 1)
+  - `--tone-ecru: #e0ddaa` (warm ecru from Palette 3)
+- Swapped `--accent-secondary` from `var(--tone-sage)` → `var(--tone-teal)` and updated all derived secondary tokens (`-light`, `-dim`, `-glow`). The `--teal` backward-compat alias chain updates automatically.
+- Added `--color-surface-highlight: var(--tone-ecru)` to the `@theme inline` block as a new named surface token.
+- Fixed `--color-accent-2-fg` from `#274137` → `#fffaf0` (ecru/white is readable on dark teal; forest green was not).
+- Updated `apps/web/src/components/landing/CtaBanner.tsx` dark section gradient from `#274137 → #6f3a28` to `#121919 → #274137` — gives the only dark section on the landing a true near-black anchor.
+- Updated `apps/web/src/components/landing/Features.tsx` scientist card portrait area from `--color-surface-alt` to `--color-surface-highlight` (ecru) for a vintage-academic feel.
+
+### The Reasoning
+- `--accent-secondary` (sage `#9db496`) was too low-saturation and low-contrast to carry active accent weight on cream/parchment backgrounds. The on-chain phase markers (Escrow, Settlement) looked muted — exactly the opposite of "authoritative blockchain transaction". Dark teal `#3c5c5f` is still clearly within the DESIGN.md palette family but has real visual presence.
+- The CtaBanner was the only dark section on the landing, but its gradient (`forest → bark`) used two warm-similar tones at similar brightness. Stepping to near-black creates a stronger contrast rhythm — the eye needs a genuine dark rest beat after the warm-cream scroll.
+- Ecru `#e0ddaa` on the scientist card portrait areas adds the olive-warm quality that reads as "aged academic paper" — appropriate for historical scientist characters — without disturbing the rest of the card layout.
+- All 3 additions stayed 100% within DESIGN.md palette source material, so no rogue hex values were introduced.
+
+### The Tech Debt
+- `--tone-sage` is still defined as a primitive token and still used as a background tint in Hero, HowItWorks, Features, and TokenMarquee (radial blobs, ambient washes). This is correct and intentional — sage as a background tint is fine. Only its role as an active accent was replaced.
+- The `--teal` alias now resolves to dark teal instead of sage. Non-landing screens that reference `--teal` directly should be audited to confirm the darker value still reads correctly in their context.
+- `--color-surface-highlight` is currently only applied in `Features.tsx`; if ecru surfaces are used elsewhere, we should document the token's intended usage scope to prevent misapplication on components where it would clash.
+
+## 2026-05-03 - Landing Section Color Temperature Pass (Warm vs Green Coherence)
+
+### The Change
+- **Hero** (`Hero.tsx`): Pushed bg fully warm (`#fdf6e4 → #f8e9ca → #f2ddb0`), removed the sage green radial blob, kept clay orbs only. Added `text-[var(--tone-bark)]` to section so headings/copy inherit warm dark brown, not forest green.
+- **HowItWorks** (`HowItWorks.tsx`): Flipped bg from mixed warm-green to fully green (`#deebd8 → #d0e5ca → #c4dfc0`). Replaced the bark blob with a forest blob. Forest green `--foreground` text now reads at home on a green section. Updated phase card surface to `#f0f6ee` (mint-white) and green-toned shadow so it lifts cleanly off the green background without looking stark.
+- **Features** (`Features.tsx`): Pushed bg to more purely golden-warm (`#faebd4 → #f8e4c0 → #f5d9a0`), removed sage green radial. Added `text-[var(--tone-bark)]` to section. Updated border to clay-toned `rgba(186,105,49,0.2)`.
+- **Footer** (`Footer.tsx`): Added `text-[var(--tone-bark)]` — Footer sits on warm parchment bg `--background`; bark text is coherent there.
+- VideoSlot and Navbar were left unchanged — VideoSlot already leans green-cool; Navbar is transparent initially and transitions naturally.
+
+### The Reasoning
+- `--foreground` (`#274137`, forest green) is a cool-hued dark. On warm orange-cream backgrounds (`#f8e8c7`, `#f3dfbb`) it creates a temperature conflict — the eye reads it as a mismatch because green and orange sit on opposite sides of the color wheel.
+- The fix is not to change the global `--foreground` (that would break other screens), but to assign each landing section a dominant temperature and override text only where needed:
+  - **Green sections**: let forest green text be the natural foreground — it's coherent.
+  - **Warm sections**: override to `--tone-bark` (`#6f3a28`) which is a warm dark brown — harmonious with cream/golden bgs and still high-contrast.
+- This creates a clear scroll rhythm: warm → neutral (marquee) → green → warm → green-cool (videoslot) → dark (ctabanner) — each beat feels intentional.
+
+### The Tech Debt
+- `text-[var(--tone-bark)]` overrides are applied at the section level, which means any child that does not explicitly set a color will inherit bark. This is intentional but should be documented so future component additions inside warm sections don't need to manually re-apply `--foreground`.
+- HowItWorks phase card surface is now a hardcoded `#f0f6ee` instead of a token. If the section bg ever changes, this may need manual retuning. Extracting a `--color-surface-green` token would be cleaner long-term.
+
+## 2026-05-03 - Landing Dark Theme Pivot + Palette Accent Typography
+
+### The Change
+- **`globals.css`**: Flipped `--background` from warm parchment `#fbf4df` → near-black forest `#0f1a14`. `--foreground` from forest green `#274137` → warm white `#f4f0e6`. Updated all `@theme inline` surface/border/muted tokens for dark context (`--color-surface: #172318`, `--color-surface-alt: #1d2d23`, `--color-surface-highlight: #1a2a1c`, `--color-border: rgba(157,180,150,0.22)`, `--color-muted: #8fa897`). Also fixed `--color-gold` to use `--tone-cream` (gold reads on dark, clay doesn't). Fixed `.arena-grid` lines from dark forest rgba to light mint rgba (were invisible on dark bg). Dimmed `.frame-cut::after` inner border from 72% to 28% opacity.
+- **`Hero.tsx`**: Dark forest bg gradient. Removed bark text override. Fixed orb `mixBlendMode` from `multiply` (darkens) → `screen` (glows on dark). Added `<span className="text-[var(--tone-cream)]">` around scientist names in subtitle.
+- **`TokenMarquee.tsx`**: Dark bg `#111d17`. Edge fades changed from `from-white` → `from-[#111d17]`. Border opacity reduced.
+- **`HowItWorks.tsx`**: Dark forest bg. Dark card surface via `var(--color-surface)`. Added `<span className="text-[var(--tone-mint)]">` around "2 on-chain transactions." in h2.
+- **`Features.tsx`**: Dark bark-tinted bg. Removed bark text override. Added `<span className="text-[var(--tone-cream)]">` around "chibi scientist." in h2.
+- **`VideoSlot.tsx`**: Dark bg. `thumbnailBackground` base changed to dark `rgba(15,26,20,0.9)`. Intro and panel overlay changed from white washes to dark washes.
+- **`CtaBanner.tsx`**: Deepened to `#080c09 → #0f1a14`. Text updated to `#f4f0e6`. Already had cream accent on "Battle sharper." — preserved.
+- **`Footer.tsx`**: Removed bark text override — foreground is now warm white globally.
+
+### The Reasoning
+- The root issue was color temperature clash (green text on orange bg). Multiple partial fixes (per-section text overrides) were tried first but each created new issues. The cleanest resolution is a dark base where the palette colors become accent glow elements against dark rather than conflicting dominants on light.
+- On a dark bg, the DESIGN.md palette becomes vivid typography accents: `--tone-cream` (#f8d694, golden) for warm key nouns, `--tone-mint` (#cbe3c1, mint) for on-chain/blockchain moments. This is the exact pattern requested (white base text, palette colors for accent words).
+- `mixBlendMode: multiply` on the Hero orb was correct for light backgrounds (it darkens into the cream). On dark backgrounds it makes the orb invisible (darkening into near-black). `screen` blend mode adds light, making the clay orb glow properly on dark.
+- The lobby/play screens use their own explicit dark bg classes (`lobby-bg`, inline dark gradients) and were not affected by the `--background` change.
+
+### The Tech Debt
+- The global `--background` change affects all routes that rely on it without explicit bg overrides. The `/connect` page and any future simple pages should be checked to confirm they look correct on dark.
+- Accent word spans (`<span>` with color class) are now inline in component JSX. If copy changes, these spans need manual updates. Extracting copy with accent markup into `content.ts` would keep copy and formatting together.
+- `--tone-cream` is now used as both a CSS variable AND hardcoded as `"var(--tone-cream)"` in inline CtaBanner style. These should be consolidated if a theming utility layer is added later.
+
+
+
+---
+
+## 2026-05-03 — Landing Page Redesign: Collectible Game-Site Direction
+
+### The Change
+
+Full art-direction overhaul of the landing page. Shifted from dark Web3/dev dashboard aesthetic to a warm, collectible battle-game splash page inspired by Axie/Pixelmon-style landing pages.
+
+**Files touched:**
+
+- **`globals.css`**: Added warm-section CSS tokens (`--warm-bg`, `--warm-surface`, `--warm-border`, `--warm-text`, `--warm-muted`, `--warm-card-shadow`). Added `.game-card` (rounded, thick-bordered collectible card), `.btn-game` / `.btn-game-primary` / `.btn-game-secondary` (chunky game buttons with offset shadows), `.paper-grain` (subtle noise texture for warm sections). Added `floatCard`, `sparkle`, `slowSpin`, `driftX` keyframes and corresponding animation utility classes.
+- **`content.ts`**: Added `emoji` and `baseEmoji` fields to `ScientistProfile` for placeholder visuals. Rewrote all `LANDING_STAGES` copy to be battle-narrative ("Enter the Queue", "Lock Your Wager", "Battle Begins", "Victor Takes All"). Changed domain labels from "Off-chain"/"On-chain" to "Arena"/"Blockchain". Updated ticker items.
+- **`Hero.tsx`**: Complete rewrite. Cinematic centered game-poster hero with: slow-spinning oversized CORA emblem background, scattered science doodle emojis, sparkle dots, floating collectible mini-cards (one per scientist with avatar, archetype badge, HP bar), vignette layers, preserved cursor-following orb, game-oriented copy ("A collectible battle game of brilliant minds" / "Collect scientists. Break their bases. Outsmart the arena."), chunky `btn-game` CTAs ("Enter Arena" + "Meet the Minds"). Removed arena-grid from hero.
+- **`Features.tsx`**: Moved to warm cream surface (`--warm-bg`) with `paper-grain` texture and dot pattern. Cards use `.game-card` instead of `.frame-cut`. Portrait area now has CSS chibi placeholder (emoji avatar in circular frame + coat body shape + base object icon + rarity badge + archetype badge + HP bar). Dark bark text on cream. Drawer mechanic preserved with warm-toned styling.
+- **`HowItWorks.tsx`**: Moved to warm cream surface with paper-grain. Copy changed to "How battles unfold" / "Pick your mind. Predict the move. Shatter the base." Stage card uses `.game-card` style with rounded step indicators. Removed arena-grid from interior. Sticky scroll-progress preserved.
+- **`VideoSlot.tsx`**: Stays dark (arena/demo moment). Copy updated: "Demo Video" → "Watch the duel flow", added play button icon, stronger placeholder text ("Arena gameplay coming soon"). Arena-grid kept here.
+- **`CtaBanner.tsx`**: Stays dark. Copy updated: "Think warmer. Battle sharper." → "Enter the arena of impossible minds." Added subcopy. Added floating decorative mini-cards on right side. Uses `btn-game` button. Arena-grid kept.
+- **`Footer.tsx`**: Fixed broken `©` encoding (mojibake `�` → `©`).
+- **`Navbar.tsx`**: Nav labels updated: "Flow"→"Minds", "Roster"→"How It Works", "Replay"→"Arena". Order changed to match new section order.
+- **`page.tsx`**: Section order changed: Features (roster) now comes before HowItWorks (battle flow).
+
+### The Reasoning
+
+- **Section rhythm**: The old page was almost entirely dark green with white text. The new rhythm is: cinematic dark hero → warm cream roster → warm cream battle explainer → dark arena demo → dark CTA. This creates visual breathing room and makes the warm palette from DESIGN.md actually visible.
+- **Art direction**: Without final character illustrations, we used CSS-based placeholder visuals (emoji avatars, shaped silhouettes, rarity/archetype badges, HP bars, floating mini-cards, science doodles, sparkles). These create the right compositional structure so real art can be swapped in later.
+- **Game-card vs frame-cut**: `.frame-cut` (clipped HUD corners) stays for dark/battle sections (VideoSlot, arena UI). Warm sections use `.game-card` (rounded, thick borders, cartoon offset shadow) which feels more collectible/game-like.
+- **Copy shift**: Replaced developer-facing language ("Solana Devnet", "Match Architecture", "4 phases, 2 on-chain transactions") with player-facing language ("A collectible battle game", "How battles unfold", "Pick your mind"). Blockchain details remain but are secondary.
+- **Preserved**: Fonts (Caprasimo + Gabarito), palette tokens, cursor orb, scroll-progress mechanic, drawer expand, entrance animations, TokenMarquee.
+
+### The Tech Debt
+
+- **Placeholder art**: All character visuals are emoji/CSS shapes. Need to swap with real illustrated chibi art when available. The `emoji` and `baseEmoji` fields in `ScientistProfile` can be replaced with image URLs.
+- **FloatingCard positions**: Hard-coded absolute positions for hero floating cards. May need responsive tuning at unusual viewport sizes.
+- **Warm/dark transitions**: The seam between warm sections (Features/HowItWorks) and dark sections (TokenMarquee above, VideoSlot below) could benefit from gradient transition strips if the hard color shift feels too abrupt.
+- **paper-grain SVG**: Using inline SVG data URL for noise texture. If performance is a concern on low-end devices, this could be replaced with a static PNG or removed.

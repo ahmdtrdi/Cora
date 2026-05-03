@@ -12,6 +12,8 @@ export type ScientistProfile = {
   detail: string;
   archetype: string;
   baseConcept: string;
+  baseEmoji: string;
+  emoji: string;
   accent: LandingAccent;
   stats: ScientistStat[];
 };
@@ -19,7 +21,7 @@ export type ScientistProfile = {
 export type LandingStage = {
   id: string;
   label: string;
-  domain: "Off-chain" | "On-chain";
+  domain: string;
   accent: LandingAccent;
   title: string;
   summary: string;
@@ -41,6 +43,8 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
       "Specializes in long-form logic chains. Correct answers build Relativity Charge, amplifying attack cards in later rounds.",
     archetype: "Tactician",
     baseConcept: "Relativity Lab",
+    baseEmoji: "🌀",
+    emoji: "🧠",
     accent: "primary",
     stats: [
       { label: "Logic", value: 92 },
@@ -57,6 +61,8 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
       "Excels in retention prompts. Radiation Shield softens incoming damage while enabling steady healing across rounds.",
     archetype: "Defender",
     baseConcept: "Radium Reactor",
+    baseEmoji: "☢️",
+    emoji: "🧪",
     accent: "secondary",
     stats: [
       { label: "Logic", value: 76 },
@@ -73,6 +79,8 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
       "Reads puzzle rhythm quickly. Cipher Break streaks reward high-accuracy speed and unlock critical burst turns.",
     archetype: "Striker",
     baseConcept: "Cipher Engine",
+    baseEmoji: "💻",
+    emoji: "⚡",
     accent: "primary",
     stats: [
       { label: "Logic", value: 89 },
@@ -86,43 +94,43 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
 export const LANDING_STAGES: LandingStage[] = [
   {
     id: "01",
-    label: "Matchmaking",
-    domain: "Off-chain",
+    label: "Enter the Queue",
+    domain: "Arena",
     accent: "primary",
-    title: "Queue, pair, open room",
+    title: "Find your rival",
     summary:
-      "Player joins queue from app or Blink. FIFO pairs two players and opens a WebSocket room.",
-    stat: "WebSocket",
+      "Step into the arena queue and get matched with a worthy opponent. The arena pairs two minds and opens the battlefield.",
+    stat: "Matchmaking",
   },
   {
     id: "02",
-    label: "Escrow",
-    domain: "On-chain",
+    label: "Lock Your Wager",
+    domain: "Blockchain",
     accent: "secondary",
-    title: "Both players deposit",
+    title: "Stake your confidence",
     summary:
-      "Both players sign the deposit in Phantom. Anchor contract locks funds in a PDA vault.",
-    stat: "Tx #1",
+      "Both players lock tokens into the arena vault. A smart contract seals the wager until the duel is settled.",
+    stat: "Vault Sealed",
   },
   {
     id: "03",
-    label: "Battle",
-    domain: "Off-chain",
+    label: "Battle Begins",
+    domain: "Arena",
     accent: "primary",
-    title: "3-round card battle",
+    title: "Three rounds of mind games",
     summary:
-      "Players use randomized Action Cards (Heal/Attack). Correct GAT answers damage enemy or heal own base HP.",
-    stat: "3 rounds",
+      "Attack, heal, outsmart. Use action cards fueled by your scientist's abilities. Correct answers deal damage — wrong ones leave you exposed.",
+    stat: "3 Rounds",
   },
   {
     id: "04",
-    label: "Settlement",
-    domain: "On-chain",
+    label: "Victor Takes All",
+    domain: "Blockchain",
     accent: "secondary",
-    title: "Signed result, funds released",
+    title: "The arena settles the score",
     summary:
-      "Server signs settlement authorization. Contract verifies signature and releases 97.5% to winner, 2.5% treasury.",
-    stat: "Tx #2",
+      "The result is signed and verified on-chain. The winner claims the prize pool, and the arena takes its cut.",
+    stat: "Settled",
   },
 ];
 
@@ -130,7 +138,7 @@ export const LANDING_TICKER_ITEMS: LandingTickerItem[] = [
   { label: "Einstein", detail: "Relativity Lab ready", accent: "primary" },
   { label: "Curie", detail: "Radium Reactor charged", accent: "secondary" },
   { label: "Turing", detail: "Cipher Engine active", accent: "primary" },
-  { label: "Room", detail: "2 players matched", accent: "neutral" },
-  { label: "Escrow", detail: "Vault awaiting signatures", accent: "secondary" },
-  { label: "Battle", detail: "3 rounds online", accent: "primary" },
+  { label: "Arena", detail: "2 minds matched", accent: "neutral" },
+  { label: "Vault", detail: "Wager locked", accent: "secondary" },
+  { label: "Battle", detail: "3 rounds live", accent: "primary" },
 ];

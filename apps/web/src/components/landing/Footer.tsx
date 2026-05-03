@@ -21,7 +21,7 @@ export function Footer() {
             <span className="font-caprasimo text-xl leading-none">CORA</span>
           </div>
           <p className="font-gabarito mt-2 text-sm text-[var(--color-muted)]">
-            � 2026 Cora Esports. Vintage cognitive arena prototype.
+            © 2026 Cora Esports. Vintage cognitive arena prototype.
           </p>
         </div>
 
