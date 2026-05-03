@@ -1702,3 +1702,23 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The rotation mapping `i === 0 ? "4deg" : i === 1 ? "-3deg" : "2deg"` is hardcoded for exactly 3 items. If more scientists are added in the future, a generic function or looping sequence for `--float-rot` will be needed.
+
+## 2026-05-03 - Connect Wallet Screen Dark Cinematic Redesign
+
+### The Change
+- Refactored `apps/web/src/components/connect/ConnectWalletScreen.tsx` to match the landing page's dark cinematic arena aesthetic.
+- Replaced the light background grid with a deep gradient (`from-[#121919] to-[#0a0f0c]`), a dark `.arena-grid`, depth vignette, and ambient radial glows (`--tone-clay`, `--tone-teal`, `--tone-sage`).
+- Added animated background elements: a faint, oversized "C" emblem, floating emoji cards (🧪, 🧬, 🔬, ⚔️) using `.animate-float-card`, and floating sparkle orbs using `.animate-sparkle`.
+- Redesigned the centered wallet connection panel into a dark game-card style using a thick `var(--tone-bark)` border, dark background (`#172318`), shadow drop, and an inner accent frame. Added a subtle `.animate-orb-breath` glow behind the panel.
+- Updated the copy to fit the game lore ("Arena Access", "Enter the Arena", "Wallet synced: ...", "Enter Lobby").
+- Changed the typography to use `--font-caprasimo` and `--font-gabarito`. Connected status uses `font-mono`.
+- Styled the "Continue" link using the `.btn-game .btn-game-primary` chunky button style.
+
+### The Reasoning
+- The user wanted the wallet connection screen to feel like an "arena gate" screen that matches the rest of the dark landing page direction, rather than a generic SaaS auth page or a light-themed placeholder.
+- Incorporating existing CSS tokens (`--tone-bark`, `--tone-clay`, `--tone-teal`, `.arena-grid`, `.animate-float-card`) ensured the new design is cohesive with the landing page without requiring new global utility classes.
+- Maintaining the `"use client"` and existing `useWallet` hook dependencies ensured that the functional logic was untouched while the visual layer received a massive upgrade.
+
+### The Tech Debt
+- The decorative emoji elements and floating cards are still using hardcoded strings/emojis. They should be swapped out with actual collectible card assets when the final art direction is available.
+- Ambient glow positions and floating card positions are hardcoded using absolute percentages, which might require adjustments on extremely wide or narrow viewports.
