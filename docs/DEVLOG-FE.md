@@ -1739,3 +1739,33 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - **Network Fees & Latency:** Real interactions mean users have to face actual blockhash/RPC latencies, which inherently introduce new possible friction scenarios. `signDepositIntent` includes minor retry handling, but a comprehensive polling/retry UI state might be needed for poor connections.
+
+## 2026-05-04 - Fix Buffer Type for Solana Memo TransactionInstruction
+
+### The Change
+- Updated [apps/web/src/lib/solana/signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) in `signMemoIntent`.
+- Replaced memo instruction payload from `new TextEncoder().encode(memoMessage)` to `Buffer.from(memoMessage, "utf8")`.
+
+### The Reasoning
+- `TransactionInstruction.data` in the current Solana SDK typing expects a `Buffer`-compatible payload in this build configuration.
+- `TextEncoder().encode(...)` returns `Uint8Array`, which triggered a TypeScript incompatibility during `next build`.
+- Using `Buffer.from` preserves exact byte content while satisfying the expected instruction data type.
+
+### The Tech Debt
+- Build is now blocked by a separate pre-render error on `/lobby` (`useSearchParams` missing Suspense boundary), unrelated to this type fix.
+
+## 2026-05-04 - Reapply Suspense Boundaries for connect/lobby/play Pages
+
+### The Change
+- Updated [apps/web/src/app/connect/page.tsx](/d:/projects/Cora/apps/web/src/app/connect/page.tsx) to wrap `ConnectWalletScreen` in `Suspense`.
+- Updated [apps/web/src/app/lobby/page.tsx](/d:/projects/Cora/apps/web/src/app/lobby/page.tsx) to wrap `LobbyScreen` in `Suspense`.
+- Updated [apps/web/src/app/play/page.tsx](/d:/projects/Cora/apps/web/src/app/play/page.tsx) to wrap `BattleScreen` in `Suspense`.
+
+### The Reasoning
+- These screens use `useSearchParams()` and must be rendered under a Suspense boundary when prerender/export runs in Next App Router.
+- Missing boundaries caused repeated `missing-suspense-with-csr-bailout` failures beginning at `/connect`.
+- Applying wrappers at route page boundaries keeps each fix isolated and avoids changing component internals.
+
+### The Tech Debt
+- Local build verification is currently blocked by Windows filesystem lock/permission errors in `.next` (`EPERM` unlink on chunk files).
+- We should standardize a local clean-build workflow that ensures Node/Next processes are stopped before deleting `.next`.
