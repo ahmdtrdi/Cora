@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ConnectWalletScreen } from "@/components/connect/ConnectWalletScreen";
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function ConnectPage() {
-  return <ConnectWalletScreen />;
+  return (
+    <Suspense fallback={null}>
+      <ConnectWalletScreen />
+    </Suspense>
+  );
 }

@@ -1,6 +1,7 @@
 import { test, expect, describe, mock, beforeEach, afterEach, setSystemTime } from 'bun:test';
 import { GameEngine } from '../src/GameEngine';
 import type { Question } from '@shared/question';
+import { getSpecialtyMultiplier } from '@shared/characterStats';
 
 const mockQuestions: Question[] = [
   {
@@ -77,6 +78,7 @@ describe('GameEngine', () => {
     
     const result = engine.playCard('player1', attackCard.id, correctOptionId);
     
+    const expectedDamage = GameEngine.BASE_DAMAGE * getSpecialtyMultiplier('turing', attackCard.question.category);
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
     expect(result.damage).toBe(50);
@@ -106,11 +108,12 @@ describe('GameEngine', () => {
     
     const result = engine.playCard('player1', healCard.id, healCard.correctOptionId);
     
+    const expectedHeal = GameEngine.BASE_HEAL * getSpecialtyMultiplier('turing', healCard.question.category);
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
-    expect(result.heal).toBe(10);
-    expect(engine.getHealth()['player1']).toBe(90);
-    expect(engine.getScores()['player1']).toBe(10);
+    expect(result.heal).toBe(expectedHeal);
+    expect(engine.getHealth()['player1']).toBe(80 + expectedHeal);
+    expect(engine.getScores()['player1']).toBe(expectedHeal);
   });
 
   test('playCard wrong answer', () => {
@@ -147,6 +150,7 @@ describe('GameEngine', () => {
 
     const internalPlayer1 = (engine as any).players.get('player1');
     const internalPlayer2 = (engine as any).players.get('player2');
+    internalPlayer1.roundsWon = 1; // Start with 1 round win so this round ends the game
     
     // We need 2 rounds to win, so simulate winning the first
     internalPlayer1.roundsWon = 1;
@@ -251,12 +255,15 @@ describe('GameEngine', () => {
 
     // Now play a card — should deal ×2 damage
     const internalPlayer1 = (engine as any).players.get('player1');
+    internalPlayer1.roundsWon = 1; // So this attack ends the match and doesn't reset health
     internalPlayer1.hand[0].type = 'attack';
     const attackCard = internalPlayer1.hand[0];
 
     setSystemTime(new Date(Date.now() + 600));
     const result = engine.playCard('player1', attackCard.id, attackCard.correctOptionId);
 
+    const expectedMult = 2 * getSpecialtyMultiplier('turing', attackCard.question.category);
+    const expectedDamage = GameEngine.BASE_DAMAGE * expectedMult;
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
     expect(result.multiplier).toBe(2);
@@ -280,11 +287,13 @@ describe('GameEngine', () => {
     setSystemTime(new Date(Date.now() + 600));
     const result = engine.playCard('player1', healCard.id, healCard.correctOptionId);
 
+    const expectedMult = 2 * getSpecialtyMultiplier('turing', healCard.question.category);
+    const expectedHeal = GameEngine.BASE_HEAL * expectedMult;
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
-    expect(result.multiplier).toBe(2);
-    expect(result.heal).toBe(20); // 10 base × 2
-    expect(engine.getHealth()['player1']).toBe(90); // 70 + 20
+    expect(result.multiplier).toBe(expectedMult);
+    expect(result.heal).toBe(expectedHeal);
+    expect(engine.getHealth()['player1']).toBe(70 + expectedHeal);
   });
 
   test('forfeit via stop() emits gameOver with forfeit reason', () => {
@@ -406,6 +415,7 @@ describe('GameEngine', () => {
     setSystemTime(new Date(Date.now() + 600));
     engine.playCard('player1', card.id, card.correctOptionId);
 
+    const expectedDamage = GameEngine.BASE_DAMAGE * getSpecialtyMultiplier('turing', card.question.category);
     const scores1 = engine.getScores();
     const health1 = engine.getHealth();
     expect(scores1['player1']).toBe(50);
