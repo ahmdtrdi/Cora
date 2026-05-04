@@ -150,7 +150,7 @@ console.log(`Server is running on port ${port}`);
 
 // Start Anchor event listener when RPC is configured
 if (process.env.SOLANA_RPC_URL) {
-  startEventListener(process.env.SOLANA_RPC_URL);
+  startEventListener(process.env.SOLANA_RPC_URL, process.env.SOLANA_WS_URL);
 } else {
   console.log('[EventListener] Skipped — no SOLANA_RPC_URL configured.');
 }

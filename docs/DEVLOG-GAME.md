@@ -190,3 +190,37 @@ The specialty multiplier **stacks multiplicatively** with the existing extra-poi
 **Tech Debt:**
 - The frontend `CharacterCard` shows generic stat bars but does not explicitly label the 1.5x specialty bonus. A tooltip or badge ("1.5x Sequence Damage") would improve discoverability.
 - Character definitions exist in two places: `characterStats.ts` (backend-authoritative) and `SCIENTISTS[]` in `LobbyScreen.tsx` (frontend display). These should eventually be unified or auto-derived.
+
+---
+
+## 10. RPC Migration — RPCFast Integration (2026-05-04)
+
+**The Change:**
+
+*Files touched:*
+- `apps/api/.env.example`
+- `apps/api/src/utils/settlement.ts`
+- `apps/api/src/utils/eventListener.ts`
+- `apps/api/src/index.ts`
+- `apps/web/src/components/Providers.tsx`
+- `apps/web/.env`
+
+Migrated the Solana RPC layer from the public `api.devnet.solana.com` to support **RPCFast** (`rpcfast.com`), a high-performance RPC provider and Frontier Hackathon sponsor.
+
+**What changed:**
+
+1. **Backend (`settlement.ts`):** The singleton `Connection` now accepts an optional `SOLANA_WS_URL` for explicit WebSocket configuration (RPCFast may provide separate HTTP/WS endpoints).
+2. **Backend (`eventListener.ts`):** `startEventListener()` now takes an optional `wsUrl` parameter instead of blindly converting `https→wss`. Falls back to the old derivation when no explicit WS URL is set.
+3. **Backend (`index.ts`):** Passes `SOLANA_WS_URL` env var to the event listener.
+4. **Frontend (`Providers.tsx`):** `ConnectionProvider` now reads `NEXT_PUBLIC_SOLANA_RPC_URL` from the environment, falling back to `clusterApiUrl('devnet')` when unset.
+5. **Env files:** Updated `.env.example` and `apps/web/.env` with RPCFast-specific documentation and placeholders.
+
+**The Reasoning:**
+- Public Solana RPC endpoints are rate-limited and unreliable for production use (especially for `sendAndConfirmTransaction` and `onLogs` subscriptions).
+- RPCFast provides <20ms latency, dedicated infrastructure, and free hackathon credits — a direct upgrade for CORA's on-chain settlement path.
+- Adding `SOLANA_WS_URL` as a separate env var is necessary because some RPC providers (including RPCFast) serve WebSocket traffic on different endpoints than their HTTP API.
+
+**Tech Debt:**
+- The `actions.ts` route still creates a one-off `new Connection()` per POST request (line 199). This should be refactored to use the shared singleton from `settlement.ts`.
+- No automated health check to validate the RPC endpoint on startup. A `getSlot()` probe would catch misconfigured URLs early.
+
