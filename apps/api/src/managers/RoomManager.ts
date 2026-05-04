@@ -206,7 +206,7 @@ export class RoomManager {
       matchIdBytes: deriveMatchId(roomId),
       clients: new Map(),
       status: 'depositing',
-      playerMeta: new Map([[playerAPubkey, { hasDeposited: false, characterId: 'einstein' }]]),
+      playerMeta: new Map([[playerAPubkey, { hasDeposited: false, characterId: 'newton' }]]),
       engine: null,
       openedCards: new Map(),
       roomType: 'private',
@@ -239,7 +239,7 @@ export class RoomManager {
     if (room.playerA === playerBPubkey) return 'full'; // same address
 
     room.playerB = playerBPubkey;
-    room.playerMeta.set(playerBPubkey, { hasDeposited: false, characterId: 'einstein' });
+    room.playerMeta.set(playerBPubkey, { hasDeposited: false, characterId: 'newton' });
     console.log(`[Private] Player B ${playerBPubkey} joined room ${roomId}`);
     return 'ok';
   }
@@ -399,7 +399,7 @@ export class RoomManager {
     });
   }
 
-  public joinRoom(roomId: string, address: string, ws: ServerWebSocket<unknown>, characterId: string = 'einstein') {
+  public joinRoom(roomId: string, address: string, ws: ServerWebSocket<unknown>, characterId: string = 'newton') {
     const room = this.rooms.get(roomId);
     if (!room) {
       console.warn(`Room ${roomId} not found for join.`);
@@ -575,8 +575,8 @@ export class RoomManager {
 //     const addresses: [string, string] = [room.playerA, room.playerB];
     const addresses = Array.from(room.clients.keys()) as [string, string];
     const playersInfo: [{ address: string; characterId: string }, { address: string; characterId: string }] = [
-      { address: addresses[0], characterId: room.playerMeta.get(addresses[0])?.characterId || 'einstein' },
-      { address: addresses[1], characterId: room.playerMeta.get(addresses[1])?.characterId || 'einstein' }
+      { address: addresses[0], characterId: room.playerMeta.get(addresses[0])?.characterId || 'newton' },
+      { address: addresses[1], characterId: room.playerMeta.get(addresses[1])?.characterId || 'newton' }
     ];
     const questions = loadQuestions();
 
@@ -941,7 +941,7 @@ export class RoomManager {
             characterState: 'stay',
             score: 0,
             roundsWon: 0,
-            characterId: room.playerMeta.get(address)?.characterId || 'einstein',
+            characterId: room.playerMeta.get(address)?.characterId || 'newton',
           },
           opponent: opponentAddress
             ? {
@@ -950,7 +950,7 @@ export class RoomManager {
               characterState: 'stay',
               score: 0,
               roundsWon: 0,
-              characterId: room.playerMeta.get(opponentAddress)?.characterId || 'einstein',
+              characterId: room.playerMeta.get(opponentAddress)?.characterId || 'newton',
             }
             : {
               address: 'Waiting for opponent...',
@@ -958,7 +958,7 @@ export class RoomManager {
               characterState: 'stay',
               score: 0,
               roundsWon: 0,
-              characterId: 'einstein',
+              characterId: 'newton',
             },
           hand: [],
           timer: {
