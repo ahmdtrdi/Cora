@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import {
   PublicKey,
   Transaction,
@@ -95,7 +96,7 @@ async function signMemoIntent({
   const instruction = new TransactionInstruction({
     keys: [],
     programId: MEMO_PROGRAM_ID,
-    data: new TextEncoder().encode(memoMessage),
+    data: Buffer.from(memoMessage, "utf8"),
   });
 
   const transaction = new Transaction().add(instruction);
