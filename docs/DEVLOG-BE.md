@@ -360,3 +360,27 @@
 **The Tech Debt:**
 - **Wallet Public Key Reading:** Deriving the `server_pubkey` from `bs58` directly is mildly brittle if key formatting diverges (e.g. Ed25519 length mismatch).
 - **Error Handling for Token Mint:** Using a fallback `tokenMint` or `wagerAmount` on the public matchmaking queue is functional but depends on client honesty; this might need stricter server-side session syncing or an explicit config for the public queue.
+
+
+---
+
+## Entry 2026-05-04: Native SOL Wagering & Settlement Hardening
+
+### The Change
+
+**Backend & Settlement (4 files):**
+- `apps/api/src/routes/actions.ts` — Injected `createAssociatedTokenAccountIdempotentInstruction` and `createSyncNativeInstruction` into the deposit transaction builder for wSOL auto-wrapping.
+- `apps/api/src/utils/settlement.ts` — Added `createAssociatedTokenAccountIdempotentInstruction` to lazily create the treasury ATA before submitting `settle_match`.
+- `apps/api/scratch/init-config.ts` — Executed to initialize the global `ProgramConfig` PDA on Devnet.
+- `apps/api/.env` — Replaced the mistakenly committed `PROGRAM_ID` keypair with a dedicated operational backend server keypair.
+
+### The Reasoning
+
+1. **Native SOL UX**: The Solana Actions spec allows us to build complex transactions. By automatically injecting the wSOL wrap instructions in the initial transaction, users can wager native SOL without knowing wSOL exists. The backend still honors the smart contract's strict SPL token requirement.
+2. **Treasury Resilience**: By prepending idempotent ATA creation to the settlement payload, we ensure that the backend settlement will never fail with an `AccountNotInitialized` error for the fee collection account.
+3. **Sanitization Bug Fix**: The `invalid transaction: Transaction failed to sanitize accounts offsets correctly` error occurred because the backend was using the Program Keypair to sign the settlement, making the Program an invoked writable signer (which is illegal in legacy transactions). Rotating to a dedicated server keypair fixed this.
+
+### The Tech Debt
+
+- [ ] The backend operator wallet is currently paying the 0.002 SOL fee to create the treasury ATA if it doesn't exist. We should ensure the treasury ATAs are pre-funded in production.
+- [ ] `init-config.ts` was run manually. This needs to be part of the production deployment scripts.
