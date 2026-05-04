@@ -345,3 +345,18 @@
 
 **The Tech Debt:**
 - **Hardcoded Default Character:** Hardcoding `einstein` as a fallback ensures the build passes and the user has a valid character in memory, but ideally, the Blink endpoint `/match/private` should eventually accept a `characterId` parameter from the challenge creator to allow them to pick their character.
+
+## 2026-05-04 - Full Smart Contract Wireup for Match Initialization
+
+**The Change:**
+- Refactored `apps/api/src/routes/actions.ts` to include `initialize_match` alongside `deposit_wager`.
+- Updated `POST /api/actions/challenge` to identify if the caller is Player A.
+- Used backend environment variable `SOLANA_PRIVATE_KEY` to attach `server_pubkey`.
+
+**The Reasoning:**
+- **Incomplete Flow:** Previously, the backend only supported providing a solitary `deposit_wager` instruction. This naturally led to the contract failing during on-chain settlement, as `MatchState` hadn't even been initialized on the Solana program (missing PDA execution).
+- **Two Actions in One:** By detecting the first player, we merge both instructions, so that `MatchState` initialization happens atomically with the primary deposit.
+
+**The Tech Debt:**
+- **Wallet Public Key Reading:** Deriving the `server_pubkey` from `bs58` directly is mildly brittle if key formatting diverges (e.g. Ed25519 length mismatch).
+- **Error Handling for Token Mint:** Using a fallback `tokenMint` or `wagerAmount` on the public matchmaking queue is functional but depends on client honesty; this might need stricter server-side session syncing or an explicit config for the public queue.
