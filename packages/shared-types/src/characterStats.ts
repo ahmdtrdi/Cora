@@ -21,7 +21,7 @@ export interface CharacterDef {
 export const CHARACTER_DEFS: Record<string, CharacterDef> = {
   turing: { id: 'turing', name: 'Alan Turing',   specialty: 'sequence', specialtyMultiplier: 1.5 },
   curie:  { id: 'curie',  name: 'Marie Curie',   specialty: 'logical',  specialtyMultiplier: 1.5 },
-  newton: { id: 'newton', name: 'Isaac Newton',  specialty: 'math',     specialtyMultiplier: 1.5 },
+  einstein: { id: 'einstein', name: 'Albert Einstein', specialty: 'math',     specialtyMultiplier: 1.5 },
 };
 
 /**

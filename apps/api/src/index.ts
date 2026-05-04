@@ -116,7 +116,7 @@ app.post('/match/private', async (c) => {
 app.get('/match/:roomId', upgradeWebSocket((c) => {
   const roomId = c.req.param('roomId');
   const address = c.req.query('address');
-  const characterId = c.req.query('characterId') || 'newton'; // Default if not provided
+  const characterId = c.req.query('characterId') || 'einstein'; // Default if not provided
 
   if (!roomId || !address) {
     return {

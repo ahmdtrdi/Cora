@@ -172,14 +172,14 @@ Each character now has a **specialty question category**. When a player answers 
 |---------------|----------|-------------|----------------------------|
 | Alan Turing   | `turing` | `sequence`  | 1.5x on sequence questions |
 | Marie Curie   | `curie`  | `logical`   | 1.5x on logical questions  |
-| Isaac Newton  | `newton` | `math`      | 1.5x on math questions     |
+| Albert Einstein | `einstein` | `math`      | 1.5x on math questions     |
 
 The specialty multiplier **stacks multiplicatively** with the existing extra-point phase multiplier (2x), yielding up to **3x** in the final minute on specialty questions.
 
 **Implementation Details:**
 1. Created `characterStats.ts` in `shared-types` as a single source of truth for character definitions (`CHARACTER_DEFS`) and a `getSpecialtyMultiplier()` helper function.
 2. In `GameEngine.playCard()`, the multiplier computation was split into `phaseMultiplier` (1x normal / 2x extra) and `specialtyMultiplier` (1x non-specialty / 1.5x specialty), then combined: `multiplier = phaseMultiplier * specialtyMultiplier`.
-3. Updated all default `characterId` fallbacks in `RoomManager.ts` from `'einstein'` to `'newton'`.
+3. Restored default `characterId` fallbacks in backend to `'einstein'` per user request, while leaving frontend character UI as Newton.
 4. Updated frontend character stats to visually reflect each character's specialty category (e.g. Turing's primary stat is "Sequence", Curie's is "Logical", Newton's is "Math").
 
 **The Reasoning:**
