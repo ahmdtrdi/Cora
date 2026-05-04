@@ -1702,3 +1702,27 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The rotation mapping `i === 0 ? "4deg" : i === 1 ? "-3deg" : "2deg"` is hardcoded for exactly 3 items. If more scientists are added in the future, a generic function or looping sequence for `--float-rot` will be needed.
+
+## 2026-05-04 - Deposit Signing Unlock Fix for Opponent (Player 2) in Lobby
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to remove the frontend-only temporary signing lock that inferred signing order from lexicographically sorted wallet addresses.
+- Removed `useMemo`-based `deterministicPrimaryAddress` role inference and related lock controls:
+  - `requiresTemporaryUnlock`
+  - `isUxSignLocked`
+  - `uxLockExpired` state + timeout effect
+- Simplified `canAttemptSign` so deposit signing is gated only by real runtime conditions:
+  - wallet connected
+  - websocket connected
+  - not currently signing/waiting
+  - not already signed
+- Removed the `"Waiting for server unlock..."` helper-text branch that depended on the deleted UX lock state.
+
+### The Reasoning
+- The previous lock used a client-side wallet sort heuristic to decide who signs first, which is not authoritative and can diverge from backend room role assignment (`playerA` / `playerB`).
+- In mismatch cases, the UI could disable Player 2 even after Player 1 had signed, creating a deadlock-feeling flow despite backend being ready to accept the deposit confirmation.
+- Using only actual connection/signing state on the frontend avoids false-negative lockouts and aligns behavior with server-driven state transitions.
+
+### The Tech Debt
+- Frontend still does not receive an explicit authoritative "you are playerA/playerB and currently allowed to sign" flag from backend state payloads.
+- If strict sequential deposit enforcement is required in the future, the lock should be server-authoritative (role/permission in payload) rather than inferred on client.
