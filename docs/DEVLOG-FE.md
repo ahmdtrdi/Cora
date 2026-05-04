@@ -1726,3 +1726,16 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Frontend still does not receive an explicit authoritative "you are playerA/playerB and currently allowed to sign" flag from backend state payloads.
 - If strict sequential deposit enforcement is required in the future, the lock should be server-authoritative (role/permission in payload) rather than inferred on client.
+
+## 2026-05-04 - Enable Real Solana Transactions for Deposit
+
+### The Change
+- Refactored `apps/web/src/lib/solana/signDepositIntent.ts` to actually invoke the backend at `POST /api/actions/challenge`.
+- Removed dummy `MEMO` string compilation for `deposit_wager`.
+- Fed `tokenMint` and `wagerAmount` dynamically to the backend from the client logic.
+
+### The Reasoning
+- **Mock Deprecation:** Clicking "Sign Deposit" in the frontend merely fired an arbitrary MEMO transaction, so no `wager_deposit` or `initialize_match` was executed on the blockchain! To properly integrate the CORA smart contract into the workflow, real Solana instructions provided by the server needed to be requested, signed, and broadcasted via the local wallet.
+
+### The Tech Debt
+- **Network Fees & Latency:** Real interactions mean users have to face actual blockhash/RPC latencies, which inherently introduce new possible friction scenarios. `signDepositIntent` includes minor retry handling, but a comprehensive polling/retry UI state might be needed for poor connections.

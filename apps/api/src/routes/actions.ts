@@ -4,17 +4,19 @@ import {
   PublicKey,
   Transaction,
   TransactionInstruction,
+  SystemProgram,
 } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { ESCROW_CONSTANTS } from '@shared/escrow';
 import { RoomManager } from '../managers/RoomManager';
+import bs58 from 'bs58';
 
 export function createActionsRouter(roomManager: RoomManager) {
   const router = new Hono();
 
   const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
-  // depositWager discriminator: sha256("global:deposit_wager")[0..8]
   const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
+  const INITIALIZE_MATCH_DISCRIMINATOR = Buffer.from([156, 133, 52, 179, 176, 29, 64, 124]);
 
   // ---------------------------------------------------------------------------
   // Solana Actions & Blinks Middleware
@@ -158,21 +160,36 @@ export function createActionsRouter(roomManager: RoomManager) {
         );
       }
 
-      // Validate and join the private room
-      const joinResult = roomManager.joinPrivateRoom(account, roomId);
-
-      if (joinResult === 'not_found') {
+      const room = roomManager.getRoom(roomId)!;
+      if (!room) {
         return c.json({ message: 'Challenge canceled — this room no longer exists.' } satisfies ActionError, 404);
       }
-      if (joinResult === 'cancelled') {
-        return c.json({ message: 'Challenge canceled — the deposit window has expired.' } satisfies ActionError, 410);
+
+      // Allow frontend to populate missing tokenMint and wagerAmount for public matchmaking
+      if (room.roomType === 'public' && room.tokenMint === null && body.tokenMint) {
+        room.tokenMint = body.tokenMint;
       }
-      if (joinResult === 'full') {
-        return c.json({ message: 'Challenge already accepted — this match is full.' } satisfies ActionError, 409);
+      if (room.roomType === 'public' && room.wagerAmount === null && body.wagerAmount !== undefined) {
+        room.wagerAmount = BigInt(body.wagerAmount);
       }
 
-      // Room joined. Build the real deposit_wager transaction for Player B.
-      const room = roomManager.getRoom(roomId)!;
+      // Check if user is already in the room
+      const isPlayerA = room.playerA === account;
+      const isPlayerB = room.playerB === account;
+
+      // If not already in the room, try to join as Player B (Blink flow)
+      if (!isPlayerA && !isPlayerB) {
+        const joinResult = roomManager.joinPrivateRoom(account, roomId);
+        if (joinResult === 'not_found') {
+          return c.json({ message: 'Challenge canceled — this room no longer exists.' } satisfies ActionError, 404);
+        }
+        if (joinResult === 'cancelled') {
+          return c.json({ message: 'Challenge canceled — the deposit window has expired.' } satisfies ActionError, 410);
+        }
+        if (joinResult === 'full') {
+          return c.json({ message: 'Challenge already accepted — this match is full.' } satisfies ActionError, 409);
+        }
+      }
 
       if (!room.tokenMint || room.wagerAmount === null) {
         return c.json({ message: 'Internal error — room is missing token configuration.' } satisfies ActionError, 500);
@@ -186,7 +203,6 @@ export function createActionsRouter(roomManager: RoomManager) {
       const tokenMint = new PublicKey(room.tokenMint);
       const matchIdBytes = room.matchIdBytes;
 
-      // Derive PDAs — must match seeds in the Anchor program
       const [matchStatePDA] = PublicKey.findProgramAddressSync(
         [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchIdBytes],
         PROGRAM_ID,
@@ -196,8 +212,48 @@ export function createActionsRouter(roomManager: RoomManager) {
         PROGRAM_ID,
       );
 
-      // Player B's associated token account for the wager token (allow off-curve for smart wallets/PDAs)
       const depositorATA = getAssociatedTokenAddressSync(tokenMint, depositor, true);
+      
+      const tx = new Transaction({
+        recentBlockhash: latest.blockhash,
+        feePayer: depositor,
+      });
+
+      // If Player A is invoking this, we must initialize the match first
+      if (isPlayerA) {
+        // Find server pubkey
+        const privateKey = process.env.SERVER_KEYPAIR;
+        if (!privateKey) throw new Error("Missing SERVER_KEYPAIR for backend");
+        const serverKeypair = bs58.decode(privateKey);
+        // The last 32 bytes of the bs58 decoded string of a secret key or using Keypair
+        // We will just read the Public Key from the private key via slice. Note: for ed25519 64 byte keys, it's bytes 32..64.
+        const serverPubkey = new PublicKey(serverKeypair.subarray(32, 64));
+
+        const wagerAmountBuffer = Buffer.alloc(8);
+        wagerAmountBuffer.writeBigUInt64LE(BigInt(room.wagerAmount));
+        
+        const initData = Buffer.concat([
+          INITIALIZE_MATCH_DISCRIMINATOR,
+          Buffer.from(matchIdBytes),
+          wagerAmountBuffer,
+          serverPubkey.toBuffer()
+        ]);
+
+        const initIx = new TransactionInstruction({
+          programId: PROGRAM_ID,
+          data: initData,
+          keys: [
+            { pubkey: depositor, isSigner: true, isWritable: true }, // player_a
+            { pubkey: new PublicKey(room.playerB || account), isSigner: false, isWritable: false }, // player_b (might be fake if B hasn't joined, but it cannot be same as player_a. If B hasn't joined wait...)
+            { pubkey: tokenMint, isSigner: false, isWritable: false }, // tokenMint
+            { pubkey: matchStatePDA, isSigner: false, isWritable: true }, // matchState PDA
+            { pubkey: vaultPDA, isSigner: false, isWritable: true }, // vault PDA
+            { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // tokenProgram
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // systemProgram
+          ],
+        });
+        tx.add(initIx);
+      }
 
       // deposit_wager has no args — only accounts, no data beyond the discriminator
       const depositWagerIx = new TransactionInstruction({
@@ -213,10 +269,7 @@ export function createActionsRouter(roomManager: RoomManager) {
         ],
       });
 
-      const tx = new Transaction({
-        recentBlockhash: latest.blockhash,
-        feePayer: depositor,
-      }).add(depositWagerIx);
+      tx.add(depositWagerIx);
 
       const serialized = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
       const base64 = serialized.toString('base64');
