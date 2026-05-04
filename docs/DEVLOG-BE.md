@@ -334,3 +334,14 @@
 - [ ] **Manual MatchState parsing remains** — while we've corrected the offsets, the fundamental fragility persists. If the Web3 team adds another field before `token_mint`, offsets break again. Consider using `@coral-xyz/anchor` IDL-based deserialization for robustness.
 - [ ] **Event listener reconnection** — if the WebSocket connection drops, `onLogs` does not auto-reconnect. Need a heartbeat/reconnect wrapper for production reliability.
 - [ ] **`prevents self-matching` test** — pre-existing timeout failure. The test chains two `queueMatch` calls for the same address, but the second call attaches to the first's promise. When `player2` pairs with the first, the second promise resolves to the same room — leaving `player3` with nobody to pair with and `p2Promise` never resolving.
+
+## 2026-05-04 - Fix ServerPlayerMeta Missing Property in Private Room Creation
+
+**The Change:**
+- Added default `characterId: 'einstein'` to the `playerMeta` initialization inside `createPrivateRoom` in `apps/api/src/managers/RoomManager.ts`.
+
+**The Reasoning:**
+- **Vercel Build Failure:** The missing property caused a TypeScript compilation error (`TS2322`) during Vercel deployment. `ServerPlayerMeta` mandates `characterId`, but it was omitted. Local development (`bun run dev`) bypassed this as it skips type checking, hiding the error until deployment.
+
+**The Tech Debt:**
+- **Hardcoded Default Character:** Hardcoding `einstein` as a fallback ensures the build passes and the user has a valid character in memory, but ideally, the Blink endpoint `/match/private` should eventually accept a `characterId` parameter from the challenge creator to allow them to pick their character.
