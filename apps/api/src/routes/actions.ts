@@ -6,7 +6,7 @@ import {
   TransactionInstruction,
   SystemProgram,
 } from '@solana/web3.js';
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction } from '@solana/spl-token';
 import { ESCROW_CONSTANTS } from '@shared/escrow';
 import { RoomManager } from '../managers/RoomManager';
 import bs58 from 'bs58';
@@ -17,6 +17,29 @@ export function createActionsRouter(roomManager: RoomManager) {
   const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
   const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
   const INITIALIZE_MATCH_DISCRIMINATOR = Buffer.from([156, 133, 52, 179, 176, 29, 64, 124]);
+
+  // Map UI token symbols → on-chain SPL mint addresses (devnet)
+  // Native SOL uses the wrapped-SOL mint for SPL escrow operations.
+  const TOKEN_MINTS: Record<string, string> = {
+    SOL:  'So11111111111111111111111111111111111111112',  // Wrapped SOL
+    BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', // BONK (devnet)
+    USDC: 'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr', // USDC (devnet)
+  };
+
+  /** Resolve a token identifier to a valid SPL mint address.
+   *  Accepts either a known symbol (SOL, BONK, USDC) or a raw base58 pubkey. */
+  function resolveTokenMint(input: string): string | null {
+    // Check symbol map first (case-insensitive)
+    const mapped = TOKEN_MINTS[input.toUpperCase()];
+    if (mapped) return mapped;
+    // Fall back to raw base58 validation
+    try {
+      new PublicKey(input);
+      return input;
+    } catch {
+      return null;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Solana Actions & Blinks Middleware
@@ -167,7 +190,11 @@ export function createActionsRouter(roomManager: RoomManager) {
 
       // Allow frontend to populate missing tokenMint and wagerAmount for public matchmaking
       if (room.roomType === 'public' && room.tokenMint === null && body.tokenMint) {
-        room.tokenMint = body.tokenMint;
+        const resolved = resolveTokenMint(body.tokenMint);
+        if (!resolved) {
+          return c.json({ message: `Unknown token "${body.tokenMint}" — provide a symbol (SOL, BONK, USDC) or a valid mint address.` } satisfies ActionError, 400);
+        }
+        room.tokenMint = resolved;
       }
       if (room.roomType === 'public' && room.wagerAmount === null && body.wagerAmount !== undefined) {
         room.wagerAmount = BigInt(body.wagerAmount);
@@ -195,12 +222,23 @@ export function createActionsRouter(roomManager: RoomManager) {
         return c.json({ message: 'Internal error — room is missing token configuration.' } satisfies ActionError, 500);
       }
 
+      // Validate that account and tokenMint are valid base58 public keys
+      let depositor: PublicKey;
+      let tokenMint: PublicKey;
+      try {
+        depositor = new PublicKey(account);
+      } catch {
+        return c.json({ message: 'Invalid `account` — not a valid base58 public key.' } satisfies ActionError, 400);
+      }
+      try {
+        tokenMint = new PublicKey(room.tokenMint);
+      } catch {
+        return c.json({ message: 'Internal error — room has an invalid tokenMint.' } satisfies ActionError, 500);
+      }
+
       const RPC = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
       const conn = new Connection(RPC, 'confirmed');
       const latest = await conn.getLatestBlockhash();
-
-      const depositor = new PublicKey(account);
-      const tokenMint = new PublicKey(room.tokenMint);
       const matchIdBytes = room.matchIdBytes;
 
       const [matchStatePDA] = PublicKey.findProgramAddressSync(
@@ -219,12 +257,39 @@ export function createActionsRouter(roomManager: RoomManager) {
         feePayer: depositor,
       });
 
+      // Ensure the depositor has an Associated Token Account (ATA) for this token.
+      // This uses the idempotent instruction, so it safely does nothing if the ATA already exists.
+      tx.add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          depositor, // payer
+          depositorATA, // ata
+          depositor, // owner
+          tokenMint // mint
+        )
+      );
+
+      // If the wager token is Wrapped SOL, automatically wrap Native SOL for the user
+      // This allows them to wager pure SOL directly from their wallet!
+      if (tokenMint.toBase58() === TOKEN_MINTS.SOL) {
+        tx.add(
+          SystemProgram.transfer({
+            fromPubkey: depositor,
+            toPubkey: depositorATA,
+            lamports: room.wagerAmount,
+          }),
+          createSyncNativeInstruction(depositorATA)
+        );
+      }
+
       // If Player A is invoking this, we must initialize the match first
       if (isPlayerA) {
         // Find server pubkey
         const privateKey = process.env.SERVER_KEYPAIR;
         if (!privateKey) throw new Error("Missing SERVER_KEYPAIR for backend");
-        const serverKeypair = bs58.decode(privateKey);
+        // Support both JSON byte-array format and base58 encoded strings
+        const serverKeypair = privateKey.trimStart().startsWith('[')
+          ? new Uint8Array(JSON.parse(privateKey))
+          : bs58.decode(privateKey);
         // The last 32 bytes of the bs58 decoded string of a secret key or using Keypair
         // We will just read the Public Key from the private key via slice. Note: for ed25519 64 byte keys, it's bytes 32..64.
         const serverPubkey = new PublicKey(serverKeypair.subarray(32, 64));
