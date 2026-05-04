@@ -222,8 +222,8 @@ export function createActionsRouter(roomManager: RoomManager) {
       // If Player A is invoking this, we must initialize the match first
       if (isPlayerA) {
         // Find server pubkey
-        const privateKey = process.env.SOLANA_PRIVATE_KEY;
-        if (!privateKey) throw new Error("Missing SOLANA_PRIVATE_KEY for backend");
+        const privateKey = process.env.SERVER_KEYPAIR;
+        if (!privateKey) throw new Error("Missing SERVER_KEYPAIR for backend");
         const serverKeypair = bs58.decode(privateKey);
         // The last 32 bytes of the bs58 decoded string of a secret key or using Keypair
         // We will just read the Public Key from the private key via slice. Note: for ed25519 64 byte keys, it's bytes 32..64.
