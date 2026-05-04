@@ -24,13 +24,13 @@ export function RoomPhaseHeader({
   return (
     <header className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-start">
       <div>
-        <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">
+        <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-bark)] opacity-80">
           {labels.eyebrow}
         </p>
-        <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#1f2b24] md:text-5xl">
+        <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#1f2b24] drop-shadow-sm md:text-5xl">
           {title ?? labels.title}
         </h1>
-        <p className="mt-2 font-gabarito text-sm text-[#3c5044]">
+        <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">
           {subtitle ?? labels.subtitle}
         </p>
       </div>

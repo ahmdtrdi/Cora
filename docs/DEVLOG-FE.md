@@ -1722,3 +1722,55 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The decorative emoji elements and floating cards are still using hardcoded strings/emojis. They should be swapped out with actual collectible card assets when the final art direction is available.
 - Ambient glow positions and floating card positions are hardcoded using absolute percentages, which might require adjustments on extremely wide or narrow viewports.
+
+## 2026-05-03 - Lobby Screens Visual Redesign
+
+### The Change
+- Refactored the entire `LobbyScreen.tsx` flow (`LobbySetup`, `CharacterSelect`, `MatchmakingWaiting`, `OpponentFound`) to adopt a dark cinematic arena aesthetic.
+- Replaced light grid backgrounds with deep gradients (`from-[#121919] to-[#0a0f0c]`), radial glow orbs, and floating emoji card decorations.
+- Updated all inner layout panels to dark `game-card` and `frame-cut` styles using `var(--tone-bark)`, `var(--tone-clay)`, and `var(--color-surface)`.
+- Restyled matchmaking UI (waiting and found) to visually emphasize a VS fighting game aesthetic, complete with shimmer bars and dropping shadows.
+- Styled unselected arena tabs with `saturate-50 opacity-60` to retain their accent color while remaining distinctly inactive.
+
+### The Reasoning
+- The lobby flow needed to match the dark cinematic aesthetic of the landing page and the newly redesigned `ConnectWalletScreen`.
+- A pure CSS/Tailwind visual pass ensures all complex matchmaking and wallet logic remains intact while dramatically improving the user experience and visual hierarchy.
+
+### The Tech Debt
+- The hardcoded float positions for emojis are repeated across `ConnectWalletScreen` and `LobbyScreen`. They should ideally be abstracted into a unified `FloatingArenaDecorations` component.
+
+## 2026-05-03 - Lobby Screens Warm Vintage Redesign Pivot
+
+### The Change
+- Pivoted the `LobbyScreen` shell from a deep cinematic dark gradient to a warm parchment dominant theme (`var(--warm-bg)`) with a dark radial vignette around the outer edges.
+- Refactored `LobbySetup` to merge the arena selection list and preview board into a single, cohesive game-card container.
+- Switched the text colors in `RoomPhaseHeader` from cold/dark themes to warm/bark tones.
+- Transitioned `MatchmakingWaiting` and `OpponentFound` cards to warm surfaces (`var(--warm-surface)`) with dark `var(--tone-bark)` and `var(--tone-clay)` borders.
+- Re-styled the alert toasts, error fallback screens, and deposit context cards to match the vintage warm layout rather than dark HUD.
+
+### The Reasoning
+- The fully dark shell felt too empty and disconnected from the vintage collectible warmth seen on the landing page's HowItWorks section.
+- Moving to a game-board composition makes the UI feel like an actual physical collectible table.
+
+## 2026-05-04 - Pre-Match Lobby Surface Separation Pass
+
+### The Change
+- Updated `apps/web/src/components/lobby/LobbySetup.tsx` to remove translucent beige layering and enforce clear panel hierarchy:
+  - Left arena selector is now a parchment gradient panel (`#fff8e8 -> #f3e6c9`) with stronger right-side separation.
+  - Token cards now use dedicated inactive/active gradients (`#fffaf0 -> #efe3c8` and `#fff1cf -> #f8d694`).
+  - Selected token state now includes stronger border, raised shadow, accent glow, and explicit checkmark.
+  - Header wallet/wager chips were restyled to dark forest + bark framing for consistency.
+  - Right arena board background is now stable and dark (`#10231b/#18392d/#0d1a14`) and no longer uses `selectedArena.previewBg` as full panel background.
+  - Arena colors are now used only as accents (icon circles, glow, borders) rather than full-surface swaps.
+- Updated `apps/web/src/components/lobby/LobbyScreen.tsx` to strengthen overall shell separation:
+  - Page background moved to a darker vignetted warm-forest treatment, clearly distinct from the lobby modal.
+  - Decorative background elements were reduced to low-opacity ambient orbs (no boxed decorative icon tiles).
+
+### The Reasoning
+- The main issue was not global muddiness, but insufficient surface contrast where page shell, modal, side panel, and token cards all sat on near-identical beige values.
+- Locking the right board to a premium dark surface preserves visual stability and prevents BONK selection from washing out the board.
+- Dedicated token-card states make selection obvious at a glance and align with the game-lobby interaction model rather than dashboard controls.
+
+### The Tech Debt
+- The left-panel token icon placeholders are still text glyphs; once official SOL/BONK assets are available, these should become consistent icon components.
+- Some decorative blur/spotlight values are hardcoded and may benefit from extraction into shared theme tokens if similar lobby variants are added.

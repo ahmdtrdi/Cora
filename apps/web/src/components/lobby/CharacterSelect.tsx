@@ -42,25 +42,25 @@ export function CharacterSelect({
     <RoomPhaseShell
       withTransition={false}
       phase="setup"
-      title="Choose your character"
-      subtitle="Pick one scientist before entering matchmaking."
+      title="Draft Your Scientist"
+      subtitle="Choose the mind that will defend your base in the arena."
       statusSlot={
         <div className="flex flex-wrap items-center gap-2">
           <span
-            className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide"
-            style={{ border: `1px solid ${arena.frame}`, color: arena.frame, background: "rgba(255,255,255,0.82)" }}
+            className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide shadow-sm"
+            style={{ border: `2px solid ${arena.frame}`, color: arena.frame, background: "var(--warm-bg)" }}
           >
             {arena.label}
           </span>
           <span
-            className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#6f3a28]"
-            style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+            className="frame-cut frame-cut-sm px-3 py-2 font-mono text-xs font-semibold tracking-wide text-[var(--tone-mint)] shadow-sm"
+            style={{ border: "2px solid var(--tone-bark)", background: "var(--tone-forest)" }}
           >
             ${wagerUsd} {arena.token}
           </span>
           <span
-            className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold text-[#274137]"
-            style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+            className="frame-cut frame-cut-sm px-3 py-2 font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)] shadow-sm"
+            style={{ border: "2px solid var(--tone-bark)", background: "var(--tone-forest)" }}
           >
             {trimWallet(walletAddress)}
           </span>
@@ -70,8 +70,7 @@ export function CharacterSelect({
         <button
           type="button"
           onClick={onBack}
-          className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#274137]"
-          style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+          className="btn-game btn-game-secondary px-4 py-2 text-[11px] shadow-sm"
         >
           Back
         </button>
@@ -82,12 +81,7 @@ export function CharacterSelect({
             type="button"
             onClick={onContinue}
             disabled={!selected}
-            className="frame-cut frame-cut-sm min-w-[170px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
-            style={{
-              border: selected ? `1px solid ${arena.frame}` : "1px solid rgba(39,65,55,0.2)",
-              background: selected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.65)",
-              color: selected ? arena.frame : "rgba(39,65,55,0.45)",
-            }}
+            className={`btn-game btn-game-primary min-w-[180px] shadow-xl ${!selected ? "opacity-50 grayscale" : ""}`}
           >
             Enter Queue
           </button>
