@@ -206,7 +206,7 @@ export class RoomManager {
       matchIdBytes: deriveMatchId(roomId),
       clients: new Map(),
       status: 'depositing',
-      playerMeta: new Map([[playerAPubkey, { hasDeposited: false }]]),
+      playerMeta: new Map([[playerAPubkey, { hasDeposited: false, characterId: 'einstein' }]]),
       engine: null,
       openedCards: new Map(),
       roomType: 'private',
