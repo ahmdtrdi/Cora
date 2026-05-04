@@ -152,3 +152,41 @@ No `.env` file existed (only `.env.example`), so `SOLANA_RPC_URL` was undefined 
 
 **Tech Debt:**
 - When ready for mainnet/devnet testing, create `apps/api/.env` with `SOLANA_RPC_URL=https://api.devnet.solana.com` to enable real on-chain settlement.
+
+---
+
+## 9. Character Specialty Stats — Category Damage Multiplier (2026-05-04)
+
+**The Change:**
+
+*Files touched:*
+- `packages/shared-types/src/characterStats.ts` (NEW)
+- `packages/game-logic/src/GameEngine.ts`
+- `apps/api/src/managers/RoomManager.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/app/dev/room-states/page.tsx`
+
+Each character now has a **specialty question category**. When a player answers a question from their character's specialty category correctly, their damage/heal is multiplied by **1.5x**:
+
+| Character     | ID       | Specialty   | Effect                     |
+|---------------|----------|-------------|----------------------------|
+| Alan Turing   | `turing` | `sequence`  | 1.5x on sequence questions |
+| Marie Curie   | `curie`  | `logical`   | 1.5x on logical questions  |
+| Albert Einstein | `einstein` | `math`      | 1.5x on math questions     |
+
+The specialty multiplier **stacks multiplicatively** with the existing extra-point phase multiplier (2x), yielding up to **3x** in the final minute on specialty questions.
+
+**Implementation Details:**
+1. Created `characterStats.ts` in `shared-types` as a single source of truth for character definitions (`CHARACTER_DEFS`) and a `getSpecialtyMultiplier()` helper function.
+2. In `GameEngine.playCard()`, the multiplier computation was split into `phaseMultiplier` (1x normal / 2x extra) and `specialtyMultiplier` (1x non-specialty / 1.5x specialty), then combined: `multiplier = phaseMultiplier * specialtyMultiplier`.
+3. Restored default `characterId` fallbacks in backend to `'einstein'` per user request, while leaving frontend character UI as Newton.
+4. Updated frontend character stats to visually reflect each character's specialty category (e.g. Turing's primary stat is "Sequence", Curie's is "Logical", Newton's is "Math").
+
+**The Reasoning:**
+- Character differentiation adds strategic depth. Players must weigh their character choice against the mixed-category question pool.
+- A shared definition in `shared-types` prevents frontend/backend character data from drifting out of sync.
+- Multiplicative stacking with extra-point phase rewards high-skill play during clutch moments.
+
+**Tech Debt:**
+- The frontend `CharacterCard` shows generic stat bars but does not explicitly label the 1.5x specialty bonus. A tooltip or badge ("1.5x Sequence Damage") would improve discoverability.
+- Character definitions exist in two places: `characterStats.ts` (backend-authoritative) and `SCIENTISTS[]` in `LobbyScreen.tsx` (frontend display). These should eventually be unified or auto-derived.

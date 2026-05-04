@@ -1,4 +1,5 @@
 import type { Question as SchemaQuestion } from '@shared/question';
+import { getSpecialtyMultiplier } from '@shared/characterStats';
 import type {
   GameState,
   GamePhase,
@@ -172,7 +173,9 @@ export class GameEngine {
 
     const card = player.hand[cardIndex];
     const correct = card.correctOptionId === selectedOptionId;
-    const multiplier = this.phase === 'extra_point' ? GameEngine.EXTRA_POINT_MULTIPLIER : 1;
+    const phaseMultiplier = this.phase === 'extra_point' ? GameEngine.EXTRA_POINT_MULTIPLIER : 1;
+    const specialtyMultiplier = getSpecialtyMultiplier(player.characterId, card.question.category);
+    const multiplier = phaseMultiplier * specialtyMultiplier;
 
     let damage = 0;
     let heal = 0;

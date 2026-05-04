@@ -1,4 +1,5 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
+import { Suspense } from "react";
 import { LobbyScreen } from "../../components/lobby/LobbyScreen";
 
 export const metadata: Metadata = {
@@ -7,6 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function LobbyPage() {
-  return <LobbyScreen />;
+  return (
+    <Suspense fallback={null}>
+      <LobbyScreen />
+    </Suspense>
+  );
 }
-

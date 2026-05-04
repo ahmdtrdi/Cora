@@ -95,7 +95,7 @@ async function signMemoIntent({
   const instruction = new TransactionInstruction({
     keys: [],
     programId: MEMO_PROGRAM_ID,
-    data: new TextEncoder().encode(memoMessage),
+    data: Buffer.from(memoMessage, "utf8"),
   });
 
   const transaction = new Transaction().add(instruction);
@@ -132,12 +132,79 @@ export async function signDepositIntent({
   token,
   wagerUsd,
 }: SignDepositIntentParams): Promise<string> {
-  const memoMessage = `CORA_DEPOSIT_INTENT:${roomId}:${token}:${wagerUsd}:${wallet.publicKey?.toBase58() ?? "unknown"}`;
-  return signMemoIntent({
-    connection,
-    wallet,
-    memoMessage,
-  });
+  if (!wallet.publicKey) {
+    throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
+  }
+  if (!wallet.sendTransaction) {
+    throw new DepositIntentError(
+      "wallet_signing_not_supported",
+      "Connected wallet does not support transaction signing.",
+    );
+  }
+
+  try {
+    const apiBase = resolveApiBaseUrl();
+    const res = await fetch(`${apiBase}/api/actions/challenge?roomId=${roomId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        account: wallet.publicKey.toBase58(),
+        tokenMint: token,
+        wagerAmount: Math.floor(parseFloat(wagerUsd) * 1_000_000) 
+      }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.message || "Failed to fetch deposit transaction");
+    }
+
+    const { transaction: base64Tx } = await res.json();
+    const txBuffer = Buffer.from(base64Tx, "base64");
+    const transaction = Transaction.from(txBuffer);
+
+    // Latest blockhash should have been attached by the server, but let's be safe
+    const latest = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = latest.blockhash;
+    transaction.feePayer = wallet.publicKey;
+
+    const signature = await wallet.sendTransaction(transaction, connection, {
+      preflightCommitment: "confirmed",
+      maxRetries: 2,
+    });
+
+    await connection.confirmTransaction(
+      {
+        signature,
+        blockhash: latest.blockhash,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+      },
+      "confirmed",
+    );
+
+    return signature;
+  } catch (error) {
+    throw mapWalletError(error);
+  }
+}
+
+function trimTrailingSlash(input: string) {
+  return input.replace(/\/+$/, "");
+}
+
+function resolveApiBaseUrl() {
+  const explicit = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
+  if (explicit) {
+    return trimTrailingSlash(explicit);
+  }
+  const wsUrl = (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080").trim();
+  if (wsUrl.startsWith("wss://")) {
+    return trimTrailingSlash(`https://${wsUrl.slice("wss://".length)}`);
+  }
+  if (wsUrl.startsWith("ws://")) {
+    return trimTrailingSlash(`http://${wsUrl.slice("ws://".length)}`);
+  }
+  return trimTrailingSlash(wsUrl);
 }
 
 export async function signSettlementReleaseIntent({
