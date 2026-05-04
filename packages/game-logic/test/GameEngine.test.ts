@@ -50,7 +50,7 @@ describe('GameEngine', () => {
   });
 
   test('initializes correctly', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     const healths = engine.getHealth();
     expect(healths['player1']).toBe(100);
     expect(healths['player2']).toBe(100);
@@ -61,7 +61,7 @@ describe('GameEngine', () => {
   });
 
   test('playCard successful attack', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     // Find an attack card in player1's hand
@@ -79,9 +79,9 @@ describe('GameEngine', () => {
     
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
-    expect(result.damage).toBe(10);
-    expect(engine.getHealth()['player2']).toBe(90);
-    expect(engine.getScores()['player1']).toBe(10);
+    expect(result.damage).toBe(50);
+    expect(engine.getHealth()['player2']).toBe(50);
+    expect(engine.getScores()['player1']).toBe(50);
     
     // Check cooldown
     const earlyResult = engine.playCard('player1', state.hand[1].id, 'A');
@@ -89,7 +89,7 @@ describe('GameEngine', () => {
   });
 
   test('playCard successful heal caps at 100', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     const internalPlayer1 = (engine as any).players.get('player1');
@@ -114,7 +114,7 @@ describe('GameEngine', () => {
   });
 
   test('playCard wrong answer', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     const internalPlayer1 = (engine as any).players.get('player1');
@@ -135,7 +135,7 @@ describe('GameEngine', () => {
   });
 
   test('win condition - hp zero', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let gameOverEventFired = false;
@@ -148,8 +148,10 @@ describe('GameEngine', () => {
     const internalPlayer1 = (engine as any).players.get('player1');
     const internalPlayer2 = (engine as any).players.get('player2');
     
-    // Bring player 2 health down to 10
-    internalPlayer2.health = 10;
+    // We need 2 rounds to win, so simulate winning the first
+    internalPlayer1.roundsWon = 1;
+    // Bring player 2 health down to 50
+    internalPlayer2.health = 50;
     
     internalPlayer1.hand[0].type = 'attack';
     const attackCard = internalPlayer1.hand[0];
@@ -169,13 +171,17 @@ describe('GameEngine', () => {
   });
 
   test('win condition - time_up determines winner by HP then score', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let gameOverData: any = null;
     engine.on('gameOver', (data) => {
       gameOverData = data;
     });
+
+    // Give player1 one round win so the next win ends the match
+    const internalPlayer1 = (engine as any).players.get('player1');
+    internalPlayer1.roundsWon = 1;
 
     // Damage player2 so player1 has higher HP
     const internalPlayer2 = (engine as any).players.get('player2');
@@ -196,7 +202,7 @@ describe('GameEngine', () => {
   });
 
   test('win condition - time_up tie-break by score', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let gameOverData: any = null;
@@ -204,8 +210,10 @@ describe('GameEngine', () => {
       gameOverData = data;
     });
 
-    // Same HP, but player2 has higher score
+    // Give player2 one round win so the next win ends the match
     const internalPlayer2 = (engine as any).players.get('player2');
+    internalPlayer2.roundsWon = 1;
+    // Same HP, but player2 has higher score
     internalPlayer2.score = 30;
 
     // Simulate time running out
@@ -222,7 +230,7 @@ describe('GameEngine', () => {
   });
 
   test('extra-point phase activates at 60s remaining with x2 multiplier', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let phaseChangeData: any = null;
@@ -252,12 +260,12 @@ describe('GameEngine', () => {
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
     expect(result.multiplier).toBe(2);
-    expect(result.damage).toBe(20); // 10 base × 2
-    expect(engine.getHealth()['player2']).toBe(80); // 100 - 20
+    expect(result.damage).toBe(100); // 50 base × 2
+    expect(engine.getHealth()['player2']).toBe(100); // 100 damage triggers roundOver and resets health to 100
   });
 
   test('extra-point phase x2 heal', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     // Enter extra-point phase
@@ -280,7 +288,7 @@ describe('GameEngine', () => {
   });
 
   test('forfeit via stop() emits gameOver with forfeit reason', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let gameOverData: any = null;
@@ -298,7 +306,7 @@ describe('GameEngine', () => {
   });
 
   test('stop() without forfeit address just stops (no gameOver)', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let gameOverFired = false;
@@ -325,7 +333,7 @@ describe('GameEngine', () => {
       explanation: 'test',
     }));
 
-    const engine = new GameEngine(['player1', 'player2'], manyQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], manyQuestions);
     engine.start();
 
     const internalPlayer1 = (engine as any).players.get('player1');
@@ -347,7 +355,7 @@ describe('GameEngine', () => {
   test('hand shrinks when queue is exhausted', () => {
     // With only 5 questions, queue has exactly 5 cards. Initial hand takes all 5.
     // After playing one, no refill possible → hand = 4
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     const internalPlayer1 = (engine as any).players.get('player1');
@@ -363,7 +371,7 @@ describe('GameEngine', () => {
   });
 
   test('resetCharacterStates sets all players to stay', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     // Manually set some states
@@ -379,7 +387,7 @@ describe('GameEngine', () => {
   });
 
   test('getScores and getHealth return consistent data after plays', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     // Initial state
@@ -400,14 +408,14 @@ describe('GameEngine', () => {
 
     const scores1 = engine.getScores();
     const health1 = engine.getHealth();
-    expect(scores1['player1']).toBe(10);
-    expect(health1['player2']).toBe(90);
+    expect(scores1['player1']).toBe(50);
+    expect(health1['player2']).toBe(50);
     // Player 1 health unchanged
     expect(health1['player1']).toBe(100);
   });
 
   test('getStateForPlayer hides correct answers', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     const state = engine.getStateForPlayer('player1');
 
     // Cards should not have correctOptionId
@@ -422,20 +430,20 @@ describe('GameEngine', () => {
   });
 
   test('getPlayerAddresses returns both addresses', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     const addrs = engine.getPlayerAddresses();
     expect(addrs).toEqual(['player1', 'player2']);
   });
 
   test('double start is no-op', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
     engine.start(); // Should not throw or reset
     expect(engine.isActive()).toBe(true);
   });
 
   test('double stop is safe', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
     engine.stop('player1');
     engine.stop('player1'); // Should not throw
@@ -443,7 +451,7 @@ describe('GameEngine', () => {
   });
 
   test('damage log is capped at DAMAGE_LOG_MAX', () => {
-    const engine = new GameEngine(['player1', 'player2'], mockQuestions);
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     const internalPlayer1 = (engine as any).players.get('player1');
