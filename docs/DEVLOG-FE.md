@@ -2274,3 +2274,30 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Optional `/match` fields are currently parsed but not yet fully consumed end-to-end in FE routing/state (future enhancement once BE contract is finalized for public room context).
+
+## 2026-05-05 - Deposit Signing UI Restyle for Dark Arena Integration
+
+### The Change
+- Restyled [apps/web/src/components/deposit/DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) with dark-arena-compatible visuals while preserving all existing props and behavior.
+  - Heading chip now uses cream/gold-on-dark treatment instead of muted dashboard green.
+  - Subtitle shifted to muted cream for dark-surface readability.
+  - Primary action button restyled to chunky game-button treatment:
+    - enabled: clay/bark gradient + cream text + stronger shadow/highlight
+    - disabled: muted forest gradient + reduced opacity/readability preserved
+  - `disabled={!canPrimaryAction}` behavior unchanged.
+- Restyled [apps/web/src/components/deposit/DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx):
+  - Replaced light card background with dark forest gradient surface.
+  - Updated border/shadow/inset/highlight to warm arena console style.
+  - Updated text hierarchy colors:
+    - status label: gold accent
+    - helper text: muted mint/cream
+    - countdown: strong gold with shadow
+    - signature: secondary muted mint in subtle inset strip
+  - Kept all slot behavior (`walletSlot`, `retrySlot`, `cancelSlot`) and spacing support intact.
+
+### The Reasoning
+- Opponent-found/matchmaking UI moved to dark arena styling; shared deposit components still looked like legacy white dashboard blocks and broke visual continuity.
+- This pass unifies the deposit signing area with arena visuals without touching functional logic or parent integration.
+
+### The Tech Debt
+- Shared deposit components are now dark-default. If future light-theme contexts reuse them, a variant/theming prop may be needed instead of per-page overrides.
