@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { createBunWebSocket } from 'hono/bun';
 import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
+import { PublicKey } from '@solana/web3.js';
 import { RoomManager } from './managers/RoomManager';
 import { rateLimiter } from './middleware/rateLimiter';
 import { createActionsRouter } from './routes/actions';
@@ -86,22 +87,46 @@ app.post('/match', async (c) => {
 
 // Private room creation — for Blinks / direct challenge invites
 // tokenMint and wagerAmount are stored server-side; never exposed in the Blink URL
+
+// Map UI token symbols → on-chain SPL mint addresses (devnet)
+const TOKEN_MINTS: Record<string, string> = {
+  SOL:  'So11111111111111111111111111111111111111112',
+  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  USDC: 'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr',
+};
+
+function resolveTokenMint(input: string): string | null {
+  const mapped = TOKEN_MINTS[input.toUpperCase()];
+  if (mapped) return mapped;
+  try {
+    new PublicKey(input);
+    return input;
+  } catch {
+    return null;
+  }
+}
+
 app.post('/match/private', async (c) => {
   let address: string;
-  let tokenMint: string;
+  let rawTokenMint: string;
   let wagerAmount: number;
 
   try {
     const body = await c.req.json();
     address = body.address;
-    tokenMint = body.tokenMint;
+    rawTokenMint = body.tokenMint;
     wagerAmount = body.wagerAmount;
   } catch (e) {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
 
-  if (!address || !tokenMint || !wagerAmount) {
+  if (!address || !rawTokenMint || !wagerAmount) {
     return c.json({ error: 'address, tokenMint, and wagerAmount are required' }, 400);
+  }
+
+  const tokenMint = resolveTokenMint(rawTokenMint);
+  if (!tokenMint) {
+    return c.json({ error: `Unknown token "${rawTokenMint}" — provide a symbol (SOL, BONK, USDC) or a valid mint address.` }, 400);
   }
 
   const roomId = roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));

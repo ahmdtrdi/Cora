@@ -58,7 +58,7 @@ export class RoomManager {
   private rooms: Map<string, Room> = new Map();
   private matchmakingQueue: Array<{ address: string; ws?: ServerWebSocket<unknown>; resolve: (roomId: string) => void }> = [];
   private DISCONNECT_TIMEOUT_MS = 10_000;  // 10 seconds (only during 'playing')
-  private DEPOSIT_TIMEOUT_MS = 20_000;     // 20 seconds per player during 'depositing'
+  private DEPOSIT_TIMEOUT_MS = 30_000;     // 20 seconds per player during 'depositing'
   private CARD_ANSWER_TIMEOUT_MS = 10_000; // 10 seconds per card
   private CARD_COUNTDOWN_TICK_MS = 1_000;  // 1 second countdown tick
 
@@ -480,10 +480,9 @@ export class RoomManager {
         this.forfeitMatch(roomId, address);
       }, this.DISCONNECT_TIMEOUT_MS);
     } else if (room.status === 'depositing') {
-      // Hard disconnect during deposit phase = immediate cancel; shot clock would fire anyway
-      console.log(`Player ${address} disconnected during depositing in room ${roomId}. Cancelling.`);
-      const opponent = address === room.playerA ? room.playerB : room.playerA;
-      this.cancelRoom(roomId, opponent ?? undefined);
+      // Let the deposit shot clock (DEPOSIT_TIMEOUT_MS) handle cancellation
+      // if they don't reconnect and deposit in time.
+      console.log(`Player ${address} temporarily disconnected during depositing in room ${roomId}. Waiting for reconnect or timeout.`);
     }
   }
 

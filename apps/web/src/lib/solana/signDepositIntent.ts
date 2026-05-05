@@ -69,6 +69,10 @@ function mapWalletError(error: unknown): DepositIntentError {
     return new DepositIntentError("rpc_error", "Transaction failed to confirm on Solana.");
   }
 
+  if (lowered.includes("failed on-chain")) {
+    return new DepositIntentError("unknown", message);
+  }
+
   return new DepositIntentError("unknown", message);
 }
 
@@ -171,9 +175,10 @@ export async function signDepositIntent({
     const signature = await wallet.sendTransaction(transaction, connection, {
       preflightCommitment: "confirmed",
       maxRetries: 2,
+      skipPreflight: true,
     });
 
-    await connection.confirmTransaction(
+    const confirmation = await connection.confirmTransaction(
       {
         signature,
         blockhash: latest.blockhash,
@@ -181,6 +186,10 @@ export async function signDepositIntent({
       },
       "confirmed",
     );
+
+    if (confirmation.value.err) {
+      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
+    }
 
     return signature;
   } catch (error) {

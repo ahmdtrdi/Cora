@@ -9,7 +9,7 @@ import {
   sendAndConfirmTransaction,
   TransactionInstruction,
 } from '@solana/web3.js';
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import { buildSettlementMessage, ESCROW_CONSTANTS } from '@shared/escrow';
@@ -204,7 +204,16 @@ export async function submitSettlementTransaction(
     ],
   });
 
-  const tx = new Transaction().add(ed25519Ix).add(settleMatchIx);
+  const tx = new Transaction().add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      serverKeypair.publicKey, // payer
+      treasuryTa, // ata
+      treasuryKey, // owner
+      tokenMint // mint
+    ),
+    ed25519Ix,
+    settleMatchIx
+  );
   
   console.log(`[Settlement] Submitting settle_match for match: ${Buffer.from(matchId).toString('hex')}`);
   console.log(`[Settlement] Target: ${targetAddress}`);
