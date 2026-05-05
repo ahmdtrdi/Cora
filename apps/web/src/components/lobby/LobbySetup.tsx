@@ -6,6 +6,7 @@ import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
+import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import type { Arena } from "./LobbyScreen";
 
 type LobbySetupProps = {
@@ -41,6 +42,13 @@ export function LobbySetup({
   const selectedArena = arenas.find((arena) => arena.id === selectedArenaId) ?? null;
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const playabilityEnabled = walletConnected && Boolean(selectedArena);
+  const { playability, loading, error } = useWalletArenaPlayability({
+    address: walletConnected ? walletAddress : "",
+    arenaId: selectedArena?.id ?? "",
+    token: selectedArena?.token ?? "SOL",
+    enabled: playabilityEnabled,
+  });
 
   const challengeLink = useMemo(() => {
     if (!selectedArena) return null;
@@ -57,6 +65,16 @@ export function LobbySetup({
   const shareDescription = selectedArena
     ? `Think fast in ${selectedArena.label}. Scan or tap to challenge me.`
     : "Pick an arena first, then share your challenge link.";
+  const tokenBalanceLabel = selectedArena ? `${selectedArena.token} Balance` : "Token Balance";
+  const tokenBalanceValue = !selectedArena
+    ? "--"
+    : !walletConnected
+      ? "--"
+      : loading
+        ? "Inspecting..."
+        : error || !playability?.reliable
+          ? "Unavailable"
+          : (playability.tokenBalance ?? "--");
 
   async function onCopyChallengeLink() {
     if (!challengeLink) {
@@ -179,6 +197,19 @@ export function LobbySetup({
           <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-mint)] opacity-90">
             Wager ${wagerUsd || "0"}
             {selectedArena ? ` · ${selectedArena.token}` : ""}
+          </span>
+        </div>
+
+        <div
+          className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
+          style={{
+            border: "2px solid var(--tone-bark)",
+            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
+            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
+          }}
+        >
+          <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-cream)] opacity-90">
+            {tokenBalanceLabel}: {tokenBalanceValue}
           </span>
         </div>
       </header>
