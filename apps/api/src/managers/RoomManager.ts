@@ -10,7 +10,8 @@ import { GameEngine } from '@cora/game-logic';
 import type { AntiCheatVerdict } from '@cora/game-logic';
 import { loadQuestions } from '../questions';
 import { deriveMatchId } from '@shared/escrow';
-import { signSettlementAuthorization, serverPublicKey, submitSettlementTransaction } from '../utils/settlement';
+import { signSettlementAuthorization, serverPublicKey, submitSettlementTransaction, getServerKeypair } from '../utils/settlement';
+import { magicBlockService } from '../services/magicblock';
 
 interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
@@ -52,6 +53,8 @@ export interface Room {
   wagerAmount: bigint | null;
   /** Per-player 20s shot clocks during the deposit phase */
   depositTimeouts: Map<string, ReturnType<typeof setTimeout>>;
+  /** Ephemeral Rollup session PDA (set when MagicBlock is enabled) */
+  erSessionPda: string | null;
 }
 
 export class RoomManager {
@@ -210,6 +213,7 @@ export class RoomManager {
       tokenMint: null,
       wagerAmount: null,
       depositTimeouts: new Map(),
+      erSessionPda: null,
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;
@@ -247,6 +251,7 @@ export class RoomManager {
       tokenMint,
       wagerAmount,
       depositTimeouts: new Map(),
+      erSessionPda: null,
     };
     this.rooms.set(roomId, room);
     console.log(`[Private] Room ${roomId} created for Player A: ${playerAPubkey}`);
@@ -606,7 +611,7 @@ export class RoomManager {
 
   // ─── Engine Initialization ────────────────────────────────────
 
-  private initializeEngine(room: Room) {
+  private async initializeEngine(room: Room) {
     if (!room.playerA || !room.playerB) {
       console.error(`Room ${room.id} missing player assignments. Cannot start.`);
       return;
@@ -627,6 +632,24 @@ export class RoomManager {
 
     const engine = new GameEngine(playersInfo, questions);
     room.engine = engine;
+
+    // Create ER session if MagicBlock is configured (parallel path — GameEngine stays as fallback)
+    if (process.env.MAGICBLOCK_RPC_URL) {
+      try {
+        const questionHash = new Uint8Array(32); // TODO: hash actual questions when ER is fully wired
+        const { sessionPda } = await magicBlockService.createBattleSession({
+          matchId: room.matchIdBytes,
+          playerA: room.playerA!,
+          playerB: room.playerB!,
+          questionHash,
+          serverKeypair: getServerKeypair(),
+        });
+        room.erSessionPda = sessionPda;
+        console.log(`[MagicBlock] ER session created: ${sessionPda}`);
+      } catch (err) {
+        console.warn('[MagicBlock] Failed to create ER session, falling back to server-only:', err);
+      }
+    }
 
     // Wire engine events to WebSocket broadcasts
     engine.on('timerSync', (data) => {
@@ -1087,7 +1110,20 @@ export class RoomManager {
   /**
    * Broadcast settlement-signed match result to all connected clients.
    */
-  private broadcastMatchResult(room: Room, winnerAddress: string) {
+  private async broadcastMatchResult(room: Room, winnerAddress: string) {
+    // Verify winner against ER if available (ER is source of truth)
+    if (room.erSessionPda) {
+      try {
+        const erState = await magicBlockService.getSessionState(room.erSessionPda);
+        if (erState.status === 'Finished' && erState.winner && erState.winner !== winnerAddress) {
+          console.error(`[INTEGRITY] ER winner mismatch! ER=${erState.winner} Engine=${winnerAddress}`);
+          winnerAddress = erState.winner;
+        }
+      } catch (err) {
+        console.warn('[MagicBlock] Could not verify ER state:', err);
+      }
+    }
+
     // Normal match outcome: action = 0
     const action = 0;
     const settlementSignature = signSettlementAuthorization(
