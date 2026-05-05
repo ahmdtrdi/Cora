@@ -48,7 +48,6 @@ function getStatusLabel(status: GameStatus) {
   if (status === "waiting") return "Waiting Opponent";
   if (status === "depositing") return "Deposit Phase";
   if (status === "playing") return "Playing";
-  if (status === "settling") return "Settling";
   return "Finished";
 }
 
@@ -362,7 +361,7 @@ export function BattleScreen() {
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
-  const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
+  const isPlayStateReady = status === "playing" || isMatchComplete;
   const shouldShowPlayStateGate = !isPlayStateReady;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)

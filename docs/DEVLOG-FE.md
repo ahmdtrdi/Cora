@@ -2231,3 +2231,25 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - FE still cannot show definitive on-chain settlement transaction signature because current WS payload does not include tx hash. If product wants this, BE needs to expose settlement tx id in an event/payload and FE can render it.
+
+## 2026-05-05 - FE Alignment Follow-up: Room Status + MatchFound Passive Support
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to align active-play gating with current backend room statuses:
+  - removed explicit `settling` branch from status label mapping
+  - changed `isPlayStateReady` to depend on `playing` or match-complete signals instead of `settling`
+- Extended [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) with passive server queue-assignment event support:
+  - added `lastMatchFound` state
+  - handles both `matchFound` and `matchFoundWaiting` message types for compatibility
+  - returns `lastMatchFound` to consumers
+- Integrated non-breaking `matchFound` awareness in [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - derives `reassignedRoomId` from socket event when server announces a different room
+  - surfaces this via deposit helper text (no forced navigation, no hard interrupt)
+
+### The Reasoning
+- Backend currently transitions `depositing -> playing -> finished`; FE no longer treats `settling` as a required active phase.
+- Backend can emit `matchFound` in requeue paths; FE now records that event so UI can stay in sync without coupling to backend internals or direct function calls.
+- Chosen UX is intentionally passive to avoid breaking existing flow while still exposing authoritative server signals.
+
+### The Tech Debt
+- `matchFound` signals are currently surfaced as guidance text only. If product wants automatic room handoff, FE will need an explicit navigation/resume policy agreed with BE contract semantics.

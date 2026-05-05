@@ -62,6 +62,7 @@ export function OpponentFound({
     lastSocketError,
     depositUnlockedAt,
     opponentFailedDepositAt,
+    lastMatchFound,
     confirmDeposit,
     reconnect,
   } = useMatchSocket({
@@ -80,6 +81,8 @@ export function OpponentFound({
 
   const opponentScientist =
     scientists.find((scientist) => scientist.id === gameState?.opponent?.characterId) ?? null;
+  const reassignedRoomId =
+    lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -179,6 +182,9 @@ export function OpponentFound({
   }, [errorVisible]);
 
   function getDepositHint() {
+    if (reassignedRoomId) {
+      return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
+    }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";

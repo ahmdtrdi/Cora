@@ -29,6 +29,12 @@ interface PlayCardResult {
   cardType: CardType;
 }
 
+interface MatchFoundPayload {
+  roomId: string;
+  role?: string;
+  opponentAddress?: string;
+}
+
 interface UseMatchSocketParams {
   roomId: string;
   address: string;
@@ -80,6 +86,7 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
   const [depositUnlockedAt, setDepositUnlockedAt] = useState<number | null>(null);
   const [opponentFailedDepositAt, setOpponentFailedDepositAt] = useState<number | null>(null);
+  const [lastMatchFound, setLastMatchFound] = useState<(MatchFoundPayload & { at: number }) | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
   const socketUrl =
@@ -154,6 +161,21 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
           case 'opponentFailedDeposit':
             setOpponentFailedDepositAt(Date.now());
+            break;
+
+          case 'matchFound':
+            setLastMatchFound({
+              ...(message.payload as MatchFoundPayload),
+              at: Date.now(),
+            });
+            break;
+
+          // Legacy/forward-compat alias used in some older flows.
+          case 'matchFoundWaiting':
+            setLastMatchFound({
+              ...(message.payload as MatchFoundPayload),
+              at: Date.now(),
+            });
             break;
 
           case 'playCardResult':
@@ -275,6 +297,7 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     currentPhase,
     depositUnlockedAt,
     opponentFailedDepositAt,
+    lastMatchFound,
     openCard,
     playCard,
     confirmDeposit,
