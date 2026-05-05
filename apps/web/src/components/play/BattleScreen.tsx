@@ -48,6 +48,7 @@ function getStatusLabel(status: GameStatus) {
   if (status === "waiting") return "Waiting Opponent";
   if (status === "depositing") return "Deposit Phase";
   if (status === "playing") return "Playing";
+  if (status === "settling") return "Settling";
   return "Finished";
 }
 
@@ -146,12 +147,9 @@ export function BattleScreen() {
 
   const address = publicKey?.toBase58() ?? "";
   const requiresWalletConnect = !address;
-  const hasValidWagerParam = Number.isFinite(Number(wagerParam)) && Number(wagerParam) > 0;
   const playGuardError = !roomIdParam
     ? "Missing roomId. Return to lobby and enter the match from the found flow."
-    : !arenaIdParam || !tokenParam || !hasValidWagerParam
-      ? "Missing arena/token/wager match context. Return to lobby and re-queue."
-      : null;
+    : null;
 
   const {
     connectionState,
@@ -361,7 +359,7 @@ export function BattleScreen() {
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
-  const isPlayStateReady = status === "playing" || isMatchComplete;
+  const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
   const shouldShowPlayStateGate = !isPlayStateReady;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)

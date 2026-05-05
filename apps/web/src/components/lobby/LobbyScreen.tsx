@@ -253,6 +253,7 @@ export function LobbyScreen() {
     try {
       const { roomId } = await queueMatch({
         address: walletAddress,
+        tokenMint: selectedArena?.token,
         signal: controller.signal,
       });
 
@@ -299,6 +300,7 @@ export function LobbyScreen() {
     }
   }, [
     walletAddress,
+    selectedArena,
     clearFoundTransitionTimers,
     setMatchmakingState,
     setMatchmakingError,
