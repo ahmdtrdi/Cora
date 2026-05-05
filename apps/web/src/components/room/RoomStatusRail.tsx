@@ -22,7 +22,7 @@ export function RoomStatusRail({
 }: RoomStatusRailProps) {
   return (
     <aside className="w-full">
-      <p className="mb-2 font-gabarito text-[11px] font-bold uppercase tracking-[0.16em] text-[#6b8274]">
+      <p className="mb-2 font-gabarito text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--tone-cream)]/75">
         {title}
       </p>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">

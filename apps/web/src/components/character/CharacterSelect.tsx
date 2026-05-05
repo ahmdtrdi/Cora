@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CharacterCard } from "./CharacterCard";
 import type {
   CharacterOption,
@@ -28,6 +28,7 @@ export type CharacterSelectProps = {
   countdownSlot?: ReactNode;
   opponentStatusSlot?: ReactNode;
   roomStatusSlot?: ReactNode;
+  showDevModeToggle?: boolean;
   onSelect: (characterId: string) => void;
 };
 
@@ -87,9 +88,17 @@ export function CharacterSelect({
   countdownSlot,
   opponentStatusSlot,
   roomStatusSlot,
+  showDevModeToggle = true,
   onSelect,
 }: CharacterSelectProps) {
-  const showMeta = Boolean(countdownSlot || opponentStatusSlot || deadlineMs !== undefined || opponentStatus);
+  const [devMode, setDevMode] = useState(false);
+  const hasAuxMeta = Boolean(
+    countdownSlot ||
+      opponentStatusSlot ||
+      roomStatusSlot ||
+      deadlineMs !== undefined ||
+      opponentStatus,
+  );
   const title = mode === "post_deposit" ? "Lock your character" : "Choose your character";
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? null;
   const autoAssignedCharacter = characters.find((character) => character.id === autoAssignedCharacterId) ?? null;
@@ -98,6 +107,11 @@ export function CharacterSelect({
   const canShowDefaultHint = mode === "post_deposit";
   const totalMs = 30_000;
   const remainingMs = deadlineMs ?? totalMs;
+  const statusLine = useMemo(() => {
+    if (selectedCharacter) return `Selected: ${selectedCharacter.name}`;
+    if (autoAssignedCharacter) return `Auto-assigned: ${autoAssignedCharacter.name}`;
+    return "Pick your scientist to continue.";
+  }, [autoAssignedCharacter, selectedCharacter]);
 
   return (
     <section className="flex flex-1 flex-col">
@@ -110,8 +124,44 @@ export function CharacterSelect({
         </div>
       )}
 
-      {showMeta && (
-        <div className="mb-4 flex flex-col gap-2">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-[rgba(111,58,40,0.35)] bg-[rgba(253,248,233,0.92)] px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.12em] text-[#6f3a28]">
+            Roster
+          </span>
+          <span className="rounded-full border border-[rgba(39,65,55,0.25)] bg-[rgba(241,248,240,0.92)] px-3 py-1 font-gabarito text-xs text-[#2f4a3d]">
+            {statusLine}
+          </span>
+        </div>
+        {showDevModeToggle && (
+          <button
+            type="button"
+            onClick={() => setDevMode((value) => !value)}
+            className={`rounded-full border px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.1em] transition-colors ${
+              devMode
+                ? "border-[rgba(248,214,148,0.7)] bg-[rgba(39,65,55,0.88)] text-[#f8d694]"
+                : "border-[rgba(111,58,40,0.32)] bg-[rgba(253,248,233,0.86)] text-[#6f3a28]"
+            }`}
+          >
+            Dev Mode: {devMode ? "On" : "Off"}
+          </button>
+        )}
+      </div>
+
+      {devMode && (
+        <div
+          className="frame-cut mb-5 space-y-3 p-3"
+          style={{ border: "2px solid rgba(248,214,148,0.36)", background: "rgba(13,24,20,0.66)" }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[#f8d694]">
+              Draft Debug
+            </p>
+            <p className="font-mono text-[11px] text-[rgba(248,214,148,0.88)]">
+              state={selectionState} | locked={String(locked)} | disabled={String(disabled)}
+            </p>
+          </div>
+
           {countdownSlot ? (
             countdownSlot
           ) : (
@@ -129,64 +179,68 @@ export function CharacterSelect({
           ) : (
             opponentStatus && (
               <span
-                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold text-[#4c6156]"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+                className="frame-cut frame-cut-sm inline-flex px-3 py-2 font-gabarito text-xs font-semibold text-[#f4f0e6]"
+                style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(28,38,32,0.88)" }}
               >
                 {renderOpponentStatus(opponentStatus, autoAssignLabel)}
               </span>
             )
           )}
-
-          {shouldShowAutoPickCopy && (
-            <p className="font-gabarito text-xs text-[#5e7768]">
-              Auto-pick if time expires.
+          {!hasAuxMeta && (
+            <p className="font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
+              No countdown/opponent sync metadata in this phase.
             </p>
           )}
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <div
+              className="frame-cut p-3"
+              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(31,44,37,0.9)" }}
+            >
+              <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[#f8d694]">
+                Your Selection
+              </p>
+              <p className="mt-1 font-gabarito text-xs text-[#f4f0e6]">
+                {selectedCharacter?.name ?? autoAssignedCharacter?.name ?? "No character selected yet."}
+              </p>
+              <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.8)]">{selectionLine}</p>
+              {shouldShowAutoPickCopy && (
+                <p className="mt-2 font-gabarito text-[11px] text-[rgba(248,214,148,0.92)]">
+                  Auto-pick if time expires.
+                </p>
+              )}
+            </div>
+            {roomStatusSlot ?? (
+              <RoomStatusRail
+                title="Selection Status"
+                rows={[
+                  {
+                    id: "you",
+                    label: "You",
+                    subtitle: selectedCharacter?.name ?? autoAssignedCharacter?.name ?? "Waiting for pick",
+                    badges:
+                      selectionState === "locked"
+                        ? ["connected", "matched", "deposited", "selecting", "locked", "ready"]
+                        : selectionState === "auto_assigned"
+                          ? ["connected", "matched", "deposited", "auto_assigned", "ready"]
+                          : selectionState === "selected"
+                            ? ["connected", "matched", "deposited", "selecting"]
+                            : ["connected", "matched", "deposited", "selecting"],
+                  },
+                  {
+                    id: "opponent",
+                    label: "Opponent",
+                    subtitle: opponentStatus === "waiting" ? "Choosing character" : "Selection state synced",
+                    badges: getOpponentBadges(opponentStatus),
+                  },
+                ]}
+              />
+            )}
+          </div>
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-        <div
-          className="frame-cut p-3"
-          style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.88)" }}
-        >
-          <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[#5e7768]">
-            Your Selection
-          </p>
-          <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
-            {selectedCharacter?.name ?? autoAssignedCharacter?.name ?? "No character selected yet."}
-          </p>
-          <p className="mt-1 font-gabarito text-xs text-[#5e7768]">{selectionLine}</p>
-        </div>
-        {roomStatusSlot ?? (
-          <RoomStatusRail
-            title="Selection Status"
-            rows={[
-              {
-                id: "you",
-                label: "You",
-                subtitle: selectedCharacter?.name ?? autoAssignedCharacter?.name ?? "Waiting for pick",
-                badges:
-                  selectionState === "locked"
-                    ? ["connected", "matched", "deposited", "selecting", "locked", "ready"]
-                    : selectionState === "auto_assigned"
-                      ? ["connected", "matched", "deposited", "auto_assigned", "ready"]
-                      : selectionState === "selected"
-                        ? ["connected", "matched", "deposited", "selecting"]
-                        : ["connected", "matched", "deposited", "selecting"],
-              },
-              {
-                id: "opponent",
-                label: "Opponent",
-                subtitle: opponentStatus === "waiting" ? "Choosing character" : "Selection state synced",
-                badges: getOpponentBadges(opponentStatus),
-              },
-            ]}
-          />
-        )}
-      </div>
-
-      <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {characters.map((character, index) => (
           <CharacterCard
             key={character.id}

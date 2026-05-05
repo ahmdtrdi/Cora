@@ -22,7 +22,7 @@ function drawRoundedRect(
   point: Point,
   size: Size,
   radius: number,
-  fill: string,
+  fill: string | CanvasGradient,
   stroke?: string,
 ) {
   const { x, y } = point;
@@ -96,6 +96,11 @@ function safeFilePart(input: string) {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+function shortenAddress(address: string) {
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
 function normalizeFamilyName(raw: string, fallback: string) {
   const trimmed = raw.trim();
   if (!trimmed) return fallback;
@@ -150,53 +155,70 @@ export async function renderChallengeCardJpg(input: ChallengeCardRenderInput): P
     throw new Error("Canvas context unavailable.");
   }
 
-  ctx.fillStyle = "#f5f1e8";
+  const backgroundGradient = ctx.createLinearGradient(0, 0, width, height);
+  backgroundGradient.addColorStop(0, "#f7f0e3");
+  backgroundGradient.addColorStop(0.58, "#f2e9d8");
+  backgroundGradient.addColorStop(1, "#e8decb");
+  ctx.fillStyle = backgroundGradient;
   ctx.fillRect(0, 0, width, height);
-  drawRoundedRect(ctx, { x: 30, y: 30 }, { width: 1540, height: 840 }, 16, "#fffdfa", "#d8d2c5");
 
-  ctx.fillStyle = "#274137";
-  ctx.font = `700 30px ${fonts.body}`;
-  ctx.fillText(input.title.toUpperCase(), 78, 96);
+  drawRoundedRect(ctx, { x: 34, y: 34 }, { width: 1532, height: 832 }, 20, "rgba(255,252,246,0.72)", "#2f2f2f");
+  drawRoundedRect(ctx, { x: 56, y: 56 }, { width: 1488, height: 788 }, 18, "rgba(255,248,238,0.82)", "#545454");
 
-  drawRoundedRect(ctx, { x: 70, y: 140 }, { width: 740, height: 620 }, 14, "#ffffff", "#d6d0c4");
-  drawRoundedRect(ctx, { x: 835, y: 140 }, { width: 695, height: 620 }, 14, "#ffffff", "#d6d0c4");
+  const leftZoneGradient = ctx.createLinearGradient(84, 96, 934, 766);
+  leftZoneGradient.addColorStop(0, "#fffaf0");
+  leftZoneGradient.addColorStop(1, "#f2e7d3");
+  drawRoundedRect(ctx, { x: 84, y: 96 }, { width: 850, height: 670 }, 16, leftZoneGradient, "#6a6a6a");
 
-  ctx.beginPath();
-  ctx.arc(170, 258, 92, 0, Math.PI * 2);
-  ctx.fillStyle = "#f1ede2";
-  ctx.fill();
-  ctx.strokeStyle = "#d1cabd";
-  ctx.stroke();
-  ctx.fillStyle = "#274137";
-  ctx.font = `700 96px ${fonts.display}`;
-  ctx.fillText(input.challengerName.slice(0, 1).toUpperCase(), 140, 286);
+  const rightZoneGradient = ctx.createLinearGradient(960, 96, 1518, 766);
+  rightZoneGradient.addColorStop(0, "#f8f1e5");
+  rightZoneGradient.addColorStop(1, "#ede2cf");
+  drawRoundedRect(ctx, { x: 960, y: 96 }, { width: 558, height: 670 }, 16, rightZoneGradient, "#6a6a6a");
 
-  ctx.fillStyle = "#1f2b24";
-  ctx.font = `700 62px ${fonts.display}`;
-  ctx.fillText(input.challengerName, 78, 420);
+  ctx.fillStyle = "rgba(38,33,29,0.72)";
+  ctx.font = `700 24px ${fonts.body}`;
+  ctx.fillText("CORA CHALLENGE", 122, 144);
 
-  ctx.fillStyle = "#4f6759";
-  ctx.font = `500 32px ${fonts.body}`;
-  ctx.fillText(input.challengerAddress, 78, 468);
+  ctx.fillStyle = "#1f1b18";
+  ctx.font = `700 76px ${fonts.display}`;
+  wrapText(ctx, input.title, 122, 222, 770, 84, 2);
 
-  drawRoundedRect(ctx, { x: 78, y: 500 }, { width: 300, height: 62 }, 31, "#f6f3ea", "#d6d0c4");
-  ctx.fillStyle = "#274137";
-  ctx.font = `700 26px ${fonts.body}`;
-  ctx.fillText(input.statusLabel.toUpperCase(), 104, 541);
+  drawRoundedRect(ctx, { x: 122, y: 288 }, { width: 200, height: 200 }, 20, "#dcd3c1", "#57514b");
+  const portraitGradient = ctx.createLinearGradient(122, 288, 322, 488);
+  portraitGradient.addColorStop(0, "#e8dfce");
+  portraitGradient.addColorStop(0.62, "#d8cebc");
+  portraitGradient.addColorStop(1, "#c7bead");
+  drawRoundedRect(ctx, { x: 130, y: 296 }, { width: 184, height: 184 }, 16, portraitGradient, "#6d655d");
+  ctx.fillStyle = "#24201c";
+  ctx.font = `700 100px ${fonts.display}`;
+  ctx.fillText(input.challengerName.slice(0, 1).toUpperCase(), 188, 415);
 
-  ctx.fillStyle = "#587062";
-  ctx.font = `500 36px ${fonts.body}`;
-  wrapText(ctx, input.description, 78, 610, 660, 44, 3);
+  ctx.fillStyle = "#1f1b18";
+  ctx.font = `700 58px ${fonts.display}`;
+  ctx.fillText(input.challengerName, 354, 362);
+  ctx.fillStyle = "rgba(50,43,38,0.82)";
+  ctx.font = `500 30px ${fonts.body}`;
+  ctx.fillText(shortenAddress(input.challengerAddress), 354, 408);
 
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=0&data=${encodeURIComponent(input.challengeLink)}`;
-  drawRoundedRect(ctx, { x: 900, y: 185 }, { width: 565, height: 380 }, 12, "#f5f1e8", "#d4cec1");
+  drawRoundedRect(ctx, { x: 354, y: 432 }, { width: 286, height: 58 }, 29, "rgba(255,255,255,0.7)", "#6c645c");
+  ctx.fillStyle = "#22201d";
+  ctx.font = `700 24px ${fonts.body}`;
+  ctx.fillText(input.statusLabel.toUpperCase(), 380, 470);
+
+  ctx.fillStyle = "rgba(52,46,41,0.86)";
+  ctx.font = `500 34px ${fonts.body}`;
+  wrapText(ctx, input.description, 122, 560, 770, 42, 4);
+
+  drawRoundedRect(ctx, { x: 996, y: 136 }, { width: 486, height: 334 }, 14, "rgba(255,255,255,0.74)", "#6a6a6a");
+  drawRoundedRect(ctx, { x: 1097, y: 180 }, { width: 284, height: 246 }, 10, "#f3ebdc", "#8d8376");
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=246x246&margin=0&data=${encodeURIComponent(input.challengeLink)}`;
   try {
     const qrImage = await loadImage(qrUrl);
-    ctx.drawImage(qrImage, 1052, 245, 260, 260);
+    ctx.drawImage(qrImage, 1116, 199, 246, 246);
   } catch {
-    ctx.fillStyle = "#6d8373";
-    ctx.font = `600 28px ${fonts.body}`;
-    ctx.fillText("QR unavailable", 1080, 374);
+    ctx.fillStyle = "rgba(44,39,36,0.62)";
+    ctx.font = `600 26px ${fonts.body}`;
+    ctx.fillText("QR unavailable", 1140, 326);
   }
 
   const metrics = [
@@ -205,19 +227,20 @@ export async function renderChallengeCardJpg(input: ChallengeCardRenderInput): P
     { label: "ARENA", value: input.arenaLabel },
   ];
   metrics.forEach((metric, index) => {
-    const boxX = 900 + index * 187;
-    drawRoundedRect(ctx, { x: boxX, y: 590 }, { width: 175, height: 112 }, 8, "#fffdfa", "#d6d0c4");
-    ctx.fillStyle = "#6d8373";
-    ctx.font = `600 22px ${fonts.body}`;
-    ctx.fillText(metric.label, boxX + 16, 626);
-    ctx.fillStyle = "#274137";
-    ctx.font = `700 34px ${fonts.body}`;
-    ctx.fillText(metric.value, boxX + 16, 672);
+    const boxY = 500 + index * 86;
+    drawRoundedRect(ctx, { x: 996, y: boxY }, { width: 486, height: 72 }, 10, "rgba(255,255,255,0.72)", "#7a7065");
+    ctx.fillStyle = "rgba(48,42,37,0.7)";
+    ctx.font = `700 22px ${fonts.body}`;
+    ctx.fillText(metric.label, 1020, boxY + 30);
+    ctx.fillStyle = "#1f1b18";
+    ctx.font = `700 30px ${fonts.body}`;
+    ctx.fillText(metric.value, 1162, boxY + 45);
   });
 
-  ctx.fillStyle = "#52695b";
-  ctx.font = `500 22px ${fonts.body}`;
-  wrapText(ctx, input.challengeLink, 78, 820, 1440, 28, 2);
+  drawRoundedRect(ctx, { x: 84, y: 790 }, { width: 1434, height: 40 }, 10, "rgba(255,255,255,0.68)", "#7d7368");
+  ctx.fillStyle = "rgba(45,39,35,0.74)";
+  ctx.font = `500 20px ${fonts.body}`;
+  wrapText(ctx, input.challengeLink, 100, 818, 1400, 24, 1);
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -392,12 +392,48 @@ export function LobbyScreen() {
     <div
       className="relative min-h-[100svh] overflow-hidden"
       style={{
-        backgroundColor: "#f5f1e8",
-        backgroundImage:
-          "linear-gradient(rgba(39,65,55,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.045) 1px, transparent 1px)",
-        backgroundSize: "42px 42px",
+        background:
+          "radial-gradient(circle at 50% 30%, rgba(168,143,104,0.22), transparent 45%), linear-gradient(180deg, #2b3a32 0%, #223229 50%, #1a251f 100%)",
       }}
     >
+      {/* Background World Elements */}
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div className="paper-grain absolute inset-0 opacity-25" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_32%,rgba(12,18,15,0.72)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(16,24,20,0.26)_0%,rgba(9,13,11,0.42)_100%)]" />
+
+        {/* Warm Spotlight Glow behind the modal */}
+        <div className="absolute left-1/2 top-1/2 h-[860px] w-[860px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--tone-clay)] opacity-14 mix-blend-screen blur-[160px]" />
+
+        {/* Ambient floating doodles */}
+        <div className="absolute left-[8%] top-[14%] opacity-20 md:left-[11%] md:top-[11%]">
+          <div className="animate-float-card text-6xl drop-shadow-md" style={{ transform: "rotate(-12deg)" }}>
+            <div className="h-6 w-6 rounded-full border border-[rgba(248,214,148,0.38)] bg-[rgba(248,214,148,0.14)]" />
+          </div>
+        </div>
+        <div className="absolute right-[9%] top-[20%] opacity-20 md:right-[14%] md:top-[17%]" style={{ animationDelay: "0.4s" }}>
+          <div className="animate-float-card text-5xl drop-shadow-md" style={{ transform: "rotate(15deg)" }}>
+            <div className="h-5 w-5 rounded-full border border-[rgba(157,180,150,0.42)] bg-[rgba(157,180,150,0.15)]" />
+          </div>
+        </div>
+        <div className="absolute bottom-[17%] left-[10%] opacity-20 md:bottom-[20%] md:left-[15%]" style={{ animationDelay: "1.2s" }}>
+          <div className="animate-float-card text-5xl drop-shadow-md" style={{ transform: "rotate(-8deg)" }}>
+            <div className="h-5 w-5 rounded-full border border-[rgba(203,227,193,0.42)] bg-[rgba(203,227,193,0.16)]" />
+          </div>
+        </div>
+        <div className="absolute bottom-[21%] right-[10%] opacity-20 md:bottom-[24%] md:right-[13%]" style={{ animationDelay: "0.8s" }}>
+          <div className="animate-float-card text-6xl drop-shadow-md" style={{ transform: "rotate(6deg)" }}>
+            <div className="h-6 w-6 rounded-full border border-[rgba(186,105,49,0.4)] bg-[rgba(186,105,49,0.14)]" />
+          </div>
+        </div>
+
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[45rem] font-caprasimo text-[var(--tone-bark)] opacity-[0.04]">
+          C
+        </div>
+        <div className="animate-sparkle absolute left-[30%] top-[20%] h-2 w-2 rounded-full bg-[var(--tone-clay)] opacity-45" />
+        <div className="animate-sparkle absolute bottom-[25%] right-[25%] h-3 w-3 rounded-full bg-[var(--tone-teal)] opacity-45" style={{ animationDelay: "1s" }} />
+        <div className="animate-sparkle absolute left-[20%] top-[50%] h-1.5 w-1.5 rounded-full bg-[var(--tone-sage)] opacity-60" style={{ animationDelay: "0.5s" }} />
+      </div>
       {showIntegrationBanner && (
         <IntegrationModeBanner
           depositMode={runtimeConfig.depositMode}
@@ -407,16 +443,16 @@ export function LobbyScreen() {
       {challengeMode && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
-            className="frame-cut px-3 py-2"
-            style={{ border: "1px solid rgba(39,65,55,0.26)", background: "rgba(255,255,255,0.95)" }}
+            className="frame-cut px-3 py-2 shadow-xl backdrop-blur-md"
+            style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}
           >
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
               Challenge Received
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+            <p className="mt-1 font-gabarito text-xs text-[var(--warm-text)]">
               {challengedBy ? `From ${shortenAddress(challengedBy)}` : "A rival challenged you."}
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+            <p className="mt-1 font-mono text-xs font-semibold text-[var(--tone-forest)]">
               {requestedToken ?? "SOL"} arena - ${requestedWager ?? FIXED_WAGER_USD}
             </p>
           </div>
@@ -425,13 +461,13 @@ export function LobbyScreen() {
       {!walletConnected && (phase === "waiting" || phase === "found") && (
         <div className="fixed left-4 top-4 z-[70] w-full max-w-sm md:left-6 md:top-6">
           <div
-            className="frame-cut px-3 py-2"
-            style={{ border: "1px solid rgba(186,105,49,0.34)", background: "rgba(255,250,242,0.97)" }}
+            className="frame-cut px-3 py-2 shadow-xl backdrop-blur-md"
+            style={{ border: "2px solid var(--tone-bark)", background: "var(--warm-surface)" }}
           >
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
               Wallet disconnected
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#73512d]">
+            <p className="mt-1 font-gabarito text-xs text-[var(--warm-text)]">
               Reconnect wallet before continuing queue or deposit confirmation.
             </p>
           </div>
@@ -446,13 +482,13 @@ export function LobbyScreen() {
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide"
-                style={{ border: `1px solid ${selectedArena.frame}`, color: selectedArena.frame, background: "rgba(255,255,255,0.82)" }}
+                style={{ border: `1px solid ${selectedArena.frame}`, color: selectedArena.frame, background: "var(--color-surface)" }}
               >
                 {selectedArena.label}
               </span>
               <span
-                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#6f3a28]"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.82)" }}
+                className="frame-cut frame-cut-sm px-3 py-2 font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)]"
+                style={{ border: "1px solid var(--tone-bark)", background: "var(--color-surface)" }}
               >
                 ${FIXED_WAGER_USD} {selectedArena.token}
               </span>
@@ -479,12 +515,12 @@ export function LobbyScreen() {
       phaseContextIssue ? (
         <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
           <div
-            className="frame-cut w-full p-5 md:p-6"
-            style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.96)" }}
+            className="game-card w-full p-6 md:p-8 shadow-2xl"
+            style={{ border: "2px solid var(--tone-bark)", background: "var(--warm-surface)" }}
           >
-            <p className="font-caprasimo text-3xl text-[#1f2b24]">{phaseContextIssue.title}</p>
-            <p className="mt-2 font-gabarito text-sm text-[#73512d]">{phaseContextIssue.detail}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <p className="font-caprasimo text-3xl text-[var(--tone-bark)]">{phaseContextIssue.title}</p>
+            <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">{phaseContextIssue.detail}</p>
+            <div className="mt-6 flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -494,8 +530,7 @@ export function LobbyScreen() {
                   setMatchmakingError(null);
                   setPhase("character-select");
                 }}
-                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                className="btn-game btn-game-primary px-4 py-2 text-xs"
               >
                 Back To Character Select
               </button>
@@ -509,8 +544,7 @@ export function LobbyScreen() {
                   setMatchmakingError(null);
                   setPhase("setup");
                 }}
-                className="frame-cut frame-cut-sm px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                className="btn-game btn-game-secondary px-4 py-2 text-xs"
               >
                 Restart Lobby
               </button>
@@ -628,4 +662,5 @@ export function LobbyScreen() {
     </div>
   );
 }
+
 
