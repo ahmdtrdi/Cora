@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
@@ -54,6 +53,7 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
+  const [showRoomStatus, setShowRoomStatus] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
@@ -233,12 +233,15 @@ export function OpponentFound({
   }
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 text-[#1f2b24] md:px-6">
+    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
       {errorVisible && errorText && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
             className="frame-cut px-3 py-2 shadow-xl backdrop-blur-md"
-            style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}
+            style={{
+              border: "2px solid var(--tone-clay)",
+              background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            }}
           >
             <div className="flex items-start justify-between gap-2">
               <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
@@ -276,116 +279,197 @@ export function OpponentFound({
           </div>
         </div>
       )}
-      <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em]" style={{ color: arena.accent }}>
-        Match Found - {arena.label}
+
+      <div className="mb-4 flex w-full justify-end">
+        <button
+          type="button"
+          onClick={() => setShowRoomStatus((value) => !value)}
+          className="rounded-full border border-[rgba(248,214,148,0.46)] bg-[rgba(16,26,22,0.5)] px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--tone-cream)] transition-colors hover:bg-[rgba(16,26,22,0.66)]"
+        >
+          {showRoomStatus ? "Hide Room Status" : "Show Room Status"}
+        </button>
+      </div>
+
+      <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
+        {arena.label} · ${wagerUsd} {arena.token}
       </p>
-      <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-bark)] drop-shadow-sm md:text-5xl">Rival Locked</h1>
+      <h1 className="mt-2 text-center font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
+        Rival Locked
+      </h1>
+      <p className="mt-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+        Sign the deposit before the timer expires.
+      </p>
 
       <div className="mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
-        <div className="game-card p-6 shadow-xl" style={{ border: "2px solid var(--tone-bark)", background: "var(--warm-surface)" }}>
-          <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-bark)] opacity-80">You</p>
-          <p className="mt-1 font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
-          <p className="mt-1 font-gabarito text-sm text-[var(--warm-text)]">{myScientist.base}</p>
-          <p className="mt-4 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+        <div
+          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          style={{
+            border: "2px solid rgba(111,58,40,0.62)",
+            background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.34)",
+          }}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
+          <div className="relative flex items-center gap-4">
+            <div
+              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              style={{
+                border: "2px solid rgba(111,58,40,0.6)",
+                background: myScientist.portraitBg,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+            >
+              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                {myScientist.initial}
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
+                You
+              </span>
+              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
+              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+            </div>
+          </div>
         </div>
 
         <div className="grid place-items-center px-6">
-          <div className="animate-orb-breath font-caprasimo text-5xl drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]" style={{ color: arena.accent }}>VS</div>
+          <div className="animate-orb-breath font-caprasimo text-6xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)]" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+            VS
+          </div>
         </div>
 
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.34 }}
-          className="game-card p-6 shadow-xl"
-          style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}
+        <div
+          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          style={{
+            border: "2px solid rgba(111,58,40,0.62)",
+            background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.34)",
+          }}
         >
-          <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-clay)] opacity-80">Opponent</p>
-          <p className="mt-1 font-caprasimo text-2xl text-[var(--tone-bark)]">
-            {opponentScientist?.name ?? "Syncing Rival..."}
-          </p>
-          <p className="mt-1 font-gabarito text-sm text-[var(--warm-text)]">
-            {opponentScientist?.base ?? "Waiting for opponent identity sync."}
-          </p>
-          <p className="mt-4 font-mono text-xs font-semibold text-[var(--tone-forest)]">
-            {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
-          </p>
-        </motion.div>
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
+          <div className="relative flex items-center gap-4">
+            <div
+              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              style={{
+                border: "2px solid rgba(111,58,40,0.6)",
+                background: opponentScientist?.portraitBg ?? "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+            >
+              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                {opponentScientist?.initial ?? "R"}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
+                Rival
+              </span>
+              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
+                {opponentScientist?.name ?? "Rival Synced"}
+              </p>
+              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
+                {opponentScientist?.base ?? "Opponent identity confirmed"}
+              </p>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
+                {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-4 w-full">
-        <RoomStatusRail
-          rows={[
-            {
-              id: "you",
-              label: "You",
-              subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
-              badges: getPlayerBadges(),
-            },
-            {
-              id: "opponent",
-              label: "Opponent",
-              subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
-              badges: getOpponentBadges(),
-            },
-          ]}
+      <div
+        className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
+        style={{
+          borderColor: "rgba(248,214,148,0.35)",
+          background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
+        }}
+      >
+        <DepositPanel
+          token={arena.token}
+          wagerUsd={wagerUsd}
+          status={getDepositStatus()}
+          helperText={getDepositHint()}
+          countdownSeconds={secondsLeft}
+          signature={signedDepositSignature}
+          canPrimaryAction={canAttemptSign}
+          primaryActionLabel={getPrimaryButtonLabel()}
+          onPrimaryAction={onSignDeposit}
+          walletSlot={
+            !wallet.publicKey ? (
+              <div className="pt-1">
+                <HydratedWalletButton />
+              </div>
+            ) : null
+          }
+          retrySlot={
+            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
+              <button
+                type="button"
+                onClick={reconnect}
+                className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+              >
+                Retry Connection
+              </button>
+            ) : null
+          }
+          cancelSlot={
+            <button
+              type="button"
+              onClick={onTimeout}
+              className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+            >
+              Cancel Match
+            </button>
+          }
+          extraSlot={
+            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
+              <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}>
+                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
+                  {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
+                </p>
+                <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
+                  {connectionState === "reconnecting"
+                    ? "Trying to restore room state. Keep this page open."
+                    : lastSocketCloseInfo
+                    ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
+                    : lastSocketError ?? "Socket disconnected."}
+                </p>
+              </div>
+            ) : null
+          }
         />
       </div>
 
-      <DepositPanel
-        token={arena.token}
-        wagerUsd={wagerUsd}
-        status={getDepositStatus()}
-        helperText={getDepositHint()}
-        countdownSeconds={secondsLeft}
-        signature={signedDepositSignature}
-        canPrimaryAction={canAttemptSign}
-        primaryActionLabel={getPrimaryButtonLabel()}
-        onPrimaryAction={onSignDeposit}
-        walletSlot={
-          !wallet.publicKey ? (
-            <div className="pt-1">
-              <HydratedWalletButton />
-            </div>
-          ) : null
-        }
-        retrySlot={
-          connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-            <button
-              type="button"
-              onClick={reconnect}
-              className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
-            >
-              Retry Connection
-            </button>
-          ) : null
-        }
-        cancelSlot={
-          <button
-            type="button"
-            onClick={onTimeout}
-            className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
-          >
-            Cancel Match
-          </button>
-        }
-        extraSlot={
-          connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-            <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}>
-              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
-                {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
-              </p>
-              <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
-                {connectionState === "reconnecting"
-                  ? "Trying to restore room state. Keep this page open."
-                  : lastSocketCloseInfo
-                  ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
-                  : lastSocketError ?? "Socket disconnected."}
-              </p>
-            </div>
-          ) : null
-        }
-      />
+      {showRoomStatus && (
+        <div
+          className="mt-5 w-full rounded-2xl border p-4 shadow-lg"
+          style={{
+            borderColor: "rgba(248,214,148,0.32)",
+            background: "linear-gradient(160deg, rgba(12,21,17,0.62), rgba(19,32,26,0.62))",
+          }}
+        >
+          <RoomStatusRail
+            rows={[
+              {
+                id: "you",
+                label: "You",
+                subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
+                badges: getPlayerBadges(),
+              },
+              {
+                id: "opponent",
+                label: "Opponent",
+                subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
+                badges: getOpponentBadges(),
+              },
+            ]}
+          />
+        </div>
+      )}
     </div>
   );
 }

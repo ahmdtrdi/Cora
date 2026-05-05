@@ -2081,3 +2081,35 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - None significant; this is a local type-safety cleanup and keeps behavior unchanged.
+
+## 2026-05-05 - OpponentFound Versus-Screen Redesign (Post-Match Deposit Phase)
+
+### The Change
+- Refactored [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to match the newer matchmaking versus-screen style while preserving signing/socket flow.
+- Updated header/content hierarchy to player-facing match-confirmation copy:
+  - Eyebrow: `{arena.label} · $${wagerUsd} {arena.token}`
+  - Title: `Rival Locked`
+  - Subtitle: `Sign the deposit before the timer expires.`
+- Rebuilt versus row into warm horizontal matchup cards over dark arena shell:
+  - Player and opponent cards now use square portrait placeholders on the left and info content on the right.
+  - Added `YOU` / `RIVAL` chips for clear side identity.
+  - Kept simple centered `VS` text with glow/shadow and no circular container.
+  - Opponent card remains revealed/matched style even when scientist fallback is not yet synced (`Rival Synced` + fallback base text), per requested behavior.
+- Moved `RoomStatusRail` behind a local player-facing visibility toggle:
+  - Hidden by default.
+  - Toggle label switches between `Show Room Status` / `Hide Room Status`.
+  - Not labeled as dev mode.
+- Elevated deposit action area by wrapping existing `DepositPanel` in a dark integrated action container so the signing step is visually central.
+- Kept error alert behavior and dismiss/timer logic, while refreshing alert surface to a cohesive warm treatment.
+
+### The Reasoning
+- This phase should read as direct continuation of matchmaking: rival confirmed, immediate deposit action.
+- Warm versus cards provide strong focal contrast against dark arena backgrounds and align with updated matchmaking language.
+- Always-visible room status read as debug infrastructure; collapsing it by default keeps the player flow clean while retaining access when needed.
+
+### The Tech Debt
+- `DepositPanel` internal visual tokens remain shared/global and still include lighter defaults; this pass integrates it via wrapper styling rather than deep component theming.
+- If this versus-card pattern is reused across multiple phases, extracting a shared matchup-card component will reduce style duplication.
+
+### Guardrails Kept
+- No changes to deposit signing logic, socket behavior, reconnect flow, redirect flow, countdown logic, status/hint helpers, or badge generation.
