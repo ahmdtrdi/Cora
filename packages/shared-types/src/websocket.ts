@@ -60,6 +60,12 @@ export interface GameState {
   currentRound: number;
   /** Number of rounds needed to win the match */
   roundsToWin: number;
+  /** Token address */
+  tokenMint: string;  
+  /** Wager amount */
+  wagerAmount: string;
+  /** Public or private match */
+  roomType: 'public' | 'private';
 }
 
 // ─── Card Countdown Pipeline Types ────────────────────────────
@@ -115,8 +121,11 @@ export interface MatchResultPayload {
 
 // Messages sent from Server -> Client
 export type ServerToClientEvents = {
+  opponentFailedDeposit: (data: {}) => void;
+  matchFound: (data: { roomId: string; role: 'playerA' | 'playerB'; opponentAddress: string }) => void;
+  depositUnlocked: (data: { roomId: string }) => void;
   gameStateUpdate: (state: GameState) => void;
-  matchResult: (result: MatchResultPayload) => void;
+  matchResult: (result: MatchResultPayload | MatchResult) => void;
   matchInvalidated: (result: MatchResult) => void; // New event for anti-cheat rejections
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;

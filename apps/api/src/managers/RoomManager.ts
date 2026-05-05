@@ -941,7 +941,12 @@ export class RoomManager {
 
       if (room.engine && (room.status === 'playing' || room.status === 'settling' || room.status === 'finished')) {
         // Engine owns the game state
-        payload = room.engine.getStateForPlayer(address);
+        payload = {
+          ...room.engine.getStateForPlayer(address),
+          tokenMint: room.tokenMint || '',
+          wagerAmount: room.wagerAmount?.toString() || '0',
+          roomType: room.roomType,
+        };
       } else {
         // Pre-game state (waiting / depositing)
         const opponentAddress = addresses.find(a => a !== address);
@@ -982,6 +987,9 @@ export class RoomManager {
           damageLog: [],
           currentRound: 1,
           roundsToWin: GameEngine.ROUNDS_TO_WIN,
+          tokenMint: room.tokenMint || '',
+          wagerAmount: room.wagerAmount?.toString() || '0',
+          roomType: room.roomType,
         };
       }
 
