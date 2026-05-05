@@ -26,17 +26,17 @@ export function CountdownBar({
   return (
     <div
       className="frame-cut frame-cut-sm w-full min-w-[220px] max-w-[360px] px-3 py-2"
-      style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)" }}
+      style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.86)" }}
     >
       <div className="mb-1 flex items-center justify-between">
-        <p className="font-gabarito text-[11px] font-semibold uppercase tracking-[0.14em] text-[#5e7768]">
+        <p className="font-gabarito text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--tone-cream)]/85">
           {label}
         </p>
-        <p className="font-gabarito text-xs font-bold text-[#274137]">
+        <p className="font-gabarito text-xs font-bold text-[var(--tone-cream)]">
           {formatMs(safeRemaining)}
         </p>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(39,65,55,0.14)]">
+      <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(248,214,148,0.18)]">
         <div
           className="h-full rounded-full bg-[linear-gradient(90deg,#ba6931,#d9a85b)] transition-[width] duration-500"
           style={{ width: `${ratio}%` }}

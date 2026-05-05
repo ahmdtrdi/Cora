@@ -2113,3 +2113,40 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### Guardrails Kept
 - No changes to deposit signing logic, socket behavior, reconnect flow, redirect flow, countdown logic, status/hint helpers, or badge generation.
+
+## 2026-05-05 - Play/Battle Screen Arena Visual Refactor (UI + FE-only Combat FX)
+
+### The Change
+- Refactored [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) visual layer to align `/play` with the updated lobby/draft/matchmaking/opponent-found direction:
+  - Switched shell/background from light grid to dark cinematic arena gradient.
+  - Updated headers/chips/alerts/guard panels to dark-compatible cream/gold palette.
+  - Replaced circular `You` / `Enemy` placeholders with **4:5 character placeholders** (left player, right opponent) using character-based gradient fallback visuals.
+  - Replaced tall base bars with **1:1 base placeholders** per side, including base HP labels.
+  - Preserved bottom card hand flow but re-skinned cards to warm collectible surfaces.
+- Added FE-only battle presentation state in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - `characterActionSide`
+  - `projectile`
+  - `playerBaseFx` / `opponentBaseFx`
+- Added FE-only placeholder projectile animation driven by existing `lastDamageEvent` (no backend protocol changes):
+  - attacker pose pulse
+  - projectile travel (attack/heal variant)
+  - target base hit/heal pulse
+  - local cleanup timers
+- Kept active question modal, settlement modal, and share overlay behavior intact while updating visual surfaces to match new arena style.
+- Updated shared room UI surfaces for dark coherence:
+  - [CountdownBar.tsx](/d:/projects/Cora/apps/web/src/components/room/CountdownBar.tsx)
+  - [PlayerRoomStatus.tsx](/d:/projects/Cora/apps/web/src/components/room/PlayerRoomStatus.tsx)
+  - [RoomStatusRail.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomStatusRail.tsx)
+
+### The Reasoning
+- The previous `/play` surface diverged from the rest of the updated flow and looked like a legacy light dashboard.
+- Character/base placeholders needed explicit future-friendly framing (4:5 and 1:1) so art/pose systems can be swapped in later without structural rework.
+- FE-only projectile/pose/base FX creates combat readability immediately while keeping server/game loop semantics unchanged.
+
+### The Tech Debt
+- Projectile travel currently uses coarse anchored coordinates (UI placeholder pass). Once final stage layout/asset anchors are fixed, this should move to measured DOM anchor coordinates for precision.
+- Character/base visuals are still placeholder glyph/gradient assets; replace with final art and state-specific sprites/poses when available.
+- Shared room status components are now dark-biased; if any warm-surface contexts require old look, introduce variant props/tokens instead of one-size styling.
+
+### Guardrails Kept
+- No changes to `useMatchSocket` semantics, gameplay scoring, answer flow, settlement flow, countdown source logic, route/query handling, or backend message contracts.
