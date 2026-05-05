@@ -306,3 +306,25 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 - [x] ~~Phase 3 items remain: account closing (M-1), Anchor events (L-3), version field (L-4)~~ → Fixed
 - [ ] **IDL changed significantly** — Events added, account lengths changed. Backend must be updated to consume new IDL and listen to events.
+
+---
+
+## Entry 11 — 2026-05-05: Chore Setup MagicBlock (cora-battle)
+
+### The Change
+
+**Web3 Setup (Chore Branch):**
+- `Anchor.toml` — Added `cora_battle` to `[programs.devnet]` and `[programs.localnet]` with a dummy program ID.
+- `programs/cora-battle/Cargo.toml` — Scaffolded manually with exact Anchor `1.0.1` dependencies to prevent version mismatch in the workspace.
+- `programs/cora-battle/src/lib.rs`, `state.rs`, `error.rs` — Populated with the initial Ephemeral Rollup (MagicBlock) logic and account structures.
+- `programs/cora-battle/src/instructions/*.rs` — Added `create_session`, `register_cards`, `play_card`, and `finalize_match` skeletons to support the asynchronous real-time gameplay flow.
+
+### The Reasoning
+
+1. **Manual Scaffolding:** Instead of `anchor new`, creating the files manually ensures we lock `anchor-lang` and `anchor-spl` to `1.0.1` identically to the existing `cora-escrow` program. This prevents workspace build errors.
+2. **Template Population:** The files were populated with the base MagicBlock implementation so they aren't completely empty and are ready for the Web3 team to refine in the next phase.
+
+### The Tech Debt
+
+- [ ] Program ID `CbBattle11111111111111111111111111111111111` is a dummy placeholder. Must `anchor keys sync` and deploy later.
+- [ ] Smart contract logic is currently just a skeleton. Needs to be thoroughly tested using litesvm/anchor-test.
