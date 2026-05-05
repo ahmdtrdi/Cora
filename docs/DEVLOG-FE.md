@@ -2179,3 +2179,77 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Canvas export and in-app preview are aligned stylistically, but not pixel-identical. If strict design parity is required later, we should centralize layout tokens and dimensions used by both renderers.
 - QR rendering still depends on remote QR image generation; if offline/resilience is needed, we should embed a local QR generation fallback.
+
+## 2026-05-05 - Real-Only E2E Flow + CharacterId WS Wiring (FE)
+
+### The Change
+- Removed FE mock-mode pathways and integration-mode banner plumbing from the web app:
+  - Deleted [apps/web/src/components/ui/IntegrationModeBanner.tsx](/d:/projects/Cora/apps/web/src/components/ui/IntegrationModeBanner.tsx)
+  - Simplified [apps/web/src/lib/config/runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts) to only retain `allowDevRoomPreview`.
+  - Removed mock/deposit mode env documentation from [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example).
+- Forced real settlement confirmation path in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed `settlementMode === "mock"` branch and mock signature generation.
+  - release confirmation now always follows Phantom signing flow.
+- Removed wallet/address dev fallback in battle flow:
+  - [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) now requires connected wallet address only.
+- Wired FE-selected character ID to backend room join:
+  - Extended [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) to send `characterId` query param on WS connect.
+  - Passed `characterId` from [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) and [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+- Aligned roster IDs/names with shared-types (`einstein`) and removed Newton leftovers:
+  - Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - Updated [apps/web/src/app/dev/room-states/page.tsx](/d:/projects/Cora/apps/web/src/app/dev/room-states/page.tsx)
+  - Updated battle visual mapping in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to use Einstein path only.
+- Replaced opponent character deterministic fallback with backend-authoritative mapping in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) by resolving from `gameState.opponent.characterId`.
+
+### The Reasoning
+- BE flow (per `DEVLOG-BE.md`) is now sequential-deposit + WS authoritative state; FE must stop short-circuiting via mock modes and must pass `characterId` on WS join so backend `playerMeta.characterId` is correct.
+- Keeping mock toggles in FE created drift against BE E2E readiness and caused confusing mixed behavior (real deposit with mock settlement).
+- Using backend-provided opponent character metadata ensures UI reflects true room state instead of deterministic local placeholders.
+
+### The Tech Debt
+- `next build` validation is currently blocked locally by locked `.next` artifacts (`EPERM`/access denied on unlink/remove), likely due to an external process holding handles. `npm run lint` passes.
+- `allowDevRoomPreview` remains in runtime config for internal UI preview scenarios; if full prod-hardening is desired, this can be removed in a follow-up.
+
+## 2026-05-05 - Battle Settlement UI Switched to Backend-Authoritative Mode
+
+### The Change
+- Refactored [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to remove client-side settlement confirmation flow.
+- Deleted FE-only settlement release state and actions:
+  - removed `releaseState`, `releaseError`, `releaseSignature`
+  - removed `onConfirmFundRelease()` and `getReleaseButtonLabel()`
+  - removed settlement warning alert path derived from `releaseError`
+- Removed client memo-sign settlement dependency usage in battle screen:
+  - removed `useConnection` usage
+  - removed `signSettlementReleaseIntent` usage
+- Replaced "Fund Release Confirmation" card with backend-authoritative settlement card:
+  - displays server-origin `settlementSignature` and `serverPublicKey` from `matchResult` payload when available
+  - otherwise shows waiting message for server settlement payload
+
+### The Reasoning
+- Backend already owns settlement orchestration and signature emission (server oracle flow), so FE should present backend state rather than trigger a second client settlement intent.
+- This avoids duplicate/conflicting settlement semantics and aligns FE with BE E2E contract while keeping services decoupled.
+
+### The Tech Debt
+- FE still cannot show definitive on-chain settlement transaction signature because current WS payload does not include tx hash. If product wants this, BE needs to expose settlement tx id in an event/payload and FE can render it.
+
+## 2026-05-05 - FE Alignment Follow-up: Room Status + MatchFound Passive Support
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to align active-play gating with current backend room statuses:
+  - removed explicit `settling` branch from status label mapping
+  - changed `isPlayStateReady` to depend on `playing` or match-complete signals instead of `settling`
+- Extended [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) with passive server queue-assignment event support:
+  - added `lastMatchFound` state
+  - handles both `matchFound` and `matchFoundWaiting` message types for compatibility
+  - returns `lastMatchFound` to consumers
+- Integrated non-breaking `matchFound` awareness in [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - derives `reassignedRoomId` from socket event when server announces a different room
+  - surfaces this via deposit helper text (no forced navigation, no hard interrupt)
+
+### The Reasoning
+- Backend currently transitions `depositing -> playing -> finished`; FE no longer treats `settling` as a required active phase.
+- Backend can emit `matchFound` in requeue paths; FE now records that event so UI can stay in sync without coupling to backend internals or direct function calls.
+- Chosen UX is intentionally passive to avoid breaking existing flow while still exposing authoritative server signals.
+
+### The Tech Debt
+- `matchFound` signals are currently surfaced as guidance text only. If product wants automatic room handoff, FE will need an explicit navigation/resume policy agreed with BE contract semantics.
