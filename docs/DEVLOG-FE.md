@@ -2150,3 +2150,32 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### Guardrails Kept
 - No changes to `useMatchSocket` semantics, gameplay scoring, answer flow, settlement flow, countdown source logic, route/query handling, or backend message contracts.
+
+## 2026-05-05 - Challenge Share Card Final Polish (Light Collectible Pass)
+
+### The Change
+- Restyled [apps/web/src/components/challenge/ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) into a light collectible challenge-ticket composition:
+  - premium light cream/stone framed surface
+  - strong two-zone layout (hero/editorial left + utility/QR right)
+  - square challenger portrait placeholder (replacing generic circular avatar)
+  - cleaner hierarchy for title, challenger identity, status chip, and description
+  - utility panel with QR + token/wager/arena metadata rows
+  - action buttons preserved (`Copy Link`, `Save As JPG`, `Share On X`) with light premium framed styling
+  - link + notice handling unchanged
+- Updated [apps/web/src/lib/challenge/renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) to visually match the new light collectible design in canvas export:
+  - light premium framed background
+  - editorial hero zone and utility zone
+  - square challenger placeholder badge
+  - clearer challenge hierarchy + status chip
+  - QR + metadata ticket block
+  - polished link strip
+- Kept [apps/web/src/lib/challenge/createChallengeLink.ts](/d:/projects/Cora/apps/web/src/lib/challenge/createChallengeLink.ts) unchanged functionally.
+
+### The Reasoning
+- The share card should read like a premium collectible pass/challenge ticket rather than a dashboard widget.
+- Light editorial styling differentiates challenge sharing from dark arena gameplay while keeping CORA identity coherent.
+- Updating both preview and JPG renderer together prevents style drift between what users see and what they download/share.
+
+### The Tech Debt
+- Canvas export and in-app preview are aligned stylistically, but not pixel-identical. If strict design parity is required later, we should centralize layout tokens and dimensions used by both renderers.
+- QR rendering still depends on remote QR image generation; if offline/resilience is needed, we should embed a local QR generation fallback.
