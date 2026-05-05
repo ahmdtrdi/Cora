@@ -11,7 +11,6 @@ import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
 import { RoomStatusRail } from "@/components/room/RoomStatusRail";
 import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
-import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -43,8 +42,6 @@ export function OpponentFound({
   wagerUsd,
   onTimeout,
 }: OpponentFoundProps) {
-  const runtimeConfig = getRuntimeConfig();
-  const allowDevCharacterFallback = runtimeConfig.allowDevCharacterFallback;
   const router = useRouter();
   const { connection } = useConnection();
   const wallet = useWallet();
@@ -70,6 +67,7 @@ export function OpponentFound({
   } = useMatchSocket({
     roomId,
     address: walletAddress,
+    characterId: myScientist.id,
   });
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
@@ -80,9 +78,8 @@ export function OpponentFound({
     signingState !== "waiting" &&
     !signed;
 
-  const opponentScientist = allowDevCharacterFallback && opponentAddress
-    ? scientists[Math.abs(opponentAddress.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % scientists.length]
-    : null;
+  const opponentScientist =
+    scientists.find((scientist) => scientist.id === gameState?.opponent?.characterId) ?? null;
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {

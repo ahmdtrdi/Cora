@@ -12,8 +12,6 @@ import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
-import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
-import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
 
 type MatchOutcome = {
   cardId: string;
@@ -119,9 +117,9 @@ function getCharacterVisual(characterId?: string) {
       baseGlyph: "⚗",
     };
   }
-  if (characterId === "einstein" || characterId === "newton") {
+  if (characterId === "einstein") {
     return {
-      initial: characterId === "newton" ? "N" : "E",
+      initial: "E",
       portraitBg: "linear-gradient(160deg, #12122a 0%, #1e1e3f 60%, #080814 100%)",
       baseGlyph: "✦",
     };
@@ -134,11 +132,8 @@ function getCharacterVisual(characterId?: string) {
 }
 
 export function BattleScreen() {
-  const runtimeConfig = getRuntimeConfig();
-  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
-  const queryAddress = searchParams.get("address");
   const arenaIdParam = searchParams.get("arena");
   const tokenParam = searchParams.get("token");
   const wagerParam = searchParams.get("wager");
@@ -152,10 +147,7 @@ export function BattleScreen() {
   const wallet = useWallet();
   const { publicKey } = wallet;
 
-  const devAddressFallbackEnabled = runtimeConfig.allowDevAddressFallback;
-  const fallbackAddress =
-    devAddressFallbackEnabled ? queryAddress ?? `dev-preview-${roomId}` : null;
-  const address = publicKey?.toBase58() ?? fallbackAddress ?? "";
+  const address = publicKey?.toBase58() ?? "";
   const requiresWalletConnect = !address;
   const hasValidWagerParam = Number.isFinite(Number(wagerParam)) && Number(wagerParam) > 0;
   const playGuardError = !roomIdParam
@@ -183,7 +175,7 @@ export function BattleScreen() {
     playCard,
     confirmDeposit,
     reconnect,
-  } = useMatchSocket({ roomId, address });
+  } = useMatchSocket({ roomId, address, characterId: scientistId ?? "einstein" });
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
@@ -341,15 +333,6 @@ export function BattleScreen() {
     }
 
     setReleaseError(null);
-
-    const settlementMode = runtimeConfig.settlementMode;
-    if (settlementMode === "mock") {
-      setReleaseState("submitting");
-      const mockSignature = `mock-release-${Date.now()}`;
-      setReleaseSignature(mockSignature);
-      setReleaseState("success");
-      return;
-    }
 
     if (!wallet.publicKey) {
       setReleaseState("error");
@@ -658,12 +641,6 @@ export function BattleScreen() {
             "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
         }}
       >
-        {showIntegrationBanner && (
-          <IntegrationModeBanner
-            depositMode={runtimeConfig.depositMode}
-            settlementMode={runtimeConfig.settlementMode}
-          />
-        )}
         <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
           <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Match Context Missing</p>
           <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">{playGuardError}</p>
@@ -690,12 +667,6 @@ export function BattleScreen() {
             "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
         }}
       >
-        {showIntegrationBanner && (
-          <IntegrationModeBanner
-            depositMode={runtimeConfig.depositMode}
-            settlementMode={runtimeConfig.settlementMode}
-          />
-        )}
         <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
           <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Wallet Required</p>
           <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">
@@ -724,12 +695,6 @@ export function BattleScreen() {
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
-      {showIntegrationBanner && (
-        <IntegrationModeBanner
-          depositMode={runtimeConfig.depositMode}
-          settlementMode={runtimeConfig.settlementMode}
-        />
-      )}
       <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
         {phaseToastVisible && (
           <div className="frame-cut px-3 py-2" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.92)" }}>

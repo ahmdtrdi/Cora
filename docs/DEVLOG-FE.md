@@ -2179,3 +2179,33 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Canvas export and in-app preview are aligned stylistically, but not pixel-identical. If strict design parity is required later, we should centralize layout tokens and dimensions used by both renderers.
 - QR rendering still depends on remote QR image generation; if offline/resilience is needed, we should embed a local QR generation fallback.
+
+## 2026-05-05 - Real-Only E2E Flow + CharacterId WS Wiring (FE)
+
+### The Change
+- Removed FE mock-mode pathways and integration-mode banner plumbing from the web app:
+  - Deleted [apps/web/src/components/ui/IntegrationModeBanner.tsx](/d:/projects/Cora/apps/web/src/components/ui/IntegrationModeBanner.tsx)
+  - Simplified [apps/web/src/lib/config/runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts) to only retain `allowDevRoomPreview`.
+  - Removed mock/deposit mode env documentation from [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example).
+- Forced real settlement confirmation path in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed `settlementMode === "mock"` branch and mock signature generation.
+  - release confirmation now always follows Phantom signing flow.
+- Removed wallet/address dev fallback in battle flow:
+  - [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) now requires connected wallet address only.
+- Wired FE-selected character ID to backend room join:
+  - Extended [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) to send `characterId` query param on WS connect.
+  - Passed `characterId` from [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) and [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+- Aligned roster IDs/names with shared-types (`einstein`) and removed Newton leftovers:
+  - Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - Updated [apps/web/src/app/dev/room-states/page.tsx](/d:/projects/Cora/apps/web/src/app/dev/room-states/page.tsx)
+  - Updated battle visual mapping in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to use Einstein path only.
+- Replaced opponent character deterministic fallback with backend-authoritative mapping in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) by resolving from `gameState.opponent.characterId`.
+
+### The Reasoning
+- BE flow (per `DEVLOG-BE.md`) is now sequential-deposit + WS authoritative state; FE must stop short-circuiting via mock modes and must pass `characterId` on WS join so backend `playerMeta.characterId` is correct.
+- Keeping mock toggles in FE created drift against BE E2E readiness and caused confusing mixed behavior (real deposit with mock settlement).
+- Using backend-provided opponent character metadata ensures UI reflects true room state instead of deterministic local placeholders.
+
+### The Tech Debt
+- `next build` validation is currently blocked locally by locked `.next` artifacts (`EPERM`/access denied on unlink/remove), likely due to an external process holding handles. `npm run lint` passes.
+- `allowDevRoomPreview` remains in runtime config for internal UI preview scenarios; if full prod-hardening is desired, this can be removed in a follow-up.

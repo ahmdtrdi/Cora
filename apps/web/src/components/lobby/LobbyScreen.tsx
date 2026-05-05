@@ -9,8 +9,7 @@ import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
 import { queueMatch } from "@/lib/matchmaking/queueMatch";
-import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
-import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
+import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import type {
@@ -66,8 +65,8 @@ export const SCIENTISTS: Scientist[] = [
     initial: "C",
   },
   {
-    id: "newton",
-    name: "Isaac Newton",
+    id: "einstein",
+    name: "Albert Einstein",
     base: "The Observatory",
     stats: [
       { label: "Physics", value: 90 },
@@ -75,7 +74,7 @@ export const SCIENTISTS: Scientist[] = [
     ],
     accentColor: "#f8d694",
     portraitBg: "linear-gradient(160deg, #12122a 0%, #1e1e3f 60%, #080814 100%)",
-    initial: "N",
+    initial: "E",
   },
 ];
 
@@ -127,7 +126,6 @@ type LobbyDraftSnapshot = {
 
 export function LobbyScreen() {
   const runtimeConfig = getRuntimeConfig();
-  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
   const { publicKey } = useWallet();
   const challengeMode = searchParams.get("challenge") === "1";
@@ -434,12 +432,6 @@ export function LobbyScreen() {
         <div className="animate-sparkle absolute bottom-[25%] right-[25%] h-3 w-3 rounded-full bg-[var(--tone-teal)] opacity-45" style={{ animationDelay: "1s" }} />
         <div className="animate-sparkle absolute left-[20%] top-[50%] h-1.5 w-1.5 rounded-full bg-[var(--tone-sage)] opacity-60" style={{ animationDelay: "0.5s" }} />
       </div>
-      {showIntegrationBanner && (
-        <IntegrationModeBanner
-          depositMode={runtimeConfig.depositMode}
-          settlementMode={runtimeConfig.settlementMode}
-        />
-      )}
       {challengeMode && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div

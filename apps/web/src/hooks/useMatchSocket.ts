@@ -32,6 +32,7 @@ interface PlayCardResult {
 interface UseMatchSocketParams {
   roomId: string;
   address: string;
+  characterId?: string;
 }
 
 function trimTrailingSlash(input: string) {
@@ -60,7 +61,7 @@ function isMatchSummaryPayload(value: unknown): value is MatchResult {
   );
 }
 
-export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
+export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketParams) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [lastSocketError, setLastSocketError] = useState<string | null>(null);
   const [lastSocketCloseInfo, setLastSocketCloseInfo] = useState<SocketCloseInfo | null>(null);
@@ -81,9 +82,10 @@ export function useMatchSocket({ roomId, address }: UseMatchSocketParams) {
   const [opponentFailedDepositAt, setOpponentFailedDepositAt] = useState<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
-  const socketUrl = roomId && address
-    ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}`
-    : null;
+  const socketUrl =
+    roomId && address
+      ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}&characterId=${encodeURIComponent(characterId ?? "einstein")}`
+      : null;
 
   useEffect(() => {
     if (!socketUrl) return;
