@@ -1,10 +1,15 @@
 type QueueMatchParams = {
   address: string;
+  tokenMint?: string;
+  wagerAmount?: number;
   signal?: AbortSignal;
 };
 
 type QueueMatchResponse = {
   roomId: string;
+  tokenMint?: string;
+  wagerAmount?: string;
+  roomType?: "public" | "private";
 };
 
 function trimTrailingSlash(input: string) {
@@ -27,18 +32,32 @@ function resolveApiBaseUrl() {
   return trimTrailingSlash(wsUrl);
 }
 
-export async function queueMatch({ address, signal }: QueueMatchParams): Promise<QueueMatchResponse> {
+export async function queueMatch({ address, tokenMint, wagerAmount, signal }: QueueMatchParams): Promise<QueueMatchResponse> {
   const apiBaseUrl = resolveApiBaseUrl();
+  const body: {
+    address: string;
+    tokenMint?: string;
+    wagerAmount?: number;
+  } = { address };
+  if (tokenMint) body.tokenMint = tokenMint;
+  if (wagerAmount !== undefined) body.wagerAmount = wagerAmount;
+
   const response = await fetch(`${apiBaseUrl}/match`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ address }),
+    body: JSON.stringify(body),
     signal,
   });
 
-  const payload = (await response.json().catch(() => null)) as { roomId?: string; error?: string } | null;
+  const payload = (await response.json().catch(() => null)) as {
+    roomId?: string;
+    tokenMint?: string;
+    wagerAmount?: string;
+    roomType?: "public" | "private";
+    error?: string;
+  } | null;
 
   if (!response.ok) {
     throw new Error(payload?.error ?? `Matchmaking failed (${response.status}).`);
@@ -49,5 +68,10 @@ export async function queueMatch({ address, signal }: QueueMatchParams): Promise
     throw new Error("Matchmaking response missing roomId.");
   }
 
-  return { roomId };
+  return {
+    roomId,
+    tokenMint: payload?.tokenMint,
+    wagerAmount: payload?.wagerAmount,
+    roomType: payload?.roomType,
+  };
 }

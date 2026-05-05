@@ -2253,3 +2253,24 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - `matchFound` signals are currently surfaced as guidance text only. If product wants automatic room handoff, FE will need an explicit navigation/resume policy agreed with BE contract semantics.
+
+## 2026-05-05 - FE Sync: Settling Status + /match Forward Compatibility (No BE edits)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added explicit `settling` status label in `getStatusLabel`
+  - updated play-state readiness gate to treat `settling` as an active ready state
+  - relaxed hard guard that previously required `arena/token/wager` query params; now only `roomId` is mandatory (allows backend-authoritative context evolution)
+- Updated [apps/web/src/lib/matchmaking/queueMatch.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/queueMatch.ts):
+  - request now supports optional `tokenMint` / `wagerAmount` payload fields
+  - response parser now supports optional `tokenMint` / `wagerAmount` / `roomType` fields while preserving backward compatibility with `{ roomId }`
+- Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - sends optional `tokenMint` to `/match` from selected arena token symbol
+
+### The Reasoning
+- BE/game flow now uses `settling` in shared contract, so FE battle status/gating should not treat it as unknown/terminal too early.
+- `/match` contract may evolve to include richer room context; FE now tolerates enriched responses and can pass optional token context without breaking existing BE behavior.
+- Keeping `roomId` as the only hard `/play` requirement reduces brittle FE dependence on URL-carried context as backend state becomes authoritative.
+
+### The Tech Debt
+- Optional `/match` fields are currently parsed but not yet fully consumed end-to-end in FE routing/state (future enhancement once BE contract is finalized for public room context).
