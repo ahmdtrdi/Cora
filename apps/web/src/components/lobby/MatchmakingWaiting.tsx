@@ -6,6 +6,8 @@ import type { Arena, Scientist } from "./LobbyScreen";
 
 type MatchmakingWaitingProps = {
   scientist: Scientist;
+  opponentScientist?: Scientist | null;
+  opponentWalletAddress?: string;
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
@@ -34,6 +36,8 @@ function shortWallet(address: string) {
 
 export function MatchmakingWaiting({
   scientist,
+  opponentScientist,
+  opponentWalletAddress,
   arena,
   wagerUsd,
   walletAddress,
@@ -94,6 +98,8 @@ export function MatchmakingWaiting({
       : state === "error"
         ? errorMessage ?? "Unable to reach matchmaking service."
         : null;
+  const isFailureState = state === "timeout" || state === "error";
+  const matchedOpponent = opponentScientist ?? null;
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
@@ -107,31 +113,111 @@ export function MatchmakingWaiting({
         </button>
       </div>
 
-      <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em]" style={{ color: arena.accent }}>
+      <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
         {arena.label} - ${wagerUsd} {arena.token}
       </p>
-      <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-bark)] drop-shadow-sm md:text-5xl">{title}</h1>
+      <h1
+        className="mt-2 text-center font-caprasimo text-4xl drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl"
+        style={{ color: isFailureState ? "#f8d694" : "var(--tone-cream)" }}
+      >
+        {title}
+      </h1>
       {subtitle && (
-        <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">{subtitle}</p>
+        <p className="mt-2 max-w-2xl text-center font-gabarito text-sm text-[rgba(244,240,230,0.9)]">{subtitle}</p>
       )}
 
       <div className="mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
-        <div className="game-card p-6 shadow-xl" style={{ border: "2px solid var(--tone-bark)", background: "var(--warm-surface)" }}>
-          <p className="font-caprasimo text-2xl text-[var(--tone-bark)]">{scientist.name}</p>
-          <p className="mt-1 font-gabarito text-sm text-[var(--warm-text)]">{scientist.base}</p>
-          <p className="mt-4 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+        <div
+          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          style={{
+            border: "2px solid rgba(111,58,40,0.62)",
+            background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.34)",
+          }}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
+          <div className="relative flex items-center gap-4">
+            <div
+              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              style={{
+                border: "2px solid rgba(111,58,40,0.6)",
+                background: scientist.portraitBg,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+            >
+              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                {scientist.initial}
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
+                You
+              </span>
+              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{scientist.name}</p>
+              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{scientist.base}</p>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+            </div>
+          </div>
         </div>
 
         <div className="grid place-items-center px-6">
-          <div className="animate-orb-breath font-caprasimo text-5xl drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]" style={{ color: arena.accent }}>VS</div>
-        </div>
-
-        <div className="game-card grid place-items-center p-6 shadow-xl" style={{ border: "2px dashed var(--tone-clay)", background: "rgba(255,255,255,0.4)" }}>
-          <div className="text-center">
-            <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-clay)] opacity-80">Scanning</p>
-            <p className="mt-2 font-caprasimo text-3xl text-[var(--tone-bark)] opacity-60">Unknown</p>
+          <div className="animate-orb-breath font-caprasimo text-6xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)]" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+            VS
           </div>
         </div>
+
+        {matchedOpponent ? (
+          <div
+            className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+            style={{
+              border: "2px solid rgba(111,58,40,0.62)",
+              background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+              boxShadow: "0 14px 30px rgba(0,0,0,0.34)",
+            }}
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
+            <div className="relative flex items-center gap-4">
+              <div
+                className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+                style={{
+                  border: "2px solid rgba(111,58,40,0.6)",
+                  background: matchedOpponent.portraitBg,
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+                }}
+              >
+                <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                  {matchedOpponent.initial}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
+                  Opponent
+                </span>
+                <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{matchedOpponent.name}</p>
+                <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{matchedOpponent.base}</p>
+                {opponentWalletAddress ? (
+                  <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(opponentWalletAddress)}</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="relative grid min-h-[156px] place-items-center overflow-hidden rounded-2xl p-5 shadow-xl"
+            style={{
+              border: "2px dashed rgba(248,214,148,0.5)",
+              background: "linear-gradient(145deg, rgba(15,35,27,0.96), rgba(8,18,14,0.96))",
+              boxShadow: "0 14px 30px rgba(0,0,0,0.38)",
+            }}
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.15),transparent_50%)]" />
+            <div className="relative text-center">
+              <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-clay)] opacity-90">Scanning</p>
+              <p className="mt-2 font-caprasimo text-3xl text-[var(--tone-cream)]">Unknown</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-8 w-full">
@@ -147,8 +233,8 @@ export function MatchmakingWaiting({
                     : 0;
             return (
               <div key={segment}>
-                <p className="mb-1.5 font-gabarito text-[11px] font-bold uppercase tracking-wide text-[var(--tone-bark)] opacity-80">{segment}</p>
-                <div className="h-2 overflow-hidden rounded-full bg-[rgba(0,0,0,0.15)] shadow-inner">
+                <p className="mb-1.5 font-gabarito text-[11px] font-bold uppercase tracking-wide text-[var(--tone-cream)] opacity-85">{segment}</p>
+                <div className="h-2 overflow-hidden rounded-full bg-[rgba(248,214,148,0.14)] shadow-inner">
                   <div
                     className={`h-full rounded-full ${ratio > 0 ? "shimmer-bar" : ""}`}
                     style={{ width: `${ratio * 100}%`, backgroundColor: arena.accent }}
@@ -169,7 +255,7 @@ export function MatchmakingWaiting({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.28 }}
-              className="font-gabarito text-sm tracking-wide text-[var(--tone-forest)] drop-shadow-sm"
+              className="font-gabarito text-sm tracking-wide text-[var(--tone-mint)] drop-shadow-sm"
             >
               {FLAVOR_TEXTS[flavorIdx]}
             </motion.p>

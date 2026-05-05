@@ -1982,3 +1982,102 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Spacing value is shared for any future usage of `preHeadingSlot`; if other screens require denser nav/header spacing, we may introduce a per-screen spacing override.
+
+## 2026-05-05 - MatchmakingWaiting Dark Arena Visual Redesign
+
+### The Change
+- Refactored [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) visual styling to match dark arena direction:
+  - Player and opponent cards moved from warm/light surfaces to dark forest-glass gradients.
+  - Added subtle radial highlight overlays and deeper shadows for cinematic depth.
+  - Upgraded center `VS` composition with a circular accent ring/orb treatment.
+  - Improved title/subtitle readability in searching/error/timeout states using cream/gold foreground colors.
+  - Updated segment labels and bar track backgrounds to dark-compatible contrast while preserving accent fill.
+  - Updated flavor text color to mint for legibility on dark background.
+- Kept CTA/actions (`Cancel`, `Keep Searching`) and layout structure intact.
+
+### The Reasoning
+- Prior light-surface cards visually clashed with the dark arena shell and weakened matchmaking tension.
+- This pass aligns the waiting screen with the newer game-like mood: dark surfaces, cream text, clay/gold accents, and stronger versus framing.
+
+### The Tech Debt
+- Visual tokens are still mostly inline in this component. If we standardize a dark-panel system for all room phases, these styles should be extracted into shared classes/tokens.
+- Failure-state title color currently shares one gold-readable treatment for both timeout and error; future UX may want distinct semantic tones if error taxonomy expands.
+
+### Guardrails Kept
+- Matchmaking progress logic, stage timing, and bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting Versus-Card Refinement (Square Placeholders + Clean VS)
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) matchup row styling:
+  - Added square portrait placeholder block to the **player** card (left side) and kept horizontal card structure.
+  - Added matching square placeholder block to the **opponent** card while scanning (left side), with `Scanning` + `Unknown` content on the right.
+  - Switched matchup cards to warm parchment surfaces with bark/clay framing for stronger contrast against dark arena shell.
+  - Removed the circular `VS` container and replaced it with clean centered `VS` typography with subtle glow/shadow only.
+  - Added lightweight `YOU` chip on player card metadata area.
+- Kept top-right cancel, arena/wager label, title/subtitle, progress bars, and retry behavior in place.
+
+### The Reasoning
+- The matchup section now reads as an intentional versus composition instead of two plain text blocks.
+- Square placeholders make the layout ready for future portrait/icon assets while preserving current scanning state.
+- Warm cards increase focal contrast and keep cohesion with CORA’s parchment/vintage style without looking like generic white dashboards.
+
+### The Tech Debt
+- Opponent card currently always renders unknown/scanning placeholder in this component’s current states; when a matched-opponent payload is wired here, we should feed portrait/name/base into the same left-icon/right-info horizontal template without changing structure.
+
+### Guardrails Kept
+- Matchmaking progress logic and bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting Opponent-State Layout Refinement
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) opponent card behavior with explicit state-based layouts:
+  - **Unknown/searching state**: dark centered placeholder card (`SCANNING` + `Unknown`) with optional centered square placeholder block.
+  - **Matched-opponent state (future-ready)**: warm horizontal card matching player composition (square portrait on left, opponent info on right).
+- Added optional props to support matched rendering without breaking current call sites:
+  - `opponentScientist?: Scientist | null`
+  - `opponentWalletAddress?: string`
+- Kept `VS` as clean centered typography (no circular container).
+
+### The Reasoning
+- The horizontal icon-left/text-right pattern is ideal for actual profile cards, but looked awkward when the opponent is unknown.
+- Centered dark placeholder communicates temporary searching state more clearly and avoids off-center visual weight.
+- Warm horizontal card on match provides a clear visual transition from searching to found opponent.
+
+### The Tech Debt
+- Matched opponent data is not yet wired from current waiting-phase parent flow, so the matched branch is prepared but not currently activated in normal waiting route.
+
+### Guardrails Kept
+- Matchmaking progress logic and bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting Final Opponent-State Polish
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) unknown/matched opponent rendering behavior:
+  - **Unknown/searching state**: removed the square `?` placeholder block; card now shows centered `SCANNING` + `Unknown` only on dark surface.
+  - **Matched state (future-ready branch)**: preserved warm horizontal portrait-left/info-right structure so it mirrors player-card pattern.
+
+### The Reasoning
+- Unknown state should feel minimal and temporary, not like a partially-rendered profile card.
+- Portrait placeholder should appear only when a real opponent exists, which creates clearer state transition and stronger visual symmetry.
+
+### The Tech Debt
+- Matched-opponent branch is ready but depends on parent flow wiring of `opponentScientist` / `opponentWalletAddress` for runtime activation.
+
+### Guardrails Kept
+- Matchmaking progress logic and progress bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting TS Narrowing Fix (Matched Opponent Branch)
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) to fix TypeScript nullability warnings in the matched-opponent JSX branch.
+- Replaced `hasMatchedOpponent` boolean check with a concrete narrowed variable:
+  - `const matchedOpponent = opponentScientist ?? null`
+  - branch now uses `matchedOpponent ? (...) : (...)`
+  - matched branch reads `matchedOpponent.*` fields.
+
+### The Reasoning
+- Boolean coercion on optional values does not always provide sufficient narrowing for TS in JSX paths. Using a nullable local with direct truthy check guarantees safe narrowing.
+
+### The Tech Debt
+- None significant; this is a local type-safety cleanup and keeps behavior unchanged.
