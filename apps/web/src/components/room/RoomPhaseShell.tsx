@@ -9,6 +9,7 @@ type RoomPhaseShellProps = {
   phase: RoomPhase;
   title?: ReactNode;
   subtitle?: ReactNode;
+  preHeadingSlot?: ReactNode;
   statusSlot?: ReactNode;
   rightPanelSlot?: ReactNode;
   children: ReactNode;
@@ -27,6 +28,7 @@ function ShellContent({
   phase,
   title,
   subtitle,
+  preHeadingSlot,
   statusSlot,
   rightPanelSlot,
   children,
@@ -39,6 +41,7 @@ function ShellContent({
         phase={phase}
         title={title}
         subtitle={subtitle}
+        preHeadingSlot={preHeadingSlot}
         statusSlot={statusSlot}
         rightPanelSlot={rightPanelSlot}
       />

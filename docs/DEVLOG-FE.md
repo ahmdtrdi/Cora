@@ -1840,3 +1840,145 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Local build verification is currently blocked by Windows filesystem lock/permission errors in `.next` (`EPERM` unlink on chunk files).
 - We should standardize a local clean-build workflow that ensures Node/Next processes are stopped before deleting `.next`.
+
+## 2026-05-04 - Character Draft Screen Redesign (Roster-Focused + Dev Toggle)
+
+### The Change
+- Reworked [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) to remove dashboard-style meta blocks from default player view and make the roster grid the centerpiece.
+- Added a compact helper row and a `Dev Mode` toggle that gates debug-only data panels (selection state, opponent status, room status rail, and countdown).
+- Rebuilt [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) into a collectible roster-card layout:
+  - square portrait block with placeholder expression cue
+  - stronger selected/active visual treatment (border, glow, lift)
+  - base + role/supporting lines
+  - compact stat presentation (short rows + mini inline meters + specialty chip)
+  - full-width selection state footer (`Selected`, `Auto-assigned`, `Locked In`, etc.)
+- Updated [RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx) with a high-contrast framed header surface to improve readability of `Setup` / `Draft Your Scientist` / supporting copy on dark lobby backgrounds.
+- Kept existing flow controls in place (Back button, arena/token/wallet chips, Enter Queue CTA) via existing shell slots.
+
+### The Reasoning
+- The old top metadata cards pulled attention away from the primary draft action and made the screen feel like a dashboard.
+- Moving non-essential state to a toggle keeps the default experience premium and player-focused while preserving QA/debug visibility.
+- Character cards now follow a game-roster hierarchy instead of a generic data-card pattern, with selection feedback strong enough to feel decisively chosen.
+- Compact stats preserve quick scanability without bloating card height or dominating vertical space.
+- A dedicated contrast-backed heading container fixes title legibility immediately and aligns with the vintage arena art direction.
+
+### The Tech Debt
+- Portrait expression states are still placeholder UI cues (initial + micro-face element). Replace with real square portraits and selected-expression variants once art assets are available.
+- Specialty metadata is partially sourced from `@shared/characterStats`; characters missing a shared specialty currently fall back to `Generalist` in UI.
+- Dev Mode state is local UI state only; if persistent QA toggles are needed, we should wire query-param or localStorage sync.
+
+## 2026-05-04 - Draft Dev Mode Toggle Availability Adjustment
+
+### The Change
+- Updated [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) so the `Dev Mode` toggle is always available in draft UI, even when countdown/opponent metadata is absent.
+- Added a debug-panel fallback line (`No countdown/opponent sync metadata in this phase.`) for pre-queue contexts.
+
+### The Reasoning
+- QA still needs access to selection/room debug panels in the normal character-select phase, not only in timed room-preview states.
+
+### The Tech Debt
+- If we introduce role-based dev tooling, this toggle should be gated behind environment or permission controls.
+
+## 2026-05-04 - Character Draft Screen Minor Layout Refinement Pass
+
+### The Change
+- Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - Repositioned `Back` into the same top-right chip row (`arena`, `wager`, `wallet`) to remove the detached floating feel.
+  - Tightened chip/button vertical padding and CTA size.
+  - Applied `className="h-[100svh] overflow-hidden py-3 md:py-4"` on `RoomPhaseShell` usage for this screen to keep the full draft composition inside one desktop viewport.
+- Updated [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx):
+  - Removed the boxed heading panel treatment (no bordered/background card).
+  - Kept readability via typography and text-shadow only.
+  - Reduced header spacing and font sizing slightly for tighter vertical rhythm.
+- Updated [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - Reduced spacing between helper row, debug block, and card grid.
+  - Tightened card grid gap from `gap-4` to `gap-3`.
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - Reduced card min height (`350px` -> `292px`).
+  - Reduced portrait max size and compressed internal spacing/typography/chips/footer height.
+  - Preserved the same visual language and selection-state cues.
+
+### The Reasoning
+- The previous pass solved hierarchy direction, but the screen still felt vertically heavy and pushed CTA visibility below the fold.
+- Keeping Back inside the same right-column control cluster makes the header composition feel intentional and aligned.
+- Removing the heading box follows the requested integrated composition while preserving contrast.
+
+### The Tech Debt
+- `h-[100svh] overflow-hidden` is intentionally scoped to this screen and viewport fit goal. If card count/metadata grows, we may need responsive fallback behavior for smaller desktop heights.
+- CTA/chip density is tuned for this draft screen specifically; if design tokens for compact HUD controls are introduced, this should be normalized into shared size variants.
+
+## 2026-05-04 - Character Card Micro-Polish (Pill Stats + Role Styling)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) to replace long bar-style stat rows with compact trait pills.
+- Kept existing stat data and labels, now rendered as lightweight chips (e.g. `LOGIC 92`, `COMPUTATION 88`) in a wrapped pill group.
+- Replaced raw role text (`Role: ...`) with a styled metadata chip (`Sequence Specialist`) and kept multiplier as a compact companion chip (`x1.5`).
+- Preserved all existing card structure and interaction states (portrait, selected state, status footer).
+
+### The Reasoning
+- Bar meters still read as RPG/dashboard UI and carried unnecessary visual weight for this collectible roster card direction.
+- Pill-based stat traits improve scan speed while reducing visual bloat and preserving data clarity.
+- Role metadata now feels integrated into the card system rather than plain label-value text.
+
+### The Tech Debt
+- Stat labels are currently rendered in full uppercase text; if longer labels are introduced later, we may want tokenized short labels or controlled wrapping rules.
+
+## 2026-05-04 - Character Draft Layout Balance Pass (Upper Section Breathing Room)
+
+### The Change
+- Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - Increased top-biased shell padding for this phase (`pt-5/6`, `pb-3/4`) while keeping viewport-locked layout.
+  - Added a small wrapper margin above the roster section (`mt-2 md:mt-3`) so cards sit lower.
+- Updated [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx):
+  - Increased heading block breathing room via slightly larger bottom margin and larger title/subtitle vertical spacing.
+- Updated [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - Increased spacing under the `Roster / Selected` row (`mb-5`).
+  - Increased spacing below the optional Dev Mode panel (`mb-5`) for balanced separation before the card grid.
+
+### The Reasoning
+- After card compaction, the composition looked top-tight and bottom-light. Increasing only upper-layout spacing restores visual balance without re-inflating cards.
+
+### The Tech Debt
+- Header spacing is shared through `RoomPhaseHeader`; if another phase later needs denser layout, we may introduce a compact header variant prop.
+
+## 2026-05-04 - Character Card Action-Row Spacing Micro-Adjustment
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) to add a small separation above the bottom action row (`Tap to Select` / `Selected`).
+- Kept existing card structure and sizing by wrapping the action row with `mt-auto pt-2`, then rendering the original action chip inside.
+
+### The Reasoning
+- The action row felt visually cramped against the stat pills. This adds breathing room without reintroducing bulk or changing card content hierarchy.
+
+### The Tech Debt
+- Spacing is currently local to this component. If other selectable cards adopt similar bottom action treatments, we may want a shared spacing token/utility.
+
+## 2026-05-04 - Draft Header Reading-Flow Refinement (Back Button Left)
+
+### The Change
+- Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - Moved `Back` out of the top-right chip cluster.
+  - Added a lightweight left-aligned `Back` control above the heading flow.
+  - Kept top-right area focused on contextual chips (arena / wager / wallet).
+- Extended shared room header plumbing to support pre-heading navigation content:
+  - [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx): added optional `preHeadingSlot` rendered above eyebrow/title/subtitle.
+  - [apps/web/src/components/room/RoomPhaseShell.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseShell.tsx): passed through optional `preHeadingSlot` prop.
+
+### The Reasoning
+- `Back` is navigation, so placing it at the start of the content sequence improves reading order and reduces visual competition with status chips.
+- The right column now reads as purely contextual state, while navigation starts the left-column flow.
+
+### The Tech Debt
+- `preHeadingSlot` is now available for other phases; if reused heavily, we may want a dedicated nav-style variant token to standardize button appearance across screens.
+
+## 2026-05-05 - Draft Header Micro-Spacing Tweak (Back vs SETUP)
+
+### The Change
+- Updated [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx) to increase spacing below the `preHeadingSlot` container (`mb-2` -> `mb-3`).
+- This creates a slightly clearer separation between the left-side `Back` navigation control and the `SETUP` eyebrow.
+
+### The Reasoning
+- `Back` should read as navigation preceding page content, not as a label attached to the heading block.
+
+### The Tech Debt
+- Spacing value is shared for any future usage of `preHeadingSlot`; if other screens require denser nav/header spacing, we may introduce a per-screen spacing override.
