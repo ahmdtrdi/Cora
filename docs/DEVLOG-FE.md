@@ -2301,3 +2301,56 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Shared deposit components are now dark-default. If future light-theme contexts reuse them, a variant/theming prop may be needed instead of per-page overrides.
+
+## 2026-05-05 - FE First Pass: History + Wallet Inspect Foundation (Backend-Stub Ready)
+
+### The Change
+- Added backend-facing history client and normalized frontend types:
+  - [apps/web/src/lib/history/historyApi.ts](/d:/projects/Cora/apps/web/src/lib/history/historyApi.ts)
+  - [apps/web/src/lib/history/historyTypes.ts](/d:/projects/Cora/apps/web/src/lib/history/historyTypes.ts)
+- Added reusable history / wallet-inspect UI primitives:
+  - [apps/web/src/components/history/HistoryButton.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryButton.tsx)
+  - [apps/web/src/components/history/HistoryDrawer.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryDrawer.tsx)
+  - [apps/web/src/components/history/WalletInspectButton.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectButton.tsx)
+  - [apps/web/src/components/history/WalletInspectPanel.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectPanel.tsx)
+- Added arena playability hook (advisory-first):
+  - [apps/web/src/hooks/useWalletArenaPlayability.ts](/d:/projects/Cora/apps/web/src/hooks/useWalletArenaPlayability.ts)
+- Integrated primary history access in room-phase shell usage:
+  - Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) to render `HistoryButton` via `rightPanelSlot` and open shared `HistoryDrawer`.
+  - Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to pass `walletConnected` into `CharacterSelect`.
+- Integrated wallet inspect shortcuts + advisory playability + history access in pre-battle deposit phase:
+  - Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx).
+- Integrated settlement-modal history action and wallet inspect shortcuts in battle screen:
+  - Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+- Validation:
+  - `npm run lint --workspace apps/web` passes.
+
+### The Reasoning
+- FE calls backend endpoints only (`/api/history/...`) and never calls GoldRush directly, matching architecture boundaries before BE integration is live.
+- The new UI contracts are backend-normalized and player-facing (`History`, `Wallet Inspect`, `Arena playable`), avoiding raw provider payload exposure.
+- Playability is advisory-first by design: UI surfaces readiness (`Playable`, `Needs token`, `Unable to inspect`) without hard-blocking flow during backend maturation.
+- Shared components keep styling consistent with the existing arena/parchment/clay visual language and prevent one-off explorer-like UI.
+
+### The Tech Debt
+- `historyApi.ts` currently relies on fallback behavior (`NEXT_PUBLIC_HISTORY_FALLBACK_MODE`) until BE endpoints are fully implemented and normalized.
+- `WalletPlayability.reliable` semantics are provisional; once BE finalizes trust signals, FE should tighten blocking/allowance behavior if required.
+- History views are currently scoped to arena/wallet lists; once BE exposes richer match identifiers and explorer links, FE can add direct per-match detail focus and deep links.
+
+## 2026-05-05 - Wallet Inspect Chip Relocated to Lobby Setup (Arena Select)
+
+### The Change
+- Moved the advisory wallet-inspection indicator from character selection to the first lobby phase (`Choose Your Arena`):
+  - Removed playability chip usage from [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx).
+  - Added token-aware balance/inspect chip in [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) using `useWalletArenaPlayability`.
+- Chip now follows selected arena token context:
+  - SOL selected -> `SOL Balance: ...`
+  - BONK selected -> `BONK Balance: ...`
+- Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to stop passing the now-removed `walletConnected` prop to `CharacterSelect`.
+- Validation: `npm run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Arena-readiness/balance feedback is more useful at token selection time than at character selection.
+- This keeps phase intent clean: arena viability in setup phase, character decisions in draft phase.
+
+### The Tech Debt
+- Balance values remain dependent on backend playability normalization; until BE endpoint is live/reliable, chip may show `Inspecting...` / `Unavailable` / `--` fallback states.
