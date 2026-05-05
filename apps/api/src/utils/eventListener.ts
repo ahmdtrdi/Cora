@@ -112,14 +112,14 @@ function parseEventData(eventName: string, buffer: Buffer): Record<string, unkno
  * Anchor emits events as base64-encoded data within `Program data:` log lines.
  * We filter for our program ID, extract the data, match discriminators, and log.
  */
-export function startEventListener(rpcUrl: string): number | null {
-  // WebSocket URL — convert HTTPS/HTTP to WSS/WS
-  const wsUrl = rpcUrl.replace(/^https/, 'wss').replace(/^http/, 'ws');
+export function startEventListener(rpcUrl: string, wsUrl?: string): number | null {
+  // Use explicit WS URL if provided; otherwise derive from HTTP URL
+  const resolvedWsUrl = wsUrl || rpcUrl.replace(/^https/, 'wss').replace(/^http/, 'ws');
 
   let connection: Connection;
   try {
     connection = new Connection(rpcUrl, {
-      wsEndpoint: wsUrl,
+      wsEndpoint: resolvedWsUrl,
       commitment: 'confirmed',
     });
   } catch (err) {

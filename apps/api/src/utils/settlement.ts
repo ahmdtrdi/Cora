@@ -76,8 +76,12 @@ const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W')
 
 // Singleton connection — reuse instead of creating per call (avoids connection churn)
 const rpcUrl = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
+const wsUrl = process.env.SOLANA_WS_URL;
 const hasExplicitRpc = Boolean(process.env.SOLANA_RPC_URL);
-const connection = new Connection(rpcUrl, 'confirmed');
+const connection = new Connection(rpcUrl, {
+  commitment: 'confirmed',
+  ...(wsUrl ? { wsEndpoint: wsUrl } : {}),
+});
 console.log(`[Settlement] Using Solana RPC: ${rpcUrl}${hasExplicitRpc ? '' : ' (default — set SOLANA_RPC_URL in .env for on-chain settlement)'}`);
 
 // ProgramConfig PDA — derived once, reused for every settle_match call
