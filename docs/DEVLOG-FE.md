@@ -2209,3 +2209,25 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - `next build` validation is currently blocked locally by locked `.next` artifacts (`EPERM`/access denied on unlink/remove), likely due to an external process holding handles. `npm run lint` passes.
 - `allowDevRoomPreview` remains in runtime config for internal UI preview scenarios; if full prod-hardening is desired, this can be removed in a follow-up.
+
+## 2026-05-05 - Battle Settlement UI Switched to Backend-Authoritative Mode
+
+### The Change
+- Refactored [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to remove client-side settlement confirmation flow.
+- Deleted FE-only settlement release state and actions:
+  - removed `releaseState`, `releaseError`, `releaseSignature`
+  - removed `onConfirmFundRelease()` and `getReleaseButtonLabel()`
+  - removed settlement warning alert path derived from `releaseError`
+- Removed client memo-sign settlement dependency usage in battle screen:
+  - removed `useConnection` usage
+  - removed `signSettlementReleaseIntent` usage
+- Replaced "Fund Release Confirmation" card with backend-authoritative settlement card:
+  - displays server-origin `settlementSignature` and `serverPublicKey` from `matchResult` payload when available
+  - otherwise shows waiting message for server settlement payload
+
+### The Reasoning
+- Backend already owns settlement orchestration and signature emission (server oracle flow), so FE should present backend state rather than trigger a second client settlement intent.
+- This avoids duplicate/conflicting settlement semantics and aligns FE with BE E2E contract while keeping services decoupled.
+
+### The Tech Debt
+- FE still cannot show definitive on-chain settlement transaction signature because current WS payload does not include tx hash. If product wants this, BE needs to expose settlement tx id in an event/payload and FE can render it.

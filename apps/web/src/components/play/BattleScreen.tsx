@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { signSettlementReleaseIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
@@ -143,7 +142,6 @@ export function BattleScreen() {
   const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
   const preSignedDepositSig = searchParams.get("depositSig");
   const scientistId = searchParams.get("scientist");
-  const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
 
@@ -186,9 +184,6 @@ export function BattleScreen() {
   const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
   const [opponentBaseFx, setOpponentBaseFx] = useState<BaseFxState>("idle");
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
-  const [releaseState, setReleaseState] = useState<"idle" | "signing" | "submitting" | "success" | "error">("idle");
-  const [releaseError, setReleaseError] = useState<string | null>(null);
-  const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -326,52 +321,6 @@ export function BattleScreen() {
     playCard(activeCard.id, optionId);
   }
 
-  async function onConfirmFundRelease() {
-    if (!settlementResult) return;
-    if (releaseState === "signing" || releaseState === "submitting" || releaseState === "success") {
-      return;
-    }
-
-    setReleaseError(null);
-
-    if (!wallet.publicKey) {
-      setReleaseState("error");
-      setReleaseError("Connect wallet to confirm fund release.");
-      return;
-    }
-
-    setReleaseState("signing");
-
-    try {
-      const signature = await signSettlementReleaseIntent({
-        connection,
-        wallet,
-        matchId: settlementResult.matchId,
-        winner: settlementResult.winner,
-      });
-      setReleaseState("submitting");
-      setReleaseSignature(signature);
-      setReleaseState("success");
-    } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : "";
-      const lower = rawMessage.toLowerCase();
-      const message = lower.includes("declined")
-        ? "Wallet request declined. Approve release confirmation to continue."
-        : lower.includes("insufficient")
-          ? "Insufficient balance for fees. Top up wallet and retry."
-          : "Release confirmation failed. Retry or return to lobby.";
-      setReleaseState("error");
-      setReleaseError(message);
-    }
-  }
-
-  function getReleaseButtonLabel() {
-    if (releaseState === "signing") return "Signing In Wallet...";
-    if (releaseState === "submitting") return "Submitting Confirmation...";
-    if (releaseState === "success") return "Release Confirmed";
-    return "Confirm Fund Release";
-  }
-
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
   const playerRoundsWon = player?.roundsWon ?? 0;
@@ -499,15 +448,6 @@ export function BattleScreen() {
     });
   }
 
-  if (releaseError) {
-    alerts.push({
-      id: `release:${releaseError}`,
-      title: "Settlement Error",
-      message: releaseError,
-      tone: "warning",
-      autoDismissMs: 12000,
-    });
-  }
   const visibleAlerts = alerts.filter((alert) => !dismissedAlerts[alert.id]);
   const autoDismissKeys = visibleAlerts
     .filter((alert) => alert.autoDismissMs > 0)
@@ -534,10 +474,6 @@ export function BattleScreen() {
 
   function dismissAlert(alert: UiAlert) {
     setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
-    if (alert.id.startsWith("release:")) {
-      setReleaseError(null);
-      setReleaseState("idle");
-    }
   }
 
   async function onCopyChallengeLink() {
@@ -1179,35 +1115,28 @@ export function BattleScreen() {
               ))}
             </div>
 
-            {settlementResult && (
-              <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}>
-                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
-                  Fund Release Confirmation
-                </p>
-                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
-                  Confirm release intent after winner announcement.
-                </p>
-                <button
-                  type="button"
-                  onClick={onConfirmFundRelease}
-                  disabled={releaseState === "signing" || releaseState === "submitting" || releaseState === "success"}
-                  className="frame-cut frame-cut-sm mt-3 px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-                >
-                  {getReleaseButtonLabel()}
-                </button>
-                {releaseSignature && (
-                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
-                    Signature: {releaseSignature}
+            <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}>
+              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+                Settlement Authority
+              </p>
+              {settlementResult ? (
+                <>
+                  <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+                    Result signed by backend oracle and submitted by backend settlement flow.
                   </p>
-                )}
-                {!wallet.publicKey && (
-                  <div className="mt-2">
-                    <HydratedWalletButton />
-                  </div>
-                )}
-              </div>
-            )}
+                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
+                    Server Pubkey: {settlementResult.serverPublicKey}
+                  </p>
+                  <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
+                    Settlement Signature: {settlementResult.settlementSignature}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+                  Waiting for server settlement payload...
+                </p>
+              )}
+            </div>
 
             <div className="mt-4">
               <button
