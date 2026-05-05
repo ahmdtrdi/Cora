@@ -141,7 +141,7 @@ export class RoomManager {
     } else {
       for (const room of activeRooms) {
         const players = Array.from(room.clients.keys()).map(a => this.shortAddr(a));
-        const statusIcon = room.status === 'waiting' ? '⏳' : room.status === 'depositing' ? '💰' : room.status === 'playing' ? '⚔️' : '🏁';
+        const statusIcon = room.status === 'waiting' ? '⏳' : room.status === 'depositing' ? '💰' : room.status === 'playing' ? '⚔️' : room.status === 'settling' ? '⚖️' : '🏁';
         const roomShort = room.id.length > 20 ? room.id.slice(0, 20) + '..' : room.id;
         const line = `   ${statusIcon} ${roomShort}`;
         const padR = Math.max(0, W - line.length);
@@ -607,8 +607,13 @@ export class RoomManager {
 
     engine.on('gameOver', (data) => {
       console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress} (${data.reason})`);
-      console.log('FINISHED: Winner determined server-side');
-      room.status = 'finished';
+      console.log('SETTLING: Winner determined server-side, beginning settlement...');
+
+      // ── Transition to 'settling' ──
+      // The match is over but on-chain settlement / anti-cheat evaluation is in progress.
+      // FE should show a settlement UI (e.g. spinner) during this phase.
+      room.status = 'settling';
+      this.broadcastGameState(room);
 
       // --- Anti-Cheat Evaluation ---
       const verdicts = data.antiCheatVerdicts || {};
@@ -665,7 +670,10 @@ export class RoomManager {
         });
       }
 
-      // Final state update
+      // ── Transition to 'finished' ──
+      // Settlement dispatched (async), match is fully complete.
+      room.status = 'finished';
+      console.log(`FINISHED: Room ${room.id} settlement dispatched.`);
       this.broadcastGameState(room);
     });
 
@@ -887,7 +895,9 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    room.status = 'finished';
+    // Transition through settling before finished for consistency
+    room.status = 'settling';
+    this.broadcastGameState(room);
 
     // Clear all opened card timers
     this.clearAllOpenedCards(room);
@@ -911,6 +921,9 @@ export class RoomManager {
       }
     }
 
+    room.status = 'finished';
+    this.broadcastGameState(room);
+
     // Clean up room
     this.rooms.delete(roomId);
   }
@@ -926,7 +939,7 @@ export class RoomManager {
 
       let payload: GameState;
 
-      if (room.engine && (room.status === 'playing' || room.status === 'finished')) {
+      if (room.engine && (room.status === 'playing' || room.status === 'settling' || room.status === 'finished')) {
         // Engine owns the game state
         payload = room.engine.getStateForPlayer(address);
       } else {
