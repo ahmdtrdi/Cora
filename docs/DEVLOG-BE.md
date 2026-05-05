@@ -384,3 +384,42 @@
 
 - [ ] The backend operator wallet is currently paying the 0.002 SOL fee to create the treasury ATA if it doesn't exist. We should ensure the treasury ATAs are pre-funded in production.
 - [ ] `init-config.ts` was run manually. This needs to be part of the production deployment scripts.
+
+---
+
+## 2026-05-05 - Blueprint V2: MagicBlock Ephemeral Rollup Backend Integration
+
+### The Change
+
+**New file:**
+- `apps/api/src/services/magicblock.ts` — `MagicBlockService` class with 3 methods:
+  - `createBattleSession()`: derives BattleSession PDA from `[b"battle", matchId]`, logs creation. Stub for actual `create_session` instruction + ER delegation (depends on `cora-battle` program deployment).
+  - `registerCard()`: stub for `register_cards` instruction submission to ER.
+  - `getSessionState()`: reads BattleSession account from ER RPC, parses the Anchor account binary layout (discriminator + 140 bytes) to extract `healthA`, `healthB`, `scoreA`, `scoreB`, `status`, and `winner`.
+
+**Modified files:**
+- `apps/api/package.json` — Added `@magicblock-labs/bolt-sdk` (v0.2.4) and `@magicblock-labs/ephemeral-rollups-sdk` (v0.13.0).
+- `apps/api/.env` — Appended `MAGICBLOCK_RPC_URL`, `MAGICBLOCK_WS_URL`, `CORA_BATTLE_PROGRAM_ID` (all commented out by default).
+- `apps/api/src/managers/RoomManager.ts` — 4 touch-points:
+  1. Added `import { magicBlockService }` and re-exported `getServerKeypair` from settlement.
+  2. Added `erSessionPda: string | null` to `Room` interface.
+  3. Added `erSessionPda: null` to both `createRoom()` and `createPrivateRoom()`.
+  4. `initializeEngine()` → made `async`, added ER session creation block gated by `process.env.MAGICBLOCK_RPC_URL`. Wrapped in try/catch — failure falls back silently to GameEngine-only.
+  5. `broadcastMatchResult()` → made `async`, added ER winner verification before signing settlement. If ER reports a different winner, ER is source of truth.
+- `apps/api/src/index.ts` — Added `GET /api/match/:roomId/proof` endpoint returning `{ erSessionPda, explorerUrl }` for fairness proof.
+
+### The Reasoning
+
+1. **Parallel Architecture:** The GameEngine remains the active game loop. ER runs alongside as a verifiable, on-chain mirror of game state. This design means zero regression risk — if ER is down or unconfigured, the system behaves exactly like V1.
+2. **Opt-In Activation:** All MagicBlock env vars are commented out in `.env`. The backend only attempts ER interactions when `MAGICBLOCK_RPC_URL` is set. This allows the Web3 lead to deploy the `cora-battle` program independently and flip the switch without any further backend changes.
+3. **ER as Source of Truth:** In `broadcastMatchResult`, when both GameEngine and ER report a winner, ER takes precedence. This establishes the on-chain game state as authoritative — critical for the "provably fair" narrative.
+4. **Fairness Proof Endpoint:** The `/api/match/:roomId/proof` endpoint gives the frontend everything it needs to link to the Solana Explorer, enabling the "✅ Verified on-chain" badge.
+
+### The Tech Debt
+
+- [ ] **Stub instructions:** `createBattleSession` and `registerCard` are stubs — they derive PDAs but don't submit actual Anchor instructions. These need to be wired once the Web3 lead deploys `cora-battle` and provides the program ID.
+- [ ] **Question hash:** `initializeEngine` passes a zeroed `questionHash` to `createBattleSession`. Should hash the actual question set for fairness proof.
+- [ ] **Card registration:** Cards are not registered on ER during gameplay. The `registerCard` flow needs to be called for each card in the player's hand during `initializeEngine`.
+- [ ] **`initializeEngine` is now async:** Callers (`handleDeposit`, `joinRoom`) call it without `await`. This is intentional (fire-and-forget for ER, engine starts synchronously), but unhandled rejections from the ER path should be monitored.
+- [ ] **Manual BattleSession parsing:** `getSessionState` uses hardcoded byte offsets. If the Rust struct changes, parsing breaks silently (same pattern as `settlement.ts`).
+
