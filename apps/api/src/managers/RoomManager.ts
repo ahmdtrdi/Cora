@@ -58,9 +58,40 @@ export class RoomManager {
   private rooms: Map<string, Room> = new Map();
   private matchmakingQueue: Array<{ address: string; ws?: ServerWebSocket<unknown>; resolve: (roomId: string) => void }> = [];
   private DISCONNECT_TIMEOUT_MS = 10_000;  // 10 seconds (only during 'playing')
-  private DEPOSIT_TIMEOUT_MS = 30_000;     // 20 seconds per player during 'depositing'
+  private DEPOSIT_TIMEOUT_MS = 30_000;     // 30 seconds per player during 'depositing'
   private CARD_ANSWER_TIMEOUT_MS = 10_000; // 10 seconds per card
   private CARD_COUNTDOWN_TICK_MS = 1_000;  // 1 second countdown tick
+  private STALE_DEPOSIT_MS = 60_000;       // 60 seconds (2x deposit timeout)
+  private STALE_SETTLING_MS = 30_000;      // 30 seconds
+
+  /** Safe WebSocket send wrapper */
+  private safeSend(ws: ServerWebSocket<unknown> | null | undefined, data: any): void {
+    if (!ws) return;
+    try {
+      ws.send(typeof data === 'string' ? data : JSON.stringify(data));
+    } catch (e) {
+      console.warn(`[SafeSend] WebSocket send failed:`, e);
+    }
+  }
+
+  /** Properly tears down engine and timers before deleting a room */
+  private destroyRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    console.log(`[RoomManager] Destroying room ${roomId}`);
+
+    for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
+    room.depositTimeouts.clear();
+
+    this.clearAllOpenedCards(room);
+
+    if (room.engine) {
+      room.engine.stop();
+    }
+
+    this.rooms.delete(roomId);
+  }
 
   // ─── FIFO Queue Debug Visualization ────────────────────────────
 
@@ -258,28 +289,33 @@ export class RoomManager {
     for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
     room.depositTimeouts.clear();
 
-    // Notify and re-queue the innocent player if they are still WebSocket-connected
+    // Notify and re-queue the innocent player ONLY if they are still WebSocket-connected.
+    // If they've already disconnected (ws is null), they've gone back to the lobby and will
+    // re-queue themselves via a fresh POST /match. Re-queuing with a null WS creates a
+    // phantom entry that blocks their next matchmaking attempt.
     if (innocentAddress) {
       const client = room.clients.get(innocentAddress);
-      if (client?.ws) {
-        client.ws.send(JSON.stringify({ type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage));
+      const innocentWs = client?.ws;
+
+      if (innocentWs) {
+        this.safeSend(innocentWs, { type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage);
+
+        // Re-queue at the front so they are matched next
+        const queueItem = {
+          address: innocentAddress,
+          ws: innocentWs,
+          resolve: (newRoomId: string) => {
+            this.safeSend(innocentWs, { type: 'matchFound', payload: { roomId: newRoomId, role: 'playerA', opponentAddress: '' } } satisfies WsMessage);
+          },
+        };
+        this.matchmakingQueue.unshift(queueItem);
+        console.log(`[Cancel] Re-queued ${innocentAddress} (WS alive).`);
+      } else {
+        console.log(`[Cancel] ${innocentAddress} already disconnected — skipping re-queue.`);
       }
-      // Re-queue at the front so they are matched next
-      const queueItem = {
-        address: innocentAddress,
-        ws: client?.ws ?? undefined,
-        resolve: (newRoomId: string) => {
-          // When re-queued player is paired, notify them via their existing WS if still open
-          const c = room.clients.get(innocentAddress);
-          if (c?.ws) {
-            c.ws.send(JSON.stringify({ type: 'matchFound', payload: { roomId: newRoomId, role: 'playerA', opponentAddress: '' } } satisfies WsMessage));
-          }
-        },
-      };
-      this.matchmakingQueue.unshift(queueItem);
     }
 
-    this.rooms.delete(roomId);
+    this.destroyRoom(roomId);
   }
 
   /**
@@ -307,6 +343,13 @@ export class RoomManager {
     //    This handles retries where the first HTTP response was lost due to proxy/network issues.
     for (const room of this.rooms.values()) {
       if ((room.playerA === address || room.playerB === address) && room.status !== 'finished') {
+        // Staleness guard: if room is stuck depositing/settling, clean it up and allow re-queue
+        if (room.status === 'depositing' && Array.from(room.depositTimeouts.values()).length === 0) {
+            console.log(`[StaleGuard] Room ${room.id} stuck in depositing with no timeouts. Destroying.`);
+            this.destroyRoom(room.id);
+            continue;
+        }
+
         this.printQueueState('♻️  RECONNECT', `${this.shortAddr(address)} already in room ${room.id}`);
         return room.id;
       }
@@ -529,12 +572,10 @@ export class RoomManager {
 
       if (!playerBAlreadyDeposited) {
         const playerBClient = room.clients.get(room.playerB);
-        if (playerBClient?.ws) {
-          playerBClient.ws.send(JSON.stringify({
-            type: 'depositUnlocked',
-            payload: { roomId: room.id },
-          } satisfies WsMessage));
-        }
+        this.safeSend(playerBClient?.ws, {
+          type: 'depositUnlocked',
+          payload: { roomId: room.id },
+        } satisfies WsMessage);
         this.armDepositTimeout(room, room.playerB);
       }
       console.log(`Room ${room.id}: Player A deposited. Player B unlocked.`);
@@ -571,8 +612,8 @@ export class RoomManager {
       return;
     }
 
-//     const addresses: [string, string] = [room.playerA, room.playerB];
-    const addresses = Array.from(room.clients.keys()) as [string, string];
+//     const addresses = Array.from(room.clients.keys()) as [string, string];
+    const addresses: [string, string] = [room.playerA, room.playerB];
     const playersInfo: [{ address: string; characterId: string }, { address: string; characterId: string }] = [
       { address: addresses[0], characterId: room.playerMeta.get(addresses[0])?.characterId || 'einstein' },
       { address: addresses[1], characterId: room.playerMeta.get(addresses[1])?.characterId || 'einstein' }
@@ -615,66 +656,75 @@ export class RoomManager {
       room.status = 'settling';
       this.broadcastGameState(room);
 
-      // --- Anti-Cheat Evaluation ---
-      const verdicts = data.antiCheatVerdicts || {};
-      let isRejected = false;
-      let cheaterAddress: string | null = null;
-      let isSuspicious = false;
+      try {
+        // --- Anti-Cheat Evaluation ---
+        const verdicts = data.antiCheatVerdicts || {};
+        let isRejected = false;
+        let cheaterAddress: string | null = null;
+        let isSuspicious = false;
 
-      console.log(`[Anti-Cheat] Room ${room.id} verdicts:`);
-      for (const [address, verdict] of Object.entries(verdicts)) {
-        console.log(` - Player ${address}: ${verdict.verdict.toUpperCase()} (Score: ${verdict.trustScore.toFixed(2)})`);
-        if (verdict.verdict === 'rejected') {
-          isRejected = true;
-          cheaterAddress = address; // Keep track of the cheater
-          console.warn(`[Anti-Cheat] WARNING: Player ${address} was rejected for flags:`, verdict.flags.map(f => f.signal).join(', '));
-        } else if (verdict.verdict === 'suspicious') {
-          isSuspicious = true;
-          console.warn(`[Anti-Cheat] WARNING: Player ${address} is suspicious. Flags:`, verdict.flags.map(f => f.signal).join(', '));
+        console.log(`[Anti-Cheat] Room ${room.id} verdicts:`);
+        for (const [address, verdict] of Object.entries(verdicts)) {
+          console.log(` - Player ${address}: ${verdict.verdict.toUpperCase()} (Score: ${verdict.trustScore.toFixed(2)})`);
+          if (verdict.verdict === 'rejected') {
+            isRejected = true;
+            cheaterAddress = address; // Keep track of the cheater
+            console.warn(`[Anti-Cheat] WARNING: Player ${address} was rejected for flags:`, verdict.flags.map(f => f.signal).join(', '));
+          } else if (verdict.verdict === 'suspicious') {
+            isSuspicious = true;
+            console.warn(`[Anti-Cheat] WARNING: Player ${address} is suspicious. Flags:`, verdict.flags.map(f => f.signal).join(', '));
+          }
+
+          // Log raw stats for future ML collection
+          console.log(`[Anti-Cheat] Stats for ${address}:`, JSON.stringify(verdict.stats));
         }
 
-        // Log raw stats for future ML collection
-        console.log(`[Anti-Cheat] Stats for ${address}:`, JSON.stringify(verdict.stats));
+        if (isRejected && cheaterAddress) {
+          console.error(`[Anti-Cheat] Match in Room ${room.id} REJECTED. Handling anti-cheat settlement.`);
+
+          // Anti-cheat settlement: action = 1, target = cheaterAddress
+          this.broadcastAntiCheatPenalty(room, cheaterAddress);
+
+          const result: MatchResult = {
+            winnerAddress: data.winnerAddress,
+            reason: 'anti_cheat',
+            finalScores: engine.getScores(),
+            finalHealth: engine.getHealth(),
+          };
+
+          this.broadcastToRoom(room, {
+            type: 'matchInvalidated',
+            payload: result,
+          });
+        } else {
+          const result: MatchResult = {
+            winnerAddress: data.winnerAddress,
+            reason: data.reason,
+            finalScores: engine.getScores(),
+            finalHealth: engine.getHealth(),
+            antiCheatWarning: isSuspicious,
+          };
+
+          this.broadcastMatchResult(room, data.winnerAddress);
+          this.broadcastToRoom(room, {
+            type: 'matchResult',
+            payload: result,
+          });
+        }
+      } catch (e) {
+        console.error(`[RoomManager] Error during game over processing for room ${room.id}:`, e);
+      } finally {
+        // ── Transition to 'finished' ──
+        // Settlement dispatched (async), match is fully complete.
+        room.status = 'finished';
+        console.log(`FINISHED: Room ${room.id} settlement dispatched.`);
+        this.broadcastGameState(room);
+        
+        // Clean up the room after 15 seconds to give clients time to disconnect/receive final states
+        setTimeout(() => {
+          this.destroyRoom(room.id);
+        }, 15_000);
       }
-
-      if (isRejected && cheaterAddress) {
-        console.error(`[Anti-Cheat] Match in Room ${room.id} REJECTED. Handling anti-cheat settlement.`);
-
-        // Anti-cheat settlement: action = 1, target = cheaterAddress
-        this.broadcastAntiCheatPenalty(room, cheaterAddress);
-
-        const result: MatchResult = {
-          winnerAddress: data.winnerAddress,
-          reason: 'anti_cheat',
-          finalScores: engine.getScores(),
-          finalHealth: engine.getHealth(),
-        };
-
-        this.broadcastToRoom(room, {
-          type: 'matchInvalidated',
-          payload: result,
-        });
-      } else {
-        const result: MatchResult = {
-          winnerAddress: data.winnerAddress,
-          reason: data.reason,
-          finalScores: engine.getScores(),
-          finalHealth: engine.getHealth(),
-          antiCheatWarning: isSuspicious,
-        };
-
-        this.broadcastMatchResult(room, data.winnerAddress);
-        this.broadcastToRoom(room, {
-          type: 'matchResult',
-          payload: result,
-        });
-      }
-
-      // ── Transition to 'finished' ──
-      // Settlement dispatched (async), match is fully complete.
-      room.status = 'finished';
-      console.log(`FINISHED: Room ${room.id} settlement dispatched.`);
-      this.broadcastGameState(room);
     });
 
     engine.on('roundOver', (data) => {
@@ -736,12 +786,10 @@ export class RoomManager {
 
     // Send initial countdown immediately
     const client = room.clients.get(address);
-    if (client?.ws) {
-      client.ws.send(JSON.stringify({
-        type: 'cardCountdown',
-        payload: { cardId, remainingMs: this.CARD_ANSWER_TIMEOUT_MS },
-      }));
-    }
+    this.safeSend(client?.ws, {
+      type: 'cardCountdown',
+      payload: { cardId, remainingMs: this.CARD_ANSWER_TIMEOUT_MS },
+    });
 
     // Countdown tick every 1 second
     const countdownInterval = setInterval(() => {
@@ -749,12 +797,10 @@ export class RoomManager {
       const remaining = Math.max(0, this.CARD_ANSWER_TIMEOUT_MS - elapsed);
 
       const c = room.clients.get(address);
-      if (c?.ws) {
-        c.ws.send(JSON.stringify({
-          type: 'cardCountdown',
-          payload: { cardId, remainingMs: remaining },
-        }));
-      }
+      this.safeSend(c?.ws, {
+        type: 'cardCountdown',
+        payload: { cardId, remainingMs: remaining },
+      });
     }, this.CARD_COUNTDOWN_TICK_MS);
 
     // Timeout: auto-expire the card after 10 seconds
@@ -788,12 +834,10 @@ export class RoomManager {
 
     // Notify the player that the card expired
     const client = room.clients.get(address);
-    if (client?.ws) {
-      client.ws.send(JSON.stringify({
-        type: 'cardExpired',
-        payload: { cardId },
-      }));
-    }
+    this.safeSend(client?.ws, {
+      type: 'cardExpired',
+      payload: { cardId },
+    });
 
     // Broadcast live scores after expiry
     this.broadcastScoreUpdate(room);
@@ -842,18 +886,16 @@ export class RoomManager {
 
     // Broadcast play result to the player who played
     const client = room.clients.get(address);
-    if (client?.ws) {
-      client.ws.send(JSON.stringify({
-        type: 'playCardResult',
-        payload: {
-          correct: result.correct,
-          damage: result.damage,
-          heal: result.heal,
-          multiplier: result.multiplier,
-          cardType: result.cardType,
-        },
-      }));
-    }
+    this.safeSend(client?.ws, {
+      type: 'playCardResult',
+      payload: {
+        correct: result.correct,
+        damage: result.damage,
+        heal: result.heal,
+        multiplier: result.multiplier,
+        cardType: result.cardType,
+      },
+    });
 
     // Broadcast live scores to both players
     this.broadcastScoreUpdate(room);
@@ -925,7 +967,7 @@ export class RoomManager {
     this.broadcastGameState(room);
 
     // Clean up room
-    this.rooms.delete(roomId);
+    this.destroyRoom(roomId);
   }
 
   // ─── Broadcasting ─────────────────────────────────────────────
@@ -993,10 +1035,10 @@ export class RoomManager {
         };
       }
 
-      client.ws.send(JSON.stringify({
+      this.safeSend(client.ws, {
         type: 'gameStateUpdate',
         payload,
-      } as WsMessage<GameState>));
+      } as WsMessage<GameState>);
     }
   }
 
@@ -1025,10 +1067,10 @@ export class RoomManager {
         opponentHealth: health[opponentAddress] ?? 0,
       };
 
-      client.ws.send(JSON.stringify({
+      this.safeSend(client.ws, {
         type: 'scoreUpdate',
         payload: scoreData,
-      }));
+      });
     }
   }
 
@@ -1038,9 +1080,7 @@ export class RoomManager {
   private broadcastToRoom(room: Room, message: WsMessage) {
     const raw = JSON.stringify(message);
     for (const client of room.clients.values()) {
-      if (client.ws) {
-        client.ws.send(raw);
-      }
+      this.safeSend(client.ws, raw);
     }
   }
 
@@ -1062,17 +1102,15 @@ export class RoomManager {
       .catch(err => console.error(`[RoomManager] Auto-settlement failed:`, err));
 
     for (const client of room.clients.values()) {
-      if (client.ws) {
-        client.ws.send(JSON.stringify({
-          type: 'matchResult',
-          payload: {
-            winner: winnerAddress,
-            matchId: Buffer.from(room.matchIdBytes).toString('hex'),
-            settlementSignature,
-            serverPublicKey,
-          }
-        } as WsMessage));
-      }
+      this.safeSend(client.ws, {
+        type: 'matchResult',
+        payload: {
+          winner: winnerAddress,
+          matchId: Buffer.from(room.matchIdBytes).toString('hex'),
+          settlementSignature,
+          serverPublicKey,
+        }
+      } as WsMessage);
     }
   }
   /**

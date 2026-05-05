@@ -310,7 +310,7 @@ export class GameEngine {
    * Build the GameState payload for a specific player.
    * Each player sees their own hand but not the opponent's.
    */
-  getStateForPlayer(address: string): GameState {
+  getStateForPlayer(address: string): Omit<GameState, 'tokenMint' | 'wagerAmount' | 'roomType'> {
     const player = this.players.get(address)!;
     const opponentAddress = this.playerAddresses.find(a => a !== address)!;
     const opponent = this.players.get(opponentAddress)!;

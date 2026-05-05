@@ -126,9 +126,10 @@ export function OpponentFound({
 
   useEffect(() => {
     if (!opponentFailedDepositAt) return;
+    // Give the user time to read the "opponent didn't deposit" status before navigating back
     const timerId = setTimeout(() => {
       onTimeout();
-    }, 1200);
+    }, 3500);
     return () => clearTimeout(timerId);
   }, [opponentFailedDepositAt, onTimeout]);
 
@@ -237,6 +238,38 @@ export function OpponentFound({
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
+      {/* Opponent failed to deposit popup */}
+      {opponentFailedDepositAt && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid #c0392b",
+              background: "linear-gradient(145deg, #2c1810 0%, #3d1f14 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[#e74c3c]">
+              Match Cancelled
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+              Your opponent did not sign the deposit in time. Returning to character select...
+            </p>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.15)]">
+              <div
+                className="h-full"
+                style={{
+                  width: "100%",
+                  background: "#e74c3c",
+                  animationName: "alertDrain",
+                  animationDuration: "3500ms",
+                  animationTimingFunction: "linear",
+                  animationFillMode: "forwards",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       {errorVisible && errorText && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
