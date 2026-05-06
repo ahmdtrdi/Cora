@@ -137,6 +137,19 @@ app.post('/match/private', async (c) => {
   return c.json({ roomId, blinkUrl });
 });
 
+// Battle session fairness proof (ER session PDA + Solana Explorer link)
+app.get('/api/match/:roomId/proof', (c) => {
+  const roomId = c.req.param('roomId');
+  const room = roomManager.getRoom(roomId);
+  if (!room?.erSessionPda) {
+    return c.json({ error: 'No ER session for this match' }, 404);
+  }
+  return c.json({
+    erSessionPda: room.erSessionPda,
+    explorerUrl: `https://explorer.solana.com/address/${room.erSessionPda}?cluster=devnet`,
+  });
+});
+
 // WebSocket match route
 app.get('/match/:roomId', upgradeWebSocket((c) => {
   const roomId = c.req.param('roomId');

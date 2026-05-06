@@ -644,7 +644,16 @@ export function LobbyScreen() {
               arena={selectedArena}
               wagerUsd={FIXED_WAGER_USD}
               onTimeout={() => {
+                // Fully reset matchmaking state — abort any hanging HTTP request,
+                // clear timers, and go back to character-select so the user can
+                // re-queue cleanly without phantom queue entries.
+                matchmakingAbortRef.current?.abort();
+                matchmakingAbortRef.current = null;
+                clearFoundTransitionTimers();
                 setMatchedRoomId(null);
+                setMatchmakingState("idle");
+                setMatchmakingStage("finding");
+                setMatchmakingError(null);
                 setPhase("character-select");
               }}
             />
