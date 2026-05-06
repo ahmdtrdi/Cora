@@ -2354,3 +2354,25 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Balance values remain dependent on backend playability normalization; until BE endpoint is live/reliable, chip may show `Inspecting...` / `Unavailable` / `--` fallback states.
+
+## 2026-05-06 - Play Screen Character Sprite Wiring (stay/action)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to render character art assets from `public/assets/characters/{scientistId}/{state}.png` directly inside the existing 4:5 portrait slots.
+- Added sprite state resolution for /play portraits:
+  - maps backend/shared CharacterState to sprite state (stay or action)
+  - preserves local action pulse behavior by forcing action during damage animation windows.
+- Switched portrait rendering from initials-only placeholders to next/image with fallback:
+  - if sprite exists, render image
+  - if sprite missing or fails to load, fallback to previous initial-letter placeholder so gameplay UI does not break.
+- Kept all gameplay logic untouched (socket contract, damage logic, cards, settlement, history).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- FE needed to consume designer-delivered scientist assets in /play without changing backend contracts.
+- Using shared-type-compatible states (stay, action) keeps naming and runtime behavior aligned across FE/BE.
+- Graceful fallback avoids runtime breakage while asset delivery is still in progress.
+
+### The Tech Debt
+- Current repository assets include turing and curie states, but einstein sprite files are not present yet; Einstein currently renders fallback initials until those files are added.
+- We currently support the shipped states (stay, action) only. If future character states (angry, happy) get dedicated art, we should extend the mapping and asset set.
