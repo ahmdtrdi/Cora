@@ -41,8 +41,8 @@ const CHARACTERS: CharacterOption[] = [
     initial: "C",
   },
   {
-    id: "newton",
-    name: "Isaac Newton",
+    id: "einstein",
+    name: "Albert Einstein",
     base: "The Observatory",
     stats: [
       { label: "Physics", value: 90 },
@@ -50,7 +50,7 @@ const CHARACTERS: CharacterOption[] = [
     ],
     accentColor: "#f8d694",
     portraitBg: "linear-gradient(160deg, #12122a 0%, #1e1e3f 60%, #080814 100%)",
-    initial: "N",
+    initial: "E",
   },
 ];
 
@@ -119,7 +119,7 @@ const PRESETS: Preset[] = [
     selectionState: "auto_assigned",
     opponentStatus: "auto_assigned",
     depositStatus: "waiting_opponent",
-    autoAssignedCharacterId: "newton",
+    autoAssignedCharacterId: "einstein",
     deadlineMs: 0,
   },
   {

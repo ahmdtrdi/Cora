@@ -9,7 +9,7 @@ import {
   sendAndConfirmTransaction,
   TransactionInstruction,
 } from '@solana/web3.js';
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import { buildSettlementMessage, ESCROW_CONSTANTS } from '@shared/escrow';
@@ -76,8 +76,12 @@ const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W')
 
 // Singleton connection — reuse instead of creating per call (avoids connection churn)
 const rpcUrl = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
+const wsUrl = process.env.SOLANA_WS_URL;
 const hasExplicitRpc = Boolean(process.env.SOLANA_RPC_URL);
-const connection = new Connection(rpcUrl, 'confirmed');
+const connection = new Connection(rpcUrl, {
+  commitment: 'confirmed',
+  ...(wsUrl ? { wsEndpoint: wsUrl } : {}),
+});
 console.log(`[Settlement] Using Solana RPC: ${rpcUrl}${hasExplicitRpc ? '' : ' (default — set SOLANA_RPC_URL in .env for on-chain settlement)'}`);
 
 // ProgramConfig PDA — derived once, reused for every settle_match call
@@ -204,7 +208,16 @@ export async function submitSettlementTransaction(
     ],
   });
 
-  const tx = new Transaction().add(ed25519Ix).add(settleMatchIx);
+  const tx = new Transaction().add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      serverKeypair.publicKey, // payer
+      treasuryTa, // ata
+      treasuryKey, // owner
+      tokenMint // mint
+    ),
+    ed25519Ix,
+    settleMatchIx
+  );
   
   console.log(`[Settlement] Submitting settle_match for match: ${Buffer.from(matchId).toString('hex')}`);
   console.log(`[Settlement] Target: ${targetAddress}`);

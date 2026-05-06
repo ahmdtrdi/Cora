@@ -97,24 +97,19 @@ describe('RoomManager', () => {
       expect(room).toBeDefined();
     });
 
-    test('prevents self-matching', async () => {
-      // Same player queues twice — should NOT be paired
+    test('prevents self-matching (chains duplicates)', async () => {
+      // Same player queues twice — the second request chains to the first
       const p1Promise = manager.queueMatch('player1');
-
-      // Queue second with same address — also blocks
       const p2Promise = manager.queueMatch('player1');
 
-      // Now a different player arrives — pairs with the first
+      // Now a different player arrives — pairs with player1
       const roomId3 = await manager.queueMatch('player2');
       const roomId1 = await p1Promise;
-
-      expect(roomId1).toBe(roomId3);
-
-      // p2 should still be pending (same address as paired player 1)
-      // Pair it with yet another player
-      const roomIdFinal = await manager.queueMatch('player3');
       const roomId2 = await p2Promise;
-      expect(roomId2).toBe(roomIdFinal);
+
+      // Both promises should resolve to the same room because they were chained
+      expect(roomId1).toBe(roomId3);
+      expect(roomId2).toBe(roomId3);
     });
 
     test('abort signal removes player from queue', async () => {

@@ -2,17 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { HistoryButton } from "@/components/history/HistoryButton";
+import { HistoryDrawer } from "@/components/history/HistoryDrawer";
+import { WalletInspectButton } from "@/components/history/WalletInspectButton";
+import { WalletInspectPanel } from "@/components/history/WalletInspectPanel";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
+import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
+import { getArenaHistory } from "@/lib/history/historyApi";
+import type { MatchHistoryItem } from "@/lib/history/historyTypes";
 import { RoomStatusRail } from "@/components/room/RoomStatusRail";
 import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
-import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -44,8 +49,6 @@ export function OpponentFound({
   wagerUsd,
   onTimeout,
 }: OpponentFoundProps) {
-  const runtimeConfig = getRuntimeConfig();
-  const allowDevCharacterFallback = runtimeConfig.allowDevCharacterFallback;
   const router = useRouter();
   const { connection } = useConnection();
   const wallet = useWallet();
@@ -54,6 +57,13 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
+  const [showRoomStatus, setShowRoomStatus] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState<MatchHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
+  const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
   const depositIntentConfirmedRef = useRef(false);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
@@ -65,11 +75,13 @@ export function OpponentFound({
     lastSocketError,
     depositUnlockedAt,
     opponentFailedDepositAt,
+    lastMatchFound,
     confirmDeposit,
     reconnect,
   } = useMatchSocket({
     roomId,
     address: walletAddress,
+    characterId: myScientist.id,
   });
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
@@ -80,9 +92,19 @@ export function OpponentFound({
     signingState !== "waiting" &&
     !signed;
 
-  const opponentScientist = allowDevCharacterFallback && opponentAddress
-    ? scientists[Math.abs(opponentAddress.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % scientists.length]
-    : null;
+  const opponentScientist =
+    scientists.find((scientist) => scientist.id === gameState?.opponent?.characterId) ?? null;
+  const reassignedRoomId =
+    lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
+  const {
+    statusLabel: playabilityLabel,
+    statusTone: playabilityTone,
+  } = useWalletArenaPlayability({
+    address: wallet.publicKey?.toBase58() ?? "",
+    arenaId: arena.id,
+    token: arena.token,
+    enabled: Boolean(wallet.publicKey),
+  });
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -181,7 +203,39 @@ export function OpponentFound({
     return () => clearTimeout(timerId);
   }, [errorVisible]);
 
+  useEffect(() => {
+    if (!historyOpen) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setHistoryLoading(true);
+      setHistoryError(null);
+    });
+
+    getArenaHistory(arena.id)
+      .then((items) => {
+        if (cancelled) return;
+        setHistoryItems(items);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "History unavailable. Try again later.";
+        setHistoryError(message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [historyOpen, arena.id]);
+
   function getDepositHint() {
+    if (reassignedRoomId) {
+      return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
+    }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
@@ -233,15 +287,18 @@ export function OpponentFound({
   }
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 text-[#1f2b24] md:px-6">
+    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
       {errorVisible && errorText && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
-            className="frame-cut px-3 py-2"
-            style={{ border: "1px solid rgba(186,105,49,0.34)", background: "rgba(255,250,242,0.97)" }}
+            className="frame-cut px-3 py-2 shadow-xl backdrop-blur-md"
+            style={{
+              border: "2px solid var(--tone-clay)",
+              background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            }}
           >
             <div className="flex items-start justify-between gap-2">
-              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
                 Deposit Signing Error
               </p>
               <button
@@ -251,21 +308,21 @@ export function OpponentFound({
                   setErrorText(null);
                   setSigningState("idle");
                 }}
-                className="font-gabarito text-xs font-bold leading-none text-[#7c4a36]"
+                className="font-gabarito text-xs font-bold leading-none text-[var(--tone-bark)] opacity-60 hover:opacity-100"
                 aria-label="Close alert"
               >
                 X
               </button>
             </div>
-            <p className="mt-1 break-words font-gabarito text-xs text-[#73512d]">
+            <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
               {errorText}
             </p>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(39,65,55,0.14)]">
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(0,0,0,0.15)]">
               <div
                 className="h-full"
                 style={{
                   width: "100%",
-                  background: "linear-gradient(90deg,#d9a85b,#ba6931)",
+                  background: "var(--tone-clay)",
                   animationName: "alertDrain",
                   animationDuration: "12000ms",
                   animationTimingFunction: "linear",
@@ -276,118 +333,252 @@ export function OpponentFound({
           </div>
         </div>
       )}
-      <p className="font-gabarito text-[11px] uppercase tracking-[0.26em]" style={{ color: arena.accent }}>
-        Match found - {arena.label}
-      </p>
-      <h1 className="mt-2 font-caprasimo text-4xl text-[#1f2b24] md:text-5xl">Opponent found</h1>
 
-      <div className="mt-8 grid w-full grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
-        <div className="frame-cut p-4" style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.85)" }}>
-          <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6b8274]">You</p>
-          <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">{myScientist.name}</p>
-          <p className="mt-1 font-gabarito text-xs text-[#4c6156]">{myScientist.base}</p>
-          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">{shortWallet(walletAddress)}</p>
-        </div>
-
-        <div className="grid place-items-center px-2">
-          <div className="font-caprasimo text-3xl" style={{ color: arena.accent }}>VS</div>
-        </div>
-
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.34 }}
-          className="frame-cut p-4"
-          style={{ border: `1px solid ${arena.frame}`, background: "rgba(255,255,255,0.85)" }}
+      <div className="mb-4 flex w-full items-center justify-between gap-2">
+        <span
+          className="frame-cut frame-cut-sm px-3 py-1.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+          style={{
+            border: playabilityTone === "warning" ? "1px solid rgba(186,105,49,0.75)" : "1px solid rgba(157,180,150,0.58)",
+            color: playabilityTone === "warning" ? "#f8d694" : "#d8ead4",
+            background: "rgba(16,26,22,0.72)",
+          }}
         >
-          <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6b8274]">Opponent</p>
-          <p className="mt-1 font-caprasimo text-xl text-[#1f2b24]">
-            {opponentScientist?.name ?? "Syncing Rival..."}
-          </p>
-          <p className="mt-1 font-gabarito text-xs text-[#4c6156]">
-            {opponentScientist?.base ?? "Waiting for opponent identity sync."}
-          </p>
-          <p className="mt-4 font-gabarito text-xs text-[#6b8274]">
-            {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
-          </p>
-        </motion.div>
+          {playabilityLabel}
+        </span>
+        <div className="flex items-center gap-2">
+          <HistoryButton onClick={() => setHistoryOpen(true)} />
+          <button
+            type="button"
+            onClick={() => setShowRoomStatus((value) => !value)}
+            className="rounded-full border border-[rgba(248,214,148,0.46)] bg-[rgba(16,26,22,0.5)] px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--tone-cream)] transition-colors hover:bg-[rgba(16,26,22,0.66)]"
+          >
+            {showRoomStatus ? "Hide Room Status" : "Show Room Status"}
+          </button>
+        </div>
       </div>
 
-      <div className="mt-4 w-full">
-        <RoomStatusRail
-          rows={[
-            {
-              id: "you",
-              label: "You",
-              subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
-              badges: getPlayerBadges(),
-            },
-            {
-              id: "opponent",
-              label: "Opponent",
-              subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
-              badges: getOpponentBadges(),
-            },
-          ]}
+      <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
+        {arena.label} · ${wagerUsd} {arena.token}
+      </p>
+      <h1 className="mt-2 text-center font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
+        Rival Locked
+      </h1>
+      <p className="mt-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+        Sign the deposit before the timer expires.
+      </p>
+
+      <div className="mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+        <div
+          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          style={{
+            border: "2px solid rgba(111,58,40,0.62)",
+            background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.34)",
+          }}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
+          <div className="relative flex items-center gap-4">
+            <div
+              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              style={{
+                border: "2px solid rgba(111,58,40,0.6)",
+                background: myScientist.portraitBg,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+            >
+              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                {myScientist.initial}
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
+                You
+              </span>
+              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
+              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <p className="font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+                {walletAddress && (
+                  <WalletInspectButton
+                    label="Inspect"
+                    onClick={() => {
+                      setInspectTargetTitle("Your Wallet");
+                      setInspectTargetAddress(walletAddress);
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid place-items-center px-6">
+          <div className="animate-orb-breath font-caprasimo text-6xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)]" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+            VS
+          </div>
+        </div>
+
+        <div
+          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          style={{
+            border: "2px solid rgba(111,58,40,0.62)",
+            background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            boxShadow: "0 14px 30px rgba(0,0,0,0.34)",
+          }}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
+          <div className="relative flex items-center gap-4">
+            <div
+              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              style={{
+                border: "2px solid rgba(111,58,40,0.6)",
+                background: opponentScientist?.portraitBg ?? "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+            >
+              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                {opponentScientist?.initial ?? "R"}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
+                Rival
+              </span>
+              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
+                {opponentScientist?.name ?? "Rival Synced"}
+              </p>
+              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
+                {opponentScientist?.base ?? "Opponent identity confirmed"}
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <p className="font-mono text-xs font-semibold text-[var(--tone-forest)]">
+                  {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+                </p>
+                {opponentAddress && (
+                  <WalletInspectButton
+                    label="Inspect"
+                    onClick={() => {
+                      setInspectTargetTitle("Rival Wallet");
+                      setInspectTargetAddress(opponentAddress);
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
+        style={{
+          borderColor: "rgba(248,214,148,0.35)",
+          background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
+        }}
+      >
+        <DepositPanel
+          token={arena.token}
+          wagerUsd={wagerUsd}
+          status={getDepositStatus()}
+          helperText={getDepositHint()}
+          countdownSeconds={secondsLeft}
+          signature={signedDepositSignature}
+          canPrimaryAction={canAttemptSign}
+          primaryActionLabel={getPrimaryButtonLabel()}
+          onPrimaryAction={onSignDeposit}
+          walletSlot={
+            !wallet.publicKey ? (
+              <div className="pt-1">
+                <HydratedWalletButton />
+              </div>
+            ) : null
+          }
+          retrySlot={
+            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
+              <button
+                type="button"
+                onClick={reconnect}
+                className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+              >
+                Retry Connection
+              </button>
+            ) : null
+          }
+          cancelSlot={
+            <button
+              type="button"
+              onClick={onTimeout}
+              className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+            >
+              Cancel Match
+            </button>
+          }
+          extraSlot={
+            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
+              <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}>
+                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
+                  {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
+                </p>
+                <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
+                  {connectionState === "reconnecting"
+                    ? "Trying to restore room state. Keep this page open."
+                    : lastSocketCloseInfo
+                    ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
+                    : lastSocketError ?? "Socket disconnected."}
+                </p>
+              </div>
+            ) : null
+          }
         />
       </div>
 
-      <DepositPanel
-        token={arena.token}
-        wagerUsd={wagerUsd}
-        status={getDepositStatus()}
-        helperText={getDepositHint()}
-        countdownSeconds={secondsLeft}
-        signature={signedDepositSignature}
-        canPrimaryAction={canAttemptSign}
-        primaryActionLabel={getPrimaryButtonLabel()}
-        onPrimaryAction={onSignDeposit}
-        walletSlot={
-          !wallet.publicKey ? (
-            <div className="pt-1">
-              <HydratedWalletButton />
-            </div>
-          ) : null
-        }
-        retrySlot={
-          connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-            <button
-              type="button"
-              onClick={reconnect}
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
-            >
-              Retry Connection
-            </button>
-          ) : null
-        }
-        cancelSlot={
-          <button
-            type="button"
-            onClick={onTimeout}
-            className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-            style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
-          >
-            Cancel Match
-          </button>
-        }
-        extraSlot={
-          connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-            <div className="mt-2 frame-cut px-3 py-2" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
-              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
-                {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
-              </p>
-              <p className="mt-1 break-words font-gabarito text-xs text-[#73512d]">
-                {connectionState === "reconnecting"
-                  ? "Trying to restore room state. Keep this page open."
-                  : lastSocketCloseInfo
-                  ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
-                  : lastSocketError ?? "Socket disconnected."}
-              </p>
-            </div>
-          ) : null
-        }
+      {showRoomStatus && (
+        <div
+          className="mt-5 w-full rounded-2xl border p-4 shadow-lg"
+          style={{
+            borderColor: "rgba(248,214,148,0.32)",
+            background: "linear-gradient(160deg, rgba(12,21,17,0.62), rgba(19,32,26,0.62))",
+          }}
+        >
+          <RoomStatusRail
+            rows={[
+              {
+                id: "you",
+                label: "You",
+                subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
+                badges: getPlayerBadges(),
+              },
+              {
+                id: "opponent",
+                label: "Opponent",
+                subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
+                badges: getOpponentBadges(),
+              },
+            ]}
+          />
+        </div>
+      )}
+
+      <HistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        title={`${arena.token} Match History`}
+        items={historyItems}
+        loading={historyLoading}
+        error={historyError}
       />
+
+      {inspectTargetAddress && (
+        <WalletInspectPanel
+          open={Boolean(inspectTargetAddress)}
+          onClose={() => setInspectTargetAddress(null)}
+          address={inspectTargetAddress}
+          arenaId={arena.id}
+          token={arena.token}
+          title={inspectTargetTitle}
+        />
+      )}
     </div>
   );
 }

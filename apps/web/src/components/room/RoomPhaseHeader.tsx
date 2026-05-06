@@ -10,6 +10,7 @@ type RoomPhaseHeaderProps = {
   subtitle?: ReactNode;
   statusSlot?: ReactNode;
   rightPanelSlot?: ReactNode;
+  preHeadingSlot?: ReactNode;
 };
 
 export function RoomPhaseHeader({
@@ -18,19 +19,21 @@ export function RoomPhaseHeader({
   subtitle,
   statusSlot,
   rightPanelSlot,
+  preHeadingSlot,
 }: RoomPhaseHeaderProps) {
   const labels = ROOM_PHASE_LABELS[phase];
 
   return (
-    <header className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-start">
+    <header className="mb-4 grid grid-cols-1 gap-2.5 md:grid-cols-[1fr_auto] md:items-start">
       <div>
-        <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">
+        {preHeadingSlot ? <div className="mb-3">{preHeadingSlot}</div> : null}
+        <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[#f8d694]">
           {labels.eyebrow}
         </p>
-        <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#1f2b24] md:text-5xl">
+        <h1 className="mt-2 font-caprasimo text-[2rem] leading-none text-[#fff8ea] drop-shadow-[0_5px_10px_rgba(0,0,0,0.45)] md:text-[2.6rem]">
           {title ?? labels.title}
         </h1>
-        <p className="mt-2 font-gabarito text-sm text-[#3c5044]">
+        <p className="mt-2 max-w-2xl font-gabarito text-[13px] text-[rgba(244,240,230,0.9)]">
           {subtitle ?? labels.subtitle}
         </p>
       </div>

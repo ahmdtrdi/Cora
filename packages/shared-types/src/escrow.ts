@@ -86,5 +86,6 @@ export const GAME_TO_CHAIN_STATUS: Record<string, OnChainMatchStatus | null> = {
   waiting: null,       // Off-chain only — before initialize_match is called
   depositing: 'WaitingDeposit',
   playing: 'Active',
+  settling: 'Active',  // On-chain still Active until settlement tx confirms
   finished: null,      // Could be 'Settled' or 'Refunded' — determined by settlement flow
 };

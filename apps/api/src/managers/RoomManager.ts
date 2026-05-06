@@ -58,7 +58,7 @@ export class RoomManager {
   private rooms: Map<string, Room> = new Map();
   private matchmakingQueue: Array<{ address: string; ws?: ServerWebSocket<unknown>; resolve: (roomId: string) => void }> = [];
   private DISCONNECT_TIMEOUT_MS = 10_000;  // 10 seconds (only during 'playing')
-  private DEPOSIT_TIMEOUT_MS = 20_000;     // 20 seconds per player during 'depositing'
+  private DEPOSIT_TIMEOUT_MS = 30_000;     // 20 seconds per player during 'depositing'
   private CARD_ANSWER_TIMEOUT_MS = 10_000; // 10 seconds per card
   private CARD_COUNTDOWN_TICK_MS = 1_000;  // 1 second countdown tick
 
@@ -141,7 +141,7 @@ export class RoomManager {
     } else {
       for (const room of activeRooms) {
         const players = Array.from(room.clients.keys()).map(a => this.shortAddr(a));
-        const statusIcon = room.status === 'waiting' ? '⏳' : room.status === 'depositing' ? '💰' : room.status === 'playing' ? '⚔️' : '🏁';
+        const statusIcon = room.status === 'waiting' ? '⏳' : room.status === 'depositing' ? '💰' : room.status === 'playing' ? '⚔️' : room.status === 'settling' ? '⚖️' : '🏁';
         const roomShort = room.id.length > 20 ? room.id.slice(0, 20) + '..' : room.id;
         const line = `   ${statusIcon} ${roomShort}`;
         const padR = Math.max(0, W - line.length);
@@ -480,10 +480,9 @@ export class RoomManager {
         this.forfeitMatch(roomId, address);
       }, this.DISCONNECT_TIMEOUT_MS);
     } else if (room.status === 'depositing') {
-      // Hard disconnect during deposit phase = immediate cancel; shot clock would fire anyway
-      console.log(`Player ${address} disconnected during depositing in room ${roomId}. Cancelling.`);
-      const opponent = address === room.playerA ? room.playerB : room.playerA;
-      this.cancelRoom(roomId, opponent ?? undefined);
+      // Let the deposit shot clock (DEPOSIT_TIMEOUT_MS) handle cancellation
+      // if they don't reconnect and deposit in time.
+      console.log(`Player ${address} temporarily disconnected during depositing in room ${roomId}. Waiting for reconnect or timeout.`);
     }
   }
 
@@ -608,8 +607,13 @@ export class RoomManager {
 
     engine.on('gameOver', (data) => {
       console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress} (${data.reason})`);
-      console.log('FINISHED: Winner determined server-side');
-      room.status = 'finished';
+      console.log('SETTLING: Winner determined server-side, beginning settlement...');
+
+      // ── Transition to 'settling' ──
+      // The match is over but on-chain settlement / anti-cheat evaluation is in progress.
+      // FE should show a settlement UI (e.g. spinner) during this phase.
+      room.status = 'settling';
+      this.broadcastGameState(room);
 
       // --- Anti-Cheat Evaluation ---
       const verdicts = data.antiCheatVerdicts || {};
@@ -666,7 +670,10 @@ export class RoomManager {
         });
       }
 
-      // Final state update
+      // ── Transition to 'finished' ──
+      // Settlement dispatched (async), match is fully complete.
+      room.status = 'finished';
+      console.log(`FINISHED: Room ${room.id} settlement dispatched.`);
       this.broadcastGameState(room);
     });
 
@@ -888,7 +895,9 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    room.status = 'finished';
+    // Transition through settling before finished for consistency
+    room.status = 'settling';
+    this.broadcastGameState(room);
 
     // Clear all opened card timers
     this.clearAllOpenedCards(room);
@@ -912,6 +921,9 @@ export class RoomManager {
       }
     }
 
+    room.status = 'finished';
+    this.broadcastGameState(room);
+
     // Clean up room
     this.rooms.delete(roomId);
   }
@@ -927,9 +939,14 @@ export class RoomManager {
 
       let payload: GameState;
 
-      if (room.engine && (room.status === 'playing' || room.status === 'finished')) {
+      if (room.engine && (room.status === 'playing' || room.status === 'settling' || room.status === 'finished')) {
         // Engine owns the game state
-        payload = room.engine.getStateForPlayer(address);
+        payload = {
+          ...room.engine.getStateForPlayer(address),
+          tokenMint: room.tokenMint || '',
+          wagerAmount: room.wagerAmount?.toString() || '0',
+          roomType: room.roomType,
+        };
       } else {
         // Pre-game state (waiting / depositing)
         const opponentAddress = addresses.find(a => a !== address);
@@ -970,6 +987,9 @@ export class RoomManager {
           damageLog: [],
           currentRound: 1,
           roundsToWin: GameEngine.ROUNDS_TO_WIN,
+          tokenMint: room.tokenMint || '',
+          wagerAmount: room.wagerAmount?.toString() || '0',
+          roomType: room.roomType,
         };
       }
 

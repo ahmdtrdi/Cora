@@ -1703,6 +1703,77 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The rotation mapping `i === 0 ? "4deg" : i === 1 ? "-3deg" : "2deg"` is hardcoded for exactly 3 items. If more scientists are added in the future, a generic function or looping sequence for `--float-rot` will be needed.
 
+## 2026-05-03 - Connect Wallet Screen Dark Cinematic Redesign
+
+### The Change
+- Refactored `apps/web/src/components/connect/ConnectWalletScreen.tsx` to match the landing page's dark cinematic arena aesthetic.
+- Replaced the light background grid with a deep gradient (`from-[#121919] to-[#0a0f0c]`), a dark `.arena-grid`, depth vignette, and ambient radial glows (`--tone-clay`, `--tone-teal`, `--tone-sage`).
+- Added animated background elements: a faint, oversized "C" emblem, floating emoji cards (ðŸ§ª, ðŸ§¬, ðŸ”¬, âš”ï¸) using `.animate-float-card`, and floating sparkle orbs using `.animate-sparkle`.
+- Redesigned the centered wallet connection panel into a dark game-card style using a thick `var(--tone-bark)` border, dark background (`#172318`), shadow drop, and an inner accent frame. Added a subtle `.animate-orb-breath` glow behind the panel.
+- Updated the copy to fit the game lore ("Arena Access", "Enter the Arena", "Wallet synced: ...", "Enter Lobby").
+- Changed the typography to use `--font-caprasimo` and `--font-gabarito`. Connected status uses `font-mono`.
+- Styled the "Continue" link using the `.btn-game .btn-game-primary` chunky button style.
+
+### The Reasoning
+- The user wanted the wallet connection screen to feel like an "arena gate" screen that matches the rest of the dark landing page direction, rather than a generic SaaS auth page or a light-themed placeholder.
+- Incorporating existing CSS tokens (`--tone-bark`, `--tone-clay`, `--tone-teal`, `.arena-grid`, `.animate-float-card`) ensured the new design is cohesive with the landing page without requiring new global utility classes.
+- Maintaining the `"use client"` and existing `useWallet` hook dependencies ensured that the functional logic was untouched while the visual layer received a massive upgrade.
+
+### The Tech Debt
+- The decorative emoji elements and floating cards are still using hardcoded strings/emojis. They should be swapped out with actual collectible card assets when the final art direction is available.
+- Ambient glow positions and floating card positions are hardcoded using absolute percentages, which might require adjustments on extremely wide or narrow viewports.
+
+## 2026-05-03 - Lobby Screens Visual Redesign
+
+### The Change
+- Refactored the entire `LobbyScreen.tsx` flow (`LobbySetup`, `CharacterSelect`, `MatchmakingWaiting`, `OpponentFound`) to adopt a dark cinematic arena aesthetic.
+- Replaced light grid backgrounds with deep gradients (`from-[#121919] to-[#0a0f0c]`), radial glow orbs, and floating emoji card decorations.
+- Updated all inner layout panels to dark `game-card` and `frame-cut` styles using `var(--tone-bark)`, `var(--tone-clay)`, and `var(--color-surface)`.
+- Restyled matchmaking UI (waiting and found) to visually emphasize a VS fighting game aesthetic, complete with shimmer bars and dropping shadows.
+- Styled unselected arena tabs with `saturate-50 opacity-60` to retain their accent color while remaining distinctly inactive.
+
+### The Reasoning
+- The lobby flow needed to match the dark cinematic aesthetic of the landing page and the newly redesigned `ConnectWalletScreen`.
+- A pure CSS/Tailwind visual pass ensures all complex matchmaking and wallet logic remains intact while dramatically improving the user experience and visual hierarchy.
+
+### The Tech Debt
+- The hardcoded float positions for emojis are repeated across `ConnectWalletScreen` and `LobbyScreen`. They should ideally be abstracted into a unified `FloatingArenaDecorations` component.
+
+## 2026-05-03 - Lobby Screens Warm Vintage Redesign Pivot
+
+### The Change
+- Pivoted the `LobbyScreen` shell from a deep cinematic dark gradient to a warm parchment dominant theme (`var(--warm-bg)`) with a dark radial vignette around the outer edges.
+- Refactored `LobbySetup` to merge the arena selection list and preview board into a single, cohesive game-card container.
+- Switched the text colors in `RoomPhaseHeader` from cold/dark themes to warm/bark tones.
+- Transitioned `MatchmakingWaiting` and `OpponentFound` cards to warm surfaces (`var(--warm-surface)`) with dark `var(--tone-bark)` and `var(--tone-clay)` borders.
+- Re-styled the alert toasts, error fallback screens, and deposit context cards to match the vintage warm layout rather than dark HUD.
+
+### The Reasoning
+- The fully dark shell felt too empty and disconnected from the vintage collectible warmth seen on the landing page's HowItWorks section.
+- Moving to a game-board composition makes the UI feel like an actual physical collectible table.
+
+## 2026-05-04 - Pre-Match Lobby Surface Separation Pass
+
+### The Change
+- Updated `apps/web/src/components/lobby/LobbySetup.tsx` to remove translucent beige layering and enforce clear panel hierarchy:
+  - Left arena selector is now a parchment gradient panel (`#fff8e8 -> #f3e6c9`) with stronger right-side separation.
+  - Token cards now use dedicated inactive/active gradients (`#fffaf0 -> #efe3c8` and `#fff1cf -> #f8d694`).
+  - Selected token state now includes stronger border, raised shadow, accent glow, and explicit checkmark.
+  - Header wallet/wager chips were restyled to dark forest + bark framing for consistency.
+  - Right arena board background is now stable and dark (`#10231b/#18392d/#0d1a14`) and no longer uses `selectedArena.previewBg` as full panel background.
+  - Arena colors are now used only as accents (icon circles, glow, borders) rather than full-surface swaps.
+- Updated `apps/web/src/components/lobby/LobbyScreen.tsx` to strengthen overall shell separation:
+  - Page background moved to a darker vignetted warm-forest treatment, clearly distinct from the lobby modal.
+  - Decorative background elements were reduced to low-opacity ambient orbs (no boxed decorative icon tiles).
+
+### The Reasoning
+- The main issue was not global muddiness, but insufficient surface contrast where page shell, modal, side panel, and token cards all sat on near-identical beige values.
+- Locking the right board to a premium dark surface preserves visual stability and prevents BONK selection from washing out the board.
+- Dedicated token-card states make selection obvious at a glance and align with the game-lobby interaction model rather than dashboard controls.
+
+### The Tech Debt
+- The left-panel token icon placeholders are still text glyphs; once official SOL/BONK assets are available, these should become consistent icon components.
+- Some decorative blur/spotlight values are hardcoded and may benefit from extraction into shared theme tokens if similar lobby variants are added.
 ## 2026-05-04 - Deposit Signing Unlock Fix for Opponent (Player 2) in Lobby
 
 ### The Change
@@ -1769,3 +1840,517 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Local build verification is currently blocked by Windows filesystem lock/permission errors in `.next` (`EPERM` unlink on chunk files).
 - We should standardize a local clean-build workflow that ensures Node/Next processes are stopped before deleting `.next`.
+
+## 2026-05-04 - Character Draft Screen Redesign (Roster-Focused + Dev Toggle)
+
+### The Change
+- Reworked [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) to remove dashboard-style meta blocks from default player view and make the roster grid the centerpiece.
+- Added a compact helper row and a `Dev Mode` toggle that gates debug-only data panels (selection state, opponent status, room status rail, and countdown).
+- Rebuilt [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) into a collectible roster-card layout:
+  - square portrait block with placeholder expression cue
+  - stronger selected/active visual treatment (border, glow, lift)
+  - base + role/supporting lines
+  - compact stat presentation (short rows + mini inline meters + specialty chip)
+  - full-width selection state footer (`Selected`, `Auto-assigned`, `Locked In`, etc.)
+- Updated [RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx) with a high-contrast framed header surface to improve readability of `Setup` / `Draft Your Scientist` / supporting copy on dark lobby backgrounds.
+- Kept existing flow controls in place (Back button, arena/token/wallet chips, Enter Queue CTA) via existing shell slots.
+
+### The Reasoning
+- The old top metadata cards pulled attention away from the primary draft action and made the screen feel like a dashboard.
+- Moving non-essential state to a toggle keeps the default experience premium and player-focused while preserving QA/debug visibility.
+- Character cards now follow a game-roster hierarchy instead of a generic data-card pattern, with selection feedback strong enough to feel decisively chosen.
+- Compact stats preserve quick scanability without bloating card height or dominating vertical space.
+- A dedicated contrast-backed heading container fixes title legibility immediately and aligns with the vintage arena art direction.
+
+### The Tech Debt
+- Portrait expression states are still placeholder UI cues (initial + micro-face element). Replace with real square portraits and selected-expression variants once art assets are available.
+- Specialty metadata is partially sourced from `@shared/characterStats`; characters missing a shared specialty currently fall back to `Generalist` in UI.
+- Dev Mode state is local UI state only; if persistent QA toggles are needed, we should wire query-param or localStorage sync.
+
+## 2026-05-04 - Draft Dev Mode Toggle Availability Adjustment
+
+### The Change
+- Updated [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) so the `Dev Mode` toggle is always available in draft UI, even when countdown/opponent metadata is absent.
+- Added a debug-panel fallback line (`No countdown/opponent sync metadata in this phase.`) for pre-queue contexts.
+
+### The Reasoning
+- QA still needs access to selection/room debug panels in the normal character-select phase, not only in timed room-preview states.
+
+### The Tech Debt
+- If we introduce role-based dev tooling, this toggle should be gated behind environment or permission controls.
+
+## 2026-05-04 - Character Draft Screen Minor Layout Refinement Pass
+
+### The Change
+- Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - Repositioned `Back` into the same top-right chip row (`arena`, `wager`, `wallet`) to remove the detached floating feel.
+  - Tightened chip/button vertical padding and CTA size.
+  - Applied `className="h-[100svh] overflow-hidden py-3 md:py-4"` on `RoomPhaseShell` usage for this screen to keep the full draft composition inside one desktop viewport.
+- Updated [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx):
+  - Removed the boxed heading panel treatment (no bordered/background card).
+  - Kept readability via typography and text-shadow only.
+  - Reduced header spacing and font sizing slightly for tighter vertical rhythm.
+- Updated [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - Reduced spacing between helper row, debug block, and card grid.
+  - Tightened card grid gap from `gap-4` to `gap-3`.
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - Reduced card min height (`350px` -> `292px`).
+  - Reduced portrait max size and compressed internal spacing/typography/chips/footer height.
+  - Preserved the same visual language and selection-state cues.
+
+### The Reasoning
+- The previous pass solved hierarchy direction, but the screen still felt vertically heavy and pushed CTA visibility below the fold.
+- Keeping Back inside the same right-column control cluster makes the header composition feel intentional and aligned.
+- Removing the heading box follows the requested integrated composition while preserving contrast.
+
+### The Tech Debt
+- `h-[100svh] overflow-hidden` is intentionally scoped to this screen and viewport fit goal. If card count/metadata grows, we may need responsive fallback behavior for smaller desktop heights.
+- CTA/chip density is tuned for this draft screen specifically; if design tokens for compact HUD controls are introduced, this should be normalized into shared size variants.
+
+## 2026-05-04 - Character Card Micro-Polish (Pill Stats + Role Styling)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) to replace long bar-style stat rows with compact trait pills.
+- Kept existing stat data and labels, now rendered as lightweight chips (e.g. `LOGIC 92`, `COMPUTATION 88`) in a wrapped pill group.
+- Replaced raw role text (`Role: ...`) with a styled metadata chip (`Sequence Specialist`) and kept multiplier as a compact companion chip (`x1.5`).
+- Preserved all existing card structure and interaction states (portrait, selected state, status footer).
+
+### The Reasoning
+- Bar meters still read as RPG/dashboard UI and carried unnecessary visual weight for this collectible roster card direction.
+- Pill-based stat traits improve scan speed while reducing visual bloat and preserving data clarity.
+- Role metadata now feels integrated into the card system rather than plain label-value text.
+
+### The Tech Debt
+- Stat labels are currently rendered in full uppercase text; if longer labels are introduced later, we may want tokenized short labels or controlled wrapping rules.
+
+## 2026-05-04 - Character Draft Layout Balance Pass (Upper Section Breathing Room)
+
+### The Change
+- Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - Increased top-biased shell padding for this phase (`pt-5/6`, `pb-3/4`) while keeping viewport-locked layout.
+  - Added a small wrapper margin above the roster section (`mt-2 md:mt-3`) so cards sit lower.
+- Updated [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx):
+  - Increased heading block breathing room via slightly larger bottom margin and larger title/subtitle vertical spacing.
+- Updated [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - Increased spacing under the `Roster / Selected` row (`mb-5`).
+  - Increased spacing below the optional Dev Mode panel (`mb-5`) for balanced separation before the card grid.
+
+### The Reasoning
+- After card compaction, the composition looked top-tight and bottom-light. Increasing only upper-layout spacing restores visual balance without re-inflating cards.
+
+### The Tech Debt
+- Header spacing is shared through `RoomPhaseHeader`; if another phase later needs denser layout, we may introduce a compact header variant prop.
+
+## 2026-05-04 - Character Card Action-Row Spacing Micro-Adjustment
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) to add a small separation above the bottom action row (`Tap to Select` / `Selected`).
+- Kept existing card structure and sizing by wrapping the action row with `mt-auto pt-2`, then rendering the original action chip inside.
+
+### The Reasoning
+- The action row felt visually cramped against the stat pills. This adds breathing room without reintroducing bulk or changing card content hierarchy.
+
+### The Tech Debt
+- Spacing is currently local to this component. If other selectable cards adopt similar bottom action treatments, we may want a shared spacing token/utility.
+
+## 2026-05-04 - Draft Header Reading-Flow Refinement (Back Button Left)
+
+### The Change
+- Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx):
+  - Moved `Back` out of the top-right chip cluster.
+  - Added a lightweight left-aligned `Back` control above the heading flow.
+  - Kept top-right area focused on contextual chips (arena / wager / wallet).
+- Extended shared room header plumbing to support pre-heading navigation content:
+  - [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx): added optional `preHeadingSlot` rendered above eyebrow/title/subtitle.
+  - [apps/web/src/components/room/RoomPhaseShell.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseShell.tsx): passed through optional `preHeadingSlot` prop.
+
+### The Reasoning
+- `Back` is navigation, so placing it at the start of the content sequence improves reading order and reduces visual competition with status chips.
+- The right column now reads as purely contextual state, while navigation starts the left-column flow.
+
+### The Tech Debt
+- `preHeadingSlot` is now available for other phases; if reused heavily, we may want a dedicated nav-style variant token to standardize button appearance across screens.
+
+## 2026-05-05 - Draft Header Micro-Spacing Tweak (Back vs SETUP)
+
+### The Change
+- Updated [apps/web/src/components/room/RoomPhaseHeader.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomPhaseHeader.tsx) to increase spacing below the `preHeadingSlot` container (`mb-2` -> `mb-3`).
+- This creates a slightly clearer separation between the left-side `Back` navigation control and the `SETUP` eyebrow.
+
+### The Reasoning
+- `Back` should read as navigation preceding page content, not as a label attached to the heading block.
+
+### The Tech Debt
+- Spacing value is shared for any future usage of `preHeadingSlot`; if other screens require denser nav/header spacing, we may introduce a per-screen spacing override.
+
+## 2026-05-05 - MatchmakingWaiting Dark Arena Visual Redesign
+
+### The Change
+- Refactored [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) visual styling to match dark arena direction:
+  - Player and opponent cards moved from warm/light surfaces to dark forest-glass gradients.
+  - Added subtle radial highlight overlays and deeper shadows for cinematic depth.
+  - Upgraded center `VS` composition with a circular accent ring/orb treatment.
+  - Improved title/subtitle readability in searching/error/timeout states using cream/gold foreground colors.
+  - Updated segment labels and bar track backgrounds to dark-compatible contrast while preserving accent fill.
+  - Updated flavor text color to mint for legibility on dark background.
+- Kept CTA/actions (`Cancel`, `Keep Searching`) and layout structure intact.
+
+### The Reasoning
+- Prior light-surface cards visually clashed with the dark arena shell and weakened matchmaking tension.
+- This pass aligns the waiting screen with the newer game-like mood: dark surfaces, cream text, clay/gold accents, and stronger versus framing.
+
+### The Tech Debt
+- Visual tokens are still mostly inline in this component. If we standardize a dark-panel system for all room phases, these styles should be extracted into shared classes/tokens.
+- Failure-state title color currently shares one gold-readable treatment for both timeout and error; future UX may want distinct semantic tones if error taxonomy expands.
+
+### Guardrails Kept
+- Matchmaking progress logic, stage timing, and bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting Versus-Card Refinement (Square Placeholders + Clean VS)
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) matchup row styling:
+  - Added square portrait placeholder block to the **player** card (left side) and kept horizontal card structure.
+  - Added matching square placeholder block to the **opponent** card while scanning (left side), with `Scanning` + `Unknown` content on the right.
+  - Switched matchup cards to warm parchment surfaces with bark/clay framing for stronger contrast against dark arena shell.
+  - Removed the circular `VS` container and replaced it with clean centered `VS` typography with subtle glow/shadow only.
+  - Added lightweight `YOU` chip on player card metadata area.
+- Kept top-right cancel, arena/wager label, title/subtitle, progress bars, and retry behavior in place.
+
+### The Reasoning
+- The matchup section now reads as an intentional versus composition instead of two plain text blocks.
+- Square placeholders make the layout ready for future portrait/icon assets while preserving current scanning state.
+- Warm cards increase focal contrast and keep cohesion with CORA’s parchment/vintage style without looking like generic white dashboards.
+
+### The Tech Debt
+- Opponent card currently always renders unknown/scanning placeholder in this component’s current states; when a matched-opponent payload is wired here, we should feed portrait/name/base into the same left-icon/right-info horizontal template without changing structure.
+
+### Guardrails Kept
+- Matchmaking progress logic and bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting Opponent-State Layout Refinement
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) opponent card behavior with explicit state-based layouts:
+  - **Unknown/searching state**: dark centered placeholder card (`SCANNING` + `Unknown`) with optional centered square placeholder block.
+  - **Matched-opponent state (future-ready)**: warm horizontal card matching player composition (square portrait on left, opponent info on right).
+- Added optional props to support matched rendering without breaking current call sites:
+  - `opponentScientist?: Scientist | null`
+  - `opponentWalletAddress?: string`
+- Kept `VS` as clean centered typography (no circular container).
+
+### The Reasoning
+- The horizontal icon-left/text-right pattern is ideal for actual profile cards, but looked awkward when the opponent is unknown.
+- Centered dark placeholder communicates temporary searching state more clearly and avoids off-center visual weight.
+- Warm horizontal card on match provides a clear visual transition from searching to found opponent.
+
+### The Tech Debt
+- Matched opponent data is not yet wired from current waiting-phase parent flow, so the matched branch is prepared but not currently activated in normal waiting route.
+
+### Guardrails Kept
+- Matchmaking progress logic and bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting Final Opponent-State Polish
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) unknown/matched opponent rendering behavior:
+  - **Unknown/searching state**: removed the square `?` placeholder block; card now shows centered `SCANNING` + `Unknown` only on dark surface.
+  - **Matched state (future-ready branch)**: preserved warm horizontal portrait-left/info-right structure so it mirrors player-card pattern.
+
+### The Reasoning
+- Unknown state should feel minimal and temporary, not like a partially-rendered profile card.
+- Portrait placeholder should appear only when a real opponent exists, which creates clearer state transition and stronger visual symmetry.
+
+### The Tech Debt
+- Matched-opponent branch is ready but depends on parent flow wiring of `opponentScientist` / `opponentWalletAddress` for runtime activation.
+
+### Guardrails Kept
+- Matchmaking progress logic and progress bar animation behavior were not changed.
+
+## 2026-05-05 - MatchmakingWaiting TS Narrowing Fix (Matched Opponent Branch)
+
+### The Change
+- Updated [apps/web/src/components/lobby/MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) to fix TypeScript nullability warnings in the matched-opponent JSX branch.
+- Replaced `hasMatchedOpponent` boolean check with a concrete narrowed variable:
+  - `const matchedOpponent = opponentScientist ?? null`
+  - branch now uses `matchedOpponent ? (...) : (...)`
+  - matched branch reads `matchedOpponent.*` fields.
+
+### The Reasoning
+- Boolean coercion on optional values does not always provide sufficient narrowing for TS in JSX paths. Using a nullable local with direct truthy check guarantees safe narrowing.
+
+### The Tech Debt
+- None significant; this is a local type-safety cleanup and keeps behavior unchanged.
+
+## 2026-05-05 - OpponentFound Versus-Screen Redesign (Post-Match Deposit Phase)
+
+### The Change
+- Refactored [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to match the newer matchmaking versus-screen style while preserving signing/socket flow.
+- Updated header/content hierarchy to player-facing match-confirmation copy:
+  - Eyebrow: `{arena.label} · $${wagerUsd} {arena.token}`
+  - Title: `Rival Locked`
+  - Subtitle: `Sign the deposit before the timer expires.`
+- Rebuilt versus row into warm horizontal matchup cards over dark arena shell:
+  - Player and opponent cards now use square portrait placeholders on the left and info content on the right.
+  - Added `YOU` / `RIVAL` chips for clear side identity.
+  - Kept simple centered `VS` text with glow/shadow and no circular container.
+  - Opponent card remains revealed/matched style even when scientist fallback is not yet synced (`Rival Synced` + fallback base text), per requested behavior.
+- Moved `RoomStatusRail` behind a local player-facing visibility toggle:
+  - Hidden by default.
+  - Toggle label switches between `Show Room Status` / `Hide Room Status`.
+  - Not labeled as dev mode.
+- Elevated deposit action area by wrapping existing `DepositPanel` in a dark integrated action container so the signing step is visually central.
+- Kept error alert behavior and dismiss/timer logic, while refreshing alert surface to a cohesive warm treatment.
+
+### The Reasoning
+- This phase should read as direct continuation of matchmaking: rival confirmed, immediate deposit action.
+- Warm versus cards provide strong focal contrast against dark arena backgrounds and align with updated matchmaking language.
+- Always-visible room status read as debug infrastructure; collapsing it by default keeps the player flow clean while retaining access when needed.
+
+### The Tech Debt
+- `DepositPanel` internal visual tokens remain shared/global and still include lighter defaults; this pass integrates it via wrapper styling rather than deep component theming.
+- If this versus-card pattern is reused across multiple phases, extracting a shared matchup-card component will reduce style duplication.
+
+### Guardrails Kept
+- No changes to deposit signing logic, socket behavior, reconnect flow, redirect flow, countdown logic, status/hint helpers, or badge generation.
+
+## 2026-05-05 - Play/Battle Screen Arena Visual Refactor (UI + FE-only Combat FX)
+
+### The Change
+- Refactored [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) visual layer to align `/play` with the updated lobby/draft/matchmaking/opponent-found direction:
+  - Switched shell/background from light grid to dark cinematic arena gradient.
+  - Updated headers/chips/alerts/guard panels to dark-compatible cream/gold palette.
+  - Replaced circular `You` / `Enemy` placeholders with **4:5 character placeholders** (left player, right opponent) using character-based gradient fallback visuals.
+  - Replaced tall base bars with **1:1 base placeholders** per side, including base HP labels.
+  - Preserved bottom card hand flow but re-skinned cards to warm collectible surfaces.
+- Added FE-only battle presentation state in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - `characterActionSide`
+  - `projectile`
+  - `playerBaseFx` / `opponentBaseFx`
+- Added FE-only placeholder projectile animation driven by existing `lastDamageEvent` (no backend protocol changes):
+  - attacker pose pulse
+  - projectile travel (attack/heal variant)
+  - target base hit/heal pulse
+  - local cleanup timers
+- Kept active question modal, settlement modal, and share overlay behavior intact while updating visual surfaces to match new arena style.
+- Updated shared room UI surfaces for dark coherence:
+  - [CountdownBar.tsx](/d:/projects/Cora/apps/web/src/components/room/CountdownBar.tsx)
+  - [PlayerRoomStatus.tsx](/d:/projects/Cora/apps/web/src/components/room/PlayerRoomStatus.tsx)
+  - [RoomStatusRail.tsx](/d:/projects/Cora/apps/web/src/components/room/RoomStatusRail.tsx)
+
+### The Reasoning
+- The previous `/play` surface diverged from the rest of the updated flow and looked like a legacy light dashboard.
+- Character/base placeholders needed explicit future-friendly framing (4:5 and 1:1) so art/pose systems can be swapped in later without structural rework.
+- FE-only projectile/pose/base FX creates combat readability immediately while keeping server/game loop semantics unchanged.
+
+### The Tech Debt
+- Projectile travel currently uses coarse anchored coordinates (UI placeholder pass). Once final stage layout/asset anchors are fixed, this should move to measured DOM anchor coordinates for precision.
+- Character/base visuals are still placeholder glyph/gradient assets; replace with final art and state-specific sprites/poses when available.
+- Shared room status components are now dark-biased; if any warm-surface contexts require old look, introduce variant props/tokens instead of one-size styling.
+
+### Guardrails Kept
+- No changes to `useMatchSocket` semantics, gameplay scoring, answer flow, settlement flow, countdown source logic, route/query handling, or backend message contracts.
+
+## 2026-05-05 - Challenge Share Card Final Polish (Light Collectible Pass)
+
+### The Change
+- Restyled [apps/web/src/components/challenge/ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) into a light collectible challenge-ticket composition:
+  - premium light cream/stone framed surface
+  - strong two-zone layout (hero/editorial left + utility/QR right)
+  - square challenger portrait placeholder (replacing generic circular avatar)
+  - cleaner hierarchy for title, challenger identity, status chip, and description
+  - utility panel with QR + token/wager/arena metadata rows
+  - action buttons preserved (`Copy Link`, `Save As JPG`, `Share On X`) with light premium framed styling
+  - link + notice handling unchanged
+- Updated [apps/web/src/lib/challenge/renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) to visually match the new light collectible design in canvas export:
+  - light premium framed background
+  - editorial hero zone and utility zone
+  - square challenger placeholder badge
+  - clearer challenge hierarchy + status chip
+  - QR + metadata ticket block
+  - polished link strip
+- Kept [apps/web/src/lib/challenge/createChallengeLink.ts](/d:/projects/Cora/apps/web/src/lib/challenge/createChallengeLink.ts) unchanged functionally.
+
+### The Reasoning
+- The share card should read like a premium collectible pass/challenge ticket rather than a dashboard widget.
+- Light editorial styling differentiates challenge sharing from dark arena gameplay while keeping CORA identity coherent.
+- Updating both preview and JPG renderer together prevents style drift between what users see and what they download/share.
+
+### The Tech Debt
+- Canvas export and in-app preview are aligned stylistically, but not pixel-identical. If strict design parity is required later, we should centralize layout tokens and dimensions used by both renderers.
+- QR rendering still depends on remote QR image generation; if offline/resilience is needed, we should embed a local QR generation fallback.
+
+## 2026-05-05 - Real-Only E2E Flow + CharacterId WS Wiring (FE)
+
+### The Change
+- Removed FE mock-mode pathways and integration-mode banner plumbing from the web app:
+  - Deleted [apps/web/src/components/ui/IntegrationModeBanner.tsx](/d:/projects/Cora/apps/web/src/components/ui/IntegrationModeBanner.tsx)
+  - Simplified [apps/web/src/lib/config/runtimeModes.ts](/d:/projects/Cora/apps/web/src/lib/config/runtimeModes.ts) to only retain `allowDevRoomPreview`.
+  - Removed mock/deposit mode env documentation from [apps/web/.env.example](/d:/projects/Cora/apps/web/.env.example).
+- Forced real settlement confirmation path in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed `settlementMode === "mock"` branch and mock signature generation.
+  - release confirmation now always follows Phantom signing flow.
+- Removed wallet/address dev fallback in battle flow:
+  - [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) now requires connected wallet address only.
+- Wired FE-selected character ID to backend room join:
+  - Extended [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) to send `characterId` query param on WS connect.
+  - Passed `characterId` from [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) and [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+- Aligned roster IDs/names with shared-types (`einstein`) and removed Newton leftovers:
+  - Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - Updated [apps/web/src/app/dev/room-states/page.tsx](/d:/projects/Cora/apps/web/src/app/dev/room-states/page.tsx)
+  - Updated battle visual mapping in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to use Einstein path only.
+- Replaced opponent character deterministic fallback with backend-authoritative mapping in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) by resolving from `gameState.opponent.characterId`.
+
+### The Reasoning
+- BE flow (per `DEVLOG-BE.md`) is now sequential-deposit + WS authoritative state; FE must stop short-circuiting via mock modes and must pass `characterId` on WS join so backend `playerMeta.characterId` is correct.
+- Keeping mock toggles in FE created drift against BE E2E readiness and caused confusing mixed behavior (real deposit with mock settlement).
+- Using backend-provided opponent character metadata ensures UI reflects true room state instead of deterministic local placeholders.
+
+### The Tech Debt
+- `next build` validation is currently blocked locally by locked `.next` artifacts (`EPERM`/access denied on unlink/remove), likely due to an external process holding handles. `npm run lint` passes.
+- `allowDevRoomPreview` remains in runtime config for internal UI preview scenarios; if full prod-hardening is desired, this can be removed in a follow-up.
+
+## 2026-05-05 - Battle Settlement UI Switched to Backend-Authoritative Mode
+
+### The Change
+- Refactored [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to remove client-side settlement confirmation flow.
+- Deleted FE-only settlement release state and actions:
+  - removed `releaseState`, `releaseError`, `releaseSignature`
+  - removed `onConfirmFundRelease()` and `getReleaseButtonLabel()`
+  - removed settlement warning alert path derived from `releaseError`
+- Removed client memo-sign settlement dependency usage in battle screen:
+  - removed `useConnection` usage
+  - removed `signSettlementReleaseIntent` usage
+- Replaced "Fund Release Confirmation" card with backend-authoritative settlement card:
+  - displays server-origin `settlementSignature` and `serverPublicKey` from `matchResult` payload when available
+  - otherwise shows waiting message for server settlement payload
+
+### The Reasoning
+- Backend already owns settlement orchestration and signature emission (server oracle flow), so FE should present backend state rather than trigger a second client settlement intent.
+- This avoids duplicate/conflicting settlement semantics and aligns FE with BE E2E contract while keeping services decoupled.
+
+### The Tech Debt
+- FE still cannot show definitive on-chain settlement transaction signature because current WS payload does not include tx hash. If product wants this, BE needs to expose settlement tx id in an event/payload and FE can render it.
+
+## 2026-05-05 - FE Alignment Follow-up: Room Status + MatchFound Passive Support
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to align active-play gating with current backend room statuses:
+  - removed explicit `settling` branch from status label mapping
+  - changed `isPlayStateReady` to depend on `playing` or match-complete signals instead of `settling`
+- Extended [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) with passive server queue-assignment event support:
+  - added `lastMatchFound` state
+  - handles both `matchFound` and `matchFoundWaiting` message types for compatibility
+  - returns `lastMatchFound` to consumers
+- Integrated non-breaking `matchFound` awareness in [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - derives `reassignedRoomId` from socket event when server announces a different room
+  - surfaces this via deposit helper text (no forced navigation, no hard interrupt)
+
+### The Reasoning
+- Backend currently transitions `depositing -> playing -> finished`; FE no longer treats `settling` as a required active phase.
+- Backend can emit `matchFound` in requeue paths; FE now records that event so UI can stay in sync without coupling to backend internals or direct function calls.
+- Chosen UX is intentionally passive to avoid breaking existing flow while still exposing authoritative server signals.
+
+### The Tech Debt
+- `matchFound` signals are currently surfaced as guidance text only. If product wants automatic room handoff, FE will need an explicit navigation/resume policy agreed with BE contract semantics.
+
+## 2026-05-05 - FE Sync: Settling Status + /match Forward Compatibility (No BE edits)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added explicit `settling` status label in `getStatusLabel`
+  - updated play-state readiness gate to treat `settling` as an active ready state
+  - relaxed hard guard that previously required `arena/token/wager` query params; now only `roomId` is mandatory (allows backend-authoritative context evolution)
+- Updated [apps/web/src/lib/matchmaking/queueMatch.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/queueMatch.ts):
+  - request now supports optional `tokenMint` / `wagerAmount` payload fields
+  - response parser now supports optional `tokenMint` / `wagerAmount` / `roomType` fields while preserving backward compatibility with `{ roomId }`
+- Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - sends optional `tokenMint` to `/match` from selected arena token symbol
+
+### The Reasoning
+- BE/game flow now uses `settling` in shared contract, so FE battle status/gating should not treat it as unknown/terminal too early.
+- `/match` contract may evolve to include richer room context; FE now tolerates enriched responses and can pass optional token context without breaking existing BE behavior.
+- Keeping `roomId` as the only hard `/play` requirement reduces brittle FE dependence on URL-carried context as backend state becomes authoritative.
+
+### The Tech Debt
+- Optional `/match` fields are currently parsed but not yet fully consumed end-to-end in FE routing/state (future enhancement once BE contract is finalized for public room context).
+
+## 2026-05-05 - Deposit Signing UI Restyle for Dark Arena Integration
+
+### The Change
+- Restyled [apps/web/src/components/deposit/DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) with dark-arena-compatible visuals while preserving all existing props and behavior.
+  - Heading chip now uses cream/gold-on-dark treatment instead of muted dashboard green.
+  - Subtitle shifted to muted cream for dark-surface readability.
+  - Primary action button restyled to chunky game-button treatment:
+    - enabled: clay/bark gradient + cream text + stronger shadow/highlight
+    - disabled: muted forest gradient + reduced opacity/readability preserved
+  - `disabled={!canPrimaryAction}` behavior unchanged.
+- Restyled [apps/web/src/components/deposit/DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx):
+  - Replaced light card background with dark forest gradient surface.
+  - Updated border/shadow/inset/highlight to warm arena console style.
+  - Updated text hierarchy colors:
+    - status label: gold accent
+    - helper text: muted mint/cream
+    - countdown: strong gold with shadow
+    - signature: secondary muted mint in subtle inset strip
+  - Kept all slot behavior (`walletSlot`, `retrySlot`, `cancelSlot`) and spacing support intact.
+
+### The Reasoning
+- Opponent-found/matchmaking UI moved to dark arena styling; shared deposit components still looked like legacy white dashboard blocks and broke visual continuity.
+- This pass unifies the deposit signing area with arena visuals without touching functional logic or parent integration.
+
+### The Tech Debt
+- Shared deposit components are now dark-default. If future light-theme contexts reuse them, a variant/theming prop may be needed instead of per-page overrides.
+
+## 2026-05-05 - FE First Pass: History + Wallet Inspect Foundation (Backend-Stub Ready)
+
+### The Change
+- Added backend-facing history client and normalized frontend types:
+  - [apps/web/src/lib/history/historyApi.ts](/d:/projects/Cora/apps/web/src/lib/history/historyApi.ts)
+  - [apps/web/src/lib/history/historyTypes.ts](/d:/projects/Cora/apps/web/src/lib/history/historyTypes.ts)
+- Added reusable history / wallet-inspect UI primitives:
+  - [apps/web/src/components/history/HistoryButton.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryButton.tsx)
+  - [apps/web/src/components/history/HistoryDrawer.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryDrawer.tsx)
+  - [apps/web/src/components/history/WalletInspectButton.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectButton.tsx)
+  - [apps/web/src/components/history/WalletInspectPanel.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectPanel.tsx)
+- Added arena playability hook (advisory-first):
+  - [apps/web/src/hooks/useWalletArenaPlayability.ts](/d:/projects/Cora/apps/web/src/hooks/useWalletArenaPlayability.ts)
+- Integrated primary history access in room-phase shell usage:
+  - Updated [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) to render `HistoryButton` via `rightPanelSlot` and open shared `HistoryDrawer`.
+  - Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to pass `walletConnected` into `CharacterSelect`.
+- Integrated wallet inspect shortcuts + advisory playability + history access in pre-battle deposit phase:
+  - Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx).
+- Integrated settlement-modal history action and wallet inspect shortcuts in battle screen:
+  - Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+- Validation:
+  - `npm run lint --workspace apps/web` passes.
+
+### The Reasoning
+- FE calls backend endpoints only (`/api/history/...`) and never calls GoldRush directly, matching architecture boundaries before BE integration is live.
+- The new UI contracts are backend-normalized and player-facing (`History`, `Wallet Inspect`, `Arena playable`), avoiding raw provider payload exposure.
+- Playability is advisory-first by design: UI surfaces readiness (`Playable`, `Needs token`, `Unable to inspect`) without hard-blocking flow during backend maturation.
+- Shared components keep styling consistent with the existing arena/parchment/clay visual language and prevent one-off explorer-like UI.
+
+### The Tech Debt
+- `historyApi.ts` currently relies on fallback behavior (`NEXT_PUBLIC_HISTORY_FALLBACK_MODE`) until BE endpoints are fully implemented and normalized.
+- `WalletPlayability.reliable` semantics are provisional; once BE finalizes trust signals, FE should tighten blocking/allowance behavior if required.
+- History views are currently scoped to arena/wallet lists; once BE exposes richer match identifiers and explorer links, FE can add direct per-match detail focus and deep links.
+
+## 2026-05-05 - Wallet Inspect Chip Relocated to Lobby Setup (Arena Select)
+
+### The Change
+- Moved the advisory wallet-inspection indicator from character selection to the first lobby phase (`Choose Your Arena`):
+  - Removed playability chip usage from [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx).
+  - Added token-aware balance/inspect chip in [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) using `useWalletArenaPlayability`.
+- Chip now follows selected arena token context:
+  - SOL selected -> `SOL Balance: ...`
+  - BONK selected -> `BONK Balance: ...`
+- Updated [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to stop passing the now-removed `walletConnected` prop to `CharacterSelect`.
+- Validation: `npm run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Arena-readiness/balance feedback is more useful at token selection time than at character selection.
+- This keeps phase intent clean: arena viability in setup phase, character decisions in draft phase.
+
+### The Tech Debt
+- Balance values remain dependent on backend playability normalization; until BE endpoint is live/reliable, chip may show `Inspecting...` / `Unavailable` / `--` fallback states.

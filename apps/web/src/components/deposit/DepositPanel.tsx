@@ -42,10 +42,10 @@ export function DepositPanel({
 }: DepositPanelProps) {
   return (
     <div className="mt-8 w-full text-center">
-      <p className="font-gabarito text-xs uppercase tracking-[0.16em] text-[#6b8274]">
+      <p className="inline-flex items-center justify-center rounded-full border border-[rgba(248,214,148,0.36)] bg-[rgba(16,26,22,0.62)] px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--tone-cream)]">
         ${wagerUsd} {token} - {title}
       </p>
-      {subtitle && <p className="mt-1 font-gabarito text-xs text-[#5e7768]">{subtitle}</p>}
+      {subtitle && <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">{subtitle}</p>}
 
       <div className="mt-3 flex flex-col items-center gap-3">
         <DepositStatusCard
@@ -63,12 +63,21 @@ export function DepositPanel({
             type="button"
             onClick={onPrimaryAction}
             disabled={!canPrimaryAction}
-            className="frame-cut frame-cut-sm min-w-[210px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide"
+            className={`frame-cut frame-cut-sm min-w-[210px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide transition ${
+              canPrimaryAction ? "hover:-translate-y-0.5" : ""
+            }`}
             style={{
-              border: "1px solid rgba(39,65,55,0.24)",
-              background: canPrimaryAction ? "rgba(255,255,255,0.92)" : "rgba(214,214,208,0.96)",
-              color: canPrimaryAction ? "#274137" : "#5f695f",
-              opacity: canPrimaryAction ? 1 : 0.95,
+              border: canPrimaryAction
+                ? "1px solid rgba(248,214,148,0.5)"
+                : "1px solid rgba(248,214,148,0.2)",
+              background: canPrimaryAction
+                ? "linear-gradient(145deg, rgba(122,69,41,0.96), rgba(79,43,25,0.96))"
+                : "linear-gradient(145deg, rgba(28,44,36,0.96), rgba(18,30,24,0.96))",
+              color: canPrimaryAction ? "var(--tone-cream)" : "rgba(244,240,230,0.68)",
+              boxShadow: canPrimaryAction
+                ? "0 10px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.16)"
+                : "0 6px 12px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08)",
+              opacity: canPrimaryAction ? 1 : 0.76,
             }}
           >
             {primaryActionLabel}

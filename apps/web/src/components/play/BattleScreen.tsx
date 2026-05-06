@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { motion } from "framer-motion";
+import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { signSettlementReleaseIntent } from "@/lib/solana/signDepositIntent";
+import { HistoryDrawer } from "@/components/history/HistoryDrawer";
+import { WalletInspectButton } from "@/components/history/WalletInspectButton";
+import { WalletInspectPanel } from "@/components/history/WalletInspectPanel";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
-import { IntegrationModeBanner } from "@/components/ui/IntegrationModeBanner";
-import { getRuntimeConfig, isIntegrationMode } from "@/lib/config/runtimeModes";
+import { getWalletHistory } from "@/lib/history/historyApi";
+import type { MatchHistoryItem } from "@/lib/history/historyTypes";
 
 type MatchOutcome = {
   cardId: string;
@@ -92,12 +95,49 @@ type UiAlert = {
   onAction?: () => void;
 };
 
+type BattleSide = "player" | "opponent";
+
+type ProjectileState = {
+  id: string;
+  from: BattleSide;
+  to: BattleSide;
+  kind: "attack" | "heal";
+};
+
+type BaseFxState = "idle" | "hit" | "heal";
+
+function getCharacterVisual(characterId?: string) {
+  if (characterId === "turing") {
+    return {
+      initial: "T",
+      portraitBg: "linear-gradient(160deg, #152920 0%, #274137 60%, #0d1f18 100%)",
+      baseGlyph: "</>",
+    };
+  }
+  if (characterId === "curie") {
+    return {
+      initial: "C",
+      portraitBg: "linear-gradient(160deg, #3d1f0a 0%, #5c2e12 60%, #210e04 100%)",
+      baseGlyph: "⚗",
+    };
+  }
+  if (characterId === "einstein") {
+    return {
+      initial: "E",
+      portraitBg: "linear-gradient(160deg, #12122a 0%, #1e1e3f 60%, #080814 100%)",
+      baseGlyph: "✦",
+    };
+  }
+  return {
+    initial: (characterId?.slice(0, 1) ?? "R").toUpperCase(),
+    portraitBg: "linear-gradient(160deg, #173026 0%, #274137 60%, #10231b 100%)",
+    baseGlyph: "⌬",
+  };
+}
+
 export function BattleScreen() {
-  const runtimeConfig = getRuntimeConfig();
-  const showIntegrationBanner = isIntegrationMode(runtimeConfig);
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
-  const queryAddress = searchParams.get("address");
   const arenaIdParam = searchParams.get("arena");
   const tokenParam = searchParams.get("token");
   const wagerParam = searchParams.get("wager");
@@ -107,21 +147,14 @@ export function BattleScreen() {
   const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
   const preSignedDepositSig = searchParams.get("depositSig");
   const scientistId = searchParams.get("scientist");
-  const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
 
-  const devAddressFallbackEnabled = runtimeConfig.allowDevAddressFallback;
-  const fallbackAddress =
-    devAddressFallbackEnabled ? queryAddress ?? `dev-preview-${roomId}` : null;
-  const address = publicKey?.toBase58() ?? fallbackAddress ?? "";
+  const address = publicKey?.toBase58() ?? "";
   const requiresWalletConnect = !address;
-  const hasValidWagerParam = Number.isFinite(Number(wagerParam)) && Number(wagerParam) > 0;
   const playGuardError = !roomIdParam
     ? "Missing roomId. Return to lobby and enter the match from the found flow."
-    : !arenaIdParam || !tokenParam || !hasValidWagerParam
-      ? "Missing arena/token/wager match context. Return to lobby and re-queue."
-      : null;
+    : null;
 
   const {
     connectionState,
@@ -142,21 +175,27 @@ export function BattleScreen() {
     playCard,
     confirmDeposit,
     reconnect,
-  } = useMatchSocket({ roomId, address });
+  } = useMatchSocket({ roomId, address, characterId: scientistId ?? "einstein" });
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
-  const [enemyAttackFlash, setEnemyAttackFlash] = useState(false);
   const [enemyEventText, setEnemyEventText] = useState<string | null>(null);
+  const [characterActionSide, setCharacterActionSide] = useState<BattleSide | null>(null);
+  const [projectile, setProjectile] = useState<ProjectileState | null>(null);
+  const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
+  const [opponentBaseFx, setOpponentBaseFx] = useState<BaseFxState>("idle");
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
-  const [releaseState, setReleaseState] = useState<"idle" | "signing" | "submitting" | "success" | "error">("idle");
-  const [releaseError, setReleaseError] = useState<string | null>(null);
-  const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [phaseToastVisible, setPhaseToastVisible] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState<MatchHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
+  const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -219,19 +258,57 @@ export function BattleScreen() {
     if (lastDamageEvent.timestamp === lastDamageTimestampRef.current) return;
     lastDamageTimestampRef.current = lastDamageEvent.timestamp;
 
-    const enemyAttacked = lastDamageEvent.attackerAddress !== player?.address;
-    if (enemyAttacked) {
-      setTimeout(() => {
-        setEnemyAttackFlash(true);
-        setEnemyEventText("Opponent attacked!");
-        setTimeout(() => setEnemyAttackFlash(false), 420);
-      }, 0);
-      return;
-    }
-    setTimeout(() => {
-      setEnemyEventText("You attacked!");
-    }, 0);
-  }, [lastDamageEvent, player?.address]);
+    const attackerSide: BattleSide =
+      lastDamageEvent.attackerAddress === player?.address ? "player" : "opponent";
+    const targetSide: BattleSide =
+      lastDamageEvent.targetAddress === player?.address
+        ? "player"
+        : lastDamageEvent.targetAddress === opponent?.address
+          ? "opponent"
+          : attackerSide === "player"
+            ? "opponent"
+            : "player";
+    const actionKind = lastDamageEvent.type === "heal" ? "heal" : "attack";
+
+    setCharacterActionSide(attackerSide);
+    setProjectile({
+      id: `${lastDamageEvent.timestamp}`,
+      from: attackerSide,
+      to: targetSide,
+      kind: actionKind,
+    });
+    setEnemyEventText(
+      attackerSide === "player"
+        ? actionKind === "heal"
+          ? "You healed your base!"
+          : "You attacked!"
+        : actionKind === "heal"
+          ? "Opponent healed!"
+          : "Opponent attacked!",
+    );
+
+    const actionResetTimer = setTimeout(() => {
+      setCharacterActionSide(null);
+    }, 360);
+    const projectileHitTimer = setTimeout(() => {
+      setProjectile(null);
+      if (targetSide === "player") {
+        setPlayerBaseFx(actionKind === "heal" ? "heal" : "hit");
+      } else {
+        setOpponentBaseFx(actionKind === "heal" ? "heal" : "hit");
+      }
+    }, 440);
+    const baseFxResetTimer = setTimeout(() => {
+      setPlayerBaseFx("idle");
+      setOpponentBaseFx("idle");
+    }, 840);
+
+    return () => {
+      clearTimeout(actionResetTimer);
+      clearTimeout(projectileHitTimer);
+      clearTimeout(baseFxResetTimer);
+    };
+  }, [lastDamageEvent, opponent?.address, player?.address]);
 
   const isPlayable = status === "playing" && connectionState === "connected";
   const isMatchComplete = Boolean(settlementResult) || Boolean(matchInvalidated) || status === "finished";
@@ -250,61 +327,6 @@ export function BattleScreen() {
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
     playCard(activeCard.id, optionId);
-  }
-
-  async function onConfirmFundRelease() {
-    if (!settlementResult) return;
-    if (releaseState === "signing" || releaseState === "submitting" || releaseState === "success") {
-      return;
-    }
-
-    setReleaseError(null);
-
-    const settlementMode = runtimeConfig.settlementMode;
-    if (settlementMode === "mock") {
-      setReleaseState("submitting");
-      const mockSignature = `mock-release-${Date.now()}`;
-      setReleaseSignature(mockSignature);
-      setReleaseState("success");
-      return;
-    }
-
-    if (!wallet.publicKey) {
-      setReleaseState("error");
-      setReleaseError("Connect wallet to confirm fund release.");
-      return;
-    }
-
-    setReleaseState("signing");
-
-    try {
-      const signature = await signSettlementReleaseIntent({
-        connection,
-        wallet,
-        matchId: settlementResult.matchId,
-        winner: settlementResult.winner,
-      });
-      setReleaseState("submitting");
-      setReleaseSignature(signature);
-      setReleaseState("success");
-    } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : "";
-      const lower = rawMessage.toLowerCase();
-      const message = lower.includes("declined")
-        ? "Wallet request declined. Approve release confirmation to continue."
-        : lower.includes("insufficient")
-          ? "Insufficient balance for fees. Top up wallet and retry."
-          : "Release confirmation failed. Retry or return to lobby.";
-      setReleaseState("error");
-      setReleaseError(message);
-    }
-  }
-
-  function getReleaseButtonLabel() {
-    if (releaseState === "signing") return "Signing In Wallet...";
-    if (releaseState === "submitting") return "Submitting Confirmation...";
-    if (releaseState === "success") return "Release Confirmed";
-    return "Confirm Fund Release";
   }
 
   const playerScore = player?.score ?? 0;
@@ -358,6 +380,8 @@ export function BattleScreen() {
   const opponentMetaLabel = opponent?.address
     ? `Score ${opponentScore} - Rounds ${opponentRoundsWon}`
     : "Waiting for opponent metadata";
+  const playerVisual = getCharacterVisual(player?.characterId ?? scientistId ?? undefined);
+  const opponentVisual = getCharacterVisual(opponent?.characterId ?? undefined);
   const challengeLink = useMemo(() => {
     const origin = typeof window === "undefined" ? null : window.location.origin;
     return createChallengeLink({
@@ -432,15 +456,6 @@ export function BattleScreen() {
     });
   }
 
-  if (releaseError) {
-    alerts.push({
-      id: `release:${releaseError}`,
-      title: "Settlement Error",
-      message: releaseError,
-      tone: "warning",
-      autoDismissMs: 12000,
-    });
-  }
   const visibleAlerts = alerts.filter((alert) => !dismissedAlerts[alert.id]);
   const autoDismissKeys = visibleAlerts
     .filter((alert) => alert.autoDismissMs > 0)
@@ -467,10 +482,6 @@ export function BattleScreen() {
 
   function dismissAlert(alert: UiAlert) {
     setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
-    if (alert.id.startsWith("release:")) {
-      setReleaseError(null);
-      setReleaseState("idle");
-    }
   }
 
   async function onCopyChallengeLink() {
@@ -565,31 +576,52 @@ export function BattleScreen() {
     return () => clearTimeout(id);
   }, [shareNotice]);
 
+  useEffect(() => {
+    if (!historyOpen || !address) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setHistoryLoading(true);
+      setHistoryError(null);
+    });
+
+    getWalletHistory(address)
+      .then((items) => {
+        if (cancelled) return;
+        setHistoryItems(items);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "History unavailable. Try again later.";
+        setHistoryError(message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [historyOpen, address]);
+
   if (playGuardError) {
     return (
       <main
         className="grid min-h-[100svh] place-items-center px-4"
         style={{
-          backgroundColor: "#f5f1e8",
-          backgroundImage:
-            "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
-          backgroundSize: "42px 42px",
+          background:
+            "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
         }}
       >
-        {showIntegrationBanner && (
-          <IntegrationModeBanner
-            depositMode={runtimeConfig.depositMode}
-            settlementMode={runtimeConfig.settlementMode}
-          />
-        )}
-        <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "#fffdfa" }}>
-          <p className="font-caprasimo text-3xl text-[#1f2b24]">Match Context Missing</p>
-          <p className="mt-2 font-gabarito text-sm text-[#73512d]">{playGuardError}</p>
+        <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
+          <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Match Context Missing</p>
+          <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">{playGuardError}</p>
           <div className="mt-4">
             <Link
               href="/lobby"
               className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+              style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
             >
               Back To Lobby
             </Link>
@@ -604,21 +636,13 @@ export function BattleScreen() {
       <main
         className="grid min-h-[100svh] place-items-center px-4"
         style={{
-          backgroundColor: "#f5f1e8",
-          backgroundImage:
-            "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
-          backgroundSize: "42px 42px",
+          background:
+            "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
         }}
       >
-        {showIntegrationBanner && (
-          <IntegrationModeBanner
-            depositMode={runtimeConfig.depositMode}
-            settlementMode={runtimeConfig.settlementMode}
-          />
-        )}
-        <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#fffdfa" }}>
-          <p className="font-caprasimo text-3xl text-[#1f2b24]">Wallet Required</p>
-          <p className="mt-2 font-gabarito text-sm text-[#4f6759]">
+        <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
+          <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Wallet Required</p>
+          <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">
             Connect Phantom to enter battle and sign match deposit.
           </p>
           <div className="mt-4 flex flex-col items-center gap-3">
@@ -626,7 +650,7 @@ export function BattleScreen() {
             <Link
               href="/lobby"
               className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+              style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
             >
               Back To Lobby
             </Link>
@@ -640,25 +664,17 @@ export function BattleScreen() {
     <main
       className="min-h-[100svh] px-4 py-4 md:px-6"
       style={{
-        backgroundColor: "#f5f1e8",
-        backgroundImage:
-          "linear-gradient(rgba(39,65,55,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,65,55,0.05) 1px, transparent 1px)",
-        backgroundSize: "42px 42px",
+        background:
+          "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
-      {showIntegrationBanner && (
-        <IntegrationModeBanner
-          depositMode={runtimeConfig.depositMode}
-          settlementMode={runtimeConfig.settlementMode}
-        />
-      )}
       <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
         {phaseToastVisible && (
-          <div className="frame-cut px-3 py-2" style={{ border: "1px solid rgba(39,65,55,0.24)", background: "rgba(236,248,228,0.97)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#275d34]">
+          <div className="frame-cut px-3 py-2" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.92)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
               Extra Point Activated
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
               Phase changed. Card effects are now x2.
             </p>
           </div>
@@ -670,25 +686,25 @@ export function BattleScreen() {
             style={{
               border:
                 alert.tone === "error"
-                  ? "1px solid rgba(138,63,43,0.34)"
-                  : "1px solid rgba(186,105,49,0.34)",
+                  ? "1px solid rgba(186,105,49,0.42)"
+                  : "1px solid rgba(248,214,148,0.42)",
               background:
                 alert.tone === "error"
-                  ? "rgba(255,245,241,0.97)"
-                  : "rgba(255,250,242,0.97)",
+                  ? "rgba(43,24,16,0.94)"
+                  : "rgba(13,24,20,0.94)",
             }}
           >
             <div className="flex items-start justify-between gap-2">
               <p
                 className="font-gabarito text-xs font-bold uppercase tracking-wide"
-                style={{ color: alert.tone === "error" ? "#8a3f2b" : "#8f5a1d" }}
+                style={{ color: alert.tone === "error" ? "#f8d694" : "#f8d694" }}
               >
                 {alert.title}
               </p>
               <button
                 type="button"
                 onClick={() => dismissAlert(alert)}
-                className="font-gabarito text-xs font-bold leading-none text-[#7c4a36]"
+                className="font-gabarito text-xs font-bold leading-none text-[var(--tone-cream)] opacity-80"
                 aria-label="Close alert"
               >
                 X
@@ -696,12 +712,12 @@ export function BattleScreen() {
             </div>
             <p
               className="mt-1 break-words font-gabarito text-xs"
-              style={{ color: alert.tone === "error" ? "#6f3a28" : "#73512d" }}
+              style={{ color: "rgba(244,240,230,0.88)" }}
             >
               {alert.message}
             </p>
             {alert.id.startsWith("socket:") && socketUrl && (
-              <p className="mt-1 break-all font-gabarito text-[11px] text-[#7c4a36]">
+              <p className="mt-1 break-all font-gabarito text-[11px] text-[rgba(244,240,230,0.74)]">
                 {socketUrl}
               </p>
             )}
@@ -711,20 +727,20 @@ export function BattleScreen() {
                   type="button"
                   onClick={alert.onAction}
                   className="frame-cut frame-cut-sm px-2 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "#fffdfa" }}
+                  style={{ border: "1px solid rgba(248,214,148,0.35)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
                 >
                   {alert.actionLabel}
                 </button>
               )}
             </div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(39,65,55,0.14)]">
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(248,214,148,0.16)]">
               <div
                 className="h-full"
                 style={{
                   width: "100%",
                   background:
                     alert.tone === "error"
-                      ? "linear-gradient(90deg,#c96d47,#8a3f2b)"
+                      ? "linear-gradient(90deg,#d9a85b,#ba6931)"
                       : "linear-gradient(90deg,#d9a85b,#ba6931)",
                   animationName: alert.autoDismissMs > 0 ? "alertDrain" : undefined,
                   animationDuration: alert.autoDismissMs > 0 ? `${alert.autoDismissMs}ms` : undefined,
@@ -739,25 +755,25 @@ export function BattleScreen() {
 
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-7xl flex-col">
         <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[#5e7768]">
+          <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
             Battle Room - {roomId}
           </p>
           <div className="flex items-center gap-2">
             <span
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
+              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {roundText}
             </span>
             <span
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
+              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {remainingMatchClock}
             </span>
             <span
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
+              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {getStatusLabel(status)} - {connectionState}
             </span>
@@ -767,9 +783,9 @@ export function BattleScreen() {
                 border: "1px solid rgba(39,65,55,0.2)",
                 background:
                   (gameState?.timer?.phase ?? currentPhase) === "extra_point"
-                    ? "rgba(236,248,228,0.95)"
-                    : "rgba(255,255,255,0.9)",
-                color: (gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "#275d34" : "#274137",
+                    ? "rgba(53,93,63,0.92)"
+                    : "rgba(19,32,26,0.86)",
+                color: "var(--tone-cream)",
               }}
             >
               {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
@@ -777,7 +793,7 @@ export function BattleScreen() {
             <Link
               href={resumeQueueHref}
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)", color: "#274137" }}
+              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               Exit
             </Link>
@@ -785,22 +801,22 @@ export function BattleScreen() {
         </header>
 
         {isRoomStateLoading && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "rgba(255,255,255,0.92)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.9)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
               Syncing room state
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
               Rejoining battle room after refresh. Waiting for server snapshot.
             </p>
           </div>
         )}
 
         {hasSocketIssue && !gameState && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.32)", background: "rgba(255,250,242,0.95)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#8f5a1d]">
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.4)", background: "rgba(43,24,16,0.88)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#f8d694]">
               Unable to enter battle room
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#73512d]">
+            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
               Connection to this match room failed. Retry socket or return to lobby queue without refreshing.
             </p>
             <div className="mt-2 flex gap-2">
@@ -808,14 +824,14 @@ export function BattleScreen() {
                 type="button"
                 onClick={reconnect}
                 className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
               >
                 Retry Room
               </button>
               <Link
                 href={resumeQueueHref}
                 className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
               >
                 Return And Requeue
               </Link>
@@ -824,11 +840,11 @@ export function BattleScreen() {
         )}
 
         {shouldShowPlayStateGate && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,255,255,0.9)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.9)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
               Room not in playing state yet
             </p>
-            <p className="mt-1 font-gabarito text-xs text-[#4f6759]">
+            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
               Current room status: {getStatusLabel(status)}. Keep this page open or return to lobby and resume queue.
             </p>
             <div className="mt-2 flex gap-2">
@@ -837,7 +853,7 @@ export function BattleScreen() {
                   type="button"
                   onClick={reconnect}
                   className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
                 >
                   Retry Room
                 </button>
@@ -845,7 +861,7 @@ export function BattleScreen() {
               <Link
                 href={resumeQueueHref}
                 className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "#fffdfa" }}
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
               >
                 Return And Requeue
               </Link>
@@ -855,55 +871,181 @@ export function BattleScreen() {
 
         <section
           className="frame-cut relative flex flex-1 flex-col overflow-hidden px-4 py-5 md:px-6"
-          style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,255,255,0.84)" }}
+          style={{
+            border: "1px solid rgba(248,214,148,0.28)",
+            background:
+              "radial-gradient(circle at 50% 18%, rgba(248,214,148,0.16), transparent 45%), linear-gradient(160deg, rgba(12,21,17,0.92), rgba(17,29,24,0.94))",
+          }}
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-caprasimo text-3xl text-[#1f2b24]">You</p>
-              <p className="font-gabarito text-xs text-[#5e7768]">Score {playerScore} - Rounds {playerRoundsWon}</p>
+              <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">You</p>
+              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">Score {playerScore} - Rounds {playerRoundsWon}</p>
+              {address && (
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{shortenAddress(address)}</p>
+                  <WalletInspectButton
+                    label="Inspect"
+                    onClick={() => {
+                      setInspectTargetTitle("Your Wallet");
+                      setInspectTargetAddress(address);
+                    }}
+                  />
+                </div>
+              )}
             </div>
-            <p className="font-caprasimo text-4xl text-[#7a8f82]">VS</p>
+            <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
             <div className="text-right">
-              <p className="font-caprasimo text-3xl text-[#1f2b24]">Opponent</p>
-              <p className="font-gabarito text-[11px] text-[#5e7768]">{opponentIdentityLabel}</p>
-              <p className="font-gabarito text-xs text-[#5e7768]">{opponentMetaLabel}</p>
+              <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Rival</p>
+              <div className="mt-1 flex items-center justify-end gap-2">
+                <p className="font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
+                {opponent?.address && (
+                  <WalletInspectButton
+                    label="Inspect"
+                    onClick={() => {
+                      setInspectTargetTitle("Rival Wallet");
+                      setInspectTargetAddress(opponent.address);
+                    }}
+                  />
+                )}
+              </div>
+              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">{opponentMetaLabel}</p>
             </div>
           </div>
 
-          <div className="relative mt-5 flex-1">
-            <div className="absolute left-0 top-6 flex items-start gap-3">
+          <div className="relative mt-4 flex-1 min-h-[420px]">
+            <div className="absolute left-0 top-2 flex flex-col items-start gap-2">
               <div
-                className="frame-cut h-44 w-20"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", background: enemyAttackFlash ? "#f3e0d8" : "#ebe5d7" }}
-              />
+                className="grid aspect-square w-24 place-items-center overflow-hidden rounded-xl border"
+                style={{
+                  borderColor: "rgba(248,214,148,0.36)",
+                  background:
+                    playerBaseFx === "hit"
+                      ? "linear-gradient(150deg, rgba(124,55,38,0.92), rgba(62,31,21,0.95))"
+                      : playerBaseFx === "heal"
+                        ? "linear-gradient(150deg, rgba(39,93,52,0.92), rgba(24,58,34,0.95))"
+                        : "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
+                  boxShadow:
+                    playerBaseFx === "hit"
+                      ? "0 0 0 2px rgba(186,105,49,0.45), 0 10px 20px rgba(0,0,0,0.35)"
+                      : playerBaseFx === "heal"
+                        ? "0 0 0 2px rgba(157,180,150,0.52), 0 10px 20px rgba(0,0,0,0.35)"
+                        : "0 10px 20px rgba(0,0,0,0.35)",
+                }}
+              >
+                <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{playerVisual.baseGlyph}</span>
+              </div>
               <div>
-                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[#5e7768]">Base HP</p>
-                <p className="font-caprasimo text-2xl text-[#274137]">{playerBaseHp}</p>
+                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[rgba(244,240,230,0.72)]">Base HP</p>
+                <p className="font-caprasimo text-2xl text-[var(--tone-cream)]">{playerBaseHp}</p>
               </div>
             </div>
 
-            <div className="absolute right-0 top-6 flex items-start gap-3">
-              <div className="text-right">
-                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[#5e7768]">Base HP</p>
-                <p className="font-caprasimo text-2xl text-[#6f3a28]">{opponentBaseHp}</p>
-              </div>
+            <div className="absolute right-0 top-2 flex flex-col items-end gap-2">
               <div
-                className="frame-cut h-44 w-20"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", background: enemyAttackFlash ? "#f3d8d0" : "#ebe5d7" }}
-              />
+                className="grid aspect-square w-24 place-items-center overflow-hidden rounded-xl border"
+                style={{
+                  borderColor: "rgba(248,214,148,0.36)",
+                  background:
+                    opponentBaseFx === "hit"
+                      ? "linear-gradient(150deg, rgba(124,55,38,0.92), rgba(62,31,21,0.95))"
+                      : opponentBaseFx === "heal"
+                        ? "linear-gradient(150deg, rgba(39,93,52,0.92), rgba(24,58,34,0.95))"
+                        : "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
+                  boxShadow:
+                    opponentBaseFx === "hit"
+                      ? "0 0 0 2px rgba(186,105,49,0.45), 0 10px 20px rgba(0,0,0,0.35)"
+                      : opponentBaseFx === "heal"
+                        ? "0 0 0 2px rgba(157,180,150,0.52), 0 10px 20px rgba(0,0,0,0.35)"
+                        : "0 10px 20px rgba(0,0,0,0.35)",
+                }}
+              >
+                <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{opponentVisual.baseGlyph}</span>
+              </div>
+              <div className="text-right">
+                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[rgba(244,240,230,0.72)]">Base HP</p>
+                <p className="font-caprasimo text-2xl text-[var(--tone-cream)]">{opponentBaseHp}</p>
+              </div>
             </div>
 
-            <div className="absolute left-[22%] top-[22%] grid h-24 w-24 place-items-center rounded-full border border-[rgba(39,65,55,0.26)] bg-[rgba(255,255,255,0.88)]">
-              <p className="font-gabarito text-sm font-semibold uppercase tracking-wider text-[#5e7768]">You</p>
+            <div
+              className={`absolute left-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] overflow-hidden rounded-2xl border transition-all duration-300 ${
+                characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg] shadow-[0_0_28px_rgba(248,214,148,0.35)]" : ""
+              }`}
+              style={{
+                borderColor: "rgba(248,214,148,0.42)",
+                background: playerVisual.portraitBg,
+              }}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
+              <div className="relative grid h-full place-items-center">
+                <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
+                  {playerVisual.initial}
+                </span>
+              </div>
             </div>
 
-            <div className="absolute right-[22%] top-[22%] grid h-24 w-24 place-items-center rounded-full border border-[rgba(39,65,55,0.26)] bg-[rgba(255,255,255,0.88)]">
-              <p className="font-gabarito text-sm font-semibold uppercase tracking-wider text-[#5e7768]">Enemy</p>
+            <div
+              className={`absolute right-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] overflow-hidden rounded-2xl border transition-all duration-300 ${
+                characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg] shadow-[0_0_28px_rgba(248,214,148,0.35)]" : ""
+              }`}
+              style={{
+                borderColor: "rgba(248,214,148,0.42)",
+                background: opponentVisual.portraitBg,
+              }}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
+              <div className="relative grid h-full place-items-center">
+                <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
+                  {opponentVisual.initial}
+                </span>
+              </div>
             </div>
+
+            {projectile && (
+              <motion.div
+                key={projectile.id}
+                className="pointer-events-none absolute left-1/2 top-[42%] h-10 w-10 -translate-x-1/2 -translate-y-1/2"
+                initial={{
+                  x: projectile.from === "player" ? -180 : 180,
+                  y: projectile.from === "player" ? 40 : -40,
+                  opacity: 0.25,
+                  scale: 0.65,
+                }}
+                animate={{
+                  x: projectile.to === "player" ? -210 : 210,
+                  y: projectile.to === "player" ? 10 : -10,
+                  opacity: 1,
+                  scale: 1,
+                }}
+                transition={{ duration: 0.42, ease: [0.2, 1, 0.3, 1] }}
+              >
+                <div
+                  className="grid h-full w-full place-items-center rounded-lg border"
+                  style={{
+                    borderColor: projectile.kind === "heal" ? "rgba(157,180,150,0.72)" : "rgba(248,214,148,0.7)",
+                    background:
+                      projectile.kind === "heal"
+                        ? "linear-gradient(145deg, rgba(39,93,52,0.9), rgba(21,52,30,0.95))"
+                        : "linear-gradient(145deg, rgba(122,69,41,0.9), rgba(77,42,24,0.95))",
+                    boxShadow:
+                      projectile.kind === "heal"
+                        ? "0 0 18px rgba(157,180,150,0.48)"
+                        : "0 0 18px rgba(248,214,148,0.44)",
+                  }}
+                >
+                  <span className="font-caprasimo text-lg text-[var(--tone-cream)]">
+                    {projectile.kind === "heal" ? "✚" : "✦"}
+                  </span>
+                </div>
+              </motion.div>
+            )}
 
             <div className="absolute bottom-0 left-1/2 w-full max-w-4xl -translate-x-1/2">
-              <p className="mb-2 text-center font-gabarito text-sm text-[#4f6759]">
-                {enemyEventText ?? (isPlayable ? "Pick a card from the center deck." : "Waiting for server state...")}
+              <p className="mb-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
+                {enemyEventText ?? (isPlayable ? "Pick a card from your hand." : "Waiting for server state...")}
               </p>
 
               <div className="flex items-end justify-center gap-2 md:gap-3">
@@ -921,15 +1063,16 @@ export function BattleScreen() {
                       disabled={!card || !isPlayable || Boolean(activeCardId) || isMatchComplete}
                       className={`frame-cut relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] px-2 py-2 text-left transition ${transformClass}`}
                       style={{
-                        border: active ? "1px solid #274137" : "1px solid rgba(39,65,55,0.2)",
-                        background: "#e9e3d7",
-                        opacity: !card || !isPlayable ? 0.6 : 1,
+                        border: active ? "1px solid rgba(248,214,148,0.88)" : "1px solid rgba(111,58,40,0.42)",
+                        background: "linear-gradient(160deg, #fff4dd 0%, #f1dfc1 100%)",
+                        opacity: !card || !isPlayable ? 0.62 : 1,
+                        boxShadow: "0 8px 16px rgba(0,0,0,0.28)",
                       }}
                     >
-                      <span className="font-gabarito text-[10px] uppercase tracking-[0.16em] text-[#6d8373]">
+                      <span className="font-gabarito text-[10px] uppercase tracking-[0.16em] text-[#6d4f3a]">
                         {card ? card.type : "locked"}
                       </span>
-                      <span className="absolute bottom-2 left-2 font-caprasimo text-3xl text-[#51675a]">?</span>
+                      <span className="absolute bottom-2 left-2 font-caprasimo text-3xl text-[#6f3a28]">?</span>
                     </button>
                   );
                 })}
@@ -940,8 +1083,8 @@ export function BattleScreen() {
       </div>
 
       {activeCard && status === "playing" && !isMatchComplete && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(20,30,24,0.35)] p-4">
-          <div className="frame-cut w-full max-w-xl p-4 md:p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
+        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">
+          <div className="frame-cut w-full max-w-xl p-4 md:p-5" style={{ border: "1px solid rgba(248,214,148,0.36)", background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)" }}>
             <div className="mb-2 flex items-center justify-between">
               <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
               <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
@@ -959,7 +1102,7 @@ export function BattleScreen() {
                   disabled={answerLocked}
                   onClick={() => onAnswer(option.id)}
                   className="frame-cut px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
-                  style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#fffdfa" }}
+                  style={{ border: "1px solid rgba(111,58,40,0.26)", background: "rgba(255,248,236,0.95)" }}
                 >
                   <p className="font-gabarito text-xs font-bold uppercase tracking-wider text-[#6d8373]">
                     {option.id}
@@ -973,12 +1116,21 @@ export function BattleScreen() {
       )}
 
       {isMatchComplete && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(20,30,24,0.42)] p-4">
-          <div className="frame-cut w-full max-w-xl p-5" style={{ border: "1px solid rgba(39,65,55,0.22)", background: "#f5f1e8" }}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
+          <div className="frame-cut w-full max-w-xl p-5" style={{ border: "1px solid rgba(248,214,148,0.36)", background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)" }}>
             <p className="font-caprasimo text-4xl text-[#1f2b24]">{settlementText}</p>
             <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Resolved turns: {outcomes.length}</p>
             {winnerAddress && (
-              <p className="mt-1 font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
+              <div className="mt-1 flex items-center gap-2">
+                <p className="font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
+                <WalletInspectButton
+                  label="Inspect"
+                  onClick={() => {
+                    setInspectTargetTitle("Winner Wallet");
+                    setInspectTargetAddress(winnerAddress);
+                  }}
+                />
+              </div>
             )}
             {settlementResult && (
               <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
@@ -1007,11 +1159,11 @@ export function BattleScreen() {
             </div>
 
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#fffdfa" }}>
+              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,248,236,0.95)" }}>
                 <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Your Rounds</p>
                 <p className="font-caprasimo text-2xl text-[#274137]">{playerRoundsWon}</p>
               </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#fffdfa" }}>
+              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,248,236,0.95)" }}>
                 <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Opponent Rounds</p>
                 <p className="font-caprasimo text-2xl text-[#6f3a28]">{opponentRoundsWon}</p>
               </div>
@@ -1032,42 +1184,43 @@ export function BattleScreen() {
               ))}
             </div>
 
-            {settlementResult && (
-              <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "#fffdfa" }}>
-                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
-                  Fund Release Confirmation
-                </p>
-                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
-                  Confirm release intent after winner announcement.
-                </p>
-                <button
-                  type="button"
-                  onClick={onConfirmFundRelease}
-                  disabled={releaseState === "signing" || releaseState === "submitting" || releaseState === "success"}
-                  className="frame-cut frame-cut-sm mt-3 px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
-                >
-                  {getReleaseButtonLabel()}
-                </button>
-                {releaseSignature && (
-                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
-                    Signature: {releaseSignature}
+            <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}>
+              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
+                Settlement Authority
+              </p>
+              {settlementResult ? (
+                <>
+                  <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+                    Result signed by backend oracle and submitted by backend settlement flow.
                   </p>
-                )}
-                {!wallet.publicKey && (
-                  <div className="mt-2">
-                    <HydratedWalletButton />
-                  </div>
-                )}
-              </div>
-            )}
+                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
+                    Server Pubkey: {settlementResult.serverPublicKey}
+                  </p>
+                  <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
+                    Settlement Signature: {settlementResult.settlementSignature}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
+                  Waiting for server settlement payload...
+                </p>
+              )}
+            </div>
 
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
+              >
+                View History
+              </button>
               <button
                 type="button"
                 onClick={() => setShareModalOpen(true)}
                 className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.9)" }}
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
               >
                 Blink Share
               </button>
@@ -1077,7 +1230,7 @@ export function BattleScreen() {
               <Link
                 href="/lobby"
                 className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,255,255,0.88)" }}
+                style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
               >
                 Back To Lobby
               </Link>
@@ -1087,13 +1240,13 @@ export function BattleScreen() {
       )}
 
       {shareModalOpen && isMatchComplete && (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(20,30,24,0.45)] p-4">
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
           <div className="relative w-full max-w-3xl">
             <button
               type="button"
               onClick={() => setShareModalOpen(false)}
               className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,255,255,0.92)" }}
+              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
             >
               Close
             </button>
@@ -1114,6 +1267,26 @@ export function BattleScreen() {
             />
           </div>
         </div>
+      )}
+
+      <HistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        title="Match History"
+        items={historyItems}
+        loading={historyLoading}
+        error={historyError}
+      />
+
+      {inspectTargetAddress && (
+        <WalletInspectPanel
+          open={Boolean(inspectTargetAddress)}
+          onClose={() => setInspectTargetAddress(null)}
+          address={inspectTargetAddress}
+          arenaId={arenaId}
+          token={arenaToken}
+          title={inspectTargetTitle}
+        />
       )}
     </main>
   );

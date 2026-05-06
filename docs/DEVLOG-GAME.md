@@ -190,3 +190,70 @@ The specialty multiplier **stacks multiplicatively** with the existing extra-poi
 **Tech Debt:**
 - The frontend `CharacterCard` shows generic stat bars but does not explicitly label the 1.5x specialty bonus. A tooltip or badge ("1.5x Sequence Damage") would improve discoverability.
 - Character definitions exist in two places: `characterStats.ts` (backend-authoritative) and `SCIENTISTS[]` in `LobbyScreen.tsx` (frontend display). These should eventually be unified or auto-derived.
+
+---
+
+## 10. RPC Migration — RPCFast Integration (2026-05-04)
+
+**The Change:**
+
+*Files touched:*
+- `apps/api/.env.example`
+- `apps/api/src/utils/settlement.ts`
+- `apps/api/src/utils/eventListener.ts`
+- `apps/api/src/index.ts`
+- `apps/web/src/components/Providers.tsx`
+- `apps/web/.env`
+
+Migrated the Solana RPC layer from the public `api.devnet.solana.com` to support **RPCFast** (`rpcfast.com`), a high-performance RPC provider and Frontier Hackathon sponsor.
+
+**What changed:**
+
+1. **Backend (`settlement.ts`):** The singleton `Connection` now accepts an optional `SOLANA_WS_URL` for explicit WebSocket configuration (RPCFast may provide separate HTTP/WS endpoints).
+2. **Backend (`eventListener.ts`):** `startEventListener()` now takes an optional `wsUrl` parameter instead of blindly converting `https→wss`. Falls back to the old derivation when no explicit WS URL is set.
+3. **Backend (`index.ts`):** Passes `SOLANA_WS_URL` env var to the event listener.
+4. **Frontend (`Providers.tsx`):** `ConnectionProvider` now reads `NEXT_PUBLIC_SOLANA_RPC_URL` from the environment, falling back to `clusterApiUrl('devnet')` when unset.
+5. **Env files:** Updated `.env.example` and `apps/web/.env` with RPCFast-specific documentation and placeholders.
+
+**The Reasoning:**
+- Public Solana RPC endpoints are rate-limited and unreliable for production use (especially for `sendAndConfirmTransaction` and `onLogs` subscriptions).
+- RPCFast provides <20ms latency, dedicated infrastructure, and free hackathon credits — a direct upgrade for CORA's on-chain settlement path.
+- Adding `SOLANA_WS_URL` as a separate env var is necessary because some RPC providers (including RPCFast) serve WebSocket traffic on different endpoints than their HTTP API.
+
+**Tech Debt:**
+- The `actions.ts` route still creates a one-off `new Connection()` per POST request (line 199). This should be refactored to use the shared singleton from `settlement.ts`.
+- No automated health check to validate the RPC endpoint on startup. A `getSlot()` probe would catch misconfigured URLs early.
+
+---
+
+## 11. Game Status — Explicit `settling` Phase (2026-05-05)
+
+**The Change:**
+
+*Files touched:*
+- `apps/api/src/managers/RoomManager.ts`
+- `packages/shared-types/src/escrow.ts`
+
+Added an explicit `settling` status to the game lifecycle, making the canonical flow:
+
+```
+waiting → depositing → playing → settling → finished
+```
+
+Previously, `GameStatus` in `websocket.ts` already defined `settling` as a valid status, but `RoomManager` never set it — jumping directly from `playing` to `finished`. The settlement logic (anti-cheat evaluation, on-chain tx dispatch) happened invisibly during the `finished` state.
+
+**What changed:**
+
+1. **`RoomManager.ts` (gameOver handler):** Room now transitions to `settling` before anti-cheat evaluation and settlement dispatch. A `gameStateUpdate` is broadcast so FE sees `status: 'settling'`. After settlement is dispatched, status moves to `finished` with a second broadcast.
+2. **`RoomManager.ts` (forfeitMatch):** Same pattern — `settling` → settlement work → `finished`.
+3. **`RoomManager.ts` (broadcastGameState):** Engine state is now returned during `settling` phase (previously only `playing` and `finished`).
+4. **`RoomManager.ts` (debug viz):** Added ⚖️ icon for `settling` rooms in the FIFO visualization.
+5. **`escrow.ts` (GAME_TO_CHAIN_STATUS):** Added `settling: 'Active'` mapping — on-chain the match is still Active until the settlement tx confirms.
+
+**The Reasoning:**
+- FE requested clarity on whether `settling` is a real status. It is now canonical and always emitted.
+- Debugging is easier when the server log shows the settlement window explicitly instead of collapsing it into `finished`.
+- FE can show a settlement spinner/animation during this brief window, improving UX.
+
+**Tech Debt:**
+- The `settling` → `finished` transition is currently synchronous (settlement tx is dispatched async via `.then()`). If we need FE to know when settlement *actually confirms* on-chain, we'd need to await the tx and broadcast a `settlementConfirmed` event. For now the async fire-and-forget is fine.
