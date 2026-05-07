@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useAnimationControls } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
@@ -206,6 +206,8 @@ export function BattleScreen() {
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
   const extraPointShownRef = useRef(false);
+  const playerActionControls = useAnimationControls();
+  const opponentActionControls = useAnimationControls();
 
   const hand = gameState?.hand ?? EMPTY_HAND;
   const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
@@ -421,6 +423,40 @@ export function BattleScreen() {
     }
     return `/history?${params.toString()}`;
   }, [address, arenaId, arenaToken]);
+
+  useEffect(() => {
+    if (playerSpriteState !== "action") {
+      playerActionControls.start({
+        scale: 1,
+        y: 0,
+        transition: { duration: 0.12, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+
+    playerActionControls.start({
+      scale: [1, 1.05, 1],
+      y: [0, -5, 0],
+      transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [playerSpriteState, playerActionControls]);
+
+  useEffect(() => {
+    if (opponentSpriteState !== "action") {
+      opponentActionControls.start({
+        scale: 1,
+        y: 0,
+        transition: { duration: 0.12, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+
+    opponentActionControls.start({
+      scale: [1, 1.05, 1],
+      y: [0, -5, 0],
+      transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [opponentSpriteState, opponentActionControls]);
 
   useEffect(() => {
     if (status !== "depositing" || connectionState !== "connected") return;
@@ -948,14 +984,11 @@ export function BattleScreen() {
               </div>
             </div>
 
-            <div
-              className={`absolute left-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] overflow-hidden rounded-2xl border transition-all duration-300 ${
-                characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg] shadow-[0_0_28px_rgba(248,214,148,0.35)]" : ""
+            <motion.div
+              className={`absolute left-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] transition-all duration-300 ${
+                characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
               }`}
-              style={{
-                borderColor: "rgba(248,214,148,0.42)",
-                background: playerVisual.portraitBg,
-              }}
+              animate={playerActionControls}
             >
               <div className="relative h-full w-full">
                 {hasPlayerSprite && playerSpriteSrc ? (
@@ -964,7 +997,7 @@ export function BattleScreen() {
                     alt={`${playerCharacterId ?? "player"} ${playerSpriteState} portrait`}
                     fill
                     sizes="(max-width: 768px) 130px, 200px"
-                    className="object-cover object-center"
+                    className="object-contain object-center"
                     onError={() => markCharacterSpriteFailed(playerSpriteSrc)}
                   />
                 ) : (
@@ -974,19 +1007,14 @@ export function BattleScreen() {
                     </span>
                   </div>
                 )}
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
               </div>
-            </div>
+            </motion.div>
 
-            <div
-              className={`absolute right-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] overflow-hidden rounded-2xl border transition-all duration-300 ${
-                characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg] shadow-[0_0_28px_rgba(248,214,148,0.35)]" : ""
+            <motion.div
+              className={`absolute right-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] transition-all duration-300 ${
+                characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
               }`}
-              style={{
-                borderColor: "rgba(248,214,148,0.42)",
-                background: opponentVisual.portraitBg,
-              }}
+              animate={opponentActionControls}
             >
               <div className="relative h-full w-full">
                 {hasOpponentSprite && opponentSpriteSrc ? (
@@ -995,7 +1023,7 @@ export function BattleScreen() {
                     alt={`${opponentCharacterId ?? "opponent"} ${opponentSpriteState} portrait`}
                     fill
                     sizes="(max-width: 768px) 130px, 200px"
-                    className="object-cover object-center"
+                    className="object-contain object-center -scale-x-100"
                     onError={() => markCharacterSpriteFailed(opponentSpriteSrc)}
                   />
                 ) : (
@@ -1005,10 +1033,8 @@ export function BattleScreen() {
                     </span>
                   </div>
                 )}
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
               </div>
-            </div>
+            </motion.div>
 
             {projectile && (
               <motion.div
