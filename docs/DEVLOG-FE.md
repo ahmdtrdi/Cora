@@ -2456,3 +2456,27 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Role and narration strings are currently generated with simple conditional helpers in `Features.tsx`. If this language is reused across pages, it should be centralized into a shared presentational mapping utility.
+
+## 2026-05-07 - Dedicated /history Route + Informational GoldRush UX Scope
+
+### The Change
+- Added a dedicated history route at [apps/web/src/app/history/page.tsx](/d:/projects/Cora/apps/web/src/app/history/page.tsx) and new view component [apps/web/src/components/history/HistoryView.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryView.tsx).
+- Implemented `HistoryView` as a non-blocking, informational page that reads query params (`scope`, `arena`, `token`, optional `address`) and fetches data via existing FE adapters:
+  - `getArenaHistory`
+  - `getWalletHistory`
+- Updated [apps/web/src/components/history/HistoryButton.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryButton.tsx) to support both click-handler mode and link mode (`href`) so existing screens can route directly to `/history`.
+- Rewired character-select history access to route mode:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) now links to `/history?...` and removes local drawer-fetch state.
+- Reduced non-arena wallet inspect surface:
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx): removed inline wallet inspect modal/buttons and local history drawer state; uses `/history` route entry.
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx): removed wallet inspect modal/buttons and local history drawer state; `View History` now links to `/history?...`.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The user requested a dedicated `/history` view and clarified GoldRush should remain informational-only.
+- Routing to a full page avoids repeating fetch + modal logic in multiple phases and keeps gameplay screens focused.
+- Removing wallet-inspect actions from opponent/battle phases aligns UX to the intended scope: balance readiness is relevant in arena selection, not throughout the full match flow.
+
+### The Tech Debt
+- History data quality still depends on backend stub coverage for `/api/history/*`; UI reflects availability but does not yet annotate mock-vs-indexed provenance explicitly per item.
+- `HistoryView` currently uses lightweight in-component query/state handling; if filtering/sorting grows, we should promote this into shared hooks for easier reuse and cache behavior consistency.
