@@ -219,6 +219,37 @@ describe('RoomManager', () => {
       expect(clientAfter.disconnectTimeout).toBeNull();
     });
 
+    test('stale socket close after reconnect is ignored', () => {
+      manager.createRoom('room-stale-close');
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+
+      manager.joinRoom('room-stale-close', 'playerA', mock1.ws);
+      manager.joinRoom('room-stale-close', 'playerB', mock2.ws);
+
+      const room = manager.getRoom('room-stale-close')!;
+      room.playerA = 'playerA';
+      room.playerB = 'playerB';
+
+      manager.handleMessage('room-stale-close', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sigA' } });
+      manager.handleMessage('room-stale-close', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sigB' } });
+
+      expect(room.status).toBe('playing');
+
+      const replacement = createMockWs();
+      manager.joinRoom('room-stale-close', 'playerA', replacement.ws);
+
+      const clientAfterReconnect = room.clients.get('playerA')!;
+      expect(clientAfterReconnect.ws).toBe(replacement.ws);
+      expect(clientAfterReconnect.disconnectTimeout).toBeNull();
+
+      manager.leaveRoom('room-stale-close', 'playerA', mock1.ws);
+
+      const clientAfterStaleClose = room.clients.get('playerA')!;
+      expect(clientAfterStaleClose.ws).toBe(replacement.ws);
+      expect(clientAfterStaleClose.disconnectTimeout).toBeNull();
+    });
+
     test('joining non-existent room does nothing', () => {
       const mockWs = createMockWs();
       manager.joinRoom('nonexistent', 'player', mockWs.ws);

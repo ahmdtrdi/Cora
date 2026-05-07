@@ -199,8 +199,8 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
         console.error('Failed to parse message', e);
       }
     },
-    onClose() {
-      roomManager.leaveRoom(roomId, address);
+    onClose(event, ws: any) {
+      roomManager.leaveRoom(roomId, address, ws);
     }
   };
 }));
