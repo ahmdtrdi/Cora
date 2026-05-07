@@ -423,3 +423,20 @@
 - [ ] **`initializeEngine` is now async:** Callers (`handleDeposit`, `joinRoom`) call it without `await`. This is intentional (fire-and-forget for ER, engine starts synchronously), but unhandled rejections from the ER path should be monitored.
 - [ ] **Manual BattleSession parsing:** `getSessionState` uses hardcoded byte offsets. If the Rust struct changes, parsing breaks silently (same pattern as `settlement.ts`).
 
+## 2026-05-07 - GoldRush (Covalent) Integration & Wager USD Enrichment
+
+### The Change
+- **New Service:** Created `apps/api/src/services/goldrush.ts` initialized with `@covalenthq/client-sdk` pointing to `solana-devnet`. 
+- **Playability & Pricing:** Implemented `getWalletPlayability`, `getTokenPriceUsd`, and `getWagerUsdValue` directly querying on-chain token balances and spot prices using Covalent's Balance and Pricing services.
+- **Mocked History:** Implemented `getArenaHistory` and `getWalletHistory` to return safe, perfectly-typed mock `MatchHistoryItem[]` arrays instead of attempting to map raw Covalent transactions, protecting MVP scope.
+- **API Routes:** Exposed the frontend data pipelines in `apps/api/src/index.ts` under `/api/history/arena/:arenaId`, `/api/history/wallet/:address`, and `/api/history/wallet/:address/playability`.
+- **USD Broadcast:** Expanded `Room` and `GameState` types in `@shared/websocket` with a `wagerUsdValue` property. Upgraded `RoomManager` to perform non-blocking asynchronous USD enrichment inside `createPrivateRoom` and seamlessly push it out via `broadcastGameState`.
+
+### The Reasoning
+- **Data Protection:** The Covalent transaction APIs output very generic data (transfers, system calls). Rather than wrestling with filtering and parsing arbitrary logic to construct a `MatchHistoryItem`, falling back to mocked history ensures a safe and flawless frontend rendering experience for the MVP.
+- **Non-Blocking Oracles:** Injecting USD prices at room creation asynchronously ensures `broadcastGameState` is not blocked, meaning real-time WebSocket speeds remain entirely uncompromised.
+- **Seamless UI Ready:** Integrating the expected history endpoints using the exact frontend TypeScript contracts means zero downstream refactoring for the frontend team.
+
+### The Tech Debt
+- [ ] **History Indexing:** We are currently stubbing `/api/history/*`. Post-hackathon, we will need a dedicated Anchor event indexer (or equivalent) to scrape proper history instead of relying on the generic Covalent tx endpoints.
+- [ ] **Public Matchmaking Wager Enrichment:** `wagerUsdValue` enrichment is currently only configured inside `createPrivateRoom`. The public queue `queueMatch` structure must also trigger the pricing oracle once a standard `tokenMint` fallback architecture is defined.

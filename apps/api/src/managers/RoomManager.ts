@@ -12,6 +12,7 @@ import { loadQuestions } from '../questions';
 import { deriveMatchId } from '@shared/escrow';
 import { signSettlementAuthorization, serverPublicKey, submitSettlementTransaction, getServerKeypair } from '../utils/settlement';
 import { magicBlockService } from '../services/magicblock';
+import { getWagerUsdValue } from '../services/goldrush';
 
 interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
@@ -54,7 +55,10 @@ export interface Room {
   /** Per-player 20s shot clocks during the deposit phase */
   depositTimeouts: Map<string, ReturnType<typeof setTimeout>>;
   /** Ephemeral Rollup session PDA (set when MagicBlock is enabled) */
+  /** Ephemeral Rollup session PDA (set when MagicBlock is enabled) */
   erSessionPda: string | null;
+  /** USD value of the wager */
+  wagerUsdValue?: string | null;
 }
 
 export class RoomManager {
@@ -214,6 +218,7 @@ export class RoomManager {
       wagerAmount: null,
       depositTimeouts: new Map(),
       erSessionPda: null,
+      wagerUsdValue: null,
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;
@@ -252,11 +257,22 @@ export class RoomManager {
       wagerAmount,
       depositTimeouts: new Map(),
       erSessionPda: null,
+      wagerUsdValue: null,
     };
     this.rooms.set(roomId, room);
     console.log(`[Private] Room ${roomId} created for Player A: ${playerAPubkey}`);
     // Arm Player A's 20s shot clock immediately
     this.armDepositTimeout(room, playerAPubkey);
+
+    // Fetch USD value asynchronously
+    getWagerUsdValue(tokenMint, wagerAmount).then((usd) => {
+      if (usd && this.rooms.has(roomId)) {
+        this.rooms.get(roomId)!.wagerUsdValue = usd;
+        // Optionally broadcast the updated state if someone is already connected
+        this.broadcastGameState(room);
+      }
+    }).catch(e => console.error('[RoomManager] Failed to fetch wager USD value:', e));
+
     return roomId;
   }
 
@@ -1010,6 +1026,7 @@ export class RoomManager {
           ...room.engine.getStateForPlayer(address),
           tokenMint: room.tokenMint || '',
           wagerAmount: room.wagerAmount?.toString() || '0',
+          wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
         };
       } else {
@@ -1054,6 +1071,7 @@ export class RoomManager {
           roundsToWin: GameEngine.ROUNDS_TO_WIN,
           tokenMint: room.tokenMint || '',
           wagerAmount: room.wagerAmount?.toString() || '0',
+          wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
         };
       }
