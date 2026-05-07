@@ -29,6 +29,10 @@ export class RoomManager {
     return this.store.getRoom(roomId);
   }
 
+  public createRoom(roomId: string): Room {
+    return this.store.createRoom(roomId);
+  }
+
   public createPrivateRoom(playerAPubkey: string, tokenMint: string, wagerAmount: bigint): string {
     return this.lifecycle.createPrivateRoom(playerAPubkey, tokenMint, wagerAmount);
   }
@@ -45,8 +49,8 @@ export class RoomManager {
     this.lifecycle.joinRoom(roomId, address, ws, characterId);
   }
 
-  public leaveRoom(roomId: string, address: string) {
-    this.lifecycle.leaveRoom(roomId, address);
+  public leaveRoom(roomId: string, address: string, ws?: ServerWebSocket<unknown>) {
+    this.lifecycle.leaveRoom(roomId, address, ws);
   }
 
   public handleMessage(roomId: string, address: string, message: WsMessage) {

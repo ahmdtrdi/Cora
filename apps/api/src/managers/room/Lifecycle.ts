@@ -52,11 +52,19 @@ export class Lifecycle {
 
     if (client) {
       console.log(`Player ${address} reconnected to room ${roomId}`);
+      const previousWs = client.ws;
       if (client.disconnectTimeout) {
         clearTimeout(client.disconnectTimeout);
         client.disconnectTimeout = null;
       }
       client.ws = ws;
+      if (previousWs && previousWs !== ws) {
+        try {
+          previousWs.close(1000, 'Replaced by newer connection');
+        } catch (e) {
+          console.warn(`Failed to close previous socket for ${address} in room ${roomId}:`, e);
+        }
+      }
       const meta = room.playerMeta.get(address);
       if (meta) meta.characterId = characterId;
     } else {
@@ -99,12 +107,18 @@ export class Lifecycle {
     this.manager.network.broadcastGameState(room);
   }
 
-  public leaveRoom(roomId: string, address: string) {
+  public leaveRoom(roomId: string, address: string, ws?: ServerWebSocket<unknown>) {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
 
     const client = room.clients.get(address);
     if (!client) return;
+    if (!client.ws) return;
+
+    if (ws && client.ws !== ws) {
+      console.log(`Ignoring stale disconnect for player ${address} in room ${roomId}`);
+      return;
+    }
 
     client.ws = null;
 
