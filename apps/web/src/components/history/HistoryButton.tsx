@@ -16,7 +16,7 @@ const SHARED_STYLE = {
   boxShadow: "0 8px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08)",
 } as const;
 
-export function HistoryButton({ onClick, href, label = "History" }: HistoryButtonProps) {
+export function HistoryButton({ onClick, href, label = "Match History" }: HistoryButtonProps) {
   if (href) {
     return (
       <Link href={href} className={SHARED_CLASSNAME} style={SHARED_STYLE}>

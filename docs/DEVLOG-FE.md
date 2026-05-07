@@ -2480,3 +2480,35 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - History data quality still depends on backend stub coverage for `/api/history/*`; UI reflects availability but does not yet annotate mock-vs-indexed provenance explicitly per item.
 - `HistoryView` currently uses lightweight in-component query/state handling; if filtering/sorting grows, we should promote this into shared hooks for easier reuse and cache behavior consistency.
+
+## 2026-05-07 - History UI & Header Placement Consolidation
+
+### The Change
+- Finalized the history experience as a player-facing records surface across:
+  - [apps/web/src/components/history/HistoryView.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryView.tsx)
+  - [apps/web/src/components/history/HistoryDrawer.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryDrawer.tsx)
+  - [apps/web/src/components/history/WalletInspectPanel.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectPanel.tsx)
+- Consolidated history UX updates in one pass:
+  - removed internal-facing disclaimer copy
+  - switched to player-facing records language
+  - refined result-first receipt hierarchy (result/status/opponent/wager/signature)
+  - improved chip consistency and visual emphasis
+  - added subtle transition polish for history state/content changes
+- Finalized history entry-point placement in [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - moved history access from character-select to arena setup
+  - grouped header as left wallet, middle wager+balance, right history
+  - aligned balance/history visuals with the existing header pill language
+- Removed history action from character-select phase in [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- History should feel like part of the game product, not backend diagnostics.
+- Arena setup is the highest-context moment for history lookup (token decision + balance + prior records).
+- Consolidating these small iterations into one coherent pass improves handoff readability.
+
+### The Tech Debt
+- History visuals and motion timing remain component-local; if reused across additional pages, we should extract shared tokens/primitives for chips, receipts, and transition timing.
+- Header chip styling in `LobbySetup` remains local composition; future header variants may benefit from a shared layout primitive.
+
+
+

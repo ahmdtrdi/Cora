@@ -23,17 +23,39 @@ function toDisplayDate(timestamp: string) {
 }
 
 function resultLabel(item: MatchHistoryItem) {
-  if (item.result === "win") return "Win";
-  if (item.result === "loss") return "Loss";
-  if (item.result === "draw") return "Draw";
-  return "Unknown";
+  if (item.result === "win") return "WIN";
+  if (item.result === "loss") return "LOSS";
+  if (item.result === "draw") return "DRAW";
+  return "UNKNOWN";
 }
 
 function settlementLabel(item: MatchHistoryItem) {
-  if (item.settlementStatus === "settled") return "Settled";
-  if (item.settlementStatus === "pending") return "Pending";
-  if (item.settlementStatus === "failed") return "Failed";
-  return "Unknown";
+  if (item.settlementStatus === "settled") return "SETTLED";
+  if (item.settlementStatus === "pending") return "PENDING";
+  if (item.settlementStatus === "failed") return "FAILED";
+  return "UNKNOWN";
+}
+
+function resultBadgeStyle(result: MatchHistoryItem["result"]) {
+  if (result === "win") {
+    return {
+      border: "1px solid rgba(39,65,55,0.28)",
+      background: "rgba(237,244,235,0.95)",
+      color: "#274137",
+    };
+  }
+  if (result === "loss") {
+    return {
+      border: "1px solid rgba(111,58,40,0.28)",
+      background: "rgba(246,233,226,0.95)",
+      color: "#6f3a28",
+    };
+  }
+  return {
+    border: "1px solid rgba(88,92,86,0.28)",
+    background: "rgba(244,240,230,0.92)",
+    color: "#5e5b53",
+  };
 }
 
 export function HistoryDrawer({
@@ -85,7 +107,7 @@ export function HistoryDrawer({
                 style={{ border: "1px solid rgba(248,214,148,0.2)", background: "rgba(248,214,148,0.08)" }}
               />
             ))}
-            <p className="font-gabarito text-xs text-[rgba(244,240,230,0.82)]">Loading history...</p>
+            <p className="font-gabarito text-xs text-[rgba(244,240,230,0.82)]">Loading match records...</p>
           </div>
         )}
 
@@ -106,7 +128,7 @@ export function HistoryDrawer({
             className="frame-cut frame-cut-sm p-4"
             style={{ border: "1px solid rgba(248,214,148,0.2)", background: "rgba(16,26,22,0.72)" }}
           >
-            <p className="font-gabarito text-sm text-[rgba(244,240,230,0.86)]">No CORA history found yet.</p>
+            <p className="font-gabarito text-sm text-[rgba(244,240,230,0.86)]">No CORA matches found yet.</p>
           </div>
         )}
 
@@ -122,29 +144,34 @@ export function HistoryDrawer({
                 }}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#6f3a28]">
-                    {item.token} Arena
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="rounded-full px-2.5 py-0.5 font-gabarito text-[10px] font-black uppercase tracking-[0.12em]"
+                      style={resultBadgeStyle(item.result)}
+                    >
+                      {resultLabel(item)}
+                    </span>
+                    <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#6f3a28]">
+                      {item.token} Arena
+                    </p>
+                  </div>
                   <p className="font-gabarito text-[11px] text-[#5e7768]">{toDisplayDate(item.timestamp)}</p>
                 </div>
-                <p className="mt-1 font-mono text-[11px] text-[#274137]">Sig: {shortSignature(item.signature)}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-full border border-[rgba(111,58,40,0.28)] bg-[rgba(255,248,236,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#6f3a28]">
-                    {resultLabel(item)}
-                  </span>
-                  <span className="rounded-full border border-[rgba(39,65,55,0.24)] bg-[rgba(237,244,235,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#274137]">
-                    {settlementLabel(item)}
-                  </span>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-gabarito text-[11px] font-semibold uppercase tracking-[0.08em] text-[#274137]">
+                    {item.opponent ? `vs ${shortSignature(item.opponent)}` : "vs Unknown"}
+                  </p>
                   {item.wagerUsd && (
                     <span className="rounded-full border border-[rgba(111,58,40,0.24)] bg-[rgba(255,248,236,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#6f3a28]">
                       ${item.wagerUsd}
                     </span>
                   )}
-                  {item.opponent && (
-                    <span className="rounded-full border border-[rgba(39,65,55,0.24)] bg-[rgba(237,244,235,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#274137]">
-                      vs {shortSignature(item.opponent)}
-                    </span>
-                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="rounded-full border border-[rgba(39,65,55,0.24)] bg-[rgba(237,244,235,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#274137]">
+                    {settlementLabel(item)}
+                  </span>
+                  <p className="font-mono text-[11px] text-[#274137]">Sig {shortSignature(item.signature)}</p>
                 </div>
                 {item.explorerUrl && (
                   <a

@@ -3,7 +3,6 @@
 import type { Arena, Scientist } from "./LobbyScreen";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import type { CharacterOption } from "@/components/character/characterTypes";
-import { HistoryButton } from "@/components/history/HistoryButton";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 
 type CharacterSelectProps = {
@@ -38,7 +37,6 @@ export function CharacterSelect({
     ...scientist,
     stats: [...scientist.stats],
   }));
-  const historyHref = `/history?scope=arena&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}`;
 
   return (
     <RoomPhaseShell
@@ -79,7 +77,6 @@ export function CharacterSelect({
           </span>
         </div>
       }
-      rightPanelSlot={<HistoryButton href={historyHref} />}
       footerSlot={
         <div className="flex items-center justify-end">
           <button
