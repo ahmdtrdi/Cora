@@ -2376,3 +2376,83 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Current repository assets include turing and curie states, but einstein sprite files are not present yet; Einstein currently renders fallback initials until those files are added.
 - We currently support the shipped states (stay, action) only. If future character states (angry, happy) get dedicated art, we should extend the mapping and asset set.
+
+## 2026-05-07 - Landing Features Uses Basic Scientist Pose Assets
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to render scientist portrait art from `public/assets/characters/{scientistId}/basic.png` inside the existing 4:5 portrait panel.
+- Added `next/image` rendering for the basic pose with `fill + object-cover` so the new art consistently fits the current card ratio.
+- Preserved a safe fallback: if a basic image is missing or fails to load, the previous placeholder portrait (emoji + silhouette) still renders.
+- Kept existing overlays, badges, and HP strip layered above the image so current visual hierarchy remains intact.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The designer shipped basic poses and these are the best source for static landing cards, while action/stay assets remain gameplay-focused in `/play`.
+- Reusing the current 4:5 frame avoids layout churn and keeps card composition stable across all scientists.
+- Fallback behavior ensures the roster section does not regress when an asset is delayed or renamed.
+
+### The Tech Debt
+- `basic.png` naming/path is currently convention-based. If art versioning grows, we should centralize scientist asset metadata in one shared map instead of deriving paths inline.
+- Overlay intensity is slightly stronger with real art than placeholder mode; we may want a quick polish pass once final color grading for all portraits is locked.
+
+## 2026-05-07 - Landing Features Portrait Cleanup (Unobstructed Character Art)
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to remove portrait-overlay elements that were covering character art.
+- Removed in-portrait center overlays:
+  - base emoji marker
+  - base label text
+- Removed in-portrait bottom HP bar strip.
+- Reduced portrait color-wash opacity when real art is present so the character remains clearly visible.
+- Moved base context to the card body (`Base: ...`) so information is retained without overlapping the illustration.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The new basic pose assets are now the primary visual focus of each roster card.
+- Overlay UI on top of portraits created readability and composition conflicts (especially around face and lower body).
+- Keeping metadata in the body preserves information hierarchy while respecting the artwork.
+
+### The Tech Debt
+- If we later need dynamic HP visualization on landing cards, it should be rendered outside portrait bounds (for example as a compact row in card body) rather than layered on the image.
+
+## 2026-05-07 - Features Expand Stats Aligned to Shared Character Definitions
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to drive expanded `View Stats` content from [packages/shared-types/src/characterStats.ts](/d:/projects/Cora/packages/shared-types/src/characterStats.ts) instead of hardcoded landing profile stat bars.
+- Added shared-data integration in landing features:
+  - imports `CHARACTER_DEFS` and `QuestionCategory`
+  - maps canonical specialty category labels (`sequence`, `logical`, `math`) for display
+- Refined click-expand (mobile + desktop drawer) stats UI to show gameplay-accurate combat intel:
+  - Specialty category
+  - Specialty bonus percent
+  - Base correct power (`1.0x`)
+  - Specialty power (`1.5x`)
+  - Specialty + extra point max (`3.0x`)
+- Updated progress bar math to normalize multiplier values against max stack (`3.0x`) so visual bars are consistent and comparable.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- `characterStats.ts` is the canonical gameplay source for character specialties and multipliers; landing expand stats should reflect those same mechanics.
+- This removes drift between marketing/landing representation and actual match behavior.
+- The refined drawer now communicates meaningful, game-accurate stats when users click `View Stats`.
+
+### The Tech Debt
+- Landing profile `stats` fields in `content.ts` are still present for narrative profile metadata, but no longer drive expandable combat bars. If not needed elsewhere, we can deprecate or repurpose them in a cleanup pass.
+
+## 2026-05-07 - Features Outer Card Narration and Pills Aligned to Shared Stats
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to make outer (collapsed) card narration and top pills derive from [packages/shared-types/src/characterStats.ts](/d:/projects/Cora/packages/shared-types/src/characterStats.ts).
+- Replaced static/marketing pill values with stat-driven pills:
+  - left pill now reflects specialty role derived from category (`Mathematician`, `Logician`, `Pattern Runner`)
+  - right pill now shows canonical specialty bonus (`+50% Bonus` from multiplier)
+- Replaced outer short narration with stat-aligned summary text generated from specialty category + multiplier (for consistency with gameplay rules).
+- Removed the previous static rarity label dependency from this card layer.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The user asked for outer card narration/pills to match character stats; shared character definitions are the authoritative source.
+- This keeps first-glance roster information aligned with actual gameplay mechanics rather than thematic-only labels.
+
+### The Tech Debt
+- Role and narration strings are currently generated with simple conditional helpers in `Features.tsx`. If this language is reused across pages, it should be centralized into a shared presentational mapping utility.
