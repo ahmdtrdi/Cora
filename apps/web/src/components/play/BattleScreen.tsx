@@ -8,15 +8,10 @@ import { motion } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { HistoryDrawer } from "@/components/history/HistoryDrawer";
-import { WalletInspectButton } from "@/components/history/WalletInspectButton";
-import { WalletInspectPanel } from "@/components/history/WalletInspectPanel";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
-import { getWalletHistory } from "@/lib/history/historyApi";
-import type { MatchHistoryItem } from "@/lib/history/historyTypes";
 
 type MatchOutcome = {
   cardId: string;
@@ -203,12 +198,6 @@ export function BattleScreen() {
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [phaseToastVisible, setPhaseToastVisible] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyItems, setHistoryItems] = useState<MatchHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
-  const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
@@ -421,6 +410,17 @@ export function BattleScreen() {
     }
     return `/lobby?${params.toString()}`;
   }, [arenaId, scientistId]);
+  const historyHref = useMemo(() => {
+    const params = new URLSearchParams({
+      scope: address ? "wallet" : "arena",
+      arena: arenaId,
+      token: arenaToken,
+    });
+    if (address) {
+      params.set("address", address);
+    }
+    return `/history?${params.toString()}`;
+  }, [address, arenaId, arenaToken]);
 
   useEffect(() => {
     if (status !== "depositing" || connectionState !== "connected") return;
@@ -604,35 +604,6 @@ export function BattleScreen() {
     }, SHARE_NOTICE_DISPLAY_MS);
     return () => clearTimeout(id);
   }, [shareNotice]);
-
-  useEffect(() => {
-    if (!historyOpen || !address) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setHistoryLoading(true);
-      setHistoryError(null);
-    });
-
-    getWalletHistory(address)
-      .then((items) => {
-        if (cancelled) return;
-        setHistoryItems(items);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "History unavailable. Try again later.";
-        setHistoryError(message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setHistoryLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [historyOpen, address]);
 
   if (playGuardError) {
     return (
@@ -911,33 +882,13 @@ export function BattleScreen() {
               <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">You</p>
               <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">Score {playerScore} - Rounds {playerRoundsWon}</p>
               {address && (
-                <div className="mt-1 flex items-center gap-2">
-                  <p className="font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{shortenAddress(address)}</p>
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Your Wallet");
-                      setInspectTargetAddress(address);
-                    }}
-                  />
-                </div>
+                <p className="mt-1 font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{shortenAddress(address)}</p>
               )}
             </div>
             <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
             <div className="text-right">
               <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Rival</p>
-              <div className="mt-1 flex items-center justify-end gap-2">
-                <p className="font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
-                {opponent?.address && (
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Rival Wallet");
-                      setInspectTargetAddress(opponent.address);
-                    }}
-                  />
-                )}
-              </div>
+              <p className="mt-1 font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
               <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">{opponentMetaLabel}</p>
             </div>
           </div>
@@ -1176,16 +1127,7 @@ export function BattleScreen() {
             <p className="font-caprasimo text-4xl text-[#1f2b24]">{settlementText}</p>
             <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Resolved turns: {outcomes.length}</p>
             {winnerAddress && (
-              <div className="mt-1 flex items-center gap-2">
-                <p className="font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
-                <WalletInspectButton
-                  label="Inspect"
-                  onClick={() => {
-                    setInspectTargetTitle("Winner Wallet");
-                    setInspectTargetAddress(winnerAddress);
-                  }}
-                />
-              </div>
+              <p className="mt-1 font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
             )}
             {settlementResult && (
               <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
@@ -1263,14 +1205,13 @@ export function BattleScreen() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
+              <Link
+                href={historyHref}
                 className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
               >
                 View History
-              </button>
+              </Link>
               <button
                 type="button"
                 onClick={() => setShareModalOpen(true)}
@@ -1322,26 +1263,6 @@ export function BattleScreen() {
             />
           </div>
         </div>
-      )}
-
-      <HistoryDrawer
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        title="Match History"
-        items={historyItems}
-        loading={historyLoading}
-        error={historyError}
-      />
-
-      {inspectTargetAddress && (
-        <WalletInspectPanel
-          open={Boolean(inspectTargetAddress)}
-          onClose={() => setInspectTargetAddress(null)}
-          address={inspectTargetAddress}
-          arenaId={arenaId}
-          token={arenaToken}
-          title={inspectTargetTitle}
-        />
       )}
     </main>
   );

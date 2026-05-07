@@ -1,21 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { HistoryButton } from "@/components/history/HistoryButton";
-import { HistoryDrawer } from "@/components/history/HistoryDrawer";
-import { WalletInspectButton } from "@/components/history/WalletInspectButton";
-import { WalletInspectPanel } from "@/components/history/WalletInspectPanel";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
-import { getArenaHistory } from "@/lib/history/historyApi";
-import type { MatchHistoryItem } from "@/lib/history/historyTypes";
 import { RoomStatusRail } from "@/components/room/RoomStatusRail";
 import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
 
@@ -58,12 +54,6 @@ export function OpponentFound({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyItems, setHistoryItems] = useState<MatchHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
-  const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
   const depositIntentConfirmedRef = useRef(false);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
@@ -105,6 +95,7 @@ export function OpponentFound({
     token: arena.token,
     enabled: Boolean(wallet.publicKey),
   });
+  const historyHref = `/history?scope=arena&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}`;
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -203,35 +194,6 @@ export function OpponentFound({
     }, 12000);
     return () => clearTimeout(timerId);
   }, [errorVisible]);
-
-  useEffect(() => {
-    if (!historyOpen) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setHistoryLoading(true);
-      setHistoryError(null);
-    });
-
-    getArenaHistory(arena.id)
-      .then((items) => {
-        if (cancelled) return;
-        setHistoryItems(items);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "History unavailable. Try again later.";
-        setHistoryError(message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setHistoryLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [historyOpen, arena.id]);
 
   function getDepositHint() {
     if (reassignedRoomId) {
@@ -379,7 +341,7 @@ export function OpponentFound({
           {playabilityLabel}
         </span>
         <div className="flex items-center gap-2">
-          <HistoryButton onClick={() => setHistoryOpen(true)} />
+          <HistoryButton href={historyHref} />
           <button
             type="button"
             onClick={() => setShowRoomStatus((value) => !value)}
@@ -430,18 +392,7 @@ export function OpponentFound({
               </span>
               <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <p className="font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
-                {walletAddress && (
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Your Wallet");
-                      setInspectTargetAddress(walletAddress);
-                    }}
-                  />
-                )}
-              </div>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
             </div>
           </div>
         </div>
@@ -484,20 +435,9 @@ export function OpponentFound({
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
                 {opponentScientist?.base ?? "Opponent identity confirmed"}
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                <p className="font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                  {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
-                </p>
-                {opponentAddress && (
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Rival Wallet");
-                      setInspectTargetAddress(opponentAddress);
-                    }}
-                  />
-                )}
-              </div>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
+                {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+              </p>
             </div>
           </div>
         </div>
@@ -593,25 +533,14 @@ export function OpponentFound({
         </div>
       )}
 
-      <HistoryDrawer
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        title={`${arena.token} Match History`}
-        items={historyItems}
-        loading={historyLoading}
-        error={historyError}
-      />
-
-      {inspectTargetAddress && (
-        <WalletInspectPanel
-          open={Boolean(inspectTargetAddress)}
-          onClose={() => setInspectTargetAddress(null)}
-          address={inspectTargetAddress}
-          arenaId={arena.id}
-          token={arena.token}
-          title={inspectTargetTitle}
-        />
-      )}
+      <div className="mt-5 w-full text-right">
+        <Link
+          href={historyHref}
+          className="inline-flex rounded-full border border-[rgba(248,214,148,0.42)] bg-[rgba(16,26,22,0.5)] px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--tone-cream)] transition-colors hover:bg-[rgba(16,26,22,0.66)]"
+        >
+          Open Full History
+        </Link>
+      </div>
     </div>
   );
 }

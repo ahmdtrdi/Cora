@@ -23,6 +23,13 @@ function shortSignature(signature: string) {
   return `${signature.slice(0, 6)}...${signature.slice(-5)}`;
 }
 
+function resultLabel(result?: MatchHistoryItem["result"]) {
+  if (result === "win") return "WIN";
+  if (result === "loss") return "LOSS";
+  if (result === "draw") return "DRAW";
+  return "UNKNOWN";
+}
+
 function toDateLabel(timestamp: string) {
   const parsed = new Date(timestamp);
   if (Number.isNaN(parsed.getTime())) return "Unknown time";
@@ -152,7 +159,7 @@ export function WalletInspectPanel({
                 style={{ border: "1px solid rgba(248,214,148,0.2)", background: "rgba(248,214,148,0.08)" }}
               />
             ))}
-            <p className="font-gabarito text-xs text-[rgba(244,240,230,0.82)]">Inspecting wallet...</p>
+            <p className="font-gabarito text-xs text-[rgba(244,240,230,0.82)]">Loading match records...</p>
           </div>
         )}
 
@@ -162,7 +169,7 @@ export function WalletInspectPanel({
             style={{ border: "1px solid rgba(186,105,49,0.5)", background: "rgba(78,41,25,0.36)" }}
           >
             <p className="font-gabarito text-xs font-semibold uppercase tracking-wide text-[#f8d694]">
-              Wallet inspect unavailable.
+              Match history unavailable. Try again later.
             </p>
             <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.84)]">{error}</p>
           </div>
@@ -173,12 +180,15 @@ export function WalletInspectPanel({
             className="frame-cut frame-cut-sm p-3"
             style={{ border: "1px solid rgba(248,214,148,0.2)", background: "rgba(16,26,22,0.72)" }}
           >
-            <p className="font-gabarito text-sm text-[rgba(244,240,230,0.86)]">No CORA history found yet.</p>
+            <p className="font-gabarito text-sm text-[rgba(244,240,230,0.86)]">No CORA matches found yet.</p>
           </div>
         )}
 
         {!loading && !error && items.length > 0 && (
           <div className="max-h-[34vh] space-y-2 overflow-auto pr-1">
+            <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[rgba(244,240,230,0.78)]">
+              Recent matches
+            </p>
             {items.map((item) => (
               <div
                 key={item.id}
@@ -189,12 +199,27 @@ export function WalletInspectPanel({
                 }}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#6f3a28]">
-                    {item.token} Arena
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-[rgba(39,65,55,0.24)] bg-[rgba(237,244,235,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-black uppercase tracking-[0.1em] text-[#274137]">
+                      {resultLabel(item.result)}
+                    </span>
+                    <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#6f3a28]">
+                      {item.token} Arena
+                    </p>
+                  </div>
                   <p className="font-gabarito text-[11px] text-[#5e7768]">{toDateLabel(item.timestamp)}</p>
                 </div>
-                <p className="mt-1 font-mono text-[11px] text-[#274137]">Sig: {shortSignature(item.signature)}</p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-gabarito text-[11px] font-semibold uppercase tracking-[0.08em] text-[#274137]">
+                    {item.opponent ? `vs ${shortSignature(item.opponent)}` : "vs Unknown"}
+                  </p>
+                  {item.wagerUsd && (
+                    <span className="rounded-full border border-[rgba(111,58,40,0.24)] bg-[rgba(255,248,236,0.95)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#6f3a28]">
+                      ${item.wagerUsd}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 font-mono text-[11px] text-[#274137]">Sig {shortSignature(item.signature)}</p>
               </div>
             ))}
           </div>

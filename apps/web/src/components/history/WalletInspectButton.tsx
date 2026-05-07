@@ -5,7 +5,7 @@ type WalletInspectButtonProps = {
   label?: string;
 };
 
-export function WalletInspectButton({ onClick, label = "Inspect" }: WalletInspectButtonProps) {
+export function WalletInspectButton({ onClick, label = "Inspect Wallet" }: WalletInspectButtonProps) {
   return (
     <button
       type="button"

@@ -2456,3 +2456,59 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Role and narration strings are currently generated with simple conditional helpers in `Features.tsx`. If this language is reused across pages, it should be centralized into a shared presentational mapping utility.
+
+## 2026-05-07 - Dedicated /history Route + Informational GoldRush UX Scope
+
+### The Change
+- Added a dedicated history route at [apps/web/src/app/history/page.tsx](/d:/projects/Cora/apps/web/src/app/history/page.tsx) and new view component [apps/web/src/components/history/HistoryView.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryView.tsx).
+- Implemented `HistoryView` as a non-blocking, informational page that reads query params (`scope`, `arena`, `token`, optional `address`) and fetches data via existing FE adapters:
+  - `getArenaHistory`
+  - `getWalletHistory`
+- Updated [apps/web/src/components/history/HistoryButton.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryButton.tsx) to support both click-handler mode and link mode (`href`) so existing screens can route directly to `/history`.
+- Rewired character-select history access to route mode:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) now links to `/history?...` and removes local drawer-fetch state.
+- Reduced non-arena wallet inspect surface:
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx): removed inline wallet inspect modal/buttons and local history drawer state; uses `/history` route entry.
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx): removed wallet inspect modal/buttons and local history drawer state; `View History` now links to `/history?...`.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The user requested a dedicated `/history` view and clarified GoldRush should remain informational-only.
+- Routing to a full page avoids repeating fetch + modal logic in multiple phases and keeps gameplay screens focused.
+- Removing wallet-inspect actions from opponent/battle phases aligns UX to the intended scope: balance readiness is relevant in arena selection, not throughout the full match flow.
+
+### The Tech Debt
+- History data quality still depends on backend stub coverage for `/api/history/*`; UI reflects availability but does not yet annotate mock-vs-indexed provenance explicitly per item.
+- `HistoryView` currently uses lightweight in-component query/state handling; if filtering/sorting grows, we should promote this into shared hooks for easier reuse and cache behavior consistency.
+
+## 2026-05-07 - History UI & Header Placement Consolidation
+
+### The Change
+- Finalized the history experience as a player-facing records surface across:
+  - [apps/web/src/components/history/HistoryView.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryView.tsx)
+  - [apps/web/src/components/history/HistoryDrawer.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryDrawer.tsx)
+  - [apps/web/src/components/history/WalletInspectPanel.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectPanel.tsx)
+- Consolidated history UX updates in one pass:
+  - removed internal-facing disclaimer copy
+  - switched to player-facing records language
+  - refined result-first receipt hierarchy (result/status/opponent/wager/signature)
+  - improved chip consistency and visual emphasis
+  - added subtle transition polish for history state/content changes
+- Finalized history entry-point placement in [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - moved history access from character-select to arena setup
+  - grouped header as left wallet, middle wager+balance, right history
+  - aligned balance/history visuals with the existing header pill language
+- Removed history action from character-select phase in [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- History should feel like part of the game product, not backend diagnostics.
+- Arena setup is the highest-context moment for history lookup (token decision + balance + prior records).
+- Consolidating these small iterations into one coherent pass improves handoff readability.
+
+### The Tech Debt
+- History visuals and motion timing remain component-local; if reused across additional pages, we should extract shared tokens/primitives for chips, receipts, and transition timing.
+- Header chip styling in `LobbySetup` remains local composition; future header variants may benefit from a shared layout primitive.
+
+
+

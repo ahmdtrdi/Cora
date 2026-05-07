@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
@@ -75,6 +76,9 @@ export function LobbySetup({
         : error || !playability?.reliable
           ? "Unavailable"
           : (playability.tokenBalance ?? "--");
+  const historyHref = selectedArena
+    ? `/history?scope=arena&arena=${encodeURIComponent(selectedArena.id)}&token=${encodeURIComponent(selectedArena.token)}`
+    : "/history?scope=arena&arena=sol&token=SOL";
 
   async function onCopyChallengeLink() {
     if (!challengeLink) {
@@ -186,32 +190,45 @@ export function LobbySetup({
           </p>
         </div>
 
-        <div
-          className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
-          style={{
-            border: "2px solid var(--tone-bark)",
-            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
-            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
-          }}
-        >
-          <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-mint)] opacity-90">
-            Wager ${wagerUsd || "0"}
-            {selectedArena ? ` · ${selectedArena.token}` : ""}
-          </span>
+        <div className="inline-flex items-center gap-2">
+          <div
+            className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
+            style={{
+              border: "2px solid var(--tone-bark)",
+              background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
+              boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
+            }}
+          >
+            <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-mint)] opacity-90">
+              Wager ${wagerUsd || "0"}
+              {selectedArena ? ` · ${selectedArena.token}` : ""}
+            </span>
+          </div>
+          <div
+            className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
+            style={{
+              border: "2px solid var(--tone-bark)",
+              background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
+              boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
+            }}
+          >
+            <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-mint)] opacity-90">
+              {tokenBalanceLabel}: {tokenBalanceValue}
+            </span>
+          </div>
         </div>
 
-        <div
-          className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
+        <Link
+          href={historyHref}
+          className="frame-cut frame-cut-sm inline-flex items-center px-3 py-2 font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-cream)] opacity-90 shadow-lg transition-colors hover:bg-[rgba(29,52,41,0.98)]"
           style={{
             border: "2px solid var(--tone-bark)",
             background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
             boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
           }}
         >
-          <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-cream)] opacity-90">
-            {tokenBalanceLabel}: {tokenBalanceValue}
-          </span>
-        </div>
+          View History
+        </Link>
       </header>
 
       <div
@@ -396,3 +413,5 @@ export function LobbySetup({
     </div>
   );
 }
+
+
