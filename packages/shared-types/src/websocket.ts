@@ -64,6 +64,8 @@ export interface GameState {
   tokenMint: string;  
   /** Wager amount */
   wagerAmount: string;
+  /** Wager USD value */
+  wagerUsdValue?: string;
   /** Public or private match */
   roomType: 'public' | 'private';
 }

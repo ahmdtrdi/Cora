@@ -8,6 +8,7 @@ import { RoomManager } from './managers/RoomManager';
 import { rateLimiter } from './middleware/rateLimiter';
 import { createActionsRouter } from './routes/actions';
 import { startEventListener } from './utils/eventListener';
+import { getArenaHistory, getWalletHistory, getWalletPlayability } from './services/goldrush';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
@@ -41,6 +42,28 @@ app.route('/api/actions', actionsRouter);
 // Basic health check route
 app.get('/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Goldrush History & Wallet Inspection Routes
+app.get('/api/history/arena/:arenaId', async (c) => {
+  const arenaId = c.req.param('arenaId');
+  const history = await getArenaHistory(arenaId);
+  return c.json({ items: history });
+});
+
+app.get('/api/history/wallet/:address', async (c) => {
+  const address = c.req.param('address');
+  const history = await getWalletHistory(address);
+  return c.json({ items: history });
+});
+
+app.get('/api/history/wallet/:address/playability', async (c) => {
+  const address = c.req.param('address');
+  const arena = c.req.query('arena') || 'unknown';
+  const token = c.req.query('token') || 'SOL';
+  
+  const playability = await getWalletPlayability(address, arena, token);
+  return c.json(playability);
 });
 
 // Questions route
