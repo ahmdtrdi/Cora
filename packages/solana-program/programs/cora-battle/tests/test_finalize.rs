@@ -6,7 +6,6 @@ use {
         InstructionData, ToAccountMetas,
     },
     solana_keypair::Keypair,
-    solana_pubkey::Pubkey,
     solana_signer::Signer,
 };
 use common::*;
