@@ -2512,3 +2512,22 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 
 
+
+## 2026-05-07 - Battle Character Asset Presentation Polish (Facing, Action Pop, Frame Removal)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) character presentation layer only:
+  - **Opponent facing direction:** mirrored opponent sprite horizontally (`scaleX`) so opponent visually faces left; player remains facing right.
+  - **Action micro-animation:** added lightweight pop/bounce when sprite enters `action` state using Framer Motion animation controls (`scale` + `y` sequence).
+  - **Frame removal:** removed visible rectangular portrait frame/background treatment around both characters (no border/background/overlay frame), while preserving existing absolute positioning and scene layout.
+  - adjusted sprite fit to `object-contain` for cleaner direct-in-scene character rendering.
+- No changes to gameplay logic, socket flow, projectile logic, base logic, or scoring.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Opponent mirroring improves combat readability by making characters face each other.
+- A short action pop increases perceived responsiveness for attack/heal events without adding heavy effects.
+- Removing portrait frames aligns character assets with a more in-scene presentation and reduces UI-box feel.
+
+### The Tech Debt
+- Action micro-animation timing is currently local in `BattleScreen.tsx`; if we add more character-state motion across screens, we should centralize motion timing tokens/utilities.
