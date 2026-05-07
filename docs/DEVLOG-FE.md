@@ -2582,3 +2582,32 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - If product later needs contextual history during deposit phases, we should reintroduce it through a centralized phase-navigation policy instead of per-screen ad hoc links.
+
+## 2026-05-07 - Battle Hand + Question Popup Rounded Placeholder Polish
+
+### The Change
+- Updated only visual styling in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for:
+  - bottom battle hand cards
+  - active question popup shell
+  - answer option buttons
+- Battle hand cards:
+  - replaced sharp `frame-cut` card appearance with rounded placeholder cards
+  - preserved existing fan layout/transforms, click behavior, disabled behavior, and active card highlighting
+  - removed visible `card.type` / `locked` text from card face
+  - kept a simple center `?` mark and added subtle placeholder texture layers
+  - tuned disabled/locked cards to look intentionally inactive rather than broken
+- Active question popup:
+  - replaced old sharp modal shell with a rounded warm panel
+  - kept dark overlay and all question/timer/answer logic unchanged
+- Answer option buttons:
+  - replaced sharp panels with rounded chunky button cards in the same warm style direction
+  - kept existing `onAnswer`, disabled, and lock behavior unchanged
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- These elements were still visually anchored to the older sharp-frame style and felt out of place against the newer rounded battle UI.
+- This pass introduces temporary rounded placeholders that are easier to swap later when final designer card assets land.
+
+### The Tech Debt
+- Card/popup placeholder textures and color treatments are currently inline style values in `BattleScreen.tsx`; these should become shared tokens/primitives if reused across more battle surfaces.
+- Final art integration will likely replace most placeholder layers, so a follow-up cleanup pass should remove any temporary decorative styling that becomes redundant.

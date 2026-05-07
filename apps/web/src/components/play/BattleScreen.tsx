@@ -1088,6 +1088,7 @@ export function BattleScreen() {
                   const card = hand[index] ?? null;
                   const active = card ? activeCardId === card.id : false;
                   const transformClass = getCardTransform(index);
+                  const cardDisabled = !card || !isPlayable || Boolean(activeCardId) || isMatchComplete;
                   return (
                     <button
                       key={card?.id ?? `placeholder-${index}`}
@@ -1095,19 +1096,40 @@ export function BattleScreen() {
                       onClick={() => {
                         if (card) onOpenCard(card);
                       }}
-                      disabled={!card || !isPlayable || Boolean(activeCardId) || isMatchComplete}
-                      className={`frame-cut relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] px-2 py-2 text-left transition ${transformClass}`}
+                      disabled={cardDisabled}
+                      className={`relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] overflow-hidden rounded-[20px] px-2 py-2 text-left transition ${transformClass}`}
                       style={{
-                        border: active ? "1px solid rgba(248,214,148,0.88)" : "1px solid rgba(111,58,40,0.42)",
-                        background: "linear-gradient(160deg, #fff4dd 0%, #f1dfc1 100%)",
-                        opacity: !card || !isPlayable ? 0.62 : 1,
-                        boxShadow: "0 8px 16px rgba(0,0,0,0.28)",
+                        border: active ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
+                        background: cardDisabled
+                          ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
+                          : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
+                        opacity: cardDisabled ? 0.68 : 1,
+                        boxShadow: active
+                          ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
+                          : "0 12px 22px rgba(0,0,0,0.3)",
                       }}
                     >
-                      <span className="font-gabarito text-[10px] uppercase tracking-[0.16em] text-[#6d4f3a]">
-                        {card ? card.type : "locked"}
+                      <div
+                        className="pointer-events-none absolute inset-[8%] rounded-2xl"
+                        style={{
+                          border: "1px solid rgba(111,58,40,0.24)",
+                          background:
+                            "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.38), transparent 44%), linear-gradient(150deg, rgba(255,245,226,0.64), rgba(241,217,181,0.68))",
+                        }}
+                      />
+                      <div
+                        className="pointer-events-none absolute inset-0"
+                        style={{
+                          background:
+                            "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
+                        }}
+                      />
+                      <span
+                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-caprasimo text-4xl"
+                        style={{ color: cardDisabled ? "rgba(111,58,40,0.48)" : "rgba(111,58,40,0.82)" }}
+                      >
+                        ?
                       </span>
-                      <span className="absolute bottom-2 left-2 font-caprasimo text-3xl text-[#6f3a28]">?</span>
                     </button>
                   );
                 })}
@@ -1119,7 +1141,21 @@ export function BattleScreen() {
 
       {activeCard && status === "playing" && !isMatchComplete && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">
-          <div className="frame-cut w-full max-w-xl p-4 md:p-5" style={{ border: "1px solid rgba(248,214,148,0.36)", background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)" }}>
+          <div
+            className="relative w-full max-w-xl overflow-hidden rounded-[28px] p-4 md:p-5"
+            style={{
+              border: "2px solid rgba(248,214,148,0.45)",
+              background: "linear-gradient(150deg, #fff6e4 0%, #f3ddb9 100%)",
+              boxShadow: "0 24px 42px rgba(0,0,0,0.36)",
+            }}
+          >
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.38), transparent 42%), radial-gradient(circle at 85% 86%, rgba(111,58,40,0.08), transparent 45%)",
+              }}
+            />
             <div className="mb-2 flex items-center justify-between">
               <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
               <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
@@ -1136,9 +1172,20 @@ export function BattleScreen() {
                   type="button"
                   disabled={answerLocked}
                   onClick={() => onAnswer(option.id)}
-                  className="frame-cut px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
-                  style={{ border: "1px solid rgba(111,58,40,0.26)", background: "rgba(255,248,236,0.95)" }}
+                  className="relative overflow-hidden rounded-2xl px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
+                  style={{
+                    border: "2px solid rgba(111,58,40,0.3)",
+                    background: "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
+                    boxShadow: "0 8px 14px rgba(77,42,24,0.14)",
+                  }}
                 >
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      background:
+                        "radial-gradient(circle at 18% 16%, rgba(255,255,255,0.34), transparent 38%), linear-gradient(180deg, rgba(255,255,255,0.1), rgba(111,58,40,0.03))",
+                    }}
+                  />
                   <p className="font-gabarito text-xs font-bold uppercase tracking-wider text-[#6d8373]">
                     {option.id}
                   </p>
