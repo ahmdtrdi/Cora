@@ -328,3 +328,62 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 - [ ] Program ID `CbBattle11111111111111111111111111111111111` is a dummy placeholder. Must `anchor keys sync` and deploy later.
 - [ ] Smart contract logic is currently just a skeleton. Needs to be thoroughly tested using litesvm/anchor-test.
+
+---
+
+## Entry 12 — 2026-05-06: `cora-battle` Security Hardening & Comprehensive Test Suite
+
+### The Change
+
+**Security audit conducted** — 12 vulnerabilities identified (3 critical, 3 high, 4 medium, 2 low). All fixed.
+
+**Smart contract hardening (13 files, 7 instructions):**
+
+- `state.rs` — **Complete rewrite.** Added `authority` field (access control), `version` (upgrade path), `total_plays` (audit trail), `finished_at` (timestamp). New state machine: `WaitingCards → Active → Finished/Cancelled`. Removed `correct_hash` from `RegisteredCard` (rainbow table fix). Added `is_used` flag (replay protection). Fixed `BattleSession::LEN` to 232 bytes.
+- `error.rs` — Expanded from 5 to 12 error codes: `InvalidStatus`, `UnauthorizedAuthority`, `SamePlayer`, `CardAlreadyUsed`, `InvalidDamage`, `InvalidTarget`, `TimeoutNotReached`, `SessionExpired`, `ArithmeticOverflow`.
+- `constants.rs` — **NEW.** Centralized all magic numbers: `INITIAL_HEALTH=100`, `MAX_ROUNDS=3`, `ROUNDS_TO_WIN=2`, `MAX_DAMAGE=100`, `MIN_DAMAGE=1`, `SESSION_TIMEOUT=900s`, `CURRENT_VERSION=1`.
+- `events.rs` — **NEW.** 7 event types for full observability: `SessionCreated`, `CardRegistered`, `SessionActivated`, `DamageApplied`, `RoundEnded`, `BattleFinalized`, `SessionCancelled`.
+- `instructions/create_session.rs` — Added self-play prevention (`player_a != player_b`), stores `authority` for access control, starts in `WaitingCards` status, emits event.
+- `instructions/register_card.rs` — **NEW (replaces `register_cards.rs`).** Authority-only, damage bounds validation (`1..=100`), status guard (WaitingCards only). Removed `correct_hash` per security addendum.
+- `instructions/activate_session.rs` — **NEW.** Explicit `WaitingCards → Active` transition. Prevents damage before cards are registered.
+- `instructions/apply_damage.rs` — **NEW (replaces `play_card.rs`).** Authority-only "blind HP calculator". Fixes: rainbow table (no on-chain answer verification), replay protection (`is_used`), fair tiebreak (attacker wins when both HP=0), `checked_add` arithmetic, timeout guard.
+- `instructions/finalize_match.rs` — Hardened: authority-only, proper `Finished` status check.
+- `instructions/force_end.rs` — **NEW.** Timeout mechanism for stale sessions. Authority-only, requires `SESSION_TIMEOUT` to have elapsed.
+- `instructions/close_session.rs` — **NEW.** Rent reclamation. Only allows closing terminal states (Finished/Cancelled).
+- `lib.rs` — Updated with all 7 instructions. Program ID synced to `3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8`.
+- `instructions/mod.rs` — Updated module re-exports.
+
+**Deleted vulnerable files:**
+- `instructions/play_card.rs` — Replaced by `apply_damage.rs` (backend relayer pattern).
+- `instructions/register_cards.rs` — Replaced by `register_card.rs` (hardened).
+
+**Test suite (4 test files, 23 test cases):**
+- `tests/common/mod.rs` — Shared helpers: `setup()`, PDA finders, `send_tx()`, `do_create_session()`, `do_register_card()`, `do_activate_session()`, `do_apply_damage()`, `do_finalize_match()`, `do_force_end()`, `do_close_session()`, `setup_active_battle()`.
+- `tests/test_create_session.rs` — 3 tests: happy path, same-player rejection, duplicate match_id.
+- `tests/test_register_card.rs` — 5 tests: happy path, unauthorized, zero damage, over-max damage, after-activation.
+- `tests/test_apply_damage.rs` — 8 tests: happy path, replay protection, unauthorized, invalid attacker, pre-activation guard, health→0 round transition, player B wins, 3-round gradual depletion.
+- `tests/test_finalize.rs` — 7 tests: finalize happy path, not-finished rejection, unauthorized finalize, close happy path, close-active rejection, force-end before timeout, double activation.
+
+**Regression:** All 19 existing escrow tests still pass.
+
+### The Reasoning
+
+1. **Rainbow table attack was critical.** With 4 multiple-choice options, hashing all 4 takes <1ms. Storing `correct_hash` on a public ledger is equivalent to storing the answer in plaintext. The "Backend Relayer" pattern (blueprint Security Addendum) keeps answer verification off-chain while recording damage on-chain — provably fair without information leakage.
+
+2. **Authority-gating all instructions** closes the most dangerous class of exploits: unauthorized actors creating fake sessions, registering 100-damage cards, or applying damage without answer verification. The `authority` field stored in `BattleSession` ensures only the original backend oracle can interact.
+
+3. **Explicit state machine** (`WaitingCards → Active → Finished/Cancelled`) with guard checks on every instruction prevents invalid transitions (e.g., damage before cards are registered, cards registered after game starts, finalize before game ends).
+
+4. **Card replay protection** (`is_used` flag) prevents the same damage event from being applied multiple times — a subtle exploit where a backend bug or malicious replay could drain a player's health unfairly.
+
+5. **SESSION_TIMEOUT + force_end** prevents SOL from being permanently locked in abandoned sessions. Without this, a crashed backend would leave session PDAs (and their rent) irrecoverable.
+
+### The Tech Debt
+
+- [x] ~~Program ID is dummy placeholder~~ → Synced to `3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8`
+- [x] ~~Smart contract is just a skeleton~~ → Fully implemented with 7 instructions + 23 tests
+- [ ] `force_end` timeout test cannot warp LiteSVM clock — currently only tests "too early" rejection. Need to verify the success path with clock warping.
+- [ ] Card PDA closing not yet implemented — `RegisteredCard` accounts still consume rent after match ends.
+- [ ] Must `anchor deploy` to devnet and copy updated IDL to `packages/solana-client/src/`.
+- [ ] Backend `magicblock.ts` service needs to be updated to use the new instruction signatures (no more `correct_hash`, new `apply_damage` instead of `play_card`).
+

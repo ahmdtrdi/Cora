@@ -1,29 +1,49 @@
 use anchor_lang::prelude::*;
 use crate::state::{BattleSession, BattleStatus};
-
-pub const BATTLE_SEED: &[u8] = b"battle";
+use crate::constants::*;
+use crate::error::BattleError;
+use crate::events::SessionCreatedEvent;
 
 pub fn handler(
     ctx: Context<CreateSession>,
     match_id: [u8; 32],
     question_hash: [u8; 32],
 ) -> Result<()> {
+    let player_a = ctx.accounts.player_a.key();
+    let player_b = ctx.accounts.player_b.key();
+
+    // Prevent self-play exploit
+    require!(player_a != player_b, BattleError::SamePlayer);
+
     let session = &mut ctx.accounts.battle_session;
+    session.version = CURRENT_VERSION;
     session.match_id = match_id;
-    session.player_a = ctx.accounts.player_a.key();
-    session.player_b = ctx.accounts.player_b.key();
-    session.health_a = 100;
-    session.health_b = 100;
+    session.authority = ctx.accounts.authority.key();
+    session.player_a = player_a;
+    session.player_b = player_b;
+    session.health_a = INITIAL_HEALTH;
+    session.health_b = INITIAL_HEALTH;
     session.score_a = 0;
     session.score_b = 0;
     session.current_round = 1;
     session.rounds_won_a = 0;
     session.rounds_won_b = 0;
-    session.status = BattleStatus::Active;
+    session.total_plays = 0;
+    session.status = BattleStatus::WaitingCards;
     session.winner = Pubkey::default();
     session.question_hash = question_hash;
     session.bump = ctx.bumps.battle_session;
     session.created_at = Clock::get()?.unix_timestamp;
+    session.finished_at = 0;
+
+    emit!(SessionCreatedEvent {
+        match_id,
+        authority: ctx.accounts.authority.key(),
+        player_a,
+        player_b,
+        question_hash,
+    });
+
     Ok(())
 }
 
@@ -32,9 +52,9 @@ pub fn handler(
 pub struct CreateSession<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    /// CHECK: player A pubkey
+    /// CHECK: Player A wallet address, validated not equal to player B in handler
     pub player_a: UncheckedAccount<'info>,
-    /// CHECK: player B pubkey
+    /// CHECK: Player B wallet address, validated not equal to player A in handler
     pub player_b: UncheckedAccount<'info>,
     #[account(
         init, payer = authority,
