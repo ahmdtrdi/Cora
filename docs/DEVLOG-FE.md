@@ -2563,3 +2563,22 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Modal visual tokens (overlay/card/button/chip styles) are still component-local in `BattleScreen.tsx`; if result surfaces expand to other screens, we should extract shared style primitives.
 - The details panel currently uses plain text blocks; if settlement diagnostics become a recurring UX need, a shared key-value diagnostics component would improve consistency.
+
+## 2026-05-07 - OpponentFound History Entry-Point Removal
+
+### The Change
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to remove history entry points from the opponent-found phase only.
+- Removed `HistoryButton` import and removed `historyHref` constant (unused after UI removal).
+- Removed top-row history button while keeping:
+  - playability chip
+  - `Show Room Status` / `Hide Room Status` toggle
+- Removed bottom `Open Full History` link block.
+- Kept all match-flow behavior unchanged: deposit signing, socket reconnection, status rail, timeout/cancel flow, and routing to battle.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Opponent-found should stay focused on immediate match flow (rival locked -> sign deposit -> enter battle).
+- History access is now treated as app-level navigation rather than a repeated action in every match phase.
+
+### The Tech Debt
+- If product later needs contextual history during deposit phases, we should reintroduce it through a centralized phase-navigation policy instead of per-screen ad hoc links.

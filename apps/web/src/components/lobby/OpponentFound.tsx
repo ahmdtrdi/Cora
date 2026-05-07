@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
-import { HistoryButton } from "@/components/history/HistoryButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
@@ -95,7 +93,6 @@ export function OpponentFound({
     token: arena.token,
     enabled: Boolean(wallet.publicKey),
   });
-  const historyHref = `/history?scope=arena&arena=${encodeURIComponent(arena.id)}&token=${encodeURIComponent(arena.token)}`;
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -341,7 +338,6 @@ export function OpponentFound({
           {playabilityLabel}
         </span>
         <div className="flex items-center gap-2">
-          <HistoryButton href={historyHref} />
           <button
             type="button"
             onClick={() => setShowRoomStatus((value) => !value)}
@@ -532,15 +528,6 @@ export function OpponentFound({
           />
         </div>
       )}
-
-      <div className="mt-5 w-full text-right">
-        <Link
-          href={historyHref}
-          className="inline-flex rounded-full border border-[rgba(248,214,148,0.42)] bg-[rgba(16,26,22,0.5)] px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--tone-cream)] transition-colors hover:bg-[rgba(16,26,22,0.66)]"
-        >
-          Open Full History
-        </Link>
-      </div>
     </div>
   );
 }
