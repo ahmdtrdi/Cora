@@ -1,0 +1,130 @@
+import type { ServerWebSocket } from 'bun';
+import type { GameState, ScoreUpdateData, WsMessage } from '@shared/websocket';
+import { GameEngine } from '@cora/game-logic';
+import { Room } from './types';
+
+export class Network {
+  /** Safe WebSocket send wrapper */
+  public safeSend(ws: ServerWebSocket<unknown> | null | undefined, data: any): void {
+    if (!ws) return;
+    try {
+      ws.send(typeof data === 'string' ? data : JSON.stringify(data));
+    } catch (e) {
+      console.warn(`[SafeSend] WebSocket send failed:`, e);
+    }
+  }
+
+  /**
+   * Broadcast a message to all connected clients in a room.
+   */
+  public broadcastToRoom(room: Room, message: WsMessage) {
+    const raw = JSON.stringify(message);
+    for (const client of room.clients.values()) {
+      this.safeSend(client.ws, raw);
+    }
+  }
+
+  public broadcastGameState(room: Room) {
+    const addresses = Array.from(room.clients.keys());
+
+    for (const address of addresses) {
+      const client = room.clients.get(address);
+      if (!client?.ws) continue;
+
+      let payload: GameState;
+
+      if (room.engine && (room.status === 'playing' || room.status === 'settling' || room.status === 'finished')) {
+        // Engine owns the game state
+        payload = {
+          ...room.engine.getStateForPlayer(address),
+          tokenMint: room.tokenMint || '',
+          wagerAmount: room.wagerAmount?.toString() || '0',
+          wagerUsdValue: room.wagerUsdValue || undefined,
+          roomType: room.roomType,
+        };
+      } else {
+        // Pre-game state (waiting / depositing)
+        const opponentAddress = addresses.find(a => a !== address);
+        payload = {
+          status: room.status,
+          player: {
+            address,
+            baseHealth: 100,
+            characterState: 'stay',
+            score: 0,
+            roundsWon: 0,
+            characterId: room.playerMeta.get(address)?.characterId || 'einstein',
+          },
+          opponent: opponentAddress
+            ? {
+              address: opponentAddress,
+              baseHealth: 100,
+              characterState: 'stay',
+              score: 0,
+              roundsWon: 0,
+              characterId: room.playerMeta.get(opponentAddress)?.characterId || 'einstein',
+            }
+            : {
+              address: 'Waiting for opponent...',
+              baseHealth: 100,
+              characterState: 'stay',
+              score: 0,
+              roundsWon: 0,
+              characterId: 'einstein',
+            },
+          hand: [],
+          timer: {
+            totalDurationMs: GameEngine.MATCH_DURATION_MS,
+            remainingMs: GameEngine.MATCH_DURATION_MS,
+            phase: 'normal',
+            extraPointThresholdMs: GameEngine.EXTRA_POINT_THRESHOLD_MS,
+          },
+          damageLog: [],
+          currentRound: 1,
+          roundsToWin: GameEngine.ROUNDS_TO_WIN,
+          tokenMint: room.tokenMint || '',
+          wagerAmount: room.wagerAmount?.toString() || '0',
+          wagerUsdValue: room.wagerUsdValue || undefined,
+          roomType: room.roomType,
+        };
+      }
+
+      this.safeSend(client.ws, {
+        type: 'gameStateUpdate',
+        payload,
+      } as WsMessage<GameState>);
+    }
+  }
+
+  /**
+   * Broadcast live score update to both players after every card play or expiry.
+   */
+  public broadcastScoreUpdate(room: Room) {
+    if (!room.engine) return;
+
+    const scores = room.engine.getScores();
+    const health = room.engine.getHealth();
+    const addresses = Array.from(room.clients.keys());
+
+    for (const address of addresses) {
+      const client = room.clients.get(address);
+      if (!client?.ws) continue;
+
+      const opponentAddress = addresses.find(a => a !== address) ?? '';
+
+      const scoreData: ScoreUpdateData = {
+        playerAddress: address,
+        opponentAddress,
+        playerScore: scores[address] ?? 0,
+        opponentScore: scores[opponentAddress] ?? 0,
+        playerHealth: health[address] ?? 0,
+        opponentHealth: health[opponentAddress] ?? 0,
+      };
+
+      this.safeSend(client.ws, {
+        type: 'scoreUpdate',
+        payload: scoreData,
+      });
+    }
+  }
+}
