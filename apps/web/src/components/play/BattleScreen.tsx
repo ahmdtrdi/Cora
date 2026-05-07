@@ -53,18 +53,6 @@ function getStatusLabel(status: GameStatus) {
   return "Finished";
 }
 
-function getOutcomeColor(outcome: MatchOutcome["outcome"]) {
-  if (outcome === "correct") return "#d8ead4";
-  if (outcome === "timeout") return "#efe8d5";
-  return "#f2ddd4";
-}
-
-function getOutcomeLabel(outcome: MatchOutcome["outcome"]) {
-  if (outcome === "correct") return "Correct";
-  if (outcome === "timeout") return "Timeout";
-  return "Wrong";
-}
-
 function shortenAddress(address?: string) {
   if (!address) return "Unknown";
   if (address.length <= 12) return address;
@@ -197,6 +185,7 @@ export function BattleScreen() {
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
   const [phaseToastVisible, setPhaseToastVisible] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
 
@@ -354,6 +343,20 @@ export function BattleScreen() {
     : matchInvalidated
       ? "Match Invalidated"
       : "Match Finished";
+  const settlementSubtitle = matchInvalidated
+    ? "Match invalidated."
+    : winnerAddress
+      ? winnerAddress === address
+        ? "Victory secured."
+        : "Rival took this round."
+      : "Match results are being finalized."
+  const settlementStatus = matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
+  const settlementStatusStyle = matchInvalidated
+    ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
+    : settlementResult
+      ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
+      : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
+  const showWinnerLine = Boolean(winnerAddress && (matchInvalidated || winnerAddress !== address));
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
@@ -1148,113 +1151,154 @@ export function BattleScreen() {
       )}
 
       {isMatchComplete && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
-          <div className="frame-cut w-full max-w-xl p-5" style={{ border: "1px solid rgba(248,214,148,0.36)", background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)" }}>
-            <p className="font-caprasimo text-4xl text-[#1f2b24]">{settlementText}</p>
-            <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Resolved turns: {outcomes.length}</p>
-            {winnerAddress && (
-              <p className="mt-1 font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
-            )}
-            {settlementResult && (
-              <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
-                Match ID: {settlementResult.matchId}
-              </p>
-            )}
-            {matchInvalidated && (
-              <p className="mt-2 font-gabarito text-xs text-[#8a3f2b]">
-                Settlement halted by anti-cheat verification.
-              </p>
-            )}
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-xl p-5 md:p-6"
+            style={{
+              border: "1px solid rgba(248,214,148,0.42)",
+              background:
+                "radial-gradient(circle at top, rgba(255,243,215,0.9) 0%, rgba(247,227,190,0.9) 34%, rgba(239,213,170,0.95) 100%)",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.45)",
+            }}
+          >
+            <div className="text-center">
+              <p className="font-caprasimo text-5xl leading-none text-[#1f2b24] md:text-6xl">{settlementText}</p>
+              <p className="mt-2 font-gabarito text-sm text-[#4f6759]">{settlementSubtitle}</p>
+              <div className="mt-3 flex justify-center">
+                <span
+                  className="rounded-full px-3 py-1 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.14em]"
+                  style={settlementStatusStyle}
+                >
+                  {settlementStatus}
+                </span>
+              </div>
+              {showWinnerLine && (
+                <p className="mt-2 font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress ?? "")}</p>
+              )}
+            </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#edf4eb" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Correct</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div
+                className="frame-cut frame-cut-sm p-3 text-center"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,248,236,0.92)" }}
+              >
+                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Your Rounds</p>
+                <p className="font-caprasimo text-3xl text-[#274137]">{playerRoundsWon}</p>
+              </div>
+              <div
+                className="frame-cut frame-cut-sm p-3 text-center"
+                style={{ border: "1px solid rgba(111,58,40,0.2)", background: "rgba(255,248,236,0.92)" }}
+              >
+                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Opponent Rounds</p>
+                <p className="font-caprasimo text-3xl text-[#6f3a28]">{opponentRoundsWon}</p>
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <div
+                className="frame-cut frame-cut-sm p-2 text-center"
+                style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#edf4eb" }}
+              >
+                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Correct</p>
                 <p className="font-caprasimo text-2xl text-[#274137]">{correctCount}</p>
               </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f6eee0" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Timeout</p>
+              <div
+                className="frame-cut frame-cut-sm p-2 text-center"
+                style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f6eee0" }}
+              >
+                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Timeout</p>
                 <p className="font-caprasimo text-2xl text-[#6f3a28]">{timeoutCount}</p>
               </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f4e8e2" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Wrong</p>
+              <div
+                className="frame-cut frame-cut-sm p-2 text-center"
+                style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f4e8e2" }}
+              >
+                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Wrong</p>
                 <p className="font-caprasimo text-2xl text-[#7c4a36]">{wrongCount}</p>
               </div>
             </div>
 
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,248,236,0.95)" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Your Rounds</p>
-                <p className="font-caprasimo text-2xl text-[#274137]">{playerRoundsWon}</p>
-              </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,248,236,0.95)" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Opponent Rounds</p>
-                <p className="font-caprasimo text-2xl text-[#6f3a28]">{opponentRoundsWon}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 max-h-40 space-y-2 overflow-auto">
-              {outcomes.map((item, index) => (
-                <div
-                  key={`${item.cardId}-${item.at}`}
-                  className="frame-cut frame-cut-sm flex items-center justify-between px-3 py-2"
-                  style={{ border: "1px solid rgba(39,65,55,0.16)", background: getOutcomeColor(item.outcome) }}
-                >
-                  <p className="font-gabarito text-xs text-[#274137]">Turn {index + 1}</p>
-                  <p className="font-gabarito text-xs font-semibold uppercase tracking-wide text-[#5e7768]">
-                    {getOutcomeLabel(item.outcome)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}>
-              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
-                Settlement Authority
-              </p>
-              {settlementResult ? (
-                <>
-                  <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
-                    Result signed by backend oracle and submitted by backend settlement flow.
-                  </p>
-                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
-                    Server Pubkey: {settlementResult.serverPublicKey}
-                  </p>
-                  <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
-                    Settlement Signature: {settlementResult.settlementSignature}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
-                  Waiting for server settlement payload...
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link
-                href={historyHref}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-              >
-                View History
-              </Link>
+            <div className="mt-4">
               <button
                 type="button"
-                onClick={() => setShareModalOpen(true)}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
+                onClick={() => setSettlementDetailsOpen((prev) => !prev)}
+                className="font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[#4f6759] underline decoration-dotted underline-offset-2"
               >
-                Blink Share
+                {settlementDetailsOpen ? "Hide Settlement Details" : "Show Settlement Details"}
               </button>
             </div>
 
-            <div className="mt-5 flex gap-2">
+            {settlementDetailsOpen && (
+              <div
+                className="mt-2 frame-cut frame-cut-sm space-y-1 p-3"
+                style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}
+              >
+                <p className="font-gabarito text-xs font-bold uppercase tracking-[0.1em] text-[#274137]">
+                  Settlement Details
+                </p>
+                {settlementResult ? (
+                  <>
+                    <p className="font-gabarito text-xs text-[#5e7768]">
+                      Result signed by backend oracle and submitted by backend settlement flow.
+                    </p>
+                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">Match ID: {settlementResult.matchId}</p>
+                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">
+                      Server Pubkey: {settlementResult.serverPublicKey}
+                    </p>
+                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">
+                      Settlement Signature: {settlementResult.settlementSignature}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-gabarito text-xs text-[#5e7768]">
+                      Waiting for server settlement payload...
+                    </p>
+                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">Match ID: unavailable</p>
+                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">Server Pubkey: unavailable</p>
+                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">
+                      Settlement Signature: unavailable
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                className="frame-cut frame-cut-sm px-5 py-3 font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
+                style={{
+                  border: "1px solid rgba(111,58,40,0.26)",
+                  color: "#fff8e9",
+                  background: "linear-gradient(160deg, #6f3a28 0%, #95512f 100%)",
+                  boxShadow: "0 10px 14px rgba(64,29,20,0.24)",
+                }}
+              >
+                Blink Share
+              </button>
               <Link
                 href="/lobby"
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
+                className="frame-cut frame-cut-sm px-5 py-3 text-center font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
+                style={{
+                  border: "1px solid rgba(39,65,55,0.22)",
+                  color: "#274137",
+                  background: "rgba(255,248,236,0.96)",
+                  boxShadow: "0 10px 14px rgba(33,67,53,0.16)",
+                }}
               >
                 Back To Lobby
+              </Link>
+            </div>
+
+            <div className="mt-3">
+              <Link
+                href={historyHref}
+                className="inline-flex frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.12em]"
+                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.86)" }}
+              >
+                View History
               </Link>
             </div>
           </div>

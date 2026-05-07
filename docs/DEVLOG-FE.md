@@ -2531,3 +2531,35 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Action micro-animation timing is currently local in `BattleScreen.tsx`; if we add more character-state motion across screens, we should centralize motion timing tokens/utilities.
+
+## 2026-05-07 - Battle Result Modal Restyle (Player-First + Collapsible Settlement Details)
+
+### The Change
+- Restyled the match-complete modal in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to match the dark arena + warm card direction with:
+  - stronger dark backdrop overlay
+  - premium parchment card treatment
+  - large centered Caprasimo result title (`You Win` / `You Lose` / `Match Invalidated`)
+  - Gabarito subtitle copy (`Victory secured.`, `Rival took this round.`, `Match invalidated.`)
+- Reduced default visible content to player-facing summary only:
+  - settlement status chip (`Settled`, `Pending`, `Invalidated`)
+  - rounds score (`Your Rounds`, `Opponent Rounds`)
+  - compact outcome stats (`Correct`, `Timeout`, `Wrong`)
+  - optional shortened winner line when context is useful
+- Removed technical settlement/debug content from the default surface (match id, full authority block, server pubkey/signature, backend explanation).
+- Added a local UI toggle in the same component:
+  - `Show Settlement Details` / `Hide Settlement Details`
+  - when expanded, reveals match id, server pubkey, settlement signature, and backend settlement text/waiting status.
+- Reordered result actions to improve hierarchy:
+  - primary style: `Blink Share`, `Back To Lobby`
+  - secondary style: `View History`
+- Cleaned dead code by removing now-unused outcome color/label helper functions after removing default turn-history rendering from this modal.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The previous modal mixed game UX and settlement internals, which made the result moment feel like an operations panel.
+- This refactor keeps the end-of-match state celebratory and readable by default, while still preserving access to technical data on demand.
+- Keeping all data wiring intact but changing only layout/copy/toggle behavior satisfies the requirement to avoid logic and routing regressions.
+
+### The Tech Debt
+- Modal visual tokens (overlay/card/button/chip styles) are still component-local in `BattleScreen.tsx`; if result surfaces expand to other screens, we should extract shared style primitives.
+- The details panel currently uses plain text blocks; if settlement diagnostics become a recurring UX need, a shared key-value diagnostics component would improve consistency.
