@@ -129,7 +129,9 @@ export class Lifecycle {
         this.forfeitMatch(roomId, address);
       }, this.DISCONNECT_TIMEOUT_MS);
     } else if (room.status === 'depositing') {
-      console.log(`Player ${address} temporarily disconnected during depositing in room ${roomId}. Waiting for reconnect or timeout.`);
+      const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
+      console.log(`Player ${address} disconnected during depositing in room ${roomId}. Cancelling room immediately.`);
+      this.cancelRoom(roomId, opponentAddress ?? undefined);
     }
   }
 
@@ -199,6 +201,7 @@ export class Lifecycle {
   public cancelRoom(roomId: string, innocentAddress?: string): void {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
+    const shouldRequeueInnocent = room.status !== 'depositing';
 
     console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'}`);
 
@@ -211,7 +214,11 @@ export class Lifecycle {
 
       if (innocentWs) {
         this.manager.network.safeSend(innocentWs, { type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage);
-        this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
+        if (shouldRequeueInnocent) {
+          this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
+        } else {
+          console.log(`[Cancel] Room ${roomId} ended during depositing. Skipping re-queue for ${innocentAddress}.`);
+        }
       } else {
         console.log(`[Cancel] ${innocentAddress} already disconnected — skipping re-queue.`);
       }
