@@ -1,11 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
-import type { Card, GameStatus } from "@shared/websocket";
+import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { HistoryDrawer } from "@/components/history/HistoryDrawer";
 import { WalletInspectButton } from "@/components/history/WalletInspectButton";
@@ -105,6 +106,7 @@ type ProjectileState = {
 };
 
 type BaseFxState = "idle" | "hit" | "heal";
+type CharacterSpriteState = "stay" | "action";
 
 function getCharacterVisual(characterId?: string) {
   if (characterId === "turing") {
@@ -133,6 +135,17 @@ function getCharacterVisual(characterId?: string) {
     portraitBg: "linear-gradient(160deg, #173026 0%, #274137 60%, #10231b 100%)",
     baseGlyph: "⌬",
   };
+}
+
+function resolveCharacterSpriteState(characterState?: CharacterState, isActioning = false): CharacterSpriteState {
+  if (isActioning || characterState === "action") return "action";
+  return "stay";
+}
+
+function getCharacterSpriteSrc(characterId?: string, state: CharacterSpriteState = "stay") {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  return `/assets/characters/${normalizedId}/${state}.png`;
 }
 
 export function BattleScreen() {
@@ -196,6 +209,7 @@ export function BattleScreen() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
   const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
+  const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -380,8 +394,16 @@ export function BattleScreen() {
   const opponentMetaLabel = opponent?.address
     ? `Score ${opponentScore} - Rounds ${opponentRoundsWon}`
     : "Waiting for opponent metadata";
-  const playerVisual = getCharacterVisual(player?.characterId ?? scientistId ?? undefined);
-  const opponentVisual = getCharacterVisual(opponent?.characterId ?? undefined);
+  const playerCharacterId = player?.characterId ?? scientistId ?? undefined;
+  const opponentCharacterId = opponent?.characterId ?? undefined;
+  const playerVisual = getCharacterVisual(playerCharacterId);
+  const opponentVisual = getCharacterVisual(opponentCharacterId);
+  const playerSpriteState = resolveCharacterSpriteState(player?.characterState, characterActionSide === "player");
+  const opponentSpriteState = resolveCharacterSpriteState(opponent?.characterState, characterActionSide === "opponent");
+  const playerSpriteSrc = getCharacterSpriteSrc(playerCharacterId, playerSpriteState);
+  const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
+  const hasPlayerSprite = Boolean(playerSpriteSrc && !failedCharacterSprites[playerSpriteSrc]);
+  const hasOpponentSprite = Boolean(opponentSpriteSrc && !failedCharacterSprites[opponentSpriteSrc]);
   const challengeLink = useMemo(() => {
     const origin = typeof window === "undefined" ? null : window.location.origin;
     return createChallengeLink({
@@ -482,6 +504,13 @@ export function BattleScreen() {
 
   function dismissAlert(alert: UiAlert) {
     setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
+  }
+
+  function markCharacterSpriteFailed(src: string) {
+    setFailedCharacterSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
   }
 
   async function onCopyChallengeLink() {
@@ -977,12 +1006,25 @@ export function BattleScreen() {
                 background: playerVisual.portraitBg,
               }}
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
-              <div className="relative grid h-full place-items-center">
-                <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
-                  {playerVisual.initial}
-                </span>
+              <div className="relative h-full w-full">
+                {hasPlayerSprite && playerSpriteSrc ? (
+                  <Image
+                    src={playerSpriteSrc}
+                    alt={`${playerCharacterId ?? "player"} ${playerSpriteState} portrait`}
+                    fill
+                    sizes="(max-width: 768px) 130px, 200px"
+                    className="object-cover object-center"
+                    onError={() => markCharacterSpriteFailed(playerSpriteSrc)}
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
+                      {playerVisual.initial}
+                    </span>
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
               </div>
             </div>
 
@@ -995,12 +1037,25 @@ export function BattleScreen() {
                 background: opponentVisual.portraitBg,
               }}
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
-              <div className="relative grid h-full place-items-center">
-                <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
-                  {opponentVisual.initial}
-                </span>
+              <div className="relative h-full w-full">
+                {hasOpponentSprite && opponentSpriteSrc ? (
+                  <Image
+                    src={opponentSpriteSrc}
+                    alt={`${opponentCharacterId ?? "opponent"} ${opponentSpriteState} portrait`}
+                    fill
+                    sizes="(max-width: 768px) 130px, 200px"
+                    className="object-cover object-center"
+                    onError={() => markCharacterSpriteFailed(opponentSpriteSrc)}
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
+                      {opponentVisual.initial}
+                    </span>
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
               </div>
             </div>
 

@@ -1,11 +1,76 @@
 "use client";
 
+import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
+import { CHARACTER_DEFS, type QuestionCategory } from "@shared/characterStats";
 import { LANDING_SCIENTISTS, type ScientistProfile } from "./content";
 import { getLandingAccentStyle } from "./visuals";
 
-const RARITY_LABELS = ["Legendary", "Epic", "Rare"] as const;
+const SPECIALTY_LABELS: Record<QuestionCategory, string> = {
+  sequence: "Sequence",
+  logical: "Logical",
+  math: "Math",
+};
+
+function getScientistBasicPoseSrc(scientistId: string) {
+  return `/assets/characters/${scientistId}/basic.png`;
+}
+
+function formatMultiplier(value: number) {
+  return `${value.toFixed(1)}x`;
+}
+
+function getOuterNarration(specialty: QuestionCategory, specialtyMultiplier: number) {
+  const bonusPercent = Math.round((specialtyMultiplier - 1) * 100);
+  if (specialty === "math") {
+    return `Math specialist with +${bonusPercent}% specialty power on correct answers.`;
+  }
+  if (specialty === "logical") {
+    return `Logical specialist with +${bonusPercent}% specialty power on correct answers.`;
+  }
+  return `Sequence specialist with +${bonusPercent}% specialty power on correct answers.`;
+}
+
+function getRolePillLabel(specialty: QuestionCategory) {
+  if (specialty === "math") return "Mathematician";
+  if (specialty === "logical") return "Logician";
+  return "Pattern Runner";
+}
+
+type CombatStatRow = {
+  label: string;
+  value: string;
+  score: number;
+  max: number;
+};
+
+function getCombatStatsRows(scientistId: string): CombatStatRow[] {
+  const def = CHARACTER_DEFS[scientistId];
+  if (!def) return [];
+
+  const maxMultiplier = 3;
+  return [
+    {
+      label: "Base Correct Power",
+      value: formatMultiplier(1),
+      score: 1,
+      max: maxMultiplier,
+    },
+    {
+      label: `${SPECIALTY_LABELS[def.specialty]} Specialty Power`,
+      value: formatMultiplier(def.specialtyMultiplier),
+      score: def.specialtyMultiplier,
+      max: maxMultiplier,
+    },
+    {
+      label: "Specialty + Extra Point Max",
+      value: formatMultiplier(def.specialtyMultiplier * 2),
+      score: def.specialtyMultiplier * 2,
+      max: maxMultiplier,
+    },
+  ];
+}
 
 function ScientistCard({
   scientist,
@@ -20,7 +85,16 @@ function ScientistCard({
 }) {
   const accentStyle = useMemo(() => getLandingAccentStyle(scientist.accent), [scientist.accent]);
   const isPrimary = scientist.accent === "primary";
-  const rarity = RARITY_LABELS[index] ?? "Rare";
+  const basicPoseSrc = getScientistBasicPoseSrc(scientist.id);
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+  const characterDef = CHARACTER_DEFS[scientist.id];
+  const combatStatsRows = useMemo(() => getCombatStatsRows(scientist.id), [scientist.id]);
+  const specialtyLabel = characterDef ? SPECIALTY_LABELS[characterDef.specialty] : "Unknown";
+  const specialtyBonusPercent = characterDef ? Math.round((characterDef.specialtyMultiplier - 1) * 100) : 0;
+  const rolePillLabel = characterDef ? getRolePillLabel(characterDef.specialty) : scientist.archetype;
+  const summaryText = characterDef
+    ? getOuterNarration(characterDef.specialty, characterDef.specialtyMultiplier)
+    : scientist.short;
 
   return (
     <motion.div
@@ -42,64 +116,74 @@ function ScientistCard({
       >
         {/* portrait area */}
         <div className="relative flex aspect-[4/5] w-full flex-col items-center justify-center overflow-hidden bg-[var(--tone-ecru)]">
-          {/* colored background wash */}
-          <div className="absolute inset-0 opacity-20" style={{ background: isPrimary ? "radial-gradient(circle at 50% 40%, rgba(186,105,49,0.3), transparent 70%)" : "radial-gradient(circle at 50% 40%, rgba(60,92,95,0.3), transparent 70%)" }} />
-
-          {/* chibi silhouette placeholder */}
-          <div className="relative mb-3 flex flex-col items-center">
-            {/* head circle */}
-            <div
-              className="grid h-20 w-20 place-items-center rounded-full border-[3px] shadow-md"
-              style={{ borderColor: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", background: isPrimary ? "rgba(186,105,49,0.1)" : "rgba(60,92,95,0.1)" }}
-            >
-              <span className="text-3xl">{scientist.emoji}</span>
-            </div>
-            {/* coat body shape */}
-            <div
-              className="-mt-2 h-12 w-16 rounded-b-2xl border-x-[3px] border-b-[3px] opacity-60"
-              style={{ borderColor: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", background: isPrimary ? "rgba(186,105,49,0.08)" : "rgba(60,92,95,0.08)" }}
+          {!imageUnavailable && (
+            <Image
+              src={basicPoseSrc}
+              alt={`${scientist.name} basic pose`}
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              className="object-cover object-center"
+              onError={() => setImageUnavailable(true)}
             />
-          </div>
+          )}
 
-          {/* base object */}
-          <div className="text-2xl opacity-50">{scientist.baseEmoji}</div>
-          <p className="font-mono mt-1 text-[9px] uppercase tracking-widest text-[var(--warm-muted)]">Base: {scientist.baseConcept}</p>
+          {/* colored background wash */}
+          <div
+            className={`absolute inset-0 ${imageUnavailable ? "opacity-20" : "opacity-10"}`}
+            style={{
+              background: isPrimary
+                ? "radial-gradient(circle at 50% 40%, rgba(186,105,49,0.3), transparent 70%)"
+                : "radial-gradient(circle at 50% 40%, rgba(60,92,95,0.3), transparent 70%)",
+            }}
+          />
+
+          {/* fallback portrait placeholder */}
+          {imageUnavailable && (
+            <div className="relative mb-3 flex flex-col items-center">
+              {/* head circle */}
+              <div
+                className="grid h-20 w-20 place-items-center rounded-full border-[3px] shadow-md"
+                style={{ borderColor: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", background: isPrimary ? "rgba(186,105,49,0.1)" : "rgba(60,92,95,0.1)" }}
+              >
+                <span className="text-3xl">{scientist.emoji}</span>
+              </div>
+              {/* coat body shape */}
+              <div
+                className="-mt-2 h-12 w-16 rounded-b-2xl border-x-[3px] border-b-[3px] opacity-60"
+                style={{ borderColor: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", background: isPrimary ? "rgba(186,105,49,0.08)" : "rgba(60,92,95,0.08)" }}
+              />
+            </div>
+          )}
 
           {/* rarity badge */}
-          <div className="absolute right-3 top-3">
+          <div className="absolute right-3 top-3 z-10">
             <span
               className="font-gabarito rounded-lg border-2 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
               style={{ borderColor: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", color: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", background: isPrimary ? "rgba(186,105,49,0.12)" : "rgba(60,92,95,0.12)" }}
             >
-              {rarity}
+              +{specialtyBonusPercent}% Bonus
             </span>
           </div>
 
           {/* archetype badge */}
-          <div className="absolute left-3 top-3">
+          <div className="absolute left-3 top-3 z-10">
             <span
               className="font-gabarito rounded-lg border-2 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
               style={{ borderColor: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)", color: "#fffaf0", background: isPrimary ? "var(--tone-clay)" : "var(--tone-teal)" }}
             >
-              {scientist.archetype}
+              {rolePillLabel}
             </span>
           </div>
 
-          {/* HP bar at bottom of portrait */}
-          <div className="absolute bottom-0 left-0 right-0 px-4 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[8px] font-bold uppercase tracking-wider text-[var(--warm-muted)]">HP</span>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-[rgba(111,58,40,0.12)]">
-                <div className="h-full rounded-full transition-all duration-700" style={{ width: "82%", background: "linear-gradient(90deg, #9db496, #cbe3c1)" }} />
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* card body */}
         <div className="p-5 md:p-6">
           <h3 className="font-caprasimo text-2xl text-[var(--warm-text)] md:text-3xl">{scientist.name}</h3>
-          <p className="font-gabarito mt-2 text-sm text-[var(--warm-muted)]">{scientist.short}</p>
+          <p className="font-gabarito mt-2 text-sm text-[var(--warm-muted)]">{summaryText}</p>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
+            Base: {scientist.baseConcept}
+          </p>
 
           {/* mobile expand */}
           <AnimatePresence>
@@ -113,15 +197,29 @@ function ScientistCard({
               >
                 <div className="mt-6 space-y-5 border-t border-[var(--warm-border)] pt-6">
                   <p className="font-gabarito text-sm leading-relaxed text-[var(--warm-muted)]">{scientist.detail}</p>
+                  <div className="flex items-center justify-between rounded-xl border border-[var(--warm-border)] bg-[rgba(255,248,236,0.7)] px-3 py-2">
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
+                      Specialty: <span className="font-bold text-[var(--warm-text)]">{specialtyLabel}</span>
+                    </p>
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
+                      Bonus: <span className="font-bold text-[var(--warm-text)]">+{specialtyBonusPercent}%</span>
+                    </p>
+                  </div>
                   <div className="space-y-4 pt-2">
-                    {scientist.stats.map((stat, i) => (
+                    {combatStatsRows.map((stat, i) => (
                       <div key={stat.label}>
                         <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
                           <span>{stat.label}</span>
                           <span className="font-bold text-[var(--warm-text)]">{stat.value}</span>
                         </div>
                         <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgba(111,58,40,0.1)]">
-                          <motion.div initial={{ width: 0 }} animate={{ width: `${stat.value}%` }} transition={{ duration: 0.8, delay: i * 0.1 }} className="h-full rounded-full" style={{ backgroundColor: accentStyle.accent }} />
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(stat.score / stat.max) * 100}%` }}
+                            transition={{ duration: 0.8, delay: i * 0.1 }}
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: accentStyle.accent }}
+                          />
                         </div>
                       </div>
                     ))}
@@ -156,15 +254,29 @@ function ScientistCard({
                 </span>
               </div>
               <p className="font-gabarito text-sm leading-relaxed text-[var(--warm-muted)]">{scientist.detail}</p>
+              <div className="mt-4 flex items-center justify-between rounded-xl border border-[var(--warm-border)] bg-[rgba(255,248,236,0.7)] px-3 py-2">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
+                  Specialty: <span className="font-bold text-[var(--warm-text)]">{specialtyLabel}</span>
+                </p>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
+                  Bonus: <span className="font-bold text-[var(--warm-text)]">+{specialtyBonusPercent}%</span>
+                </p>
+              </div>
               <div className="mt-8 space-y-5">
-                {scientist.stats.map((stat, i) => (
+                {combatStatsRows.map((stat, i) => (
                   <div key={stat.label}>
                     <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-[var(--warm-muted)]">
                       <span>{stat.label}</span>
                       <span className="font-bold text-[var(--warm-text)]">{stat.value}</span>
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-[rgba(111,58,40,0.1)]">
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${stat.value}%` }} transition={{ duration: 0.8, delay: i * 0.1 }} className="h-full rounded-full" style={{ backgroundColor: accentStyle.accent }} />
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(stat.score / stat.max) * 100}%` }}
+                        transition={{ duration: 0.8, delay: i * 0.1 }}
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: accentStyle.accent }}
+                      />
                     </div>
                   </div>
                 ))}
