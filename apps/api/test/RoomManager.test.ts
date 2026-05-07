@@ -287,6 +287,28 @@ describe('RoomManager', () => {
       expect(client.disconnectTimeout).not.toBeNull();
     });
 
+    test('disconnect during depositing cancels the room immediately and does not requeue the opponent', async () => {
+      const playerAQueue = manager.queueMatch('playerA');
+      const roomId = await manager.queueMatch('playerB');
+      await playerAQueue;
+
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+      manager.joinRoom(roomId, 'playerA', mock1.ws);
+      manager.joinRoom(roomId, 'playerB', mock2.ws);
+
+      const room = manager.getRoom(roomId)!;
+      expect(room.status).toBe('depositing');
+
+      manager.leaveRoom(roomId, 'playerB');
+
+      expect(manager.getRoom(roomId)).toBeUndefined();
+      expect((manager.queue as any).queue).toHaveLength(0);
+
+      const failureMsg = mock1.messages.find((m: any) => m.type === 'opponentFailedDeposit');
+      expect(failureMsg).toBeDefined();
+    });
+
     test('leaving non-existent room does nothing', () => {
       // Should not throw
       manager.leaveRoom('nonexistent', 'player');
@@ -296,6 +318,28 @@ describe('RoomManager', () => {
   // ─── Deposit Handling ────────────────────────────────────────
 
   describe('handleMessage - confirmDeposit', () => {
+    test('deposit-phase cancellation does not requeue the innocent player', async () => {
+      const playerAQueue = manager.queueMatch('playerA');
+      const roomId = await manager.queueMatch('playerB');
+      await playerAQueue;
+
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+      manager.joinRoom(roomId, 'playerA', mock1.ws);
+      manager.joinRoom(roomId, 'playerB', mock2.ws);
+
+      const room = manager.getRoom(roomId)!;
+      expect(room.status).toBe('depositing');
+
+      manager.lifecycle.cancelRoom(roomId, 'playerA');
+
+      expect(manager.getRoom(roomId)).toBeUndefined();
+      expect((manager.queue as any).queue).toHaveLength(0);
+
+      const failureMsg = mock1.messages.find((m: any) => m.type === 'opponentFailedDeposit');
+      expect(failureMsg).toBeDefined();
+    });
+
     test('single deposit does not start game', () => {
       manager.createRoom('room-dep');
       const mock1 = createMockWs();
