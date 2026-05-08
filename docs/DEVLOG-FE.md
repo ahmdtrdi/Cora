@@ -2765,3 +2765,76 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Notification copy/timing is still local to `BattleScreen`; if other gameplay screens need similar UX, this should become a shared game-notification primitive.
 - Deposit waiting-state messaging logic is still component-local in `OpponentFound`; if additional deposit phases/screens are added, message derivation should be centralized.
+
+## 2026-05-08 - Match Lifecycle UX Polish (/play Presence, Cancel/Surrender Semantics, Result States)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed remaining `/play` requeue assumptions (`resumeQueue` URL construction and `Return And Requeue` actions)
+  - replaced old `/play` recovery navigation with clean `/lobby` return paths only
+  - upgraded current-player recovery copy/action to:
+    - title/copy: `You were disconnected` + `Your match is still active. Rejoin to continue.`
+    - action: `Rejoin Room` (same-room socket reconnect)
+  - integrated backend lifecycle events into play UX:
+    - consumes `lastRoomCancelled` and maps reason-specific user copy:
+      - `player_cancelled` -> `Match cancelled`
+      - `deposit_timeout` -> `Deposit timed out`
+      - `disconnect` -> `Match cancelled before battle start`
+    - consumes presence state (`presenceUpdate` and `player/opponent.isConnected`) for non-blocking opponent status:
+      - transient notices: `Opponent disconnected` / `Opponent reconnected`
+      - persistent opponent chip: `Connected` / `Away`
+  - added cancel vs surrender action semantics on `/play`:
+    - pre-commit (`waiting`/`depositing`): `Cancel Match` (sends `cancelMatch`)
+    - committed/active (`playing`/`settling`): `Surrender`
+  - replaced prompt-style surrender with explicit confirmation modal:
+    - title: `Surrender match?`
+    - body: `Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby.`
+    - actions: `Keep Playing` and `Surrender`
+  - expanded result presentation to support non-winner assumptions safely:
+    - `You Win` / `You Lose`
+    - `Draw`
+    - `You Surrendered`
+    - `Opponent Surrendered`
+    - cancellation result text via `roomCancelled` reasons
+  - preserved existing animation/result structure and gameplay card flow.
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - added friendly `roomCancelled` reason mapping messages before lobby return
+  - removed immediate post-click forced timeout on cancel; now waits for backend cancellation signal path
+  - updated stale `Returning to queue` language to `Returning to lobby` for deposit-failure context.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- `/play` should no longer imply auto-requeue behavior in wagered and recoverable match states.
+- Presence-aware UX prevents confusion when an opponent disconnects while a connected player remains in an active room.
+- Explicit cancel-vs-surrender wording aligns player intent with lifecycle phase and backend semantics.
+- Result rendering must tolerate `winnerAddress: null` and lifecycle-terminal outcomes beyond simple win/lose.
+
+### The Tech Debt
+- Presence UX still depends on event timing between `presenceUpdate` and `gameStateUpdate`; if backend emits richer phase-aware presence metadata, the FE can further simplify conditions.
+- Cancellation is now clearly rendered, but lobby-level post-cancel handoff remains distributed across component-local timers and callbacks.
+- `/lobby` still retains legacy `resumeQueue` handling for compatibility; now that `/play` stopped emitting it, a future cleanup pass can remove that branch if no other flows depend on it.
+## 2026-05-08 - Disconnect Overlay UX (Manual Rejoin + Optional Surrender)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) reconnect UX for current-player disconnect during active/recoverable match:
+  - added a full-screen blocking overlay in the same frame-cut visual style as existing battle overlays
+  - title/body copy now:
+    - `You were disconnected`
+    - `Your match is still active. Rejoin to continue, or surrender to end the match.`
+  - removed inline disconnect-state frame usage for this flow
+  - suppressed top-right disconnect/reconnecting socket alerts while the full-screen disconnect overlay is active
+  - removed auto-rejoin behavior from this disconnect UX path; reconnect is now user-triggered only
+  - added explicit dual CTA behavior:
+    - `Rejoin Room` -> calls `reconnect()` for same-room recovery
+    - `Surrender` -> uses existing surrender intent flow, including reconnect-then-submit handling when disconnected
+  - no countdown timer, no auto-dismiss, no auto-win/forfeit countdown added in FE
+- Validation: `npm run lint` in `apps/web` passes.
+
+### The Reasoning
+- In a recoverable wagered match, disconnect should be explicit and player-controlled, not hidden in toasts or auto-retry side effects.
+- A blocking overlay with clear actions reduces ambiguity about whether the room is still active and what the player can do next.
+- Reusing existing surrender semantics keeps settlement ownership on backend lifecycle events rather than FE assumptions.
+
+### The Tech Debt
+- Reconnect/surrender intent orchestration is still component-local state in `BattleScreen`; if additional play surfaces share this behavior, it should be extracted into a dedicated match-recovery controller hook.
+- Socket alert suppression is context-specific (`showDisconnectedOverlay`) and may need consolidation if other modal-priority states are introduced.
