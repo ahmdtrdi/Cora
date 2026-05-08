@@ -51,7 +51,9 @@ pub struct RoundTimedOutEvent {
     pub timed_out_player: Pubkey,
     pub round_winner: Pubkey,
     pub current_round: u8,
+    /// Canonical round wins for player A.
     pub score_a: u16,
+    /// Canonical round wins for player B.
     pub score_b: u16,
 }
 
@@ -69,10 +71,16 @@ pub struct BattleFinalizedEvent {
     pub match_id: [u8; 32],
     pub winner: Pubkey,
     pub end_reason: u8,
+    /// Canonical round wins for player A.
     pub score_a: u16,
+    /// Canonical round wins for player B.
     pub score_b: u16,
+    /// Legacy duplicate of score_a, kept for compatibility.
     pub rounds_won_a: u8,
+    /// Legacy duplicate of score_b, kept for compatibility.
     pub rounds_won_b: u8,
+    pub game_score_a: u32,
+    pub game_score_b: u32,
 }
 
 #[event]

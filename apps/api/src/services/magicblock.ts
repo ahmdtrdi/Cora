@@ -16,6 +16,7 @@ export const MAGICBLOCK_END_REASONS = {
   SERVER_CANCELLED: 4,
   CHEATER_FLAGGED: 5,
   FORCE_ENDED: 6,
+  DRAW_NO_CONTEST: 7,
 } as const;
 
 export function isMagicBlockConfigured(): boolean {
@@ -25,8 +26,12 @@ export function isMagicBlockConfigured(): boolean {
 export interface BattleSessionState {
   healthA: number;
   healthB: number;
+  // Canonical round wins mirrored from score_a/score_b on-chain.
   scoreA: number;
   scoreB: number;
+  // Gameplay score tie-break fields; effect writes are wired in a later step.
+  gameScoreA: number;
+  gameScoreB: number;
   currentRound: number;
   roundDeadline: number;
   winner: string | null;
@@ -184,6 +189,8 @@ export class MagicBlockService {
    *   status:        u8        offset 160
    *   winner:        Pubkey    offset 161
    *   end_reason:    u8        offset 242
+   *   game_score_a:  u32       offset 243
+   *   game_score_b:  u32       offset 247
    */
   async getSessionState(sessionPda: string): Promise<BattleSessionState> {
     const account = await mbConnection.getAccountInfo(new PublicKey(sessionPda));
@@ -205,8 +212,22 @@ export class MagicBlockService {
     const winnerKey = new PublicKey(winnerBytes);
     const winner = winnerKey.equals(PublicKey.default) ? null : winnerKey.toBase58();
     const endReason = data.readUInt8(DISC + 242);
+    const gameScoreA = data.readUInt32LE(DISC + 243);
+    const gameScoreB = data.readUInt32LE(DISC + 247);
 
-    return { healthA, healthB, scoreA, scoreB, currentRound, roundDeadline, winner, status, endReason };
+    return {
+      healthA,
+      healthB,
+      scoreA,
+      scoreB,
+      gameScoreA,
+      gameScoreB,
+      currentRound,
+      roundDeadline,
+      winner,
+      status,
+      endReason,
+    };
   }
 }
 

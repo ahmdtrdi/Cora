@@ -30,6 +30,8 @@ pub fn handler(ctx: Context<FinalizeMatch>) -> Result<()> {
         score_b: session.score_b,
         rounds_won_a: session.rounds_won_a,
         rounds_won_b: session.rounds_won_b,
+        game_score_a: session.game_score_a,
+        game_score_b: session.game_score_b,
     });
 
     Ok(())

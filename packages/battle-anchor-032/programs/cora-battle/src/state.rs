@@ -20,15 +20,15 @@ pub struct BattleSession {
     pub health_a: u16,
     /// Player B's current health points (reset each round)
     pub health_b: u16,
-    /// Player A's round score in this best-of-3 battle
+    /// Canonical rounds won by player A for match winner evaluation.
     pub score_a: u16,
-    /// Player B's round score in this best-of-3 battle
+    /// Canonical rounds won by player B for match winner evaluation.
     pub score_b: u16,
     /// Current round number (1-indexed while active, 0 before activation)
     pub current_round: u8,
-    /// Rounds won by player A
+    /// Legacy duplicate of score_a, kept synchronized for backward compatibility.
     pub rounds_won_a: u8,
-    /// Rounds won by player B
+    /// Legacy duplicate of score_b, kept synchronized for backward compatibility.
     pub rounds_won_b: u8,
     /// Unix timestamp when the current round started
     pub round_started_at: i64,
@@ -44,7 +44,7 @@ pub struct BattleSession {
     pub status: BattleStatus,
     /// Winner's pubkey (Pubkey::default() until Finished)
     pub winner: Pubkey,
-    /// SHA-256 hash of the question set used (fairness proof)
+    /// SHA-256 hash of the public question set commitment, not an answer hash.
     pub question_hash: [u8; 32],
     /// PDA bump seed
     pub bump: u8,
@@ -54,6 +54,10 @@ pub struct BattleSession {
     pub finished_at: i64,
     /// Terminal outcome reason. See END_REASON_* constants.
     pub end_reason: u8,
+    /// Cumulative gameplay score for player A, used for final tie-breaks.
+    pub game_score_a: u32,
+    /// Cumulative gameplay score for player B, used for final tie-breaks.
+    pub game_score_b: u32,
 }
 
 impl BattleSession {
@@ -63,6 +67,7 @@ impl BattleSession {
     // + 8 (round_deadline) + 1 (missed_a) + 1 (missed_b) + 2 (plays)
     // + 1 (status) + 32 (winner) + 32 (q_hash) + 1 (bump)
     // + 8 (created) + 8 (finished) + 1 (end_reason)
+    // + 4 (game_score_a) + 4 (game_score_b)
     pub const LEN: usize = 8
         + 1
         + 32
@@ -87,7 +92,39 @@ impl BattleSession {
         + 1
         + 8
         + 8
-        + 1; // = 251
+        + 1
+        + 4
+        + 4; // = 259
+
+    /// Determine the match winner using the GameEngine's public final ordering:
+    /// rounds won, then gameplay score, then remaining health, else draw.
+    pub fn determine_winner_by_match_rules(&self) -> Option<Pubkey> {
+        if self.score_a != self.score_b {
+            return Some(if self.score_a > self.score_b {
+                self.player_a
+            } else {
+                self.player_b
+            });
+        }
+
+        if self.game_score_a != self.game_score_b {
+            return Some(if self.game_score_a > self.game_score_b {
+                self.player_a
+            } else {
+                self.player_b
+            });
+        }
+
+        if self.health_a != self.health_b {
+            return Some(if self.health_a > self.health_b {
+                self.player_a
+            } else {
+                self.player_b
+            });
+        }
+
+        None
+    }
 }
 
 /// State machine for battle lifecycle.
