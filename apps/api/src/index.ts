@@ -9,13 +9,7 @@ import { rateLimiter } from './middleware/rateLimiter';
 import { createActionsRouter } from './routes/actions';
 import { startEventListener } from './utils/eventListener';
 import { getArenaHistory, getWalletHistory, getWalletPlayability } from './services/goldrush';
-import { createClient } from '@supabase/supabase-js'; 
-
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+import { supabase } from './services/supabase';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();

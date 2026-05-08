@@ -2,12 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Question } from '@shared/question';
 import { validateQuestion } from '@shared/question';
-import { createClient } from '@supabase/supabase-js';
-
-// Setup Supabase client
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { supabase } from './services/supabase';
 
 /**
  * Load and validate all question JSON files from the data/questions directory.
