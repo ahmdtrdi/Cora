@@ -383,3 +383,45 @@ Added explicit **match cancellation** and **surrender** flows across the full st
 - Presence and cancellation logic are growing into a real state machine, but are still implemented as imperative lifecycle branches and timers. A formal statechart would reduce the chance of future edge-case regressions.
 - Draw handling needs an end-to-end audit with the blockchain settlement path to guarantee refund behavior is fully deterministic and matches on-chain assumptions.
 - The lobby recovery code is compensating for the current HTTP matchmaking design. A websocket-native queue/ready flow would simplify this significantly and remove some of the persistence glue.
+
+---
+
+## 14. Winner Tie-Break Update - Round, Score, Remaining Health (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `packages/game-logic/src/GameEngine.ts`
+- `packages/game-logic/test/GameEngine.test.ts`
+
+Updated final match winner resolution so a finished room is now decided in this order:
+
+1. `roundsWon`
+2. `score`
+3. `health` remaining
+
+This removes `correctAnswers` from the final match tie-break path.
+
+**What changed:**
+
+1. **Final match comparator:** `determineMatchOutcome()` now compares `roundsWon` first, then `score`, then `health`.
+2. **Removed old final fallback:** `correctAnswers` is no longer used to decide the final winner once the room finishes.
+3. **Targeted regression coverage:** Updated engine tests to explicitly verify:
+   - a player can win on higher `score` even when `health` is tied
+   - `health` is only used after both `roundsWon` and `score` are tied
+
+**The Reasoning:**
+
+- The previous final winner order did not match the intended game rule requested for room completion.
+- `score` is the better second-level match signal after round wins because it reflects total successful value generated across the match, not just the last surviving HP snapshot.
+- Keeping `health` as the last fallback preserves a deterministic outcome without arbitrarily defaulting to player A.
+
+**Test:**
+
+- Verified with `bun test packages/game-logic/test/GameEngine.test.ts`
+- Result: `20 pass`, `0 fail`
+
+**Tech Debt:**
+
+- Round timeout logic still uses its own local comparison flow (`health`, then `correctAnswers`) for deciding the winner of an expiring round. That is separate from final room resolution, but we should document and review whether both policies are intentionally different long-term.
