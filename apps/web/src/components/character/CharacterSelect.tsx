@@ -248,6 +248,7 @@ export function CharacterSelect({
             selected={selectedCharacterId === character.id}
             autoAssigned={autoAssignedCharacterId === character.id}
             showNeutralDefault={canShowDefaultHint && neutralDefaultCharacterId === character.id}
+            previewExpression="happy"
             disabled={disabled}
             locked={locked}
             index={index}

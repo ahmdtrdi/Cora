@@ -1,6 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
+import Image from "next/image";
+import { motion, useAnimationControls } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CharacterOption } from "./characterTypes";
 import { CHARACTER_DEFS } from "@shared/characterStats";
 
@@ -11,6 +13,7 @@ type CharacterCardProps = {
   locked?: boolean;
   autoAssigned?: boolean;
   showNeutralDefault?: boolean;
+  previewExpression?: "happy";
   index: number;
   onSelect: (characterId: string) => void;
 };
@@ -22,10 +25,20 @@ export function CharacterCard({
   locked = false,
   autoAssigned = false,
   showNeutralDefault = false,
+  previewExpression = "happy",
   index,
   onSelect,
 }: CharacterCardProps) {
+  const portraitControls = useAnimationControls();
+  const hasMountedRef = useRef(false);
+  const [failedExpressions, setFailedExpressions] = useState<Record<string, true>>({});
   const isInteractive = !disabled && !locked;
+  const expressionName = selected ? previewExpression : "idle";
+  const expressionSrc = useMemo(
+    () => `/assets/characters/${character.id.trim().toLowerCase()}/exp/${expressionName}.png`,
+    [character.id, expressionName],
+  );
+  const canRenderExpression = !failedExpressions[expressionSrc];
   const specialty = CHARACTER_DEFS[character.id]?.specialty ?? null;
   const specialtyLabel = specialty ? specialty[0].toUpperCase() + specialty.slice(1) : "Generalist";
   const specialtyMultiplier = CHARACTER_DEFS[character.id]?.specialtyMultiplier ?? 1;
@@ -40,6 +53,20 @@ export function CharacterCard({
           ? "Balanced Default"
           : "Tap to Select";
 
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      portraitControls.set({ scale: 1, y: 0 });
+      return;
+    }
+
+    portraitControls.start({
+      y: selected ? [0, -3, 0] : [0, 2, 0],
+      scale: selected ? [1, 1.035, 1] : [1, 1.018, 1],
+      transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [selected, portraitControls]);
+
   return (
     <motion.button
       type="button"
@@ -49,8 +76,8 @@ export function CharacterCard({
       disabled={!isInteractive}
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: selected ? -5 : 0 }}
-      transition={{ duration: 0.32, delay: index * 0.06 }}
-      whileHover={isInteractive ? { y: selected ? -7 : -4 } : undefined}
+      transition={{ duration: 0.32, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={isInteractive ? { y: selected ? -6 : -1.5 } : undefined}
       className="game-card relative flex min-h-[350px] flex-col overflow-hidden p-4 text-left transition-transform"
       style={{
         border: selected ? "3px solid #ba6931" : "3px solid rgba(111,58,40,0.38)",
@@ -66,7 +93,8 @@ export function CharacterCard({
       aria-pressed={selected}
       aria-disabled={!isInteractive}
     >
-      <div
+      <motion.div
+        animate={portraitControls}
         className="relative mx-auto mb-4 aspect-square w-full max-w-[210px] overflow-hidden rounded-2xl"
         style={{
           border: selected ? "2px solid rgba(248,214,148,0.94)" : "2px solid rgba(15,20,17,0.7)",
@@ -77,24 +105,27 @@ export function CharacterCard({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_26%,rgba(255,255,255,0.2),transparent_60%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.06)_0%,rgba(5,8,7,0.35)_100%)]" />
         <div className="relative z-10 grid h-full place-items-center">
-          <span className="font-caprasimo text-7xl text-[#f7e5bf]" style={{ textShadow: "0 6px 14px rgba(0,0,0,0.35)" }}>
-            {character.initial}
-          </span>
-          <div className="absolute bottom-4 flex items-center gap-2 rounded-full border border-[rgba(248,214,148,0.5)] bg-[rgba(18,25,22,0.72)] px-2 py-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--tone-cream)]" />
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--tone-cream)]" />
-            <span
-              className={`h-[2px] rounded-full bg-[var(--tone-cream)] transition-all ${selected ? "w-4" : "w-2"}`}
-              style={{ transform: selected ? "translateY(0px) rotate(0deg)" : "translateY(1px) rotate(-12deg)" }}
+          {canRenderExpression ? (
+            <Image
+              src={expressionSrc}
+              alt={`${character.name} ${expressionName} expression`}
+              fill
+              sizes="210px"
+              className="object-cover object-center"
+              onError={() => {
+                setFailedExpressions((prev) => {
+                  if (prev[expressionSrc]) return prev;
+                  return { ...prev, [expressionSrc]: true };
+                });
+              }}
             />
-          </div>
-          {selected && (
-            <span className="absolute right-3 top-3 rounded-md border border-[rgba(248,214,148,0.62)] bg-[rgba(28,16,8,0.7)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-wide text-[#f8d694]">
-              Focused
+          ) : (
+            <span className="font-caprasimo text-7xl text-[#f7e5bf]" style={{ textShadow: "0 6px 14px rgba(0,0,0,0.35)" }}>
+              {character.initial}
             </span>
           )}
         </div>
-      </div>
+      </motion.div>
 
       <p className="font-caprasimo text-2xl leading-tight text-[#2a1b10]">{character.name}</p>
       <p className="mt-1 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#664734]">
