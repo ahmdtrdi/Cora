@@ -63,7 +63,7 @@ function shortenAddress(address?: string) {
 
 function formatMatchClock(remainingMs?: number) {
   if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
-    return "05:00";
+    return "03:00";
   }
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
