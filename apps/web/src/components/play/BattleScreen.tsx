@@ -248,12 +248,14 @@ export function BattleScreen() {
   const opponentReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousPlayerStreakRef = useRef(0);
   const previousOpponentStreakRef = useRef(0);
+  const previousRoundsWonRef = useRef<{ player: number; opponent: number } | null>(null);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
   const playerBaseControls = useAnimationControls();
   const opponentBaseControls = useAnimationControls();
 
-  const showGameNotice = useCallback((message: string, tone: "action" | "phase" = "action") => {
+  const showGameNotice = useCallback(
+    (message: string, tone: "action" | "phase" = "action", durationMs = 2100) => {
     if (gameNoticeTimerRef.current) {
       clearTimeout(gameNoticeTimerRef.current);
       gameNoticeTimerRef.current = null;
@@ -262,8 +264,10 @@ export function BattleScreen() {
     gameNoticeTimerRef.current = setTimeout(() => {
       setGameNotice(null);
       gameNoticeTimerRef.current = null;
-    }, 2100);
-  }, []);
+    }, durationMs);
+  },
+    [],
+  );
 
   const showReaction = useCallback(
     (side: BattleSide, expression: CharacterExpression, durationMs = REACTION_DISPLAY_MS) => {
@@ -437,8 +441,8 @@ export function BattleScreen() {
     const hurtReactionTimer =
       actionKind === "attack" && lastDamageEvent.damage > 0
         ? setTimeout(() => {
-            showReaction(targetSide, "hurt");
-          }, 420)
+          showReaction(targetSide, "hurt");
+        }, 420)
         : null;
 
     return () => {
@@ -619,9 +623,9 @@ export function BattleScreen() {
     ? "Syncing Room State"
     : isRoomUnavailable
       ? "You were disconnected"
-    : status === "waiting"
-      ? "Waiting For Battle"
-      : "Room Locked";
+      : status === "waiting"
+        ? "Waiting For Battle"
+        : "Room Locked";
   const roomGateMessage = isRoomStateLoading
     ? "Rejoining battle room after refresh. Waiting for server snapshot."
     : isRoomUnavailable
@@ -636,10 +640,10 @@ export function BattleScreen() {
       : null;
   const settlementPayload = settlementResult
     ? {
-        matchId: settlementResult.matchId,
-        serverPublicKey: settlementResult.serverPublicKey,
-        settlementSignature: settlementResult.settlementSignature,
-      }
+      matchId: settlementResult.matchId,
+      serverPublicKey: settlementResult.serverPublicKey,
+      settlementSignature: settlementResult.settlementSignature,
+    }
     : null;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
@@ -858,6 +862,35 @@ export function BattleScreen() {
     }
   }, [opponentCurrentCorrectStreak, showReaction]);
 
+  useEffect(() => {
+    const previous = previousRoundsWonRef.current;
+    if (!previous) {
+      previousRoundsWonRef.current = {
+        player: playerRoundsWon,
+        opponent: opponentRoundsWon,
+      };
+      return;
+    }
+
+    if (playerRoundsWon === previous.player && opponentRoundsWon === previous.opponent) {
+      return;
+    }
+
+    const playerRoundDelta = playerRoundsWon - previous.player;
+    const opponentRoundDelta = opponentRoundsWon - previous.opponent;
+
+    if (playerRoundDelta > 0 && opponentRoundDelta <= 0) {
+      showGameNotice("Round winner: You", "phase", 3200);
+    } else if (opponentRoundDelta > 0 && playerRoundDelta <= 0) {
+      showGameNotice("Round winner: Your rival", "phase", 3200);
+    }
+
+    previousRoundsWonRef.current = {
+      player: playerRoundsWon,
+      opponent: opponentRoundsWon,
+    };
+  }, [playerRoundsWon, opponentRoundsWon, showGameNotice]);
+
   const alerts: BattleUiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
   if (lastSocketIssueAt && !showDisconnectedOverlay) {
@@ -1061,7 +1094,6 @@ export function BattleScreen() {
       <BattleScreenStatusLayer
         visibleAlerts={visibleAlerts}
         socketUrl={socketUrl}
-        gameNotice={gameNotice}
         onDismissAlert={dismissAlert}
       />
 
@@ -1182,7 +1214,48 @@ export function BattleScreen() {
             </div>
           </div>
 
-          <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
+            <AnimatePresence mode="wait">
+              {gameNotice && (
+                <motion.div
+                  key={gameNotice.id}
+                  initial={{ opacity: 0, y: -8, x: "-50%", scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+                  exit={{ opacity: 0, y: -4, x: "-50%", scale: 0.98 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  className="pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
+                  style={{
+                    border:
+                      gameNotice.tone === "phase"
+                        ? "1px solid rgba(248,214,148,0.46)"
+                        : "1px solid rgba(157,180,150,0.52)",
+                    background:
+                      gameNotice.tone === "phase"
+                        ? "linear-gradient(145deg, rgba(54,36,21,0.93), rgba(29,20,12,0.94))"
+                        : "linear-gradient(145deg, rgba(28,46,38,0.93), rgba(14,25,21,0.94))",
+                    boxShadow:
+                      gameNotice.tone === "phase"
+                        ? "0 12px 28px rgba(64,43,24,0.45)"
+                        : "0 12px 28px rgba(19,40,31,0.45)",
+                  }}
+                >
+                  <p
+                    className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
+                    style={{
+                      color:
+                        gameNotice.tone === "phase"
+                          ? "rgba(248,214,148,0.88)"
+                          : "rgba(173,209,164,0.86)",
+                    }}
+                  >
+                    {gameNotice.tone === "phase" ? "Battle Update" : "Combat Update"}
+                  </p>
+                  <p className="mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
+                    {gameNotice.message}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div
               className="pointer-events-none absolute inset-x-[6%] bottom-[7%] z-0 h-[28%]"
               style={{
@@ -1191,7 +1264,7 @@ export function BattleScreen() {
               }}
             />
             <motion.div
-              className="absolute -left-[7%] bottom-[12%] z-0 w-[clamp(200px,27vw,400px)] opacity-90"
+              className="absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] opacity-90"
               style={{
                 aspectRatio: "1700 / 1269",
                 filter:
@@ -1240,7 +1313,7 @@ export function BattleScreen() {
             </motion.div>
 
             <motion.div
-              className="absolute -right-[7%] bottom-[12%] z-0 w-[clamp(200px,27vw,400px)] opacity-90"
+              className="absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] opacity-90"
               style={{
                 aspectRatio: "1700 / 1269",
                 filter:
@@ -1259,9 +1332,8 @@ export function BattleScreen() {
                     alt={`${opponentCharacterId ?? "opponent"} base`}
                     fill
                     sizes="(max-width: 768px) 200px, 400px"
-                    className={`object-contain object-right-bottom ${
-                      opponentCharacterId?.trim().toLowerCase() === "einstein" ? "" : "-scale-x-100"
-                    }`}
+                    className={`object-contain object-right-bottom ${opponentCharacterId?.trim().toLowerCase() === "einstein" ? "" : "-scale-x-100"
+                      }`}
                     onError={() => markBaseSpriteFailed(opponentBaseSrc)}
                   />
                 ) : (
@@ -1290,7 +1362,7 @@ export function BattleScreen() {
               </div>
             </motion.div>
 
-            <div className="absolute left-1 top-2 z-[14] w-[clamp(132px,17vw,190px)] md:left-4 md:top-3">
+            <div className="absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
               <div className="flex items-center justify-between gap-2">
                 <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
                 <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
@@ -1306,7 +1378,7 @@ export function BattleScreen() {
               </div>
             </div>
 
-            <div className="absolute right-1 top-2 z-[14] w-[clamp(132px,17vw,190px)] text-right md:right-4 md:top-3">
+            <div className="absolute right-3 top-3 z-20 w-[clamp(132px,17vw,190px)] text-right md:right-5">
               <div className="flex items-center justify-between gap-2">
                 <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
                 <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
@@ -1323,9 +1395,8 @@ export function BattleScreen() {
             </div>
 
             <motion.div
-              className={`absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${
-                characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
-              }`}
+              className={`absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
+                }`}
               animate={playerActionControls}
             >
               <div className="relative h-full w-full">
@@ -1388,9 +1459,8 @@ export function BattleScreen() {
             </motion.div>
 
             <motion.div
-              className={`absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${
-                characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
-              }`}
+              className={`absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
+                }`}
               animate={opponentActionControls}
             >
               <div className="relative h-full w-full">
@@ -1501,157 +1571,157 @@ export function BattleScreen() {
           </div>
 
           <div className="relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
-              <AnimatePresence>
-                {activeCard && status === "playing" && !isMatchComplete && (
-                  <motion.div
-                    key={activeCard.id}
-                    initial={{ opacity: 0, y: 10, x: "-50%", scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
-                    exit={{ opacity: 0, y: 6, x: "-50%", scale: 0.98 }}
-                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                    className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
-                    style={{
-                      border: "1px solid rgba(248,214,148,0.36)",
-                      background: "linear-gradient(150deg, rgba(255,246,228,0.96), rgba(243,221,185,0.96))",
-                      boxShadow: "0 14px 26px rgba(0,0,0,0.28)",
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-gabarito text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#6d8373]">
-                          Question
-                        </p>
-                        <p className="mt-0.5 line-clamp-2 font-gabarito text-sm font-semibold leading-snug text-[#1f2b24] md:text-base">
-                          {activeCard.question.text}
-                        </p>
-                      </div>
-                      <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displaySecondsLeft}</p>
+            <AnimatePresence>
+              {activeCard && status === "playing" && !isMatchComplete && (
+                <motion.div
+                  key={activeCard.id}
+                  initial={{ opacity: 0, y: 10, x: "-50%", scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+                  exit={{ opacity: 0, y: 6, x: "-50%", scale: 0.98 }}
+                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.36)",
+                    background: "linear-gradient(150deg, rgba(255,246,228,0.96), rgba(243,221,185,0.96))",
+                    boxShadow: "0 14px 26px rgba(0,0,0,0.28)",
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-gabarito text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#6d8373]">
+                        Question
+                      </p>
+                      <p className="mt-0.5 line-clamp-2 font-gabarito text-sm font-semibold leading-snug text-[#1f2b24] md:text-base">
+                        {activeCard.question.text}
+                      </p>
                     </div>
+                    <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displaySecondsLeft}</p>
+                  </div>
 
-                    <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
-                      {activeCard.question.options.map((option) => {
-                        const isSelected = selectedOptionId === option.id;
-                        const selectedCorrect = isSelected && answerFeedback === "correct";
-                        const selectedWrong = isSelected && answerFeedback === "wrong";
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            disabled={answerLocked}
-                            onClick={() => onAnswer(option.id)}
-                            className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
-                            style={{
-                              border: selectedCorrect
-                                ? "1px solid rgba(76,120,82,0.58)"
-                                : selectedWrong
-                                  ? "1px solid rgba(140,70,48,0.62)"
-                                  : isSelected
-                                    ? "1px solid rgba(186,105,49,0.5)"
-                                    : "1px solid rgba(111,58,40,0.24)",
-                              background: selectedCorrect
-                                ? "linear-gradient(160deg, rgba(86,133,93,0.98), rgba(53,93,63,0.98))"
-                                : selectedWrong
-                                  ? "linear-gradient(160deg, rgba(233,201,184,0.98), rgba(188,116,83,0.96))"
-                                  : isSelected
-                                    ? "linear-gradient(160deg, rgba(248,225,181,0.98), rgba(231,190,128,0.96))"
-                                    : "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
-                              boxShadow: isSelected
-                                ? "0 0 0 2px rgba(248,214,148,0.18), 0 8px 14px rgba(77,42,24,0.16)"
-                                : "0 6px 10px rgba(77,42,24,0.12)",
-                              opacity: answerLocked && !isSelected ? 0.72 : 1,
-                            }}
-                          >
-                            <span
-                              className="font-gabarito text-[10px] font-black uppercase tracking-wider"
-                              style={{ color: selectedWrong ? "#6f3a28" : selectedCorrect ? "rgba(240,249,238,0.96)" : "#6d8373" }}
-                            >
-                              {option.id}
-                            </span>
-                            <span
-                              className="ml-2 font-gabarito text-xs font-semibold md:text-sm"
-                              style={{ color: selectedWrong ? "#3f2419" : selectedCorrect ? "rgba(249,253,248,0.96)" : "#1f2b24" }}
-                            >
-                              {option.text}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <p className="mb-1 text-center font-gabarito text-xs text-[rgba(244,240,230,0.86)]">
-                {activeCard && status === "playing" && !isMatchComplete
-                  ? "Choose an answer."
-                  : isPlayable
-                    ? "Pick a card from your hand."
-                    : "Waiting for server state..."}
-              </p>
-
-              <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
-                {Array.from({ length: displaySlots }).map((_, index) => {
-                  const card = hand[index] ?? null;
-                  const active = card ? activeCardId === card.id : false;
-                  const transformClass = getCardTransform(index);
-                  const cardDisabled = !card || !isPlayable || Boolean(activeCardId) || isMatchComplete;
-                  return (
-                    <button
-                      key={card?.id ?? `placeholder-${index}`}
-                      type="button"
-                      onClick={() => {
-                        if (card) onOpenCard(card);
-                      }}
-                      disabled={cardDisabled}
-                      className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition ${transformClass}`}
-                      style={{
-                        border: active ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
-                        background: cardDisabled
-                          ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
-                          : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
-                        opacity: active ? 1 : cardDisabled ? 0.68 : 1,
-                        boxShadow: active
-                          ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
-                          : "0 12px 22px rgba(0,0,0,0.3)",
-                      }}
-                    >
-                      <div
-                        className="pointer-events-none absolute inset-[8%] rounded-2xl"
-                        style={{
-                          border: "1px solid rgba(111,58,40,0.24)",
-                          background:
-                            "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.38), transparent 44%), linear-gradient(150deg, rgba(255,245,226,0.64), rgba(241,217,181,0.68))",
-                        }}
-                      />
-                      <div
-                        className="pointer-events-none absolute inset-0"
-                        style={{
-                          background:
-                            "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
-                        }}
-                      />
-                      {card && (
-                        <span
-                          className="absolute left-1/2 top-[18%] -translate-x-1/2 rounded-full px-2 py-0.5 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.12em]"
+                  <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
+                    {activeCard.question.options.map((option) => {
+                      const isSelected = selectedOptionId === option.id;
+                      const selectedCorrect = isSelected && answerFeedback === "correct";
+                      const selectedWrong = isSelected && answerFeedback === "wrong";
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          disabled={answerLocked}
+                          onClick={() => onAnswer(option.id)}
+                          className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
                           style={{
-                            color: card.type === "heal" ? "#214335" : "#6f3a28",
-                            background: card.type === "heal" ? "rgba(216,234,212,0.82)" : "rgba(248,214,148,0.82)",
-                            border: "1px solid rgba(111,58,40,0.22)",
+                            border: selectedCorrect
+                              ? "1px solid rgba(76,120,82,0.58)"
+                              : selectedWrong
+                                ? "1px solid rgba(140,70,48,0.62)"
+                                : isSelected
+                                  ? "1px solid rgba(186,105,49,0.5)"
+                                  : "1px solid rgba(111,58,40,0.24)",
+                            background: selectedCorrect
+                              ? "linear-gradient(160deg, rgba(86,133,93,0.98), rgba(53,93,63,0.98))"
+                              : selectedWrong
+                                ? "linear-gradient(160deg, rgba(233,201,184,0.98), rgba(188,116,83,0.96))"
+                                : isSelected
+                                  ? "linear-gradient(160deg, rgba(248,225,181,0.98), rgba(231,190,128,0.96))"
+                                  : "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
+                            boxShadow: isSelected
+                              ? "0 0 0 2px rgba(248,214,148,0.18), 0 8px 14px rgba(77,42,24,0.16)"
+                              : "0 6px 10px rgba(77,42,24,0.12)",
+                            opacity: answerLocked && !isSelected ? 0.72 : 1,
                           }}
                         >
-                          {card.type === "heal" ? "Heal" : "Attack"}
-                        </span>
-                      )}
+                          <span
+                            className="font-gabarito text-[10px] font-black uppercase tracking-wider"
+                            style={{ color: selectedWrong ? "#6f3a28" : selectedCorrect ? "rgba(240,249,238,0.96)" : "#6d8373" }}
+                          >
+                            {option.id}
+                          </span>
+                          <span
+                            className="ml-2 font-gabarito text-xs font-semibold md:text-sm"
+                            style={{ color: selectedWrong ? "#3f2419" : selectedCorrect ? "rgba(249,253,248,0.96)" : "#1f2b24" }}
+                          >
+                            {option.text}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <p className="mb-1 text-center font-gabarito text-xs text-[rgba(244,240,230,0.86)]">
+              {activeCard && status === "playing" && !isMatchComplete
+                ? "Choose an answer."
+                : isPlayable
+                  ? "Pick a card from your hand."
+                  : "Waiting for server state..."}
+            </p>
+
+            <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
+              {Array.from({ length: displaySlots }).map((_, index) => {
+                const card = hand[index] ?? null;
+                const active = card ? activeCardId === card.id : false;
+                const transformClass = getCardTransform(index);
+                const cardDisabled = !card || !isPlayable || Boolean(activeCardId) || isMatchComplete;
+                return (
+                  <button
+                    key={card?.id ?? `placeholder-${index}`}
+                    type="button"
+                    onClick={() => {
+                      if (card) onOpenCard(card);
+                    }}
+                    disabled={cardDisabled}
+                    className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition ${transformClass}`}
+                    style={{
+                      border: active ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
+                      background: cardDisabled
+                        ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
+                        : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
+                      opacity: active ? 1 : cardDisabled ? 0.68 : 1,
+                      boxShadow: active
+                        ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
+                        : "0 12px 22px rgba(0,0,0,0.3)",
+                    }}
+                  >
+                    <div
+                      className="pointer-events-none absolute inset-[8%] rounded-2xl"
+                      style={{
+                        border: "1px solid rgba(111,58,40,0.24)",
+                        background:
+                          "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.38), transparent 44%), linear-gradient(150deg, rgba(255,245,226,0.64), rgba(241,217,181,0.68))",
+                      }}
+                    />
+                    <div
+                      className="pointer-events-none absolute inset-0"
+                      style={{
+                        background:
+                          "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
+                      }}
+                    />
+                    {card && (
                       <span
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-caprasimo text-4xl"
-                        style={{ color: cardDisabled ? "rgba(111,58,40,0.48)" : "rgba(111,58,40,0.82)" }}
+                        className="absolute left-1/2 top-[18%] -translate-x-1/2 rounded-full px-2 py-0.5 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.12em]"
+                        style={{
+                          color: card.type === "heal" ? "#214335" : "#6f3a28",
+                          background: card.type === "heal" ? "rgba(216,234,212,0.82)" : "rgba(248,214,148,0.82)",
+                          border: "1px solid rgba(111,58,40,0.22)",
+                        }}
                       >
-                        ?
+                        {card.type === "heal" ? "Heal" : "Attack"}
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
+                    )}
+                    <span
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-caprasimo text-4xl"
+                      style={{ color: cardDisabled ? "rgba(111,58,40,0.48)" : "rgba(111,58,40,0.82)" }}
+                    >
+                      ?
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+          </div>
         </section>
       </div>
 

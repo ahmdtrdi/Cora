@@ -3352,3 +3352,74 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - None added. This removes duplicated rendering paths.
+
+## 2026-05-08 - Battle Notice Reposition + Emphasis Upgrade
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved transient battle notifications (`gameNotice`) into the main battle arena layout, directly below the top score/VS divider line
+  - replaced the previous minimal top overlay look with a stronger in-arena event banner that includes:
+    - tone-based label (`Battle Update` for phase events, `Combat Update` for combat events)
+    - clearer contrast, border, and shadow treatment per tone
+    - preserved enter/exit motion timing and existing notice lifecycle behavior
+- Updated [apps/web/src/components/play/BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx):
+  - removed `gameNotice` rendering from the fixed status layer
+  - kept socket/system alert stack behavior unchanged
+  - removed no-longer-needed notice prop/types tied to that layer
+
+### The Reasoning
+- The user feedback was that notifications felt underwhelming and visually detached by appearing as a fixed line-level banner.
+- Placing the notice under the battle header keeps it in the player focus zone and ties feedback to the duel stage.
+- Separating concerns (alerts in status layer, battle event notices in arena layout) makes future UI tuning safer and clearer.
+
+### The Tech Debt
+- Notice colors and copy labels are still inline in `BattleScreen.tsx`; if notification variants expand, we should extract a small shared token map/helper.
+- Timing (`2100ms`) is still a fixed constant and may need harmonization with future combat animation durations.
+
+## 2026-05-09 - Battle Notice Vertical Nudge (Higher, Still Centered)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved the in-arena notification banner higher by adjusting its absolute anchor from `top-2` to `top-[-2rem]`
+  - kept horizontal centering and existing below-divider placement behavior
+
+### The Reasoning
+- The banner looked too low relative to the battle stage; this tweak lifts it closer to the base/combat visual level while preserving the same centered emphasis.
+
+### The Tech Debt
+- Vertical placement still depends on tuned offsets combined with scene container padding (`pt-[4.25rem]`); if we continue iterating this area, a dedicated banner anchor container would reduce offset coupling.
+
+## 2026-05-09 - Round Change Winner Notification (Logic-Only)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added round progression tracking ref (`previousRoundsWonRef`) for player and rival round wins
+  - added a new effect that listens to `playerRoundsWon` / `opponentRoundsWon` changes
+  - triggers existing battle notice pipeline on round win changes:
+    - `Round winner: You`
+    - `Round winner: Your rival`
+- Kept presentation/layout untouched (no UI structure/style changes).
+
+### The Reasoning
+- Round outcomes are already represented by `roundsWon` counters, so this is the safest source-of-truth to detect when a round result is finalized.
+- Reusing `showGameNotice` preserves current notification timing/animation behavior with minimal risk.
+
+### The Tech Debt
+- If backend later introduces explicit per-round winner events, this derived approach should be switched to event-driven notices to avoid any edge cases around reconnect snapshots.
+
+## 2026-05-09 - Longer Round-Winner Notification Duration
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - extended `showGameNotice` to accept optional `durationMs` (default remains `2100ms`)
+  - kept all existing callers unchanged by relying on the default duration
+  - set round-winner notices to a longer display time:
+    - `Round winner: You` -> `3200ms`
+    - `Round winner: Your rival` -> `3200ms`
+
+### The Reasoning
+- Round-result context is more important than transient hit/heal feedback, so it should remain visible a bit longer for readability.
+- Using an optional duration parameter avoids UI changes and preserves current behavior for other notice types.
+
+### The Tech Debt
+- Notice durations are still hardcoded at call sites; if we keep tuning cadence, we should centralize durations in named constants.
