@@ -2531,3 +2531,130 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Action micro-animation timing is currently local in `BattleScreen.tsx`; if we add more character-state motion across screens, we should centralize motion timing tokens/utilities.
+
+## 2026-05-07 - Battle Result Modal Restyle (Player-First + Collapsible Settlement Details)
+
+### The Change
+- Restyled the match-complete modal in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to match the dark arena + warm card direction with:
+  - stronger dark backdrop overlay
+  - premium parchment card treatment
+  - large centered Caprasimo result title (`You Win` / `You Lose` / `Match Invalidated`)
+  - Gabarito subtitle copy (`Victory secured.`, `Rival took this round.`, `Match invalidated.`)
+- Reduced default visible content to player-facing summary only:
+  - settlement status chip (`Settled`, `Pending`, `Invalidated`)
+  - rounds score (`Your Rounds`, `Opponent Rounds`)
+  - compact outcome stats (`Correct`, `Timeout`, `Wrong`)
+  - optional shortened winner line when context is useful
+- Removed technical settlement/debug content from the default surface (match id, full authority block, server pubkey/signature, backend explanation).
+- Added a local UI toggle in the same component:
+  - `Show Settlement Details` / `Hide Settlement Details`
+  - when expanded, reveals match id, server pubkey, settlement signature, and backend settlement text/waiting status.
+- Reordered result actions to improve hierarchy:
+  - primary style: `Blink Share`, `Back To Lobby`
+  - secondary style: `View History`
+- Cleaned dead code by removing now-unused outcome color/label helper functions after removing default turn-history rendering from this modal.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The previous modal mixed game UX and settlement internals, which made the result moment feel like an operations panel.
+- This refactor keeps the end-of-match state celebratory and readable by default, while still preserving access to technical data on demand.
+- Keeping all data wiring intact but changing only layout/copy/toggle behavior satisfies the requirement to avoid logic and routing regressions.
+
+### The Tech Debt
+- Modal visual tokens (overlay/card/button/chip styles) are still component-local in `BattleScreen.tsx`; if result surfaces expand to other screens, we should extract shared style primitives.
+- The details panel currently uses plain text blocks; if settlement diagnostics become a recurring UX need, a shared key-value diagnostics component would improve consistency.
+
+## 2026-05-07 - OpponentFound History Entry-Point Removal
+
+### The Change
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to remove history entry points from the opponent-found phase only.
+- Removed `HistoryButton` import and removed `historyHref` constant (unused after UI removal).
+- Removed top-row history button while keeping:
+  - playability chip
+  - `Show Room Status` / `Hide Room Status` toggle
+- Removed bottom `Open Full History` link block.
+- Kept all match-flow behavior unchanged: deposit signing, socket reconnection, status rail, timeout/cancel flow, and routing to battle.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Opponent-found should stay focused on immediate match flow (rival locked -> sign deposit -> enter battle).
+- History access is now treated as app-level navigation rather than a repeated action in every match phase.
+
+### The Tech Debt
+- If product later needs contextual history during deposit phases, we should reintroduce it through a centralized phase-navigation policy instead of per-screen ad hoc links.
+
+## 2026-05-07 - Battle Hand + Question Popup Rounded Placeholder Polish
+
+### The Change
+- Updated only visual styling in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for:
+  - bottom battle hand cards
+  - active question popup shell
+  - answer option buttons
+- Battle hand cards:
+  - replaced sharp `frame-cut` card appearance with rounded placeholder cards
+  - preserved existing fan layout/transforms, click behavior, disabled behavior, and active card highlighting
+  - removed visible `card.type` / `locked` text from card face
+  - kept a simple center `?` mark and added subtle placeholder texture layers
+  - tuned disabled/locked cards to look intentionally inactive rather than broken
+- Active question popup:
+  - replaced old sharp modal shell with a rounded warm panel
+  - kept dark overlay and all question/timer/answer logic unchanged
+- Answer option buttons:
+  - replaced sharp panels with rounded chunky button cards in the same warm style direction
+  - kept existing `onAnswer`, disabled, and lock behavior unchanged
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- These elements were still visually anchored to the older sharp-frame style and felt out of place against the newer rounded battle UI.
+- This pass introduces temporary rounded placeholders that are easier to swap later when final designer card assets land.
+
+### The Tech Debt
+- Card/popup placeholder textures and color treatments are currently inline style values in `BattleScreen.tsx`; these should become shared tokens/primitives if reused across more battle surfaces.
+- Final art integration will likely replace most placeholder layers, so a follow-up cleanup pass should remove any temporary decorative styling that becomes redundant.
+
+## 2026-05-08 - Battle Room Gate Banners Converted To Blocking Overlay Modal
+
+### The Change
+- Updated room gate presentation in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) from inline banners to a centered blocking overlay modal.
+- Removed inline rendering above the arena for:
+  - `isRoomStateLoading`
+  - `shouldShowPlayStateGate`
+- Added a unified fixed overlay gate (`showRoomGateModal`) with dark low-opacity backdrop and centered panel so the arena stays in place.
+- Modal copy now follows requested wording:
+  - syncing: `Syncing Room State` + `Rejoining battle room after refresh. Waiting for server snapshot.`
+  - non-playing: `Waiting For Battle` (when status is `waiting`) or `Room Locked` + `Current room status: ${getStatusLabel(status)}.`
+- Preserved gate actions:
+  - `Retry Room` (only when socket has issue)
+  - `Return And Requeue`
+- Kept socket/gameplay logic and state checks unchanged (presentation-only refactor).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Inline gate banners were affecting document flow and pushing the battle arena down, which made the screen feel broken.
+- A fixed overlay preserves scene layout while still blocking interaction and communicating room state clearly.
+
+### The Tech Debt
+- This gate modal styling is local to `BattleScreen.tsx`; if similar blocking gates are needed elsewhere, we should extract a shared modal-gate primitive.
+- There is still a separate `Unable to enter battle room` inline banner path; if we want full consistency, that path can be unified into the same overlay pattern in a follow-up pass.
+
+## 2026-05-08 - OpponentFound Deposit Action Hierarchy Polish
+
+### The Change
+- Polished deposit action presentation for `OpponentFound` flow using:
+  - [apps/web/src/components/deposit/DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx)
+  - [apps/web/src/components/deposit/DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx)
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+- Centered secondary action group in `DepositStatusCard` so `retrySlot` + `cancelSlot` are always centered together, and `Cancel Match` stays centered when alone.
+- Reduced secondary action visual weight in `OpponentFound` by shrinking `Retry Connection` and `Cancel Match` padding/size (`px-3 py-1.5 text-[10px] shadow-sm`).
+- Updated `DepositPanel` primary action button to the shared chunky primary game button family (`btn-game btn-game-primary`) with larger dominant CTA sizing and muted disabled styling in the same family.
+- Kept all behavior intact: signing, retry, cancel, deposit status logic, and slot wiring unchanged.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The previous secondary actions looked too prominent and defaulted left alignment, which weakened the action hierarchy.
+- Centering secondary actions and reducing their scale creates a clear primary-first flow while preserving utility access.
+- Using the shared primary button family aligns deposit CTA visuals with established game CTAs like queue entry.
+
+### The Tech Debt
+- Slot-provided action sizing is still caller-controlled; if more screens reuse this pattern, we should standardize secondary-action size tokens at the deposit component level.
+- Deposit CTA variant choices are now class-driven but still local to `DepositPanel`; a future button-variant utility could reduce repeated CTA class decisions across flows.
