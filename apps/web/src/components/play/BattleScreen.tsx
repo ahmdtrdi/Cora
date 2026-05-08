@@ -582,6 +582,14 @@ export function BattleScreen() {
       : settlementResult
         ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
         : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
+  const settlementEmojiMood =
+    isRoomCancelled || isDraw || matchInvalidated
+      ? null
+      : didCurrentPlayerSurrender || (winnerAddress && winnerAddress !== address)
+        ? { player: "hurt" as const, opponent: "confident" as const }
+        : didOpponentSurrender || (winnerAddress && winnerAddress === address)
+          ? { player: "confident" as const, opponent: "hurt" as const }
+          : null;
   const showWinnerLine = Boolean(winnerAddress && !isRoomCancelled && !didCurrentPlayerSurrender && !didOpponentSurrender && (matchInvalidated || winnerAddress !== address));
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
@@ -652,6 +660,12 @@ export function BattleScreen() {
       : "Unknown";
   const playerCharacterId = player?.characterId ?? undefined;
   const opponentCharacterId = opponent?.characterId ?? undefined;
+  const settlementExpressionSrc = settlementEmojiMood
+    ? {
+      player: getCharacterExpressionSrc(playerCharacterId, settlementEmojiMood.player),
+      opponent: getCharacterExpressionSrc(opponentCharacterId, settlementEmojiMood.opponent),
+    }
+    : null;
   const playerVisual = getCharacterVisual(playerCharacterId);
   const opponentVisual = getCharacterVisual(opponentCharacterId);
   const playerSpriteState = resolveCharacterSpriteState(player?.characterState, characterActionSide === "player");
@@ -1743,6 +1757,8 @@ export function BattleScreen() {
         onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
         settlementText={settlementText}
         settlementSubtitle={settlementSubtitle}
+        settlementEmojiMood={settlementEmojiMood}
+        settlementExpressionSrc={settlementExpressionSrc}
         settlementStatus={settlementStatus}
         settlementStatusStyle={settlementStatusStyle}
         winnerLineText={winnerLineText}

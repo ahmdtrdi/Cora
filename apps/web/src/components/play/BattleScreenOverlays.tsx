@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
@@ -12,6 +14,16 @@ type SettlementPayload = {
 type ShareNotice = {
   text: string;
   tone: "success" | "error";
+} | null;
+
+type SettlementEmojiMood = {
+  player: "confident" | "hurt";
+  opponent: "confident" | "hurt";
+} | null;
+
+type SettlementExpressionSrc = {
+  player: string | null;
+  opponent: string | null;
 } | null;
 
 type BattleScreenOverlaysProps = {
@@ -32,6 +44,8 @@ type BattleScreenOverlaysProps = {
   onCloseSurrenderModal: () => void;
   settlementText: string;
   settlementSubtitle: string;
+  settlementEmojiMood: SettlementEmojiMood;
+  settlementExpressionSrc: SettlementExpressionSrc;
   settlementStatus: string;
   settlementStatusStyle: CSSProperties;
   winnerLineText: string | null;
@@ -77,6 +91,8 @@ export function BattleScreenOverlays({
   onCloseSurrenderModal,
   settlementText,
   settlementSubtitle,
+  settlementEmojiMood,
+  settlementExpressionSrc,
   settlementStatus,
   settlementStatusStyle,
   winnerLineText,
@@ -103,6 +119,8 @@ export function BattleScreenOverlays({
   onShareChallengeToX,
   shareNotice,
 }: BattleScreenOverlaysProps) {
+  const [failedExpressionSprites, setFailedExpressionSprites] = useState<Record<string, true>>({});
+
   return (
     <>
       {showRoomGateModal && (
@@ -240,6 +258,94 @@ export function BattleScreenOverlays({
               <div className="text-center">
                 <p className="font-caprasimo text-5xl leading-none text-[#1f2b24] md:text-6xl">{settlementText}</p>
                 <p className="mt-2 font-gabarito text-sm text-[#4f6759]">{settlementSubtitle}</p>
+                {settlementEmojiMood && (
+                  <div className="mt-3 flex w-full items-center justify-between gap-3 md:gap-4">
+                    <div className="relative">
+                      <div
+                        className="relative rounded-[20px] border px-3 py-2"
+                        style={{
+                          borderColor: "rgba(39,65,55,0.22)",
+                          background: "linear-gradient(150deg, rgba(255,251,244,0.98), rgba(244,229,200,0.98))",
+                          boxShadow: "0 8px 14px rgba(33,67,53,0.14)",
+                        }}
+                      >
+                        <div className="relative h-14 w-14 overflow-hidden rounded-[12px] border border-[rgba(39,65,55,0.2)] md:h-16 md:w-16">
+                          {settlementExpressionSrc?.player && !failedExpressionSprites[settlementExpressionSrc.player] ? (
+                            <Image
+                              src={settlementExpressionSrc.player}
+                              alt={`You ${settlementEmojiMood.player} expression`}
+                              fill
+                              sizes="(max-width: 768px) 56px, 64px"
+                              className="object-cover object-center"
+                              onError={() =>
+                                setFailedExpressionSprites((prev) => ({
+                                  ...prev,
+                                  [settlementExpressionSrc.player!]: true,
+                                }))
+                              }
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center">
+                              <span className="font-gabarito text-[10px] font-bold uppercase text-[#4f6759]">
+                                {settlementEmojiMood.player}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="mt-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[#4f6759]">You</p>
+                      </div>
+                      <span
+                        className="absolute -left-1 bottom-3 h-3 w-3 rotate-45 rounded-[2px] border-l border-b"
+                        style={{
+                          borderColor: "rgba(39,65,55,0.22)",
+                          background: "rgba(246,232,206,0.98)",
+                        }}
+                      />
+                    </div>
+                    <div className="relative">
+                      <div
+                        className="relative rounded-[20px] border px-3 py-2"
+                        style={{
+                          borderColor: "rgba(111,58,40,0.22)",
+                          background: "linear-gradient(150deg, rgba(255,251,244,0.98), rgba(244,229,200,0.98))",
+                          boxShadow: "0 8px 14px rgba(111,58,40,0.14)",
+                        }}
+                      >
+                        <div className="relative h-14 w-14 overflow-hidden rounded-[12px] border border-[rgba(111,58,40,0.2)] md:h-16 md:w-16">
+                          {settlementExpressionSrc?.opponent && !failedExpressionSprites[settlementExpressionSrc.opponent] ? (
+                            <Image
+                              src={settlementExpressionSrc.opponent}
+                              alt={`Your rival ${settlementEmojiMood.opponent} expression`}
+                              fill
+                              sizes="(max-width: 768px) 56px, 64px"
+                              className="object-cover object-center"
+                              onError={() =>
+                                setFailedExpressionSprites((prev) => ({
+                                  ...prev,
+                                  [settlementExpressionSrc.opponent!]: true,
+                                }))
+                              }
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center">
+                              <span className="font-gabarito text-[10px] font-bold uppercase text-[#6f3a28]">
+                                {settlementEmojiMood.opponent}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="mt-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[#6f3a28]">Your Rival</p>
+                      </div>
+                      <span
+                        className="absolute -right-1 bottom-3 h-3 w-3 rotate-45 rounded-[2px] border-r border-t"
+                        style={{
+                          borderColor: "rgba(111,58,40,0.22)",
+                          background: "rgba(246,232,206,0.98)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 flex justify-center">
                   <span
                     className="rounded-full px-3 py-1 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.14em]"

@@ -3423,3 +3423,63 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Notice durations are still hardcoded at call sites; if we keep tuning cadence, we should centralize durations in named constants.
+
+## 2026-05-09 - Settlement Overlay Winner/Loser Emoji Bubbles
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added `settlementEmojiMood` derivation from existing match outcome states
+  - maps winner/loser mood for relevant outcomes:
+    - `You Win` / `Opponent Surrendered`: player `confident`, rival `hurt`
+    - `You Lose` / `You Surrendered`: player `hurt`, rival `confident`
+  - passes `settlementEmojiMood` into the overlays component
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - added `settlementEmojiMood` prop typing and handling
+  - inserted a new row under settlement title/subtitle:
+    - `[You bubble emoji] [Your Rival bubble emoji]`
+  - used chat-bubble-like cards with small directional tails
+  - emoji mapping:
+    - confident -> `??`
+    - hurt -> `??`
+
+### The Reasoning
+- The user wanted clearer emotional feedback tied to result outcomes without restructuring the rest of the settlement panel.
+- Deriving mood in `BattleScreen` keeps business/outcome logic centralized and keeps overlays mostly presentational.
+
+### The Tech Debt
+- Emoji mapping and bubble styling are currently inline in the overlay component; if more expression variants are added, these should move to a shared presentational helper.
+
+## 2026-05-09 - Settlement Overlay Uses Character Expression Assets (Left/Right Anchored)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added `settlementExpressionSrc` derived from selected character IDs and winner/loser mood (`confident` / `hurt`)
+  - passed `settlementExpressionSrc` into `BattleScreenOverlays`
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - replaced text emoji output with actual character expression images (`next/image`) inside the existing chat-bubble shapes
+  - added per-image fallback handling (`failedExpressionSprites`) if an expression sprite is missing
+  - changed result-expression row alignment from centered pair to full-width anchored layout:
+    - `You` bubble sticks to left
+    - `Your Rival` bubble sticks to right
+
+### The Reasoning
+- User requested real expression assets from selected characters rather than generic emoji symbols.
+- Keeping mood derivation in `BattleScreen` ensures result logic remains centralized while overlays stay presentational.
+- Left/right anchoring preserves side identity and reads closer to battle perspective.
+
+### The Tech Debt
+- Expression failure fallback currently shows mood text labels; if any character packs ship incomplete `exp/` sets, we may want dedicated fallback portraits.
+
+## 2026-05-09 - Fix TS Declaration Order for Settlement Expression Sources
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved `settlementExpressionSrc` derivation to below `playerCharacterId` and `opponentCharacterId` declarations
+  - resolved block-scoped variable usage-before-declaration errors for both character IDs
+
+### The Reasoning
+- `settlementExpressionSrc` depends on character IDs; deriving it before those constants caused TypeScript compile errors.
+- Reordering keeps behavior identical while restoring valid declaration flow.
+
+### The Tech Debt
+- None introduced.
