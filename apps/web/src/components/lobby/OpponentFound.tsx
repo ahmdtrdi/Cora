@@ -26,6 +26,7 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
+const PHANTOM_SIGNING_WARNING_MS = 20_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -59,6 +60,7 @@ export function OpponentFound({
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
+  const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
 
@@ -188,6 +190,19 @@ export function OpponentFound({
     setSecondsLeft(AGREEMENT_TIMEOUT_SECONDS);
   }, [depositUnlockedAt, effectiveRole]);
 
+  useEffect(() => {
+    if (signingState !== "signing") {
+      setWalletApprovalTakingLong(false);
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      setWalletApprovalTakingLong(true);
+    }, PHANTOM_SIGNING_WARNING_MS);
+
+    return () => clearTimeout(timerId);
+  }, [signingState]);
+
   async function onSignDeposit() {
     console.info("[OpponentFound] Deposit click", {
       roomId,
@@ -204,6 +219,7 @@ export function OpponentFound({
 
     setErrorText(null);
     setErrorVisible(false);
+    setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
     try {
@@ -266,6 +282,9 @@ export function OpponentFound({
     if (isCancellingMatch) return "Cancelling match...";
     if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
+    if (walletApprovalTakingLong) {
+      return "Phantom approval has been open for a while. Close the old prompt if needed, then retry for a fresh transaction.";
+    }
     if (signingState === "signing") return "Confirm this transaction in Phantom.";
     if (signingState === "waiting") {
       if (depositUnlockedAt) return "Deposit signed. Waiting for opponent confirmation.";
@@ -404,6 +423,24 @@ export function OpponentFound({
                 }}
               />
             </div>
+          </div>
+        </div>
+      )}
+      {walletApprovalTakingLong && signingState === "signing" && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid var(--tone-clay)",
+              background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[var(--tone-bark)]">
+              Phantom Taking Too Long
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[var(--warm-text)]">
+              If the wallet popup has been sitting open, the transaction can expire. Close the old prompt and retry to get a fresh deposit transaction.
+            </p>
           </div>
         </div>
       )}
