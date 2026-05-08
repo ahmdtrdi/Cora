@@ -1,8 +1,8 @@
-use anchor_lang::prelude::*;
-use crate::state::{BattleSession, BattleStatus};
 use crate::constants::*;
 use crate::error::BattleError;
 use crate::events::SessionCancelledEvent;
+use crate::state::{BattleSession, BattleStatus};
+use anchor_lang::prelude::*;
 
 /// Force-end a stale or timed-out session.
 /// Only callable by the session authority after SESSION_TIMEOUT has elapsed.
@@ -12,8 +12,7 @@ pub fn handler(ctx: Context<ForceEnd>) -> Result<()> {
 
     // Cannot force-end already terminal states
     require!(
-        session.status == BattleStatus::WaitingCards
-            || session.status == BattleStatus::Active,
+        session.status == BattleStatus::WaitingCards || session.status == BattleStatus::Active,
         BattleError::InvalidStatus
     );
 
@@ -25,11 +24,15 @@ pub fn handler(ctx: Context<ForceEnd>) -> Result<()> {
     );
 
     session.status = BattleStatus::Cancelled;
+    session.winner = Pubkey::default();
     session.finished_at = now;
+    session.end_reason = END_REASON_FORCE_ENDED;
 
     emit!(SessionCancelledEvent {
+        session: session.key(),
         match_id: session.match_id,
-        reason: String::from("timeout"),
+        reason: END_REASON_FORCE_ENDED,
+        finished_at: now,
     });
 
     Ok(())
