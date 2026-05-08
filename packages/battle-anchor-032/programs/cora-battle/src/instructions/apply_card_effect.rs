@@ -51,13 +51,30 @@ pub fn handler(ctx: Context<ApplyCardEffect>, final_value: u16, score_delta: u32
     }
 
     let actor_is_a = card.owner == session.player_a;
+    let actual_damage = if card.effect_type == EFFECT_ATTACK {
+        if actor_is_a {
+            session.health_b.min(final_value)
+        } else {
+            session.health_a.min(final_value)
+        }
+    } else {
+        0
+    };
 
     match card.effect_type {
         EFFECT_ATTACK => {
             if actor_is_a {
                 session.health_b = session.health_b.saturating_sub(final_value);
+                session.round_damage_a = session
+                    .round_damage_a
+                    .checked_add(u32::from(actual_damage))
+                    .ok_or(BattleError::ArithmeticOverflow)?;
             } else {
                 session.health_a = session.health_a.saturating_sub(final_value);
+                session.round_damage_b = session
+                    .round_damage_b
+                    .checked_add(u32::from(actual_damage))
+                    .ok_or(BattleError::ArithmeticOverflow)?;
             }
         }
         EFFECT_HEAL => {
@@ -111,7 +128,13 @@ pub fn handler(ctx: Context<ApplyCardEffect>, final_value: u16, score_delta: u32
         } else {
             session.health_b == 0
         };
-        award_round_and_progress(session, session_key, round_winner_is_a, now)?;
+        award_round_and_progress(
+            session,
+            session_key,
+            round_winner_is_a,
+            END_REASON_NORMAL_WIN,
+            now,
+        )?;
     }
 
     Ok(())
