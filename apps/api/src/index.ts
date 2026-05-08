@@ -9,6 +9,13 @@ import { rateLimiter } from './middleware/rateLimiter';
 import { createActionsRouter } from './routes/actions';
 import { startEventListener } from './utils/eventListener';
 import { getArenaHistory, getWalletHistory, getWalletPlayability } from './services/goldrush';
+import { createClient } from '@supabase/supabase-js'; 
+
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
@@ -67,25 +74,44 @@ app.get('/api/history/wallet/:address/playability', async (c) => {
 });
 
 // Questions route
+// app.get('/api/questions', async (c) => {
+//   try {
+//     const defaultPath = 'data/questions/pool.json';
+//     const fallbackPath = '../../data/questions/pool.json';
+
+//     let questions;
+//     try {
+//       questions = await Bun.file(defaultPath).json();
+//     } catch {
+//       questions = await Bun.file(fallbackPath).json();
+//     }
+
+//     // Serve 5 random questions
+//     const shuffled = questions.sort(() => 0.5 - Math.random());
+//     const selected = shuffled.slice(0, 5);
+
+//     return c.json({ questions: selected });
+//   } catch (error) {
+//     console.error('Failed to load questions:', error);
+//     return c.json({ error: 'Failed to load questions' }, 500);
+//   }
+// });
+
 app.get('/api/questions', async (c) => {
   try {
-    const defaultPath = 'data/questions/pool.json';
-    const fallbackPath = '../../data/questions/pool.json';
+    // Call the new distributed RPC function
+    // Notice we don't need to pass a limit anymore because the SQL handles the 3-3-4 split natively
+    const { data: selected, error } = await supabase.rpc('get_distributed_questions');
 
-    let questions;
-    try {
-      questions = await Bun.file(defaultPath).json();
-    } catch {
-      questions = await Bun.file(fallbackPath).json();
+    if (error) {
+      console.error('Supabase RPC Error:', error);
+      throw error;
     }
 
-    // Serve 5 random questions
-    const shuffled = questions.sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, 5);
-
+    // Return the perfectly balanced, shuffled array of 10 questions
     return c.json({ questions: selected });
   } catch (error) {
-    console.error('Failed to load questions:', error);
+    console.error('Failed to load questions from Supabase:', error);
     return c.json({ error: 'Failed to load questions' }, 500);
   }
 });
