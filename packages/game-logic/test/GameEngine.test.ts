@@ -137,6 +137,32 @@ describe('GameEngine', () => {
     expect(engine.getHealth()['player1']).toBe(100);
   });
 
+  test('getStateForPlayer returns live current correct streak and resets on wrong answers', () => {
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
+    engine.start();
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+
+    const firstCard = internalPlayer1.hand[0];
+    setSystemTime(new Date(Date.now() + 600));
+    engine.playCard('player1', firstCard.id, firstCard.correctOptionId);
+    expect(engine.getStateForPlayer('player1').player.currentCorrectStreak).toBe(1);
+
+    const secondCard = internalPlayer1.hand[0];
+    setSystemTime(new Date(Date.now() + 1200));
+    engine.playCard('player1', secondCard.id, secondCard.correctOptionId);
+    expect(engine.getStateForPlayer('player1').player.currentCorrectStreak).toBe(2);
+
+    const thirdCard = internalPlayer1.hand[0];
+    const wrongOption = thirdCard.question.options.find((o: any) => o.id !== thirdCard.correctOptionId);
+    setSystemTime(new Date(Date.now() + 1800));
+    engine.playCard('player1', thirdCard.id, wrongOption.id);
+
+    const state = engine.getStateForPlayer('player1');
+    expect(state.player.currentCorrectStreak).toBe(0);
+    expect(state.player.correctAnswers).toBe(2);
+  });
+
   test('win condition - hp zero', () => {
     const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
