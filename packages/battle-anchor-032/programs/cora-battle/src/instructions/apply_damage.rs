@@ -1,19 +1,19 @@
-use anchor_lang::prelude::*;
-use crate::state::{BattleSession, RegisteredCard, BattleStatus};
 use crate::constants::*;
 use crate::error::BattleError;
-use crate::events::{DamageAppliedEvent, RoundEndedEvent, BattleFinalizedEvent};
+use crate::events::{
+    BattleFinalizedEvent, DamageAppliedEvent, RoundAdvancedEvent, RoundEndedEvent,
+};
+use crate::state::{BattleSession, BattleStatus, RegisteredCard};
+use anchor_lang::prelude::*;
 
 /// Apply damage to the opponent of the attacker.
 /// Only callable by the session authority (backend oracle).
 /// The backend verifies the player's answer off-chain, then calls this
 /// instruction to record the damage on-chain — the "blind HP calculator" pattern.
-pub fn handler(
-    ctx: Context<ApplyDamage>,
-    attacker: Pubkey,
-) -> Result<()> {
+pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
     let session = &mut ctx.accounts.battle_session;
     let card = &mut ctx.accounts.registered_card;
+    let session_key = session.key();
 
     // Session must be in Active state
     require!(
@@ -42,18 +42,13 @@ pub fn handler(
     // Apply damage to the opponent
     let damage = card.damage;
     if is_player_a {
-        session.score_a = session.score_a
-            .checked_add(1)
-            .ok_or(BattleError::ArithmeticOverflow)?;
         session.health_b = session.health_b.saturating_sub(damage);
     } else {
-        session.score_b = session.score_b
-            .checked_add(1)
-            .ok_or(BattleError::ArithmeticOverflow)?;
         session.health_a = session.health_a.saturating_sub(damage);
     }
 
-    session.total_plays = session.total_plays
+    session.total_plays = session
+        .total_plays
         .checked_add(1)
         .ok_or(BattleError::ArithmeticOverflow)?;
 
@@ -77,11 +72,13 @@ pub fn handler(
         };
 
         if round_winner_is_a {
-            session.rounds_won_a = session.rounds_won_a
+            session.rounds_won_a = session
+                .rounds_won_a
                 .checked_add(1)
                 .ok_or(BattleError::ArithmeticOverflow)?;
         } else {
-            session.rounds_won_b = session.rounds_won_b
+            session.rounds_won_b = session
+                .rounds_won_b
                 .checked_add(1)
                 .ok_or(BattleError::ArithmeticOverflow)?;
         }
@@ -92,7 +89,20 @@ pub fn handler(
             session.player_b
         };
 
+        if round_winner_is_a {
+            session.score_a = session
+                .score_a
+                .checked_add(1)
+                .ok_or(BattleError::ArithmeticOverflow)?;
+        } else {
+            session.score_b = session
+                .score_b
+                .checked_add(1)
+                .ok_or(BattleError::ArithmeticOverflow)?;
+        }
+
         emit!(RoundEndedEvent {
+            session: session_key,
             match_id: session.match_id,
             round: session.current_round,
             round_winner,
@@ -101,27 +111,33 @@ pub fn handler(
         });
 
         // Check if match is over (best-of-3, need 2 wins)
-        if session.rounds_won_a >= ROUNDS_TO_WIN {
+        if session.score_a >= u16::from(ROUNDS_TO_WIN) {
             session.status = BattleStatus::Finished;
             session.winner = session.player_a;
             session.finished_at = now;
+            session.end_reason = END_REASON_NORMAL_WIN;
 
             emit!(BattleFinalizedEvent {
+                session: session_key,
                 match_id: session.match_id,
                 winner: session.player_a,
+                end_reason: session.end_reason,
                 score_a: session.score_a,
                 score_b: session.score_b,
                 rounds_won_a: session.rounds_won_a,
                 rounds_won_b: session.rounds_won_b,
             });
-        } else if session.rounds_won_b >= ROUNDS_TO_WIN {
+        } else if session.score_b >= u16::from(ROUNDS_TO_WIN) {
             session.status = BattleStatus::Finished;
             session.winner = session.player_b;
             session.finished_at = now;
+            session.end_reason = END_REASON_NORMAL_WIN;
 
             emit!(BattleFinalizedEvent {
+                session: session_key,
                 match_id: session.match_id,
                 winner: session.player_b,
+                end_reason: session.end_reason,
                 score_a: session.score_a,
                 score_b: session.score_b,
                 rounds_won_a: session.rounds_won_a,
@@ -131,9 +147,21 @@ pub fn handler(
             // Next round: reset health, advance round counter
             session.health_a = INITIAL_HEALTH;
             session.health_b = INITIAL_HEALTH;
-            session.current_round = session.current_round
+            session.current_round = session
+                .current_round
                 .checked_add(1)
                 .ok_or(BattleError::ArithmeticOverflow)?;
+            session.round_started_at = now;
+            session.round_deadline = now
+                .checked_add(ROUND_DURATION_SECONDS)
+                .ok_or(BattleError::ArithmeticOverflow)?;
+
+            emit!(RoundAdvancedEvent {
+                session: session_key,
+                match_id: session.match_id,
+                current_round: session.current_round,
+                round_deadline: session.round_deadline,
+            });
         }
     }
 

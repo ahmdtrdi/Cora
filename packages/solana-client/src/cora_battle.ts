@@ -120,6 +120,58 @@ export type CoraBattle = {
       ]
     },
     {
+      "name": "cancelSession",
+      "docs": [
+        "Cancel an unresolved session with an explicit ER outcome reason."
+      ],
+      "discriminator": [
+        57,
+        207,
+        155,
+        166,
+        136,
+        32,
+        99,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "battleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "closeSession",
       "docs": [
         "Close a terminal session account and reclaim rent SOL.",
@@ -720,6 +772,7 @@ export type CoraBattle = {
         },
         {
           "name": "battleSession",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -901,6 +954,59 @@ export type CoraBattle = {
       ]
     },
     {
+      "name": "timeoutPlayerForRound",
+      "docs": [
+        "Resolve a single-player round timeout after the round deadline.",
+        "Reconnects before this deadline are handled off-chain by the backend."
+      ],
+      "discriminator": [
+        252,
+        81,
+        161,
+        108,
+        203,
+        35,
+        169,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "battleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "timedOutPlayer",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "undelegateBattleSession",
       "docs": [
         "Commit and undelegate the BattleSession PDA when the battle has ended."
@@ -1067,6 +1173,19 @@ export type CoraBattle = {
       ]
     },
     {
+      "name": "roundAdvancedEvent",
+      "discriminator": [
+        68,
+        10,
+        218,
+        225,
+        156,
+        83,
+        179,
+        174
+      ]
+    },
+    {
       "name": "roundEndedEvent",
       "discriminator": [
         225,
@@ -1077,6 +1196,19 @@ export type CoraBattle = {
         107,
         81,
         122
+      ]
+    },
+    {
+      "name": "roundTimedOutEvent",
+      "discriminator": [
+        173,
+        100,
+        219,
+        75,
+        250,
+        125,
+        235,
+        153
       ]
     },
     {
@@ -1172,11 +1304,16 @@ export type CoraBattle = {
     },
     {
       "code": 6010,
+      "name": "invalidEndReason",
+      "msg": "End reason is not valid for this instruction"
+    },
+    {
+      "code": 6011,
       "name": "sessionExpired",
       "msg": "Session has expired due to timeout"
     },
     {
-      "code": 6011,
+      "code": 6012,
       "name": "arithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
     }
@@ -1187,6 +1324,10 @@ export type CoraBattle = {
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "matchId",
             "type": {
@@ -1199,6 +1340,10 @@ export type CoraBattle = {
           {
             "name": "winner",
             "type": "pubkey"
+          },
+          {
+            "name": "endReason",
+            "type": "u8"
           },
           {
             "name": "scoreA",
@@ -1287,21 +1432,21 @@ export type CoraBattle = {
           {
             "name": "scoreA",
             "docs": [
-              "Player A's total correct answers across all rounds"
+              "Player A's round score in this best-of-3 battle"
             ],
             "type": "u16"
           },
           {
             "name": "scoreB",
             "docs": [
-              "Player B's total correct answers across all rounds"
+              "Player B's round score in this best-of-3 battle"
             ],
             "type": "u16"
           },
           {
             "name": "currentRound",
             "docs": [
-              "Current round number (1-indexed, max MAX_ROUNDS)"
+              "Current round number (1-indexed while active, 0 before activation)"
             ],
             "type": "u8"
           },
@@ -1316,6 +1461,34 @@ export type CoraBattle = {
             "name": "roundsWonB",
             "docs": [
               "Rounds won by player B"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "roundStartedAt",
+            "docs": [
+              "Unix timestamp when the current round started"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "roundDeadline",
+            "docs": [
+              "Unix timestamp when the current round may be resolved by timeout"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "playerAMissedRounds",
+            "docs": [
+              "Rounds missed by player A due to timeout"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "playerBMissedRounds",
+            "docs": [
+              "Rounds missed by player B due to timeout"
             ],
             "type": "u8"
           },
@@ -1376,6 +1549,13 @@ export type CoraBattle = {
               "Unix timestamp when session finished (0 if not finished)"
             ],
             "type": "i64"
+          },
+          {
+            "name": "endReason",
+            "docs": [
+              "Terminal outcome reason. See END_REASON_* constants."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -1527,10 +1707,43 @@ export type CoraBattle = {
       }
     },
     {
+      "name": "roundAdvancedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "currentRound",
+            "type": "u8"
+          },
+          {
+            "name": "roundDeadline",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "roundEndedEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "matchId",
             "type": {
@@ -1560,10 +1773,14 @@ export type CoraBattle = {
       }
     },
     {
-      "name": "sessionActivatedEvent",
+      "name": "roundTimedOutEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "matchId",
             "type": {
@@ -1572,6 +1789,55 @@ export type CoraBattle = {
                 32
               ]
             }
+          },
+          {
+            "name": "timedOutPlayer",
+            "type": "pubkey"
+          },
+          {
+            "name": "roundWinner",
+            "type": "pubkey"
+          },
+          {
+            "name": "currentRound",
+            "type": "u8"
+          },
+          {
+            "name": "scoreA",
+            "type": "u16"
+          },
+          {
+            "name": "scoreB",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessionActivatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "currentRound",
+            "type": "u8"
+          },
+          {
+            "name": "roundDeadline",
+            "type": "i64"
           }
         ]
       }
@@ -1581,6 +1847,10 @@ export type CoraBattle = {
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "matchId",
             "type": {
@@ -1592,7 +1862,11 @@ export type CoraBattle = {
           },
           {
             "name": "reason",
-            "type": "string"
+            "type": "u8"
+          },
+          {
+            "name": "finishedAt",
+            "type": "i64"
           }
         ]
       }
