@@ -2736,3 +2736,32 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 - Player-role reliability remains dependent on role propagation source; if `/match` role availability changes across environments, role-origin handling should be centralized into one explicit match-session contract.
 - Temporary card type chips are intentionally stopgap UI and should be replaced once final card art/type indicators are delivered.
 - Result modal motion values are local constants; if more overlays adopt similar behavior, motion tokens should be shared.
+
+## 2026-05-08 - Gameplay Feedback Notification Pass + Deposit Waiting State Polish
+
+### The Change
+- Updated gameplay feedback presentation in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - Removed inline post-action feedback text above hand cards.
+  - Added a compact, upper-middle, non-blocking game notification system (`pointer-events-none`) with subtle motion.
+  - Routed post-action feedback into notifications:
+    - attack result (`Attack landed: -X HP` when available)
+    - heal result (`Healed: +X HP` when available)
+    - no-damage states (`No damage this turn.`)
+  - Routed Extra Point phase change into the same upper-middle notification style (`Extra Point - every move matters.`).
+  - Kept existing projectile/base-hit animations and interaction flow unchanged.
+- Removed `View History` action from the win/lose result popup in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) only.
+- Polished deposit waiting states in [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - Player A countdown now stops after signing (`signingState === waiting`) and shows clear waiting copy (`Deposit signed. Waiting for Player B.`).
+  - Player B remains locked/passive pre-unlock (`Waiting for Player A to deposit first.`) with no draining countdown.
+  - Player B unlock copy remains explicit (`Player A deposited. Your turn to sign.`).
+  - Countdown visibility now uses explicit derived state (`shouldShowCountdown`) rather than always showing after mount.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Inline action text near hand cards was competing with play controls and looked disconnected from the game feedback style.
+- A single upper-middle, non-blocking notification lane improves readability for both action outcomes and phase changes without obstructing card play.
+- Deposit-phase copy and countdown visibility now better communicate who is waiting on whom, reducing confusion during Player A/Player B sequencing.
+
+### The Tech Debt
+- Notification copy/timing is still local to `BattleScreen`; if other gameplay screens need similar UX, this should become a shared game-notification primitive.
+- Deposit waiting-state messaging logic is still component-local in `OpponentFound`; if additional deposit phases/screens are added, message derivation should be centralized.
