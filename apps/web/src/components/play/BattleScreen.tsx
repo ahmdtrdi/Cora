@@ -380,6 +380,15 @@ export function BattleScreen() {
     : null;
   const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
   const shouldShowPlayStateGate = !isPlayStateReady;
+  const showRoomGateModal = isRoomStateLoading || shouldShowPlayStateGate;
+  const roomGateTitle = isRoomStateLoading
+    ? "Syncing Room State"
+    : status === "waiting"
+      ? "Waiting For Battle"
+      : "Room Locked";
+  const roomGateMessage = isRoomStateLoading
+    ? "Rejoining battle room after refresh. Waiting for server snapshot."
+    : `Current room status: ${getStatusLabel(status)}.`;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
     : isRoomStateLoading
@@ -839,17 +848,6 @@ export function BattleScreen() {
           </div>
         </header>
 
-        {isRoomStateLoading && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.9)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Syncing room state
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Rejoining battle room after refresh. Waiting for server snapshot.
-            </p>
-          </div>
-        )}
-
         {hasSocketIssue && !gameState && (
           <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.4)", background: "rgba(43,24,16,0.88)" }}>
             <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#f8d694]">
@@ -867,36 +865,6 @@ export function BattleScreen() {
               >
                 Retry Room
               </button>
-              <Link
-                href={resumeQueueHref}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Return And Requeue
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {shouldShowPlayStateGate && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.9)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Room not in playing state yet
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Current room status: {getStatusLabel(status)}. Keep this page open or return to lobby and resume queue.
-            </p>
-            <div className="mt-2 flex gap-2">
-              {hasSocketIssue && (
-                <button
-                  type="button"
-                  onClick={reconnect}
-                  className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-                >
-                  Retry Room
-                </button>
-              )}
               <Link
                 href={resumeQueueHref}
                 className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
@@ -1138,6 +1106,37 @@ export function BattleScreen() {
           </div>
         </section>
       </div>
+
+      {showRoomGateModal && (
+        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(2,6,5,0.62)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-md p-4 md:p-5"
+            style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(13,24,20,0.94)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">{roomGateTitle}</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">{roomGateMessage}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {hasSocketIssue && (
+                <button
+                  type="button"
+                  onClick={reconnect}
+                  className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+                >
+                  Retry Room
+                </button>
+              )}
+              <Link
+                href={resumeQueueHref}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Return And Requeue
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeCard && status === "playing" && !isMatchComplete && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">

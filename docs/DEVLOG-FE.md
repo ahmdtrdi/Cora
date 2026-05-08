@@ -2611,3 +2611,28 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Card/popup placeholder textures and color treatments are currently inline style values in `BattleScreen.tsx`; these should become shared tokens/primitives if reused across more battle surfaces.
 - Final art integration will likely replace most placeholder layers, so a follow-up cleanup pass should remove any temporary decorative styling that becomes redundant.
+
+## 2026-05-08 - Battle Room Gate Banners Converted To Blocking Overlay Modal
+
+### The Change
+- Updated room gate presentation in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) from inline banners to a centered blocking overlay modal.
+- Removed inline rendering above the arena for:
+  - `isRoomStateLoading`
+  - `shouldShowPlayStateGate`
+- Added a unified fixed overlay gate (`showRoomGateModal`) with dark low-opacity backdrop and centered panel so the arena stays in place.
+- Modal copy now follows requested wording:
+  - syncing: `Syncing Room State` + `Rejoining battle room after refresh. Waiting for server snapshot.`
+  - non-playing: `Waiting For Battle` (when status is `waiting`) or `Room Locked` + `Current room status: ${getStatusLabel(status)}.`
+- Preserved gate actions:
+  - `Retry Room` (only when socket has issue)
+  - `Return And Requeue`
+- Kept socket/gameplay logic and state checks unchanged (presentation-only refactor).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Inline gate banners were affecting document flow and pushing the battle arena down, which made the screen feel broken.
+- A fixed overlay preserves scene layout while still blocking interaction and communicating room state clearly.
+
+### The Tech Debt
+- This gate modal styling is local to `BattleScreen.tsx`; if similar blocking gates are needed elsewhere, we should extract a shared modal-gate primitive.
+- There is still a separate `Unable to enter battle room` inline banner path; if we want full consistency, that path can be unified into the same overlay pattern in a follow-up pass.
