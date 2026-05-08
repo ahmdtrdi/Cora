@@ -442,3 +442,34 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [x] `anchor build` verified from `packages/battle-anchor-032` after `avm install/use 0.32.1`.
 - [x] `anchor build` verified from `packages/solana-program` after restoring active Anchor CLI to `1.0.1`.
 - [ ] `ephemeral-rollups-sdk 0.13.0` still brings a few Solana 3.x modular crates through `magicblock-delegation-program-api v2.0.0` (`solana-instruction = ^3.0.0`). This is SDK-transitive and does not pull `litesvm`/`solana-keypair`, so build/deploy is unblocked.
+
+---
+
+## Entry 15 — 2026-05-08: ER Round Timeout and Reconnect Outcome Rules
+
+### The Change
+
+- `packages/battle-anchor-032/programs/cora-battle/src/constants.rs` — Added `ROUND_DURATION_SECONDS = 180` and explicit `END_REASON_*` constants for normal win, single-player timeout, both-player timeout, server cancel, cheater flag, and force end.
+- `state.rs` — Extended `BattleSession` with round timing (`round_started_at`, `round_deadline`), missed-round counters, and `end_reason`. `current_round` now starts at `0` and moves to `1` on activation.
+- `activate_session.rs` — Starts round 1 and sets the first 3-minute deadline.
+- `apply_damage.rs` — Keeps the blind HP calculator pattern, but now treats `score_a/score_b` as round score instead of per-answer count. Normal round wins advance the deadline, and normal match wins set `END_REASON_NORMAL_WIN`.
+- `timeout_player_for_round.rs` — New authority-only instruction. It only resolves after `round_deadline`, awards the round to the connected opponent, advances to the next round, or finalizes with `END_REASON_SINGLE_PLAYER_TIMEOUT`.
+- `cancel_session.rs` — New authority-only no-contest path for both-player timeout, server cancellation, or force-ended outcomes.
+- `events.rs` — Added `RoundTimedOutEvent` and `RoundAdvancedEvent`, and extended finalized/cancelled/activated events with session pubkey, reason, score, and deadline data.
+- `apps/api/src/services/magicblock.ts` — Updated `BattleSession` byte offsets, exported ER end-reason constants, and added stable service stubs for `activateSession`, `applyDamage`, `timeoutPlayerForRound`, `cancelSession`, and `finalizeMatch`.
+- `packages/solana-program/programs/solana-program/src/constants.rs` — Updated escrow `MATCH_TIMEOUT` from 600s to 900s so the base-layer refund fallback fits a 3-round battle plus operational buffer.
+- `tests-disabled/ROUND_TIMEOUT_TEST_PLAN.md` — Added the required timeout/reconnect test scenarios without re-enabling the incompatible LiteSVM stack.
+
+### The Reasoning
+
+1. **Reconnect belongs off-chain until the round is terminal.** The backend can observe disconnect/reconnect in real time, while ER only needs a deterministic instruction after the 180s round deadline.
+2. **Timeout is a round outcome, not an instant match loss.** A single disconnect gives the opponent one round. The match only finishes when a player reaches 2 round wins.
+3. **No-contest must be explicit.** Both-player timeout and server/network failure now map to `Cancelled` with a numeric end reason so escrow can choose refund behavior without learning battle internals.
+4. **Escrow stays simple.** It only sees settle/refund windows; round state, HP, and timeout cause live in the MagicBlock battle program.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Generated IDL includes `timeout_player_for_round`, `cancel_session`, `RoundTimedOutEvent`, `RoundAdvancedEvent`, and the extended finalized/cancelled events.
+- [x] Restored active Anchor CLI to `1.0.1` after the battle build.
+- [ ] `./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit` still fails on existing `apps/api/src/services/goldrush.ts` issues: missing `@covalenthq/client-sdk` type resolution and two implicit `any` parameters.
