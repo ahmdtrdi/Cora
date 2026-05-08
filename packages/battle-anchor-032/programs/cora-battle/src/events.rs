@@ -88,6 +88,25 @@ pub struct RoundAdvancedEvent {
 }
 
 #[event]
+pub struct RoundResolvedByStateEvent {
+    pub session: Pubkey,
+    pub round: u8,
+    pub resolver: Pubkey,
+    pub health_a: u16,
+    pub health_b: u16,
+    pub round_damage_a: u32,
+    pub round_damage_b: u32,
+    pub round_winner: Pubkey,
+    pub score_a: u16,
+    pub score_b: u16,
+    pub game_score_a: u32,
+    pub game_score_b: u32,
+    pub next_round: u8,
+    pub deadline: i64,
+    pub was_draw: bool,
+}
+
+#[event]
 pub struct BattleFinalizedEvent {
     pub session: Pubkey,
     pub match_id: [u8; 32],
@@ -101,6 +120,8 @@ pub struct BattleFinalizedEvent {
     pub rounds_won_a: u8,
     /// Legacy duplicate of score_b, kept for compatibility.
     pub rounds_won_b: u8,
+    pub health_a: u16,
+    pub health_b: u16,
     pub game_score_a: u32,
     pub game_score_b: u32,
 }

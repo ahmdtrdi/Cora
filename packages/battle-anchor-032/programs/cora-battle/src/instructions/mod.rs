@@ -12,6 +12,7 @@ pub mod finalize_match;
 pub mod force_end;
 pub(crate) mod match_updates;
 pub mod register_card;
+pub mod resolve_round_by_state;
 pub mod timeout_player_for_round;
 
 #[allow(ambiguous_glob_reexports)]
@@ -40,5 +41,7 @@ pub use finalize_match::*;
 pub use force_end::*;
 #[allow(ambiguous_glob_reexports)]
 pub use register_card::*;
+#[allow(ambiguous_glob_reexports)]
+pub use resolve_round_by_state::*;
 #[allow(ambiguous_glob_reexports)]
 pub use timeout_player_for_round::*;

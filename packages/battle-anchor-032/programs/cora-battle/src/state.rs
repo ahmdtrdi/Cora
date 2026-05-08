@@ -58,6 +58,10 @@ pub struct BattleSession {
     pub game_score_a: u32,
     /// Cumulative gameplay score for player B, used for final tie-breaks.
     pub game_score_b: u32,
+    /// Attack damage contributed by player A during the current round.
+    pub round_damage_a: u32,
+    /// Attack damage contributed by player B during the current round.
+    pub round_damage_b: u32,
 }
 
 impl BattleSession {
@@ -68,6 +72,7 @@ impl BattleSession {
     // + 1 (status) + 32 (winner) + 32 (q_hash) + 1 (bump)
     // + 8 (created) + 8 (finished) + 1 (end_reason)
     // + 4 (game_score_a) + 4 (game_score_b)
+    // + 4 (round_damage_a) + 4 (round_damage_b)
     pub const LEN: usize = 8
         + 1
         + 32
@@ -94,7 +99,9 @@ impl BattleSession {
         + 8
         + 1
         + 4
-        + 4; // = 259
+        + 4
+        + 4
+        + 4; // = 267
 
     /// Determine the match winner using the GameEngine's public final ordering:
     /// rounds won, then gameplay score, then remaining health, else draw.

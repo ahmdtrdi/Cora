@@ -38,6 +38,9 @@ pub enum BattleError {
     #[msg("Registered card owner is not valid for this session")]
     InvalidCardOwner,
 
+    #[msg("Current round state is not valid for this instruction")]
+    InvalidRoundState,
+
     #[msg("Target must be a participant in this session")]
     InvalidTarget,
 

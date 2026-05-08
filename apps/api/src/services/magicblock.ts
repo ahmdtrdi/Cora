@@ -38,6 +38,8 @@ export interface BattleSessionState {
   // Gameplay score tie-break fields; effect writes are wired in a later step.
   gameScoreA: number;
   gameScoreB: number;
+  roundDamageA: number;
+  roundDamageB: number;
   currentRound: number;
   roundDeadline: number;
   winner: string | null;
@@ -158,6 +160,15 @@ export class MagicBlockService {
     return 'tx_hash_placeholder';
   }
 
+  async resolveRoundByState(params: {
+    sessionPda: string;
+    serverKeypair: Keypair;
+  }): Promise<string> {
+    // TODO: Submit resolve_round_by_state after round_deadline for normal time-up resolution.
+    console.log(`[MagicBlock] Resolved round by ER state for session ${params.sessionPda}`);
+    return 'tx_hash_placeholder';
+  }
+
   async timeoutPlayerForRound(params: {
     sessionPda: string;
     timedOutPlayer: string;
@@ -226,6 +237,8 @@ export class MagicBlockService {
    *   end_reason:    u8        offset 242
    *   game_score_a:  u32       offset 243
    *   game_score_b:  u32       offset 247
+   *   round_damage_a:u32       offset 251
+   *   round_damage_b:u32       offset 255
    */
   async getSessionState(sessionPda: string): Promise<BattleSessionState> {
     const account = await mbConnection.getAccountInfo(new PublicKey(sessionPda));
@@ -249,6 +262,8 @@ export class MagicBlockService {
     const endReason = data.readUInt8(DISC + 242);
     const gameScoreA = data.readUInt32LE(DISC + 243);
     const gameScoreB = data.readUInt32LE(DISC + 247);
+    const roundDamageA = data.readUInt32LE(DISC + 251);
+    const roundDamageB = data.readUInt32LE(DISC + 255);
 
     return {
       healthA,
@@ -257,6 +272,8 @@ export class MagicBlockService {
       scoreB,
       gameScoreA,
       gameScoreB,
+      roundDamageA,
+      roundDamageB,
       currentRound,
       roundDeadline,
       winner,

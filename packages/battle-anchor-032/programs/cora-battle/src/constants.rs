@@ -39,7 +39,7 @@ pub const MIN_DAMAGE: u16 = 1;
 pub const SESSION_TIMEOUT: i64 = 900;
 
 /// Current state schema version for forward-compatible upgrades
-pub const CURRENT_VERSION: u8 = 3;
+pub const CURRENT_VERSION: u8 = 4;
 
 pub const END_REASON_NONE: u8 = 0;
 pub const END_REASON_NORMAL_WIN: u8 = 1;

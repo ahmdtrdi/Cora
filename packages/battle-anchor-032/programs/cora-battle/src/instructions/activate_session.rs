@@ -23,6 +23,8 @@ pub fn handler(ctx: Context<ActivateSession>) -> Result<()> {
     session.current_round = 1;
     session.round_started_at = now;
     session.round_deadline = round_deadline;
+    session.round_damage_a = 0;
+    session.round_damage_b = 0;
 
     emit!(SessionActivatedEvent {
         session: session.key(),

@@ -53,6 +53,10 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
     };
     if is_player_a {
         session.health_b = session.health_b.saturating_sub(damage);
+        session.round_damage_a = session
+            .round_damage_a
+            .checked_add(u32::from(actual_damage))
+            .ok_or(BattleError::ArithmeticOverflow)?;
         // Legacy apply_damage approximates gameplay score from applied damage.
         session.game_score_a = session
             .game_score_a
@@ -60,6 +64,10 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
             .ok_or(BattleError::ArithmeticOverflow)?;
     } else {
         session.health_a = session.health_a.saturating_sub(damage);
+        session.round_damage_b = session
+            .round_damage_b
+            .checked_add(u32::from(actual_damage))
+            .ok_or(BattleError::ArithmeticOverflow)?;
         // Legacy apply_damage approximates gameplay score from applied damage.
         session.game_score_b = session
             .game_score_b
@@ -90,7 +98,13 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
         } else {
             session.health_b == 0
         };
-        award_round_and_progress(session, session_key, round_winner_is_a, now)?;
+        award_round_and_progress(
+            session,
+            session_key,
+            round_winner_is_a,
+            END_REASON_NORMAL_WIN,
+            now,
+        )?;
     }
 
     Ok(())
