@@ -25,12 +25,14 @@ const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
+const REACTION_DISPLAY_MS = 1900;
 const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
 const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
 };
+const CHARACTER_REACTION_EXPRESSIONS: CharacterExpression[] = ["happy", "confident", "hurt"];
 
 const CARD_TRANSFORMS = [
   "translate-y-4 -rotate-6",
@@ -63,7 +65,7 @@ function shortenAddress(address?: string) {
 
 function formatMatchClock(remainingMs?: number) {
   if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
-    return "05:00";
+    return "03:00";
   }
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -93,11 +95,16 @@ type ProjectileState = {
   id: string;
   from: BattleSide;
   to: BattleSide;
-  kind: "attack" | "heal";
+  src: string | null;
 };
 
 type BaseFxState = "idle" | "hit" | "heal";
 type CharacterSpriteState = "stay" | "action";
+type CharacterExpression = "happy" | "confident" | "hurt";
+type CharacterReaction = {
+  id: string;
+  expression: CharacterExpression;
+};
 
 function getCharacterVisual(characterId?: string) {
   if (characterId === "turing") {
@@ -139,6 +146,22 @@ function getCharacterSpriteSrc(characterId?: string, state: CharacterSpriteState
   return `/assets/characters/${normalizedId}/${state}.png`;
 }
 
+function getCharacterExpressionSrc(characterId?: string, expression: CharacterExpression = "happy") {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  return `/assets/characters/${normalizedId}/exp/${expression}.png`;
+}
+
+function getCharacterProjectileSrc(characterId?: string) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  if (normalizedId === "turing") {
+    const variant = Math.random() < 0.5 ? 0 : 1;
+    return `/assets/characters/turing/projectile_${variant}.png`;
+  }
+  return `/assets/characters/${normalizedId}/projectile.png`;
+}
+
 export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
@@ -150,7 +173,6 @@ export function BattleScreen() {
   const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
   const preSignedDepositSig = searchParams.get("depositSig");
-  const scientistId = searchParams.get("scientist");
   const wallet = useWallet();
   const { publicKey } = wallet;
 
@@ -170,6 +192,8 @@ export function BattleScreen() {
     settlementResult,
     matchSummaryResult,
     matchInvalidated,
+    lastPresenceUpdate,
+    lastRoomCancelled,
     lastDamageEvent,
     lastPlayResult,
     lastCardCountdown,
@@ -178,6 +202,7 @@ export function BattleScreen() {
     openCard,
     playCard,
     confirmDeposit,
+    cancelMatch,
     surrender,
     reconnect,
   } = useMatchSocket({ roomId, address });
@@ -190,12 +215,17 @@ export function BattleScreen() {
   const [projectile, setProjectile] = useState<ProjectileState | null>(null);
   const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
   const [opponentBaseFx, setOpponentBaseFx] = useState<BaseFxState>("idle");
+  const [playerReaction, setPlayerReaction] = useState<CharacterReaction | null>(null);
+  const [opponentReaction, setOpponentReaction] = useState<CharacterReaction | null>(null);
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
+  const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
+  const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
+  const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -203,7 +233,12 @@ export function BattleScreen() {
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
   const extraPointShownRef = useRef(false);
+  const previousOpponentConnectedRef = useRef<boolean | null>(null);
   const gameNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playerReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const opponentReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousPlayerStreakRef = useRef(0);
+  const previousOpponentStreakRef = useRef(0);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
 
@@ -219,10 +254,44 @@ export function BattleScreen() {
     }, 2100);
   }, []);
 
+  const showReaction = useCallback(
+    (side: BattleSide, expression: CharacterExpression, durationMs = REACTION_DISPLAY_MS) => {
+      const id = `${side}:${expression}:${Date.now()}`;
+      if (side === "player") {
+        if (playerReactionTimerRef.current) {
+          clearTimeout(playerReactionTimerRef.current);
+          playerReactionTimerRef.current = null;
+        }
+        setPlayerReaction({ id, expression });
+        playerReactionTimerRef.current = setTimeout(() => {
+          setPlayerReaction((prev) => (prev?.id === id ? null : prev));
+          playerReactionTimerRef.current = null;
+        }, durationMs);
+        return;
+      }
+      if (opponentReactionTimerRef.current) {
+        clearTimeout(opponentReactionTimerRef.current);
+        opponentReactionTimerRef.current = null;
+      }
+      setOpponentReaction({ id, expression });
+      opponentReactionTimerRef.current = setTimeout(() => {
+        setOpponentReaction((prev) => (prev?.id === id ? null : prev));
+        opponentReactionTimerRef.current = null;
+      }, durationMs);
+    },
+    [],
+  );
+
   useEffect(() => {
     return () => {
       if (gameNoticeTimerRef.current) {
         clearTimeout(gameNoticeTimerRef.current);
+      }
+      if (playerReactionTimerRef.current) {
+        clearTimeout(playerReactionTimerRef.current);
+      }
+      if (opponentReactionTimerRef.current) {
+        clearTimeout(opponentReactionTimerRef.current);
       }
     };
   }, []);
@@ -270,6 +339,9 @@ export function BattleScreen() {
         at: lastPlayResult.at,
       },
     ]);
+    if (lastPlayResult.correct) {
+      showReaction("player", "happy");
+    }
     if (lastPlayResult.cardType === "heal" && lastPlayResult.heal > 0) {
       showGameNotice(`Healed: +${lastPlayResult.heal} HP`);
     } else if (lastPlayResult.cardType === "attack" && lastPlayResult.damage > 0) {
@@ -280,7 +352,7 @@ export function BattleScreen() {
     setActiveCardId(null);
     setAnswerLocked(false);
     pendingCardIdRef.current = null;
-  }, [lastPlayResult, showGameNotice]);
+  }, [lastPlayResult, showGameNotice, showReaction]);
 
   useEffect(() => {
     if (!lastDamageEvent) return;
@@ -298,14 +370,23 @@ export function BattleScreen() {
             ? "opponent"
             : "player";
     const actionKind = lastDamageEvent.type === "heal" ? "heal" : "attack";
+    const attackerCharacterId = attackerSide === "player" ? player?.characterId : opponent?.characterId;
+    const shouldSpawnProjectile = actionKind === "attack" && lastDamageEvent.damage > 0;
+    const projectileSrc = shouldSpawnProjectile ? getCharacterProjectileSrc(attackerCharacterId) : null;
 
     setCharacterActionSide(attackerSide);
-    setProjectile({
-      id: `${lastDamageEvent.timestamp}`,
-      from: attackerSide,
-      to: targetSide,
-      kind: actionKind,
-    });
+    const projectileSpawnTimer = setTimeout(() => {
+      if (shouldSpawnProjectile) {
+        setProjectile({
+          id: `${lastDamageEvent.timestamp}`,
+          from: attackerSide,
+          to: targetSide,
+          src: projectileSrc,
+        });
+      } else {
+        setProjectile(null);
+      }
+    }, 0);
 
     const actionResetTimer = setTimeout(() => {
       setCharacterActionSide(null);
@@ -322,16 +403,32 @@ export function BattleScreen() {
       setPlayerBaseFx("idle");
       setOpponentBaseFx("idle");
     }, 840);
+    const hurtReactionTimer =
+      actionKind === "attack" && lastDamageEvent.damage > 0
+        ? setTimeout(() => {
+            showReaction(targetSide, "hurt");
+          }, 420)
+        : null;
 
     return () => {
+      clearTimeout(projectileSpawnTimer);
       clearTimeout(actionResetTimer);
       clearTimeout(projectileHitTimer);
       clearTimeout(baseFxResetTimer);
+      if (hurtReactionTimer) {
+        clearTimeout(hurtReactionTimer);
+      }
     };
-  }, [lastDamageEvent, opponent?.address, player?.address]);
+  }, [lastDamageEvent, opponent?.address, player?.address, opponent?.characterId, player?.characterId, showReaction]);
 
   const isPlayable = status === "playing" && connectionState === "connected";
-  const isMatchComplete = Boolean(settlementResult) || Boolean(matchInvalidated) || status === "finished";
+  const hasTerminalResult = Boolean(settlementResult) || Boolean(matchSummaryResult) || Boolean(matchInvalidated);
+  const isRoomCancelled = Boolean(lastRoomCancelled);
+  const isMatchComplete = hasTerminalResult || isRoomCancelled || status === "finished";
+  const isCommittedState = status === "playing" || status === "settling";
+  const canSurrenderByState = !isMatchComplete && isCommittedState;
+  const canCancelMatch = connectionState === "connected" && !isMatchComplete && (status === "waiting" || status === "depositing");
+  const canSurrenderMatch = connectionState === "connected" && canSurrenderByState;
 
   function onOpenCard(card: Card) {
     if (!isPlayable || activeCardId || isMatchComplete) return;
@@ -349,17 +446,34 @@ export function BattleScreen() {
     playCard(activeCard.id, optionId);
   }
 
-  function onSurrender() {
-    if (!isPlayable || isMatchComplete) return;
-    const ok = window.confirm("Surrender this match?");
-    if (!ok) return;
-    surrender();
+  function onCancelMatch() {
+    if (!canCancelMatch) return;
+    cancelMatch();
+  }
+
+  function onOpenSurrenderModal() {
+    if (!canSurrenderMatch) return;
+    setSurrenderModalOpen(true);
+  }
+
+  function onConfirmSurrender() {
+    if (!canSurrenderByState) return;
+    if (connectionState === "connected") {
+      surrender();
+      setSurrenderModalOpen(false);
+      return;
+    }
+    setPendingSurrenderAfterReconnect(true);
+    reconnect();
+    setSurrenderModalOpen(false);
   }
 
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
   const playerRoundsWon = player?.roundsWon ?? 0;
   const opponentRoundsWon = opponent?.roundsWon ?? 0;
+  const playerCurrentCorrectStreak = player?.currentCorrectStreak ?? 0;
+  const opponentCurrentCorrectStreak = opponent?.currentCorrectStreak ?? 0;
   const playerBaseHp = player?.baseHealth ?? 100;
   const opponentBaseHp = opponent?.baseHealth ?? 100;
 
@@ -369,32 +483,63 @@ export function BattleScreen() {
 
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
-  const isDraw = matchSummaryResult?.reason === "draw";
-  const settlementText = winnerAddress
-    ? winnerAddress === player?.address
-      ? "You Win"
-      : "You Lose"
-    : isDraw
-      ? "Draw"
+  const matchResultReason = matchSummaryResult?.reason ?? matchInvalidated?.reason ?? null;
+  const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
+  const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
+  const didOpponentSurrender =
+    matchResultReason === "surrender" && Boolean(surrenderedAddress) && surrenderedAddress !== address;
+  const isDraw = matchResultReason === "draw";
+  const roomCancelledTitle =
+    lastRoomCancelled?.reason === "deposit_timeout"
+      ? "Deposit timed out"
+      : lastRoomCancelled?.reason === "disconnect"
+        ? "Match cancelled before battle start"
+        : "Match cancelled";
+  const roomCancelledSubtitle =
+    lastRoomCancelled?.reason === "deposit_timeout"
+      ? "Deposit confirmation did not complete in time."
+      : lastRoomCancelled?.reason === "disconnect"
+        ? "A player disconnected before the battle was ready."
+        : "A player cancelled this room before battle start.";
+  const settlementText = isRoomCancelled
+    ? roomCancelledTitle
+    : didCurrentPlayerSurrender
+      ? "You Surrendered"
+      : didOpponentSurrender
+        ? "Opponent Surrendered"
+        : winnerAddress
+          ? winnerAddress === player?.address
+            ? "You Win"
+            : "You Lose"
+          : isDraw
+            ? "Draw"
+            : matchInvalidated
+              ? "Match Invalidated"
+              : "Match Finished";
+  const settlementSubtitle = isRoomCancelled
+    ? roomCancelledSubtitle
     : matchInvalidated
-      ? "Match Invalidated"
-      : "Match Finished";
-  const settlementSubtitle = matchInvalidated
-    ? "Match invalidated."
-    : isDraw
-      ? "All checks were equal. Wagers are being refunded."
-    : winnerAddress
-      ? winnerAddress === address
-        ? "Victory secured."
-        : "Rival took this round."
-      : "Match results are being finalized."
-  const settlementStatus = matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
-  const settlementStatusStyle = matchInvalidated
-    ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
-    : settlementResult
-      ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
-      : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
-  const showWinnerLine = Boolean(winnerAddress && (matchInvalidated || winnerAddress !== address));
+      ? "Match invalidated."
+      : didCurrentPlayerSurrender
+        ? "You forfeited this match. Settlement is being resolved."
+        : didOpponentSurrender
+          ? "Your rival surrendered. Settlement is being resolved."
+          : isDraw
+            ? "The match ended evenly. Settlement is being resolved."
+            : winnerAddress
+              ? winnerAddress === address
+                ? "Victory secured."
+                : "Rival took this round."
+              : "Match results are being finalized."
+  const settlementStatus = isRoomCancelled ? "Cancelled" : matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
+  const settlementStatusStyle = isRoomCancelled
+    ? { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" }
+    : matchInvalidated
+      ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
+      : settlementResult
+        ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
+        : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
+  const showWinnerLine = Boolean(winnerAddress && !isRoomCancelled && !didCurrentPlayerSurrender && !didOpponentSurrender && (matchInvalidated || winnerAddress !== address));
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
@@ -414,23 +559,34 @@ export function BattleScreen() {
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
   const isRoomStateLoading = !gameState && isSocketRecovering;
   const isRoomUnavailable = !gameState && hasSocketIssue;
+  const presenceOpponentConnected =
+    opponent?.address && lastPresenceUpdate?.players
+      ? lastPresenceUpdate.players[opponent.address]?.isConnected
+      : undefined;
+  const opponentIsConnected = presenceOpponentConnected ?? opponent?.isConnected ?? true;
+  const showOpponentAwayStatus = connectionState === "connected" && !isMatchComplete && !opponentIsConnected;
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
+  const showDisconnectedOverlay =
+    Boolean(lastSocketIssueAt) &&
+    connectionState !== "connected" &&
+    !isMatchComplete &&
+    !isRoomCancelled;
   const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
   const shouldShowPlayStateGate = !isPlayStateReady;
-  const showRoomGateModal = isRoomStateLoading || shouldShowPlayStateGate;
+  const showRoomGateModal = (isRoomStateLoading || shouldShowPlayStateGate) && !showOpponentAwayStatus && !showDisconnectedOverlay;
   const roomGateTitle = isRoomStateLoading
     ? "Syncing Room State"
     : isRoomUnavailable
-      ? "Unable To Enter Room"
+      ? "You were disconnected"
     : status === "waiting"
       ? "Waiting For Battle"
       : "Room Locked";
   const roomGateMessage = isRoomStateLoading
     ? "Rejoining battle room after refresh. Waiting for server snapshot."
     : isRoomUnavailable
-      ? socketCloseText ?? lastSocketError ?? "The room is unavailable or already finished."
+      ? "Your match is still active. Rejoin to continue."
     : `Current room status: ${getStatusLabel(status)}.`;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
@@ -448,8 +604,34 @@ export function BattleScreen() {
   const opponentSpriteState = resolveCharacterSpriteState(opponent?.characterState, characterActionSide === "opponent");
   const playerSpriteSrc = getCharacterSpriteSrc(playerCharacterId, playerSpriteState);
   const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
+  const playerReactionSrc = playerReaction
+    ? getCharacterExpressionSrc(playerCharacterId, playerReaction.expression)
+    : null;
+  const opponentReactionSrc = opponentReaction
+    ? getCharacterExpressionSrc(opponentCharacterId, opponentReaction.expression)
+    : null;
   const hasPlayerSprite = Boolean(playerSpriteSrc && !failedCharacterSprites[playerSpriteSrc]);
   const hasOpponentSprite = Boolean(opponentSpriteSrc && !failedCharacterSprites[opponentSpriteSrc]);
+  const hasPlayerReactionSprite = Boolean(playerReactionSrc && !failedCharacterSprites[playerReactionSrc]);
+  const hasOpponentReactionSprite = Boolean(opponentReactionSrc && !failedCharacterSprites[opponentReactionSrc]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    function preloadExpressions(characterId?: string) {
+      if (!characterId) return;
+      for (const expression of CHARACTER_REACTION_EXPRESSIONS) {
+        const src = getCharacterExpressionSrc(characterId, expression);
+        if (!src) continue;
+        const preloader = new window.Image();
+        preloader.src = src;
+      }
+    }
+
+    preloadExpressions(playerCharacterId);
+    preloadExpressions(opponentCharacterId);
+  }, [playerCharacterId, opponentCharacterId]);
+
   const challengeLink = useMemo(() => {
     const origin = typeof window === "undefined" ? null : window.location.origin;
     return createChallengeLink({
@@ -460,13 +642,6 @@ export function BattleScreen() {
       refAddress: address,
     });
   }, [arenaId, arenaToken, wagerUsd, address]);
-  const resumeQueueHref = useMemo(() => {
-    const params = new URLSearchParams({ resumeQueue: "1", arena: arenaId });
-    if (scientistId) {
-      params.set("scientist", scientistId);
-    }
-    return `/lobby?${params.toString()}`;
-  }, [arenaId, scientistId]);
   const cleanLobbyHref = "/lobby";
   useEffect(() => {
     if (playerSpriteState !== "action") {
@@ -521,28 +696,78 @@ export function BattleScreen() {
   }, [currentPhase, gameState?.timer?.phase, showGameNotice]);
 
   useEffect(() => {
-    if (!isMatchComplete) return;
+    if (!isMatchComplete && !isRoomCancelled) return;
     clearLobbyReturnState();
-  }, [isMatchComplete]);
+  }, [isMatchComplete, isRoomCancelled]);
+
+  useEffect(() => {
+    if (!pendingSurrenderAfterReconnect) return;
+    if (connectionState !== "connected") return;
+
+    const timerId = setTimeout(() => {
+      if (!canSurrenderByState) {
+        setPendingSurrenderAfterReconnect(false);
+        return;
+      }
+      surrender();
+      setPendingSurrenderAfterReconnect(false);
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [pendingSurrenderAfterReconnect, connectionState, canSurrenderByState, surrender]);
+
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    if (!opponent?.address) return;
+
+    const previous = previousOpponentConnectedRef.current;
+    previousOpponentConnectedRef.current = opponentIsConnected;
+    if (previous === null || previous === opponentIsConnected) return;
+
+    const notifyTimer = setTimeout(() => {
+      if (opponentIsConnected) {
+        showGameNotice("Opponent reconnected", "phase");
+      } else {
+        showGameNotice("Opponent disconnected", "phase");
+      }
+    }, 0);
+
+    return () => clearTimeout(notifyTimer);
+  }, [connectionState, opponent?.address, opponentIsConnected, showGameNotice]);
+
+  useEffect(() => {
+    const previous = previousPlayerStreakRef.current;
+    previousPlayerStreakRef.current = playerCurrentCorrectStreak;
+    if (playerCurrentCorrectStreak >= 3 && playerCurrentCorrectStreak !== previous) {
+      showReaction("player", "confident");
+    }
+  }, [playerCurrentCorrectStreak, showReaction]);
+
+  useEffect(() => {
+    const previous = previousOpponentStreakRef.current;
+    previousOpponentStreakRef.current = opponentCurrentCorrectStreak;
+    if (opponentCurrentCorrectStreak >= 3 && opponentCurrentCorrectStreak !== previous) {
+      showReaction("opponent", "confident");
+    }
+  }, [opponentCurrentCorrectStreak, showReaction]);
 
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
-  if (lastSocketIssueAt) {
+  if (lastSocketIssueAt && !showDisconnectedOverlay) {
     alerts.push({
       id: `socket:${lastSocketIssueAt}`,
       title: "Server Connection Issue",
       message: socketMessage,
       tone: "error",
       autoDismissMs: SOCKET_ALERT_DISPLAY_MS,
-      actionLabel: hasSocketIssue ? "Retry" : undefined,
-      onAction: hasSocketIssue ? reconnect : undefined,
+      actionLabel: undefined,
+      onAction: undefined,
     });
   }
-  if (connectionState === "reconnecting") {
+  if (connectionState === "reconnecting" && !showDisconnectedOverlay) {
     alerts.push({
       id: "socket:reconnecting",
-      title: "Reconnecting",
-      message: "Restoring room connection. Keep this page open.",
+      title: "Rejoining room",
+      message: "Your match is still active. Rejoining battle room now.",
       tone: "warning",
       autoDismissMs: 0,
     });
@@ -553,7 +778,16 @@ export function BattleScreen() {
     alerts.push({
       id: "deposit:missing_pre_signed_intent",
       title: "Deposit Sync Error",
-      message: "Missing pre-signed deposit intent. Return to lobby and re-queue.",
+      message: "Missing pre-signed deposit intent. Return to lobby and start from match setup.",
+      tone: "warning",
+      autoDismissMs: 0,
+    });
+  }
+  if (lastRoomCancelled) {
+    alerts.push({
+      id: `room:cancelled:${lastRoomCancelled.at}`,
+      title: roomCancelledTitle,
+      message: roomCancelledSubtitle,
       tone: "warning",
       autoDismissMs: 0,
     });
@@ -589,6 +823,13 @@ export function BattleScreen() {
 
   function markCharacterSpriteFailed(src: string) {
     setFailedCharacterSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markProjectileSpriteFailed(src: string) {
+    setFailedProjectileSprites((prev) => {
       if (prev[src]) return prev;
       return { ...prev, [src]: true };
     });
@@ -890,55 +1131,47 @@ export function BattleScreen() {
             >
               {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
             </span>
-            <button
-              type="button"
-              onClick={onSurrender}
-              disabled={!isPlayable || isMatchComplete}
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide disabled:opacity-50"
-              style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
-            >
-              Surrender
-            </button>
-            <Link
-              href={isMatchComplete ? cleanLobbyHref : resumeQueueHref}
-              onClick={() => {
-                if (isMatchComplete) {
-                  clearLobbyReturnState();
-                }
-              }}
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
-            >
-              Exit
-            </Link>
+            {canCancelMatch && (
+              <button
+                type="button"
+                onClick={onCancelMatch}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(19,32,26,0.9)", color: "var(--tone-cream)" }}
+              >
+                Cancel Match
+              </button>
+            )}
+            {canSurrenderMatch && (
+              <button
+                type="button"
+                onClick={onOpenSurrenderModal}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
+              >
+                Surrender
+              </button>
+            )}
+            {(isMatchComplete || isRoomCancelled) && (
+              <Link
+                href={cleanLobbyHref}
+                onClick={clearLobbyReturnState}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
+              >
+                Return To Lobby
+              </Link>
+            )}
           </div>
         </header>
 
-        {hasSocketIssue && !gameState && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.4)", background: "rgba(43,24,16,0.88)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#f8d694]">
-              Unable to enter battle room
+        {showOpponentAwayStatus && (
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.34)", background: "rgba(19,32,26,0.82)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
+              Opponent disconnected
             </p>
             <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Connection to this match room failed. Retry socket or return to lobby queue without refreshing.
+              Your rival may reconnect while the match is still active.
             </p>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={reconnect}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Retry Room
-              </button>
-              <Link
-                href={resumeQueueHref}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Return And Requeue
-              </Link>
-            </div>
           </div>
         )}
 
@@ -961,6 +1194,18 @@ export function BattleScreen() {
             <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
             <div className="text-right">
               <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Rival</p>
+              <div className="mt-1 flex justify-end">
+                <span
+                  className="rounded-full px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.32)",
+                    background: opponentIsConnected ? "rgba(39,65,55,0.46)" : "rgba(111,58,40,0.46)",
+                    color: "var(--tone-cream)",
+                  }}
+                >
+                  {opponentIsConnected ? "Connected" : "Away"}
+                </span>
+              </div>
               <p className="mt-1 font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
               <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">{opponentMetaLabel}</p>
             </div>
@@ -1028,6 +1273,45 @@ export function BattleScreen() {
               animate={playerActionControls}
             >
               <div className="relative h-full w-full">
+                <AnimatePresence>
+                  {playerReaction && playerReactionSrc && hasPlayerReactionSprite && (
+                    <motion.div
+                      key={playerReaction.id}
+                      className="pointer-events-none absolute -left-[5.6rem] top-6 z-20 md:-left-[6.2rem]"
+                      initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                      animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
+                      exit={{ opacity: 0, y: -7, scale: 0.96 }}
+                      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div
+                        className="relative rounded-[22px] border p-1.5"
+                        style={{
+                          borderColor: "rgba(248,214,148,0.58)",
+                          background: "linear-gradient(150deg, rgba(255,249,235,0.98), rgba(246,228,195,0.98))",
+                          boxShadow: "0 12px 22px rgba(0,0,0,0.28)",
+                        }}
+                      >
+                        <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
+                          <Image
+                            src={playerReactionSrc}
+                            alt={`${playerCharacterId ?? "player"} ${playerReaction.expression} reaction`}
+                            fill
+                            sizes="(max-width: 768px) 80px, 88px"
+                            className="object-cover object-center"
+                            onError={() => markCharacterSpriteFailed(playerReactionSrc)}
+                          />
+                        </div>
+                        <span
+                          className="absolute -right-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-r border-b"
+                          style={{
+                            borderColor: "rgba(248,214,148,0.58)",
+                            background: "rgba(246,228,195,0.98)",
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {hasPlayerSprite && playerSpriteSrc ? (
                   <Image
                     src={playerSpriteSrc}
@@ -1054,6 +1338,45 @@ export function BattleScreen() {
               animate={opponentActionControls}
             >
               <div className="relative h-full w-full">
+                <AnimatePresence>
+                  {opponentReaction && opponentReactionSrc && hasOpponentReactionSprite && (
+                    <motion.div
+                      key={opponentReaction.id}
+                      className="pointer-events-none absolute -right-[5.6rem] top-6 z-20 md:-right-[6.2rem]"
+                      initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                      animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
+                      exit={{ opacity: 0, y: -7, scale: 0.96 }}
+                      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div
+                        className="relative rounded-[22px] border p-1.5"
+                        style={{
+                          borderColor: "rgba(248,214,148,0.58)",
+                          background: "linear-gradient(150deg, rgba(255,249,235,0.98), rgba(246,228,195,0.98))",
+                          boxShadow: "0 12px 22px rgba(0,0,0,0.28)",
+                        }}
+                      >
+                        <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
+                          <Image
+                            src={opponentReactionSrc}
+                            alt={`${opponentCharacterId ?? "opponent"} ${opponentReaction.expression} reaction`}
+                            fill
+                            sizes="(max-width: 768px) 80px, 88px"
+                            className="object-cover object-center"
+                            onError={() => markCharacterSpriteFailed(opponentReactionSrc)}
+                          />
+                        </div>
+                        <span
+                          className="absolute -left-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-l border-t"
+                          style={{
+                            borderColor: "rgba(248,214,148,0.58)",
+                            background: "rgba(246,228,195,0.98)",
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {hasOpponentSprite && opponentSpriteSrc ? (
                   <Image
                     src={opponentSpriteSrc}
@@ -1073,15 +1396,15 @@ export function BattleScreen() {
               </div>
             </motion.div>
 
-            {projectile && (
+                        {projectile && (
               <motion.div
                 key={projectile.id}
-                className="pointer-events-none absolute left-1/2 top-[42%] h-10 w-10 -translate-x-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute left-1/2 top-[42%] h-12 w-12 -translate-x-1/2 -translate-y-1/2"
                 initial={{
                   x: projectile.from === "player" ? -180 : 180,
                   y: projectile.from === "player" ? 40 : -40,
-                  opacity: 0.25,
-                  scale: 0.65,
+                  opacity: 0.22,
+                  scale: 0.72,
                 }}
                 animate={{
                   x: projectile.to === "player" ? -210 : 210,
@@ -1091,23 +1414,30 @@ export function BattleScreen() {
                 }}
                 transition={{ duration: 0.42, ease: [0.2, 1, 0.3, 1] }}
               >
-                <div
-                  className="grid h-full w-full place-items-center rounded-lg border"
-                  style={{
-                    borderColor: projectile.kind === "heal" ? "rgba(157,180,150,0.72)" : "rgba(248,214,148,0.7)",
-                    background:
-                      projectile.kind === "heal"
-                        ? "linear-gradient(145deg, rgba(39,93,52,0.9), rgba(21,52,30,0.95))"
-                        : "linear-gradient(145deg, rgba(122,69,41,0.9), rgba(77,42,24,0.95))",
-                    boxShadow:
-                      projectile.kind === "heal"
-                        ? "0 0 18px rgba(157,180,150,0.48)"
-                        : "0 0 18px rgba(248,214,148,0.44)",
-                  }}
-                >
-                  <span className="font-caprasimo text-lg text-[var(--tone-cream)]">
-                    {projectile.kind === "heal" ? "✚" : "✦"}
-                  </span>
+                <div className="relative h-full w-full">
+                  <div
+                    className="absolute inset-0 rounded-full blur-[7px]"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(248,214,148,0.62) 0%, rgba(248,214,148,0.28) 46%, rgba(248,214,148,0) 76%)",
+                    }}
+                  />
+                  {projectile.src && !failedProjectileSprites[projectile.src] ? (
+                    <Image
+                      src={projectile.src}
+                      alt="Projectile effect"
+                      fill
+                      sizes="48px"
+                      className="object-contain object-center drop-shadow-[0_0_8px_rgba(248,214,148,0.38)]"
+                      onError={() => markProjectileSpriteFailed(projectile.src!)}
+                    />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center">
+                      <span className="font-caprasimo text-lg text-[var(--tone-cream)] drop-shadow-[0_0_8px_rgba(248,214,148,0.5)]">
+                        {"\u2726"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -1201,16 +1531,60 @@ export function BattleScreen() {
                   className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
                   style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
                 >
-                  Retry Room
+                  Rejoin Room
                 </button>
               )}
               <Link
-                href={resumeQueueHref}
+                href={cleanLobbyHref}
+                onClick={clearLobbyReturnState}
                 className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
               >
-                Return And Requeue
+                Return To Lobby
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDisconnectedOverlay && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-lg p-5 md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">You were disconnected</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
+              Your match is still active. Rejoin to continue, or surrender to end the match.
+            </p>
+            {pendingSurrenderAfterReconnect && (
+              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
+                Rejoining room to submit surrender...
+              </p>
+            )}
+            {!canSurrenderByState && (
+              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
+                Surrender is only available after the match is committed.
+              </p>
+            )}
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={reconnect}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Rejoin Room
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmSurrender}
+                disabled={!canSurrenderByState || pendingSurrenderAfterReconnect}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:opacity-50"
+                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
+              >
+                Surrender
+              </button>
             </div>
           </div>
         </div>
@@ -1269,6 +1643,38 @@ export function BattleScreen() {
                   <p className="mt-1 font-gabarito text-sm text-[#1f2b24]">{option.text}</p>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {surrenderModalOpen && canSurrenderMatch && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4">
+          <div
+            className="frame-cut w-full max-w-lg p-5 md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">Surrender match?</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
+              Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSurrenderModalOpen(false)}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Keep Playing
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmSurrender}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
+              >
+                Surrender
+              </button>
             </div>
           </div>
         </div>
@@ -1466,3 +1872,4 @@ export function BattleScreen() {
     </main>
   );
 }
+

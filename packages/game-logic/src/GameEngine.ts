@@ -34,7 +34,7 @@ import { AntiCheatAnalyzer } from './AntiCheatAnalyzer';
  */
 export class GameEngine {
   // ─── Configuration ────────────────────────────────────────────
-  static readonly MATCH_DURATION_MS = 300_000;          // 5 minutes
+  static readonly MATCH_DURATION_MS = 180_000;          // 180 seconds
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
   static readonly ROUNDS_TO_WIN = 2;
   static readonly BASE_DAMAGE = 50;
@@ -80,6 +80,7 @@ export class GameEngine {
         score: 0,
         roundsWon: 0,
         correctAnswers: 0,
+        currentCorrectStreak: 0,
         hand,
         characterState: 'stay',
         queueIndex: GameEngine.HAND_SIZE, // Next card to draw is at index 5
@@ -188,6 +189,7 @@ export class GameEngine {
 
     if (correct) {
       player.correctAnswers += 1;
+      player.currentCorrectStreak += 1;
       if (card.type === 'attack') {
         damage = GameEngine.BASE_DAMAGE * multiplier;
         opponent.health = Math.max(0, opponent.health - damage);
@@ -203,6 +205,7 @@ export class GameEngine {
       }
     } else {
       // Wrong answer — no effect, but still consume the card
+      player.currentCorrectStreak = 0;
       player.characterState = 'stay';
     }
 
@@ -514,10 +517,10 @@ export class GameEngine {
   }
 
   /**
-   * Final checker: rounds won, then health left, then correct answers.
+   * Final checker: rounds won, then score, then health left.
    * If every category is equal, the match is a draw.
    */
-  private determineMatchOutcome(): { winnerAddress: string | null; reason: 'rounds_won' | 'health_left' | 'correct_answers' | 'draw' } {
+  private determineMatchOutcome(): { winnerAddress: string | null; reason: 'rounds_won' | 'score' | 'health_left' | 'draw' } {
     const [addrA, addrB] = this.playerAddresses;
     const a = this.players.get(addrA)!;
     const b = this.players.get(addrB)!;
@@ -525,11 +528,11 @@ export class GameEngine {
     if (a.roundsWon !== b.roundsWon) {
       return { winnerAddress: a.roundsWon > b.roundsWon ? addrA : addrB, reason: 'rounds_won' };
     }
+    if (a.score !== b.score) {
+      return { winnerAddress: a.score > b.score ? addrA : addrB, reason: 'score' };
+    }
     if (a.health !== b.health) {
       return { winnerAddress: a.health > b.health ? addrA : addrB, reason: 'health_left' };
-    }
-    if (a.correctAnswers !== b.correctAnswers) {
-      return { winnerAddress: a.correctAnswers > b.correctAnswers ? addrA : addrB, reason: 'correct_answers' };
     }
     return { winnerAddress: null, reason: 'draw' };
   }
@@ -547,6 +550,7 @@ export class GameEngine {
       score: player.score,
       roundsWon: player.roundsWon,
       correctAnswers: player.correctAnswers,
+      currentCorrectStreak: player.currentCorrectStreak,
       characterId: player.characterId,
       isConnected: true,
     };

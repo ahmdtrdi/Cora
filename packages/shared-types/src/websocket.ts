@@ -12,6 +12,7 @@ export interface PlayerState {
   score: number;
   roundsWon: number;
   correctAnswers: number;
+  currentCorrectStreak: number;
   characterId: string;
   isConnected: boolean;
   lastSeenAt?: number;

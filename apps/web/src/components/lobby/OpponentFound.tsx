@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
@@ -26,12 +27,19 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
+const PHANTOM_SIGNING_WARNING_MS = 20_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
     return address;
   }
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
+function getRoomCancelledMessage(reason?: "player_cancelled" | "deposit_timeout" | "disconnect") {
+  if (reason === "deposit_timeout") return "Deposit timed out. Returning to lobby.";
+  if (reason === "disconnect") return "Match cancelled before battle start. Returning to lobby.";
+  return "Match cancelled. Returning to lobby.";
 }
 
 export function OpponentFound({
@@ -53,8 +61,14 @@ export function OpponentFound({
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
+  const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
+  const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
+  const myHappyExpressionSrc = useMemo(
+    () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
+    [myScientist.id],
+  );
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
   const signed = signingState === "waiting";
@@ -104,6 +118,10 @@ export function OpponentFound({
     token: arena.token,
     enabled: Boolean(wallet.publicKey),
   });
+  const roomCancelledNotice = useMemo(
+    () => (lastRoomCancelled ? getRoomCancelledMessage(lastRoomCancelled.reason) : null),
+    [lastRoomCancelled],
+  );
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -150,7 +168,10 @@ export function OpponentFound({
 
   useEffect(() => {
     if (!lastRoomCancelled) return;
-    onTimeout();
+    const timerId = setTimeout(() => {
+      onTimeout();
+    }, 1800);
+    return () => clearTimeout(timerId);
   }, [lastRoomCancelled, onTimeout]);
 
   useEffect(() => {
@@ -175,6 +196,19 @@ export function OpponentFound({
     setSecondsLeft(AGREEMENT_TIMEOUT_SECONDS);
   }, [depositUnlockedAt, effectiveRole]);
 
+  useEffect(() => {
+    if (signingState !== "signing") {
+      setWalletApprovalTakingLong(false);
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      setWalletApprovalTakingLong(true);
+    }, PHANTOM_SIGNING_WARNING_MS);
+
+    return () => clearTimeout(timerId);
+  }, [signingState]);
+
   async function onSignDeposit() {
     console.info("[OpponentFound] Deposit click", {
       roomId,
@@ -191,6 +225,7 @@ export function OpponentFound({
 
     setErrorText(null);
     setErrorVisible(false);
+    setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
     try {
@@ -226,7 +261,6 @@ export function OpponentFound({
     if (isCancellingMatch) return;
     setIsCancellingMatch(true);
     cancelMatch();
-    onTimeout();
   }
 
   useEffect(() => {
@@ -252,8 +286,11 @@ export function OpponentFound({
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
     if (isCancellingMatch) return "Cancelling match...";
-    if (lastRoomCancelled?.reason === "player_cancelled") return "Match cancelled. Returning to lobby.";
-    if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
+    if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
+    if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
+    if (walletApprovalTakingLong) {
+      return "Phantom approval has been open for a while. Close the old prompt if needed, then retry for a fresh transaction.";
+    }
     if (signingState === "signing") return "Confirm this transaction in Phantom.";
     if (signingState === "waiting") {
       if (depositUnlockedAt) return "Deposit signed. Waiting for opponent confirmation.";
@@ -336,6 +373,20 @@ export function OpponentFound({
           </div>
         </div>
       )}
+      {roomCancelledNotice && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(186,105,49,0.86)",
+              background: "linear-gradient(145deg, #2c1810 0%, #3d2315 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[#f8d694]">Match cancelled</p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">{roomCancelledNotice}</p>
+          </div>
+        </div>
+      )}
       {errorVisible && errorText && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
@@ -378,6 +429,24 @@ export function OpponentFound({
                 }}
               />
             </div>
+          </div>
+        </div>
+      )}
+      {walletApprovalTakingLong && signingState === "signing" && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid var(--tone-clay)",
+              background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[var(--tone-bark)]">
+              Phantom Taking Too Long
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[var(--warm-text)]">
+              If the wallet popup has been sitting open, the transaction can expire. Close the old prompt and retry to get a fresh deposit transaction.
+            </p>
           </div>
         </div>
       )}
@@ -433,9 +502,22 @@ export function OpponentFound({
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
               }}
             >
-              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                {myScientist.initial}
-              </span>
+              {!myExpressionUnavailable ? (
+                <div className="relative h-full w-full">
+                  <Image
+                    src={myHappyExpressionSrc}
+                    alt={`${myScientist.name} happy expression`}
+                    fill
+                    sizes="80px"
+                    className="object-cover object-center"
+                    onError={() => setMyExpressionUnavailable(true)}
+                  />
+                </div>
+              ) : (
+                <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                  {myScientist.initial}
+                </span>
+              )}
             </div>
 
             <div className="min-w-0">

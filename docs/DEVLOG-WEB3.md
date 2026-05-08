@@ -442,3 +442,245 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [x] `anchor build` verified from `packages/battle-anchor-032` after `avm install/use 0.32.1`.
 - [x] `anchor build` verified from `packages/solana-program` after restoring active Anchor CLI to `1.0.1`.
 - [ ] `ephemeral-rollups-sdk 0.13.0` still brings a few Solana 3.x modular crates through `magicblock-delegation-program-api v2.0.0` (`solana-instruction = ^3.0.0`). This is SDK-transitive and does not pull `litesvm`/`solana-keypair`, so build/deploy is unblocked.
+
+---
+
+## Entry 15 — 2026-05-08: ER Round Timeout and Reconnect Outcome Rules
+
+### The Change
+
+- `packages/battle-anchor-032/programs/cora-battle/src/constants.rs` — Added `ROUND_DURATION_SECONDS = 180` and explicit `END_REASON_*` constants for normal win, single-player timeout, both-player timeout, server cancel, cheater flag, and force end.
+- `state.rs` — Extended `BattleSession` with round timing (`round_started_at`, `round_deadline`), missed-round counters, and `end_reason`. `current_round` now starts at `0` and moves to `1` on activation.
+- `activate_session.rs` — Starts round 1 and sets the first 3-minute deadline.
+- `apply_damage.rs` — Keeps the blind HP calculator pattern, but now treats `score_a/score_b` as round score instead of per-answer count. Normal round wins advance the deadline, and normal match wins set `END_REASON_NORMAL_WIN`.
+- `timeout_player_for_round.rs` — New authority-only instruction. It only resolves after `round_deadline`, awards the round to the connected opponent, advances to the next round, or finalizes with `END_REASON_SINGLE_PLAYER_TIMEOUT`.
+- `cancel_session.rs` — New authority-only no-contest path for both-player timeout, server cancellation, or force-ended outcomes.
+- `events.rs` — Added `RoundTimedOutEvent` and `RoundAdvancedEvent`, and extended finalized/cancelled/activated events with session pubkey, reason, score, and deadline data.
+- `apps/api/src/services/magicblock.ts` — Updated `BattleSession` byte offsets, exported ER end-reason constants, and added stable service stubs for `activateSession`, `applyDamage`, `timeoutPlayerForRound`, `cancelSession`, and `finalizeMatch`.
+- `packages/solana-program/programs/solana-program/src/constants.rs` — Updated escrow `MATCH_TIMEOUT` from 600s to 900s so the base-layer refund fallback fits a 3-round battle plus operational buffer.
+- `tests-disabled/ROUND_TIMEOUT_TEST_PLAN.md` — Added the required timeout/reconnect test scenarios without re-enabling the incompatible LiteSVM stack.
+
+### The Reasoning
+
+1. **Reconnect belongs off-chain until the round is terminal.** The backend can observe disconnect/reconnect in real time, while ER only needs a deterministic instruction after the 180s round deadline.
+2. **Timeout is a round outcome, not an instant match loss.** A single disconnect gives the opponent one round. The match only finishes when a player reaches 2 round wins.
+3. **No-contest must be explicit.** Both-player timeout and server/network failure now map to `Cancelled` with a numeric end reason so escrow can choose refund behavior without learning battle internals.
+4. **Escrow stays simple.** It only sees settle/refund windows; round state, HP, and timeout cause live in the MagicBlock battle program.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Generated IDL includes `timeout_player_for_round`, `cancel_session`, `RoundTimedOutEvent`, `RoundAdvancedEvent`, and the extended finalized/cancelled events.
+- [x] Restored active Anchor CLI to `1.0.1` after the battle build.
+- [ ] `./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit` still fails on existing `apps/api/src/services/goldrush.ts` issues: missing `@covalenthq/client-sdk` type resolution and two implicit `any` parameters.
+
+---
+
+## Entry 16 — 2026-05-08: ER Gameplay Score Fields + Winner Rule Stabilization
+
+### The Change
+
+**ER state and events (7 files):**
+- `packages/battle-anchor-032/programs/cora-battle/src/state.rs` — Added `game_score_a: u32` and `game_score_b: u32`, documented `score_a/score_b` as canonical round-win counters, marked `rounds_won_a/b` as legacy duplicate fields, updated `BattleSession::LEN`, and added `determine_winner_by_match_rules()` using `round wins -> gameplay score -> health -> draw`.
+- `constants.rs` — Bumped `CURRENT_VERSION` to `2` and added `END_REASON_DRAW_NO_CONTEST = 7`.
+- `create_session.rs` — Initialized `game_score_a` and `game_score_b` to zero at session creation, before activation.
+- `events.rs` — Extended `BattleFinalizedEvent` with `game_score_a` and `game_score_b`, and clarified existing `score_*` event fields as round wins.
+- `apply_damage.rs` and `timeout_player_for_round.rs` — Kept `score_*` and `rounds_won_*` synchronized, with TODO notes that `rounds_won_*` is deprecated duplicate state retained for compatibility.
+- `finalize_match.rs` — Emitted the new gameplay-score fields in the final event payload.
+
+**Backend ER reader (1 file):**
+- `apps/api/src/services/magicblock.ts` — Added `gameScoreA` / `gameScoreB` to the TypeScript session shape, added `DRAW_NO_CONTEST` to the local constants mirror, and updated manual byte offsets to decode the new tail fields without changing legacy field offsets.
+
+**Documentation (1 file):**
+- `docs/DEVLOG-WEB3.md` — Appended this entry and moved the one-off package-local notes into the role-based devlog flow defined by `docs/AGENTS.md`.
+
+### The Reasoning
+
+1. **Gameplay score and round wins are different public facts.** The GameEngine's final ordering is rounds won, then gameplay score, then remaining health. Reusing `score_a/score_b` for both concepts would make the ER account ambiguous and impossible to trust as an audit source.
+
+2. **`score_a/score_b` stays canonical for round wins to minimize migration risk.** Those fields are already used by the active ER instructions and by the backend reader. Changing their meaning would ripple through state, events, offsets, and any external consumers. Adding explicit `game_score_*` fields is the safer Web3 migration.
+
+3. **Appending the new fields at the end preserves older offsets.** This keeps existing account decoding stable for `health_*`, `score_*`, `current_round`, `winner`, and `end_reason` while still allowing the backend to read the new gameplay score immediately.
+
+4. **Winner helper now matches the public match rule, even if write-paths are not done yet.** The helper gives the program a single authoritative place for the final rule before we wire BE-authorized gameplay-score mutations in the next step.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] `BattleSession` now stores explicit gameplay score fields separately from round wins.
+- [x] `score_a/score_b` remain canonical round-win counters.
+- [x] `rounds_won_a/b` remain synchronized but are documented as legacy duplicate state.
+
+### The Tech Debt
+
+- [ ] `game_score_a` and `game_score_b` are stored and emitted, but no ER instruction mutates them yet. The next step is a BE-authorized effect/write path that mirrors GameEngine score changes without moving answer validation on-chain.
+- [ ] `finalize_match` still emits the stored winner instead of computing from `determine_winner_by_match_rules()`. That is acceptable for this migration, but the helper should become the final source once gameplay-score writes exist.
+- [ ] `RoundEndedEvent` still exposes `rounds_won_a/b` rather than canonical `score_a/score_b`. Consumers are safe today because the fields stay synchronized, but the event vocabulary is still mixed.
+
+---
+
+## Entry 17 — 2026-05-08: BE-Authorized `apply_card_effect` for ATTACK / HEAL / NONE
+
+### The Change
+
+**ER instruction surface and shared logic (7 files):**
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` — Added `register_card_v2` and `apply_card_effect` to the program interface while keeping `register_card` and `apply_damage` intact for compatibility.
+- `instructions/apply_card_effect.rs` — **NEW**: Added the backend-authorized effect instruction. It validates authority, owner, effect type, card replay protection, score delta bounds, and max-value bounds, then applies ATTACK / HEAL / NONE state transitions and writes `game_score_*` through `score_delta`.
+- `instructions/match_updates.rs` — **NEW**: Centralized the normal round-win path shared by `apply_damage` and `apply_card_effect` so round award, round advance, and finalization stay aligned.
+- `instructions/apply_damage.rs` — Kept the legacy damage-only entrypoint, but now requires `EFFECT_ATTACK` cards and increments gameplay score using the applied damage amount as a compatibility approximation.
+- `instructions/register_card.rs` — Kept legacy `register_card(damage)` as an attack-only compatibility path, and added `register_card_v2(card_id, owner, effect_type, max_value)` for effect-aware cards.
+- `state.rs` — Extended `RegisteredCard` with `owner`, `effect_type`, and `max_value`, while keeping `damage` as the legacy attack value for `apply_damage`.
+- `events.rs` — Added `CardEffectAppliedEvent` and expanded `CardRegisteredEvent` with owner/effect metadata without removing the legacy damage field.
+
+**Constants and errors (2 files):**
+- `constants.rs` — Added `EFFECT_ATTACK`, `EFFECT_HEAL`, `EFFECT_NONE`, `MAX_EFFECT_VALUE`, and `MAX_SCORE_DELTA`, and bumped the account schema version to `3`.
+- `error.rs` — Added `InvalidEffectType`, `InvalidEffectValue`, `InvalidScoreDelta`, and `InvalidCardOwner`.
+
+**Backend stub surface (1 file):**
+- `apps/api/src/services/magicblock.ts` — Added `MAGICBLOCK_EFFECT_TYPES`, plus new stubs for `registerCardV2()` and `applyCardEffect()`. Legacy `registerCard()` and `applyDamage()` remain in place and are now documented as compatibility paths.
+
+### The Reasoning
+
+1. **ER now mirrors final public battle effects instead of only raw damage.** The backend still owns answer validation, specialty multipliers, and any private scoring logic. ER receives only the final effect value plus the final gameplay-score delta, which preserves privacy while making state transitions auditable.
+
+2. **Gameplay score needed a write path, not a winner shortcut.** `game_score_a/b` is now mutable through `score_delta`, but it does not trigger an instant win. Round wins remain the only immediate match progression signal; gameplay score is still only a final tie-break after rounds.
+
+3. **`register_card_v2` is the clean Web3 path; legacy `register_card` remains intentionally narrow.** The old instruction does not carry an owner, so it cannot safely support owner-bound effect resolution. Rather than invent unsafe owner derivation, it remains an ATTACK-only compatibility path for `apply_damage`, while the new instruction carries explicit owner/effect metadata.
+
+4. **No answer intelligence moved on-chain.** The ER program still does not store correct answers, answer hashes, question contents, or correct-answer counts. The backend remains the private game brain; ER remains the auditable state executor.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Generated IDL includes `applyCardEffect`, `registerCardV2`, and `CardEffectAppliedEvent`.
+- [x] `apply_damage` still exists and compiles as the legacy damage-only compatibility path.
+- [x] `apply_card_effect` supports ATTACK / HEAL / NONE and writes `game_score_*` via `score_delta`.
+
+### The Tech Debt
+
+- [ ] Legacy `register_card` now creates ownerless attack cards (`owner = Pubkey::default()`) so old `apply_damage` flows keep working. New effect-aware flows must use `register_card_v2`.
+- [ ] `apply_damage` approximates gameplay score from applied damage only. That is acceptable for the legacy path, but BE should migrate to `apply_card_effect` whenever gameplay score can differ from raw damage.
+- [ ] No new pure-Rust helper tests were added in this step. LiteSVM remains disabled, so the next testing pass should either add isolated unit coverage around effect math or expand the disabled test plan once the harness is compatible again.
+
+---
+
+## Entry 18 — 2026-05-08: `resolve_round_by_state` for Normal Time-Up Rounds
+
+### The Change
+
+**ER state and round-resolution flow (9 files):**
+- `packages/battle-anchor-032/programs/cora-battle/src/state.rs` — Added `round_damage_a` and `round_damage_b` to `BattleSession` so ER can track per-round offensive contribution without any answer metadata.
+- `create_session.rs` and `activate_session.rs` — Initialize/reset `round_damage_*` to zero when sessions are created and when round 1 starts.
+- `instructions/apply_card_effect.rs` — `EFFECT_ATTACK` now increments the attacker's `round_damage_*` by the actual applied damage. `EFFECT_HEAL` and `EFFECT_NONE` do not affect round damage.
+- `instructions/apply_damage.rs` — Legacy attack path now also increments `round_damage_*` by actual damage so timer-based state resolution stays aligned across new and old flows.
+- `instructions/match_updates.rs` — Expanded the shared helper surface with centralized round advance, final winner emission, and draw/no-contest cancellation. Shared transitions now reset `round_damage_*` whenever a new round begins.
+- `instructions/timeout_player_for_round.rs` — Refactored to use the shared round-award helper so timeout wins, attack KOs, and normal round advancement do not drift in score syncing or reset behavior.
+- `instructions/resolve_round_by_state.rs` — **NEW**: Added `resolve_round_by_state()` for rounds that expire normally with both players still active. Winner ordering is `health -> round_damage -> draw`.
+- `events.rs` — Added `RoundResolvedByStateEvent` and expanded `BattleFinalizedEvent` with terminal `health_a` / `health_b` so final state is more auditable.
+- `lib.rs` and `instructions/mod.rs` — Exported the new instruction and module through the program surface.
+
+**Backend/dev-support updates (2 files):**
+- `apps/api/src/services/magicblock.ts` — Added `resolveRoundByState()` stub and manual decoder support for `roundDamageA` / `roundDamageB`.
+- `docs-archive/ROUND_TIMEOUT_TEST_PLAN.md` — Extended the disabled test plan with state-resolution and round-damage scenarios while LiteSVM remains incompatible.
+
+### The Reasoning
+
+1. **Normal time-up needed a fully public tiebreak path.** Once the round deadline passes, ER must be able to deterministically resolve the round from public state alone. Remaining HP is the cleanest primary signal, and `round_damage_*` gives ER a second public offensive tiebreak without introducing answer data.
+
+2. **`round_damage_*` is intentionally round-scoped, not match-scoped.** It resets on activation and on every round advance, so it only explains the current round's public offensive contribution. Match-level score remains `game_score_a/b`.
+
+3. **Final winner logic remains unchanged.** `resolve_round_by_state` only decides the round winner. Match outcome still follows the existing public rule: `score_a/score_b -> game_score_a/game_score_b -> remaining health -> draw/no-contest`.
+
+4. **Draw stays explicit and escrow stays blind.** If the final round ends with public state still fully tied, ER now records `END_REASON_DRAW_NO_CONTEST` and cancels the battle session. No escrow logic was touched, and no answer or hash data was added on-chain.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Generated IDL includes `resolveRoundByState` and `RoundResolvedByStateEvent`.
+- [x] Generated types include `roundDamageA` and `roundDamageB`.
+- [x] ATTACK paths write `round_damage_*`; HEAL does not.
+
+### The Tech Debt
+
+- [ ] No live Rust integration tests were re-enabled. Coverage for `resolve_round_by_state` currently lives in the disabled test plan only.
+- [ ] `RoundEndedEvent` still reports legacy `rounds_won_*` fields instead of canonical `score_*`. This remains safe because the counters stay synchronized, but the event vocabulary is still mixed.
+- [ ] The backend room flow still needs to decide when to call `resolve_round_by_state()` versus `timeout_player_for_round()` based on real disconnect state at deadline.
+
+---
+
+## Entry 19 — 2026-05-08: MagicBlock Service Adapter Wired to Latest `cora-battle` ER Surface
+
+### The Change
+
+**Backend service adapter (1 file):**
+- `apps/api/src/services/magicblock.ts` — Replaced the placeholder service with an Anchor-backed adapter that loads the checked-in `cora_battle` IDL and exposes wrappers for the latest ER instruction surface:
+  - `createSession`
+  - `registerCard` (legacy)
+  - `registerCardV2`
+  - `activateSession`
+  - `delegateBattleSession`
+  - `delegateRegisteredCard`
+  - `applyDamage` (legacy)
+  - `applyCardEffect`
+  - `timeoutPlayerForRound`
+  - `resolveRoundByState`
+  - `cancelSession`
+  - `commitBattleSession`
+  - `commitRegisteredCard`
+  - `undelegateBattleSession`
+  - `undelegateRegisteredCard`
+  - `getSessionState`
+
+**Adapter details:**
+- Added explicit RPC lane separation:
+  - base layer via `SOLANA_RPC_URL`
+  - MagicBlock ER/router via `MAGICBLOCK_ROUTER_RPC_URL` (with `MAGICBLOCK_RPC_URL` as legacy fallback env)
+- Added exported local constant mirrors for:
+  - `EFFECT_ATTACK`, `EFFECT_HEAL`, `EFFECT_NONE`
+  - `END_REASON_*` values through `END_REASON_DRAW_NO_CONTEST`
+- Added PDA helpers for:
+  - BattleSession from `roomId` or `matchId`
+  - RegisteredCard from `sessionPda + cardId`
+- Expanded `BattleSessionState` decoding to include:
+  - `sessionPda`, `authority`, `playerA`, `playerB`
+  - canonical round wins via `scoreA/scoreB`
+  - gameplay score via `gameScoreA/gameScoreB`
+  - current-round offensive contribution via `roundDamageA/roundDamageB`
+  - `currentRound`, `roundStartedAt`, `roundDeadline`
+  - `winner`, `endReason`, `finishedAt`, `totalPlays`
+- Fixed the manual BattleSession byte offsets so `roundStartedAt`, `roundDeadline`, `status`, `winner`, `finishedAt`, `gameScore_*`, and `roundDamage_*` line up with the current on-chain layout.
+- Added wrapper logging for every instruction with `roomId`, instruction name, `sessionPda`, optional `cardPda`, transaction signature, and error output.
+- Kept `createBattleSession()` as a compatibility alias so the existing room bootstrap path does not break while BE wiring catches up.
+
+### The Reasoning
+
+1. **The adapter needed to match the real ER surface before Engine wiring.** BE cannot safely integrate `registerCardV2`, `applyCardEffect`, or `resolveRoundByState` later if the service layer still speaks the old damage-only stub language.
+
+2. **Base and router lanes need to stay distinct.** Session and card setup belong on the base layer; delegated gameplay mutation and lifecycle commits belong on the MagicBlock router lane. Keeping that separation in one place reduces accidental RPC mix-ups later.
+
+3. **`getSessionState()` needed a schema correction, not just new fields.** The previous manual decoder was missing the inserted fields before `round_deadline`, which meant downstream reads could drift as the ER account evolved. This step re-aligned the decoder to the current `BattleSession` layout.
+
+4. **Legacy wrappers remain deliberately visible.** `registerCard()` and `applyDamage()` are still exported, but now clearly documented as compatibility paths only. New BE room flow should use `registerCardV2()` and `applyCardEffect()`.
+
+5. **Engine.ts was intentionally left alone.** This task stops at the adapter boundary. BE still owns the eventual decision of when to call `applyCardEffect`, `timeoutPlayerForRound`, `resolveRoundByState`, or `cancelSession` in the live room loop.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Adapter now loads the latest `cora_battle` IDL and exposes wrappers for the latest ER instructions.
+- [x] No lifecycle `v2` methods were introduced; lifecycle wrappers still target `BattleSession` / `RegisteredCard`.
+- [x] `Engine.ts` was not modified.
+- [x] Escrow code was not modified.
+
+**TypeScript check:**
+- [ ] `./node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit` is still blocked by unrelated API-service issues:
+  - `apps/api/src/services/goldrush.ts` cannot resolve `@covalenthq/client-sdk`
+  - `apps/api/src/services/supabase.ts` cannot resolve `@supabase/supabase-js`
+  - `goldrush.ts` also has pre-existing implicit `any` parameter errors
+- [x] The project-wide TypeScript check did not surface additional `magicblock.ts` errors before stopping on those unrelated blockers.
+
+### The Tech Debt
+
+- [ ] BE still needs to wire the new room flow to `registerCardV2()` and `applyCardEffect()`; this task only made the adapter ready.
+- [ ] BE must choose `timeoutPlayerForRound()` vs `resolveRoundByState()` vs `cancelSession()` based on actual disconnect/server-state facts at deadline.
+- [ ] Settlement should eventually consume terminal ER state directly once the room flow is fully hooked up, instead of treating ER verification as an optional late check.

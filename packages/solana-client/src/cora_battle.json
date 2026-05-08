@@ -56,6 +56,68 @@
       "args": []
     },
     {
+      "name": "apply_card_effect",
+      "docs": [
+        "Apply a backend-authorized final card effect to ER battle state.",
+        "The backend remains the source of truth for answer validation and",
+        "private multiplier computation; ER only stores the final public effect."
+      ],
+      "discriminator": [
+        183,
+        143,
+        101,
+        151,
+        167,
+        55,
+        194,
+        21
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "registered_card",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "final_value",
+          "type": "u16"
+        },
+        {
+          "name": "score_delta",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "apply_damage",
       "docs": [
         "Apply damage to the opponent of the attacker.",
@@ -110,6 +172,58 @@
         {
           "name": "attacker",
           "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "cancel_session",
+      "docs": [
+        "Cancel an unresolved session with an explicit ER outcome reason."
+      ],
+      "discriminator": [
+        57,
+        207,
+        155,
+        166,
+        136,
+        32,
+        99,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "u8"
         }
       ]
     },
@@ -714,6 +828,7 @@
         },
         {
           "name": "battle_session",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -827,7 +942,7 @@
       "name": "register_card",
       "docs": [
         "Register a card (question mapping) for a battle session.",
-        "Authority-only. Only allowed in WaitingCards status."
+        "Legacy damage-only path. New effect-aware flows should use register_card_v2."
       ],
       "discriminator": [
         33,
@@ -891,6 +1006,186 @@
         {
           "name": "damage",
           "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "register_card_v2",
+      "docs": [
+        "Register an effect-aware card for ER resolution.",
+        "Authority-only. Only allowed in WaitingCards status."
+      ],
+      "discriminator": [
+        210,
+        169,
+        134,
+        131,
+        120,
+        191,
+        221,
+        138
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battle_session"
+        },
+        {
+          "name": "registered_card",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session"
+              },
+              {
+                "kind": "arg",
+                "path": "card_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "card_id",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "type": "pubkey"
+        },
+        {
+          "name": "effect_type",
+          "type": "u8"
+        },
+        {
+          "name": "max_value",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "resolve_round_by_state",
+      "docs": [
+        "Resolve a timer-expired round from current ER state.",
+        "Uses only public state: health, round damage, and existing match totals."
+      ],
+      "discriminator": [
+        68,
+        216,
+        6,
+        37,
+        4,
+        246,
+        43,
+        183
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "timeout_player_for_round",
+      "docs": [
+        "Resolve a single-player round timeout after the round deadline.",
+        "Reconnects before this deadline are handled off-chain by the backend."
+      ],
+      "discriminator": [
+        252,
+        81,
+        161,
+        108,
+        203,
+        35,
+        169,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "timed_out_player",
+          "type": "pubkey"
         }
       ]
     },
@@ -1035,6 +1330,19 @@
       ]
     },
     {
+      "name": "CardEffectAppliedEvent",
+      "discriminator": [
+        247,
+        16,
+        82,
+        16,
+        174,
+        134,
+        108,
+        63
+      ]
+    },
+    {
       "name": "CardRegisteredEvent",
       "discriminator": [
         0,
@@ -1061,6 +1369,19 @@
       ]
     },
     {
+      "name": "RoundAdvancedEvent",
+      "discriminator": [
+        68,
+        10,
+        218,
+        225,
+        156,
+        83,
+        179,
+        174
+      ]
+    },
+    {
       "name": "RoundEndedEvent",
       "discriminator": [
         225,
@@ -1071,6 +1392,32 @@
         107,
         81,
         122
+      ]
+    },
+    {
+      "name": "RoundResolvedByStateEvent",
+      "discriminator": [
+        164,
+        35,
+        224,
+        170,
+        255,
+        193,
+        73,
+        70
+      ]
+    },
+    {
+      "name": "RoundTimedOutEvent",
+      "discriminator": [
+        173,
+        100,
+        219,
+        75,
+        250,
+        125,
+        235,
+        153
       ]
     },
     {
@@ -1156,21 +1503,51 @@
     },
     {
       "code": 6008,
+      "name": "InvalidEffectType",
+      "msg": "Effect type is not valid for this card"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidEffectValue",
+      "msg": "Effect value is not valid for this card"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidScoreDelta",
+      "msg": "Gameplay score delta is out of allowed range"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidCardOwner",
+      "msg": "Registered card owner is not valid for this session"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidRoundState",
+      "msg": "Current round state is not valid for this instruction"
+    },
+    {
+      "code": 6013,
       "name": "InvalidTarget",
       "msg": "Target must be a participant in this session"
     },
     {
-      "code": 6009,
+      "code": 6014,
       "name": "TimeoutNotReached",
       "msg": "Session timeout has not been reached yet"
     },
     {
-      "code": 6010,
+      "code": 6015,
+      "name": "InvalidEndReason",
+      "msg": "End reason is not valid for this instruction"
+    },
+    {
+      "code": 6016,
       "name": "SessionExpired",
       "msg": "Session has expired due to timeout"
     },
     {
-      "code": 6011,
+      "code": 6017,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
     }
@@ -1181,6 +1558,10 @@
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1195,20 +1576,52 @@
             "type": "pubkey"
           },
           {
+            "name": "end_reason",
+            "type": "u8"
+          },
+          {
             "name": "score_a",
+            "docs": [
+              "Canonical round wins for player A."
+            ],
             "type": "u16"
           },
           {
             "name": "score_b",
+            "docs": [
+              "Canonical round wins for player B."
+            ],
             "type": "u16"
           },
           {
             "name": "rounds_won_a",
+            "docs": [
+              "Legacy duplicate of score_a, kept for compatibility."
+            ],
             "type": "u8"
           },
           {
             "name": "rounds_won_b",
+            "docs": [
+              "Legacy duplicate of score_b, kept for compatibility."
+            ],
             "type": "u8"
+          },
+          {
+            "name": "health_a",
+            "type": "u16"
+          },
+          {
+            "name": "health_b",
+            "type": "u16"
+          },
+          {
+            "name": "game_score_a",
+            "type": "u32"
+          },
+          {
+            "name": "game_score_b",
+            "type": "u32"
           }
         ]
       }
@@ -1217,8 +1630,8 @@
       "name": "BattleSession",
       "docs": [
         "The main battle session account, tracking all on-chain game state.",
-        "Acts as a \"blind HP calculator\" — answer verification happens off-chain",
-        "in the backend, only damage application is recorded on-chain."
+        "Acts as a backend-authorized battle state mirror. Answer verification and",
+        "private effect math stay off-chain; ER only records final public effects."
       ],
       "type": {
         "kind": "struct",
@@ -1281,42 +1694,70 @@
           {
             "name": "score_a",
             "docs": [
-              "Player A's total correct answers across all rounds"
+              "Canonical rounds won by player A for match winner evaluation."
             ],
             "type": "u16"
           },
           {
             "name": "score_b",
             "docs": [
-              "Player B's total correct answers across all rounds"
+              "Canonical rounds won by player B for match winner evaluation."
             ],
             "type": "u16"
           },
           {
             "name": "current_round",
             "docs": [
-              "Current round number (1-indexed, max MAX_ROUNDS)"
+              "Current round number (1-indexed while active, 0 before activation)"
             ],
             "type": "u8"
           },
           {
             "name": "rounds_won_a",
             "docs": [
-              "Rounds won by player A"
+              "Legacy duplicate of score_a, kept synchronized for backward compatibility."
             ],
             "type": "u8"
           },
           {
             "name": "rounds_won_b",
             "docs": [
-              "Rounds won by player B"
+              "Legacy duplicate of score_b, kept synchronized for backward compatibility."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "round_started_at",
+            "docs": [
+              "Unix timestamp when the current round started"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "round_deadline",
+            "docs": [
+              "Unix timestamp when the current round may be resolved by timeout"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "player_a_missed_rounds",
+            "docs": [
+              "Rounds missed by player A due to timeout"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "player_b_missed_rounds",
+            "docs": [
+              "Rounds missed by player B due to timeout"
             ],
             "type": "u8"
           },
           {
             "name": "total_plays",
             "docs": [
-              "Total damage events applied (audit trail)"
+              "Total resolved card plays applied to ER state (audit trail)"
             ],
             "type": "u16"
           },
@@ -1341,7 +1782,7 @@
           {
             "name": "question_hash",
             "docs": [
-              "SHA-256 hash of the question set used (fairness proof)"
+              "SHA-256 hash of the public question set commitment, not an answer hash."
             ],
             "type": {
               "array": [
@@ -1370,6 +1811,41 @@
               "Unix timestamp when session finished (0 if not finished)"
             ],
             "type": "i64"
+          },
+          {
+            "name": "end_reason",
+            "docs": [
+              "Terminal outcome reason. See END_REASON_* constants."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "game_score_a",
+            "docs": [
+              "Cumulative gameplay score for player A, used for final tie-breaks."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "game_score_b",
+            "docs": [
+              "Cumulative gameplay score for player B, used for final tie-breaks."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "round_damage_a",
+            "docs": [
+              "Attack damage contributed by player A during the current round."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "round_damage_b",
+            "docs": [
+              "Attack damage contributed by player B during the current round."
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -1401,10 +1877,78 @@
       }
     },
     {
+      "name": "CardEffectAppliedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "card",
+            "type": "pubkey"
+          },
+          {
+            "name": "actor",
+            "type": "pubkey"
+          },
+          {
+            "name": "effect_type",
+            "type": "u8"
+          },
+          {
+            "name": "final_value",
+            "type": "u16"
+          },
+          {
+            "name": "score_delta",
+            "type": "u32"
+          },
+          {
+            "name": "health_a",
+            "type": "u16"
+          },
+          {
+            "name": "health_b",
+            "type": "u16"
+          },
+          {
+            "name": "score_a",
+            "type": "u16"
+          },
+          {
+            "name": "score_b",
+            "type": "u16"
+          },
+          {
+            "name": "game_score_a",
+            "type": "u32"
+          },
+          {
+            "name": "game_score_b",
+            "type": "u32"
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "CardRegisteredEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "card",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1422,6 +1966,18 @@
                 16
               ]
             }
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "effect_type",
+            "type": "u8"
+          },
+          {
+            "name": "max_value",
+            "type": "u16"
           },
           {
             "name": "damage",
@@ -1470,7 +2026,7 @@
     {
       "name": "RegisteredCard",
       "docs": [
-        "A registered card representing one question's damage potential.",
+        "A registered card representing one question's public ER effect envelope.",
         "The card_id uses dummy ephemeral IDs to prevent correlation with",
         "real question IDs in the database (privacy via Ephemeral Mapping)."
       ],
@@ -1497,9 +2053,30 @@
             }
           },
           {
+            "name": "owner",
+            "docs": [
+              "Player who is allowed to resolve this card in ER."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "effect_type",
+            "docs": [
+              "Public effect kind used for auditable ER state changes."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "max_value",
+            "docs": [
+              "Maximum final effect value the backend may authorize for this card."
+            ],
+            "type": "u16"
+          },
+          {
             "name": "damage",
             "docs": [
-              "Damage this card deals when the backend confirms a correct answer"
+              "Legacy damage-only attack value used by apply_damage compatibility flow."
             ],
             "type": "u16"
           },
@@ -1521,10 +2098,43 @@
       }
     },
     {
+      "name": "RoundAdvancedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "round_deadline",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RoundEndedEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1554,10 +2164,82 @@
       }
     },
     {
-      "name": "SessionActivatedEvent",
+      "name": "RoundResolvedByStateEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "type": "u8"
+          },
+          {
+            "name": "resolver",
+            "type": "pubkey"
+          },
+          {
+            "name": "health_a",
+            "type": "u16"
+          },
+          {
+            "name": "health_b",
+            "type": "u16"
+          },
+          {
+            "name": "round_damage_a",
+            "type": "u32"
+          },
+          {
+            "name": "round_damage_b",
+            "type": "u32"
+          },
+          {
+            "name": "round_winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "score_a",
+            "type": "u16"
+          },
+          {
+            "name": "score_b",
+            "type": "u16"
+          },
+          {
+            "name": "game_score_a",
+            "type": "u32"
+          },
+          {
+            "name": "game_score_b",
+            "type": "u32"
+          },
+          {
+            "name": "next_round",
+            "type": "u8"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "was_draw",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundTimedOutEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1566,6 +2248,61 @@
                 32
               ]
             }
+          },
+          {
+            "name": "timed_out_player",
+            "type": "pubkey"
+          },
+          {
+            "name": "round_winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "score_a",
+            "docs": [
+              "Canonical round wins for player A."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "score_b",
+            "docs": [
+              "Canonical round wins for player B."
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionActivatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "round_deadline",
+            "type": "i64"
           }
         ]
       }
@@ -1575,6 +2312,10 @@
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1586,7 +2327,11 @@
           },
           {
             "name": "reason",
-            "type": "string"
+            "type": "u8"
+          },
+          {
+            "name": "finished_at",
+            "type": "i64"
           }
         ]
       }

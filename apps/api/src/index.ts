@@ -131,7 +131,33 @@ app.get('/match/active/:address', (c) => {
   });
 });
 
-// Private room creation for Blinks / direct challenge invites
+app.get('/match/presence/:address', (c) => {
+  const address = c.req.param('address');
+  const room = roomManager.queue.findActiveRoomForAddress(address);
+
+  if (room) {
+    const role =
+      room.playerA === address ? 'playerA' :
+      room.playerB === address ? 'playerB' :
+      undefined;
+
+    return c.json({
+      inRoom: true,
+      queued: false,
+      roomId: room.id,
+      role,
+      roomType: room.roomType,
+      status: room.status,
+    });
+  }
+
+  return c.json({
+    inRoom: false,
+    queued: roomManager.queue.isQueued(address),
+  });
+});
+
+// Private room creation — for Blinks / direct challenge invites
 // tokenMint and wagerAmount are stored server-side; never exposed in the Blink URL
 app.post('/match/private', async (c) => {
   let address: string;

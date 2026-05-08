@@ -1,8 +1,8 @@
-use anchor_lang::prelude::*;
-use crate::state::{BattleSession, BattleStatus};
 use crate::constants::*;
 use crate::error::BattleError;
 use crate::events::SessionCreatedEvent;
+use crate::state::{BattleSession, BattleStatus};
+use anchor_lang::prelude::*;
 
 pub fn handler(
     ctx: Context<CreateSession>,
@@ -25,9 +25,13 @@ pub fn handler(
     session.health_b = INITIAL_HEALTH;
     session.score_a = 0;
     session.score_b = 0;
-    session.current_round = 1;
+    session.current_round = 0;
     session.rounds_won_a = 0;
     session.rounds_won_b = 0;
+    session.round_started_at = 0;
+    session.round_deadline = 0;
+    session.player_a_missed_rounds = 0;
+    session.player_b_missed_rounds = 0;
     session.total_plays = 0;
     session.status = BattleStatus::WaitingCards;
     session.winner = Pubkey::default();
@@ -35,6 +39,11 @@ pub fn handler(
     session.bump = ctx.bumps.battle_session;
     session.created_at = Clock::get()?.unix_timestamp;
     session.finished_at = 0;
+    session.end_reason = END_REASON_NONE;
+    session.game_score_a = 0;
+    session.game_score_b = 0;
+    session.round_damage_a = 0;
+    session.round_damage_b = 0;
 
     emit!(SessionCreatedEvent {
         match_id,

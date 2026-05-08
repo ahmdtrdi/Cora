@@ -2765,3 +2765,267 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Notification copy/timing is still local to `BattleScreen`; if other gameplay screens need similar UX, this should become a shared game-notification primitive.
 - Deposit waiting-state messaging logic is still component-local in `OpponentFound`; if additional deposit phases/screens are added, message derivation should be centralized.
+
+## 2026-05-08 - Match Lifecycle UX Polish (/play Presence, Cancel/Surrender Semantics, Result States)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed remaining `/play` requeue assumptions (`resumeQueue` URL construction and `Return And Requeue` actions)
+  - replaced old `/play` recovery navigation with clean `/lobby` return paths only
+  - upgraded current-player recovery copy/action to:
+    - title/copy: `You were disconnected` + `Your match is still active. Rejoin to continue.`
+    - action: `Rejoin Room` (same-room socket reconnect)
+  - integrated backend lifecycle events into play UX:
+    - consumes `lastRoomCancelled` and maps reason-specific user copy:
+      - `player_cancelled` -> `Match cancelled`
+      - `deposit_timeout` -> `Deposit timed out`
+      - `disconnect` -> `Match cancelled before battle start`
+    - consumes presence state (`presenceUpdate` and `player/opponent.isConnected`) for non-blocking opponent status:
+      - transient notices: `Opponent disconnected` / `Opponent reconnected`
+      - persistent opponent chip: `Connected` / `Away`
+  - added cancel vs surrender action semantics on `/play`:
+    - pre-commit (`waiting`/`depositing`): `Cancel Match` (sends `cancelMatch`)
+    - committed/active (`playing`/`settling`): `Surrender`
+  - replaced prompt-style surrender with explicit confirmation modal:
+    - title: `Surrender match?`
+    - body: `Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby.`
+    - actions: `Keep Playing` and `Surrender`
+  - expanded result presentation to support non-winner assumptions safely:
+    - `You Win` / `You Lose`
+    - `Draw`
+    - `You Surrendered`
+    - `Opponent Surrendered`
+    - cancellation result text via `roomCancelled` reasons
+  - preserved existing animation/result structure and gameplay card flow.
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - added friendly `roomCancelled` reason mapping messages before lobby return
+  - removed immediate post-click forced timeout on cancel; now waits for backend cancellation signal path
+  - updated stale `Returning to queue` language to `Returning to lobby` for deposit-failure context.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- `/play` should no longer imply auto-requeue behavior in wagered and recoverable match states.
+- Presence-aware UX prevents confusion when an opponent disconnects while a connected player remains in an active room.
+- Explicit cancel-vs-surrender wording aligns player intent with lifecycle phase and backend semantics.
+- Result rendering must tolerate `winnerAddress: null` and lifecycle-terminal outcomes beyond simple win/lose.
+
+### The Tech Debt
+- Presence UX still depends on event timing between `presenceUpdate` and `gameStateUpdate`; if backend emits richer phase-aware presence metadata, the FE can further simplify conditions.
+- Cancellation is now clearly rendered, but lobby-level post-cancel handoff remains distributed across component-local timers and callbacks.
+- `/lobby` still retains legacy `resumeQueue` handling for compatibility; now that `/play` stopped emitting it, a future cleanup pass can remove that branch if no other flows depend on it.
+## 2026-05-08 - Disconnect Overlay UX (Manual Rejoin + Optional Surrender)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) reconnect UX for current-player disconnect during active/recoverable match:
+  - added a full-screen blocking overlay in the same frame-cut visual style as existing battle overlays
+  - title/body copy now:
+    - `You were disconnected`
+    - `Your match is still active. Rejoin to continue, or surrender to end the match.`
+  - removed inline disconnect-state frame usage for this flow
+  - suppressed top-right disconnect/reconnecting socket alerts while the full-screen disconnect overlay is active
+  - removed auto-rejoin behavior from this disconnect UX path; reconnect is now user-triggered only
+  - added explicit dual CTA behavior:
+    - `Rejoin Room` -> calls `reconnect()` for same-room recovery
+    - `Surrender` -> uses existing surrender intent flow, including reconnect-then-submit handling when disconnected
+  - no countdown timer, no auto-dismiss, no auto-win/forfeit countdown added in FE
+- Validation: `npm run lint` in `apps/web` passes.
+
+### The Reasoning
+- In a recoverable wagered match, disconnect should be explicit and player-controlled, not hidden in toasts or auto-retry side effects.
+- A blocking overlay with clear actions reduces ambiguity about whether the room is still active and what the player can do next.
+- Reusing existing surrender semantics keeps settlement ownership on backend lifecycle events rather than FE assumptions.
+
+### The Tech Debt
+- Reconnect/surrender intent orchestration is still component-local state in `BattleScreen`; if additional play surfaces share this behavior, it should be extracted into a dedicated match-recovery controller hook.
+- Socket alert suppression is context-specific (`showDisconnectedOverlay`) and may need consolidation if other modal-priority states are introduced.
+
+## 2026-05-08 - Character Expressions (Happy Preview + Battle Reaction Bubbles)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - added expression portrait support for selection UI using `/assets/characters/{characterId}/exp/happy.png`
+  - renders `happy` expression for selected or previewed cards (hover/focus preview)
+  - keeps existing fallback initial rendering when expression asset is unavailable
+- Updated [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - explicitly passes `previewExpression="happy"` into `CharacterCard`
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added battle reaction bubble UI near each character (left for player, right for rival)
+  - bubble content is expression image assets from `/assets/characters/{characterId}/exp/{expression}.png`
+  - added temporary reaction state with override behavior and auto-hide timers
+  - wired reactions to existing match events/state only:
+    - `happy` on local correct answer via `lastPlayResult.correct`
+    - `hurt` on damaged target via `lastDamageEvent` attack damage
+    - `confident` when `currentCorrectStreak >= 3` for player/opponent
+  - intentionally uses `currentCorrectStreak` (not `longestCorrectStreak`) for FE reaction logic
+
+### The Reasoning
+- Expression assets are 1:1 and separate from combat pose assets (`stay/action/basic` 4:5), so expression rendering is isolated to `/exp` and mapped per use-case.
+- Character selection now previews the intended expression style without changing gameplay sprites.
+- Battle reactions are event-driven, brief, and non-blocking to preserve gameplay readability while providing emotional feedback.
+- `currentCorrectStreak` represents live, player-facing momentum and is the correct source for confidence reactions.
+
+### The Tech Debt
+- Reaction trigger logic lives in `BattleScreen`; if additional battle surfaces need the same behavior, this should be extracted into a shared reaction hook/controller.
+- Rival `happy` currently depends on available FE event context and can be expanded later if backend emits an explicit per-player correctness stream to both clients.
+- Expression fallback behavior is per-component; a shared character-asset resolver utility could reduce duplication across lobby/play surfaces.
+
+## 2026-05-08 - Character Select Expression State (Idle Default, Happy on Selected)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - removed hover/focus-driven expression switching
+  - expression rendering is now strictly selection-state based:
+    - unselected card -> `/assets/characters/{characterId}/exp/idle.png`
+    - selected card -> `/assets/characters/{characterId}/exp/happy.png`
+  - preserved fallback initial rendering when expression asset is unavailable
+- Kept [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) selected-expression contract (`previewExpression="happy"`) unchanged.
+
+### The Reasoning
+- Selection intent should be explicit and stable; hover-based swaps can feel noisy and imply a state change that has not actually happened.
+- `idle` as default and `happy` as selected gives a clean, readable visual cue for locked-in user intent.
+
+### The Tech Debt
+- Expression state mapping for select cards is still component-local; if multiple screens require the same selected/unselected expression policy, this should move into a shared character-expression helper.
+
+## 2026-05-08 - Character Card Selection Bounce (Select <-> Deselect)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - added a subtle bounce animation when selection state changes in either direction:
+    - `not selected -> selected`
+    - `selected -> not selected`
+  - implemented via `framer-motion` animation controls with short keyframe-based `y/scale` motion
+  - preserved existing hover lift and visual selection styling
+  - switched expression error handling to a per-asset failure map to avoid effect-driven state resets and keep lint clean
+
+### The Reasoning
+- A small bounce gives immediate feedback that selection state actually changed, without introducing distracting motion.
+- Animation controls provide explicit state-transition motion while keeping mount and hover behavior stable.
+- Per-asset failure tracking keeps idle/happy expression swapping resilient when one asset is missing.
+
+### The Tech Debt
+- Selection bounce timing/curve is currently hardcoded in the card component; if we add similar transitions elsewhere, we should centralize motion tokens.
+
+## 2026-05-08 - Card Hover Softening + Portrait-Only Selection Bounce
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - softened card hover lift to be less aggressive
+  - moved select/deselect bounce animation from the full card container to the portrait block only
+  - portrait now performs a subtle `y/scale` bounce on both transitions:
+    - unselected -> selected
+    - selected -> unselected
+  - card keeps stable selection offset while avoiding large full-card motion
+
+### The Reasoning
+- Full-card bounce plus strong hover made interaction feel overly jumpy.
+- Limiting bounce to the image area preserves responsiveness while keeping the overall layout calm.
+
+### The Tech Debt
+- Motion values are currently inline in `CharacterCard`; if we continue tuning interaction feel across components, shared motion tokens would reduce drift.
+
+## 2026-05-08 - Character Card Cleanup (Remove Focused Badge + Dot/Line Marker)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - removed the `Focused` label badge from selected portraits
+  - removed the bottom dot/line indicator strip inside the portrait frame
+  - preserved all selection, expression, and animation behavior otherwise
+
+### The Reasoning
+- These extra markers added visual noise and duplicated selection signals already conveyed by border/background/status treatments.
+- Cleaner portrait framing improves readability of expression art.
+
+### The Tech Debt
+- Selection state is currently communicated by multiple visual channels; a future design pass could codify a minimal, shared state-token set for all character cards.
+
+## 2026-05-08 - Battle Emote Reposition + Size Increase
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved player reaction emote to the right side of the player identity block (`You / Score / Address`)
+  - moved rival reaction emote to the left side of the rival identity block (`Rival / Connected / Address / Score`)
+  - removed old mid-arena absolute emote anchors
+  - significantly increased emote bubble size from small overlays to large header-side bubbles (`96px` mobile, `112px` desktop)
+  - preserved existing reaction timing, animation, and event triggers
+
+### The Reasoning
+- Emotes now sit exactly with the identity metadata the user reads first, which improves clarity and avoids visual competition with center combat sprites.
+- Larger size improves readability of 1:1 expression art.
+
+### The Tech Debt
+- Player/rival emote bubble markup is duplicated in the header row; this can be extracted into a shared reaction bubble component if we keep iterating on style/behavior.
+
+## 2026-05-08 - Battle Reaction Polish (Preload + Speech Bubble + Arena Attachment + Softer Timing)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added expression asset preloading for both active characters using a lightweight helper (`new window.Image()`), covering:
+    - `happy`
+    - `confident`
+    - `hurt`
+  - preloading runs when `playerCharacterId`/`opponentCharacterId` are available and does not block gameplay
+  - increased default reaction display duration from `1200ms` to `1900ms`
+  - replaced reaction visual from portrait-card look to a compact speech-bubble style:
+    - warm cream bubble surface
+    - stronger border/shadow
+    - visible directional tail toward character
+  - moved reaction bubbles from the header/name row back into the arena, anchored near each character sprite:
+    - player bubble on character side-left
+    - opponent bubble on character side-right
+  - softened reaction motion to feel less abrupt:
+    - pop-in with small bounce
+    - gentler fade-out
+  - kept all existing trigger logic unchanged (`happy`, `hurt`, `confident`) and no socket/gameplay behavior changes
+
+### The Reasoning
+- Preloading eliminates first-show image lag and makes reactions feel immediate.
+- Speech-bubble styling communicates "reaction" better than square card framing.
+- Arena-anchored placement reconnects the expression to the character action context.
+- Slightly longer lifetime and softer transitions improve readability without clutter.
+
+### The Tech Debt
+- Reaction bubble markup exists twice (player/opponent variants); this can be extracted into a small shared render helper/component if more variants are added.
+- Position offsets are tuned constants; a future responsive pass could derive offsets from measured sprite bounds for tighter device consistency.
+
+## 2026-05-08 - Opponent Found Player Expression (Happy)
+
+### The Change
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - player-selected character portrait in the "Opponent Found" panel now renders:
+    - `/assets/characters/{myScientist.id}/exp/happy.png`
+  - added `next/image` rendering for the player portrait with graceful fallback to existing initial glyph if asset fails
+  - opponent portrait remains unchanged as `?` (hidden identity behavior preserved)
+
+### The Reasoning
+- The player’s own selected scientist can be shown with expressive art before battle starts, while opponent identity remains intentionally concealed.
+
+### The Tech Debt
+- Expression asset resolution is component-local in `OpponentFound`; if more pre-battle surfaces need this behavior, a shared character portrait resolver helper would reduce duplication.
+
+## 2026-05-08 - Battle Projectile Asset Wiring (Attacker-Based, Turing Variants, Heal Skip)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - replaced placeholder projectile visual with character projectile assets
+  - added projectile source resolver:
+    - Einstein/Curie/others: `/assets/characters/{characterId}/projectile.png`
+    - Turing: random per spawn between:
+      - `/assets/characters/turing/projectile_0.png`
+      - `/assets/characters/turing/projectile_1.png`
+  - projectile asset is now selected from the attacker character (`playerCharacterId` or `opponentCharacterId` based on event side)
+  - heal events no longer spawn projectile visuals
+    - heal base FX and heal-related reaction behavior remain intact
+  - removed framed projectile container/box styling
+  - added subtle warm/gold radial glow behind projectile for dark-scene readability
+  - added projectile asset failure tracking (`failedProjectileSprites`) and fallback rendering (glow + glyph) when image load fails
+
+### The Reasoning
+- Projectile visuals should match the active attacker identity to improve combat readability and character personality.
+- Turing’s randomized binary projectile variants add variety while preserving deterministic gameplay logic.
+- Heal should remain a non-projectile feedback channel, so visuals align with intended semantics.
+- A free-floating asset with soft glow feels integrated into battle motion and avoids UI-card framing artifacts.
+
+### The Tech Debt
+- Projectile glow and motion constants are inline; if we introduce more VFX types, these should move to shared visual tokens/helpers.
+- Projectile asset preloading is not yet centralized; if first-hit latency appears on slower devices, a shared preload pass can be added for projectile paths similar to expression preloading.
