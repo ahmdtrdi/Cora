@@ -81,6 +81,9 @@ export function OpponentFound({
   const effectiveRole = matchRole ?? socketRole;
   const isPlayerBWaitingUnlock =
     effectiveRole === "playerB" && !depositUnlockedAt && !signedDepositSignature && signingState !== "signing";
+  const isPlayerAWaitingForPlayerB =
+    effectiveRole === "playerA" && signingState === "waiting" && Boolean(signedDepositSignature);
+  const shouldShowCountdown = !isPlayerBWaitingUnlock && signingState !== "waiting";
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
     signingState !== "signing" &&
@@ -116,7 +119,7 @@ export function OpponentFound({
       return;
     }
 
-    if (isPlayerBWaitingUnlock) return;
+    if (isPlayerBWaitingUnlock || signingState === "waiting") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -231,6 +234,7 @@ export function OpponentFound({
     }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (isPlayerBWaitingUnlock) return "Waiting for Player A to deposit first.";
+    if (isPlayerAWaitingForPlayerB) return "Deposit signed. Waiting for Player B.";
     if (effectiveRole === "playerB" && depositUnlockedAt && signingState === "idle") {
       return "Player A deposited. Your turn to sign.";
     }
@@ -258,6 +262,7 @@ export function OpponentFound({
 
   function getPrimaryButtonLabel() {
     if (isPlayerBWaitingUnlock) return "Waiting For Player A...";
+    if (isPlayerAWaitingForPlayerB) return "Waiting For Player B...";
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
@@ -489,7 +494,7 @@ export function OpponentFound({
           wagerUsd={wagerUsd}
           status={getDepositStatus()}
           helperText={getDepositHint()}
-          countdownSeconds={isPlayerBWaitingUnlock ? undefined : secondsLeft}
+          countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
           signature={signedDepositSignature}
           canPrimaryAction={canAttemptSign}
           primaryActionLabel={getPrimaryButtonLabel()}

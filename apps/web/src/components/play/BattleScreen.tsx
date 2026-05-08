@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
@@ -176,7 +176,7 @@ export function BattleScreen() {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
-  const [enemyEventText, setEnemyEventText] = useState<string | null>(null);
+  const [gameNotice, setGameNotice] = useState<{ id: string; message: string; tone: "action" | "phase" } | null>(null);
   const [characterActionSide, setCharacterActionSide] = useState<BattleSide | null>(null);
   const [projectile, setProjectile] = useState<ProjectileState | null>(null);
   const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
@@ -186,7 +186,6 @@ export function BattleScreen() {
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
-  const [phaseToastVisible, setPhaseToastVisible] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
@@ -195,8 +194,29 @@ export function BattleScreen() {
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
   const extraPointShownRef = useRef(false);
+  const gameNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
+
+  const showGameNotice = useCallback((message: string, tone: "action" | "phase" = "action") => {
+    if (gameNoticeTimerRef.current) {
+      clearTimeout(gameNoticeTimerRef.current);
+      gameNoticeTimerRef.current = null;
+    }
+    setGameNotice({ id: `${Date.now()}`, message, tone });
+    gameNoticeTimerRef.current = setTimeout(() => {
+      setGameNotice(null);
+      gameNoticeTimerRef.current = null;
+    }, 2100);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (gameNoticeTimerRef.current) {
+        clearTimeout(gameNoticeTimerRef.current);
+      }
+    };
+  }, []);
 
   const hand = gameState?.hand ?? EMPTY_HAND;
   const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
@@ -221,11 +241,11 @@ export function BattleScreen() {
         at: lastCardExpired.at,
       },
     ]);
-    setEnemyEventText("Time up. Card expired.");
+    showGameNotice("No damage this turn.");
     setActiveCardId(null);
     setAnswerLocked(false);
     pendingCardIdRef.current = null;
-  }, [lastCardExpired]);
+  }, [lastCardExpired, showGameNotice]);
 
   useEffect(() => {
     if (!lastPlayResult) return;
@@ -241,11 +261,17 @@ export function BattleScreen() {
         at: lastPlayResult.at,
       },
     ]);
-    setEnemyEventText(lastPlayResult.correct ? "Nice hit!" : "No damage this turn.");
+    if (lastPlayResult.cardType === "heal" && lastPlayResult.heal > 0) {
+      showGameNotice(`Healed: +${lastPlayResult.heal} HP`);
+    } else if (lastPlayResult.cardType === "attack" && lastPlayResult.damage > 0) {
+      showGameNotice(`Attack landed: -${lastPlayResult.damage} HP`);
+    } else {
+      showGameNotice("No damage this turn.");
+    }
     setActiveCardId(null);
     setAnswerLocked(false);
     pendingCardIdRef.current = null;
-  }, [lastPlayResult]);
+  }, [lastPlayResult, showGameNotice]);
 
   useEffect(() => {
     if (!lastDamageEvent) return;
@@ -271,15 +297,6 @@ export function BattleScreen() {
       to: targetSide,
       kind: actionKind,
     });
-    setEnemyEventText(
-      attackerSide === "player"
-        ? actionKind === "heal"
-          ? "You healed your base!"
-          : "You attacked!"
-        : actionKind === "heal"
-          ? "Opponent healed!"
-          : "Opponent attacked!",
-    );
 
     const actionResetTimer = setTimeout(() => {
       setCharacterActionSide(null);
@@ -424,18 +441,6 @@ export function BattleScreen() {
     }
     return `/lobby?${params.toString()}`;
   }, [arenaId, scientistId]);
-  const historyHref = useMemo(() => {
-    const params = new URLSearchParams({
-      scope: address ? "wallet" : "arena",
-      arena: arenaId,
-      token: arenaToken,
-    });
-    if (address) {
-      params.set("address", address);
-    }
-    return `/history?${params.toString()}`;
-  }, [address, arenaId, arenaToken]);
-
   useEffect(() => {
     if (playerSpriteState !== "action") {
       playerActionControls.start({
@@ -485,12 +490,8 @@ export function BattleScreen() {
     if (extraPointShownRef.current) return;
 
     extraPointShownRef.current = true;
-    setPhaseToastVisible(true);
-    const timerId = setTimeout(() => {
-      setPhaseToastVisible(false);
-    }, 5000);
-    return () => clearTimeout(timerId);
-  }, [currentPhase, gameState?.timer?.phase]);
+    showGameNotice("Extra Point - every move matters.", "phase");
+  }, [currentPhase, gameState?.timer?.phase, showGameNotice]);
 
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
@@ -717,16 +718,6 @@ export function BattleScreen() {
       }}
     >
       <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
-        {phaseToastVisible && (
-          <div className="frame-cut px-3 py-2" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.92)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Extra Point Activated
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Phase changed. Card effects are now x2.
-            </p>
-          </div>
-        )}
         {visibleAlerts.map((alert) => (
           <div
             key={alert.id}
@@ -799,6 +790,35 @@ export function BattleScreen() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="pointer-events-none fixed left-1/2 top-20 z-[60] w-full max-w-sm -translate-x-1/2 px-4">
+        <AnimatePresence mode="wait">
+          {gameNotice && (
+            <motion.div
+              key={gameNotice.id}
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="frame-cut px-4 py-2 text-center shadow-xl"
+              style={{
+                border:
+                  gameNotice.tone === "phase"
+                    ? "1px solid rgba(248,214,148,0.45)"
+                    : "1px solid rgba(157,180,150,0.42)",
+                background:
+                  gameNotice.tone === "phase"
+                    ? "linear-gradient(145deg, rgba(46,31,17,0.95), rgba(33,22,13,0.95))"
+                    : "linear-gradient(145deg, rgba(19,32,26,0.95), rgba(13,24,20,0.95))",
+              }}
+            >
+              <p className="font-gabarito text-xs font-bold uppercase tracking-[0.12em] text-[var(--tone-cream)]">
+                {gameNotice.message}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-7xl flex-col">
@@ -1048,7 +1068,7 @@ export function BattleScreen() {
 
             <div className="absolute bottom-0 left-1/2 w-full max-w-4xl -translate-x-1/2">
               <p className="mb-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-                {enemyEventText ?? (isPlayable ? "Pick a card from your hand." : "Waiting for server state...")}
+                {isPlayable ? "Pick a card from your hand." : "Waiting for server state..."}
               </p>
 
               <div className="flex items-end justify-center gap-2 md:gap-3">
@@ -1360,16 +1380,6 @@ export function BattleScreen() {
                 }}
               >
                 Back To Lobby
-              </Link>
-            </div>
-
-            <div className="mt-3">
-              <Link
-                href={historyHref}
-                className="inline-flex frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.12em]"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.86)" }}
-              >
-                View History
               </Link>
             </div>
             </motion.div>
