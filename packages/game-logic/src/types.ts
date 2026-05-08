@@ -10,6 +10,7 @@ export interface EnginePlayerState {
   health: number;
   score: number;
   roundsWon: number;
+  correctAnswers: number;
   hand: EngineCard[];
   characterState: CharacterState;
   lastPlayTimestamp?: number;
@@ -45,7 +46,7 @@ export interface PlayCardResult {
   newAttackerHealth: number;
   gameOver: boolean;
   winnerAddress?: string;
-  winReason?: 'hp_zero' | 'time_up' | 'forfeit';
+  winReason?: 'hp_zero' | 'time_up' | 'surrender';
   antiCheatVerdict?: AntiCheatVerdict;
 }
 
@@ -88,11 +89,18 @@ export interface AntiCheatVerdict {
 /**
  * Events emitted by the GameEngine.
  */
+export type GameOverReason = 'hp_zero' | 'time_up' | 'surrender' | 'draw';
+
 export type GameEngineEventMap = {
   timerSync: { remainingMs: number; phase: GamePhase };
   phaseChange: { phase: GamePhase };
   roundOver: { winnerAddress: string | null; reason: 'hp_zero' | 'time_up' };
-  gameOver: { winnerAddress: string; reason: 'hp_zero' | 'time_up' | 'forfeit'; antiCheatVerdicts?: Record<string, AntiCheatVerdict> };
+  gameOver: {
+    winnerAddress: string | null;
+    reason: GameOverReason;
+    surrenderedAddress?: string;
+    antiCheatVerdicts?: Record<string, AntiCheatVerdict>;
+  };
   stateUpdate: {};
 };
 

@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
-import { queueMatch } from "@/lib/matchmaking/queueMatch";
+import { getActiveMatchForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
 import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
@@ -107,6 +107,7 @@ const MATCHMAKING_TIMEOUT_MS = 45_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
 const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
+const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
@@ -124,8 +125,40 @@ type LobbyDraftSnapshot = {
   scientistId?: string | null;
 };
 
+type ActiveRoomSnapshot = {
+  walletAddress: string;
+  roomId: string;
+  role?: "playerA" | "playerB" | null;
+  arenaId?: string | null;
+  scientistId?: string | null;
+  status?: string | null;
+  token?: string | null;
+  wagerUsd?: string | null;
+};
+
+function readActiveRoomSnapshot() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as ActiveRoomSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveRoomSnapshot(snapshot: ActiveRoomSnapshot | null) {
+  if (typeof window === "undefined") return;
+  if (!snapshot) {
+    window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(snapshot));
+}
+
 export function LobbyScreen() {
   const runtimeConfig = getRuntimeConfig();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { publicKey } = useWallet();
   const challengeMode = searchParams.get("challenge") === "1";
@@ -159,6 +192,8 @@ export function LobbyScreen() {
   const foundTransitionTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const autoRequeueStartedRef = useRef(false);
   const draftHydratedRef = useRef(false);
+  const activeRoomHydratedRef = useRef(false);
+  const activeRoomLookupAbortRef = useRef<AbortController | null>(null);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -225,6 +260,81 @@ export function LobbyScreen() {
     foundTransitionTimeoutsRef.current = [];
   }, []);
 
+  const openRecoveredRoom = useCallback((snapshot: {
+    roomId: string;
+    role?: "playerA" | "playerB" | null;
+    status?: string | null;
+    arenaId?: string | null;
+    token?: string | null;
+    wagerUsd?: string | null;
+    scientistId?: string | null;
+  }) => {
+    const nextArenaId =
+      snapshot.arenaId && ARENAS.some((arena) => arena.id === snapshot.arenaId)
+        ? snapshot.arenaId
+        : selectedArenaId;
+    const nextScientistId = snapshot.scientistId ?? selectedScientist?.id ?? null;
+    const nextScientist =
+      nextScientistId ? SCIENTISTS.find((scientist) => scientist.id === nextScientistId) ?? null : null;
+    const nextArena = nextArenaId ? ARENAS.find((arena) => arena.id === nextArenaId) ?? null : null;
+
+    if (nextArenaId && nextArenaId !== selectedArenaId) {
+      setSelectedArenaId(nextArenaId);
+    }
+    if (nextScientist && nextScientist.id !== selectedScientist?.id) {
+      setSelectedScientist(nextScientist);
+    }
+
+    setMatchedRoomId(snapshot.roomId);
+    setMatchedRole(snapshot.role ?? null);
+    setMatchmakingState("idle");
+    setMatchmakingStage("finding");
+    setMatchmakingError(null);
+    clearFoundTransitionTimers();
+
+    writeActiveRoomSnapshot({
+      walletAddress,
+      roomId: snapshot.roomId,
+      role: snapshot.role ?? null,
+      arenaId: nextArenaId ?? null,
+      scientistId: nextScientist?.id ?? null,
+      status: snapshot.status ?? null,
+      token: snapshot.token ?? nextArena?.token ?? null,
+      wagerUsd: snapshot.wagerUsd ?? FIXED_WAGER_USD,
+    });
+
+    if (snapshot.status === "playing") {
+      const params = new URLSearchParams({
+        roomId: snapshot.roomId,
+        address: walletAddress,
+        arena: nextArenaId ?? "sol",
+        token: snapshot.token ?? nextArena?.token ?? "SOL",
+        wager: snapshot.wagerUsd ?? FIXED_WAGER_USD,
+      });
+      if (nextScientist?.id) {
+        params.set("scientist", nextScientist.id);
+      }
+      router.replace(`/play?${params.toString()}`);
+      return;
+    }
+
+    setPhase("found");
+  }, [
+    clearFoundTransitionTimers,
+    router,
+    selectedArenaId,
+    selectedScientist,
+    setMatchedRoomId,
+    setMatchedRole,
+    setMatchmakingError,
+    setMatchmakingStage,
+    setMatchmakingState,
+    setPhase,
+    setSelectedArenaId,
+    setSelectedScientist,
+    walletAddress,
+  ]);
+
   const startMatchmakingSearch = useCallback(async () => {
     if (!walletAddress) {
       setMatchmakingState("error");
@@ -253,13 +363,27 @@ export function LobbyScreen() {
     }, MATCHMAKING_TIMEOUT_MS);
 
     try {
-      const { roomId, role } = await queueMatch({
+      const { roomId, role, alreadyInRoom, status } = await queueMatch({
         address: walletAddress,
         tokenMint: selectedArena?.token,
         signal: controller.signal,
       });
 
       if (requestId !== matchmakingRequestIdRef.current) return;
+
+      if (alreadyInRoom) {
+        openRecoveredRoom({
+          roomId,
+          role: role ?? null,
+          status: status ?? null,
+          arenaId: selectedArena?.id ?? null,
+          token: selectedArena?.token ?? null,
+          wagerUsd: FIXED_WAGER_USD,
+          scientistId: selectedScientist?.id ?? null,
+        });
+        return;
+      }
+
       setMatchedRoomId(roomId);
       setMatchedRole(role ?? null);
       setMatchmakingState("searching");
@@ -304,7 +428,9 @@ export function LobbyScreen() {
   }, [
     walletAddress,
     selectedArena,
+    selectedScientist,
     clearFoundTransitionTimers,
+    openRecoveredRoom,
     setMatchmakingState,
     setMatchmakingError,
     setMatchedRoomId,
@@ -325,6 +451,7 @@ export function LobbyScreen() {
     userCancelledRef.current = true;
     matchmakingAbortRef.current?.abort();
     clearFoundTransitionTimers();
+    writeActiveRoomSnapshot(null);
     setMatchedRole(null);
     setMatchmakingState("idle");
     setMatchmakingStage("finding");
@@ -386,12 +513,107 @@ export function LobbyScreen() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (activeRoomHydratedRef.current) return;
+    activeRoomHydratedRef.current = true;
+
+    const snapshot = readActiveRoomSnapshot();
+    if (!snapshot) return;
+
+    queueMicrotask(() => {
+      if (!selectedArenaId && snapshot.arenaId && ARENAS.some((arena) => arena.id === snapshot.arenaId)) {
+        setSelectedArenaId(snapshot.arenaId);
+      }
+
+      if (!selectedScientist && snapshot.scientistId) {
+        const restoredScientist = SCIENTISTS.find((scientist) => scientist.id === snapshot.scientistId) ?? null;
+        if (restoredScientist) {
+          setSelectedScientist(restoredScientist);
+        }
+      }
+    });
+  }, [selectedArenaId, selectedScientist]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const snapshot: LobbyDraftSnapshot = {
       arenaId: selectedArenaId,
       scientistId: selectedScientist?.id ?? null,
     };
     window.sessionStorage.setItem(LOBBY_DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
   }, [selectedArenaId, selectedScientist?.id]);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      activeRoomLookupAbortRef.current?.abort();
+      activeRoomLookupAbortRef.current = null;
+      return;
+    }
+
+    const storedSnapshot = readActiveRoomSnapshot();
+    if (storedSnapshot && storedSnapshot.walletAddress === walletAddress && storedSnapshot.roomId && phase === "setup") {
+      queueMicrotask(() => {
+        openRecoveredRoom(storedSnapshot);
+      });
+    }
+
+    const controller = new AbortController();
+    activeRoomLookupAbortRef.current?.abort();
+    activeRoomLookupAbortRef.current = controller;
+
+    void (async () => {
+      try {
+        const activeMatch = await getActiveMatchForAddress(walletAddress, controller.signal);
+        if (controller.signal.aborted) return;
+
+        if (!activeMatch.inRoom || !activeMatch.roomId) {
+          const snapshot = readActiveRoomSnapshot();
+          if (snapshot?.walletAddress === walletAddress) {
+            writeActiveRoomSnapshot(null);
+          }
+          return;
+        }
+
+        const latestSnapshot = readActiveRoomSnapshot();
+        openRecoveredRoom({
+          roomId: activeMatch.roomId,
+          role: activeMatch.role ?? latestSnapshot?.role ?? null,
+          status: activeMatch.status ?? latestSnapshot?.status ?? null,
+          arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
+          token: latestSnapshot?.token ?? selectedArena?.token ?? null,
+          wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
+          scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn("Failed to restore active room.", error);
+      } finally {
+        if (activeRoomLookupAbortRef.current === controller) {
+          activeRoomLookupAbortRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+      if (activeRoomLookupAbortRef.current === controller) {
+        activeRoomLookupAbortRef.current = null;
+      }
+    };
+  }, [walletAddress, phase, openRecoveredRoom, selectedArena, selectedArenaId, selectedScientist]);
+
+  useEffect(() => {
+    if (!walletAddress || !matchedRoomId) return;
+    writeActiveRoomSnapshot({
+      walletAddress,
+      roomId: matchedRoomId,
+      role: matchedRole,
+      arenaId: selectedArena?.id ?? null,
+      scientistId: selectedScientist?.id ?? null,
+      status: phase === "found" ? "depositing" : null,
+      token: selectedArena?.token ?? null,
+      wagerUsd: FIXED_WAGER_USD,
+    });
+  }, [walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
 
   return (
     <div
@@ -523,6 +745,7 @@ export function LobbyScreen() {
               <button
                 type="button"
                 onClick={() => {
+                  writeActiveRoomSnapshot(null);
                   setMatchedRoomId(null);
                   setMatchedRole(null);
                   setMatchmakingState("idle");
@@ -657,6 +880,7 @@ export function LobbyScreen() {
                 matchmakingAbortRef.current?.abort();
                 matchmakingAbortRef.current = null;
                 clearFoundTransitionTimers();
+                writeActiveRoomSnapshot(null);
                 setMatchedRoomId(null);
                 setMatchedRole(null);
                 setMatchmakingState("idle");

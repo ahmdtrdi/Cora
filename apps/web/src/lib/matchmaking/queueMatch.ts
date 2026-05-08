@@ -11,6 +11,18 @@ type QueueMatchResponse = {
   tokenMint?: string;
   wagerAmount?: string;
   roomType?: "public" | "private";
+  alreadyInRoom?: boolean;
+  status?: string;
+};
+
+type ActiveMatchResponse = {
+  inRoom: boolean;
+  roomId?: string;
+  role?: "playerA" | "playerB";
+  roomType?: "public" | "private";
+  status?: string;
+  playerA?: string | null;
+  playerB?: string | null;
 };
 
 function trimTrailingSlash(input: string) {
@@ -58,6 +70,8 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
     tokenMint?: string;
     wagerAmount?: string;
     roomType?: "public" | "private";
+    alreadyInRoom?: boolean;
+    status?: string;
     error?: string;
   } | null;
 
@@ -76,5 +90,23 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
     tokenMint: payload?.tokenMint,
     wagerAmount: payload?.wagerAmount,
     roomType: payload?.roomType,
+    alreadyInRoom: payload?.alreadyInRoom,
+    status: payload?.status,
   };
+}
+
+export async function getActiveMatchForAddress(address: string, signal?: AbortSignal): Promise<ActiveMatchResponse> {
+  const apiBaseUrl = resolveApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/match/active/${encodeURIComponent(address)}`, { signal });
+  const payload = (await response.json().catch(() => null)) as ActiveMatchResponse | { error?: string } | null;
+
+  if (!response.ok) {
+    throw new Error((payload as { error?: string } | null)?.error ?? `Active match lookup failed (${response.status}).`);
+  }
+
+  if (!payload || typeof (payload as ActiveMatchResponse).inRoom !== "boolean") {
+    throw new Error("Active match response missing inRoom.");
+  }
+
+  return payload as ActiveMatchResponse;
 }

@@ -183,8 +183,7 @@ describe('RoomManager', () => {
       expect(mock3.ws.close).toHaveBeenCalledWith(1008, 'Room is full');
     });
 
-    test('player reconnect clears disconnect timeout', () => {
-      // disconnectTimeout is only armed during 'playing' status
+    test('player reconnect restores presence without ending the room', () => {
       manager.createRoom('room-reconnect');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -208,7 +207,7 @@ describe('RoomManager', () => {
 
       const client = room.clients.get('playerA')!;
       expect(client.ws).toBeNull();
-      expect(client.disconnectTimeout).not.toBeNull();
+      expect(room.status).toBe('playing');
 
       // Reconnect
       const mock1b = createMockWs();
@@ -216,7 +215,6 @@ describe('RoomManager', () => {
 
       const clientAfter = room.clients.get('playerA')!;
       expect(clientAfter.ws).toBe(mock1b.ws);
-      expect(clientAfter.disconnectTimeout).toBeNull();
     });
 
     test('stale socket close after reconnect is ignored', () => {
@@ -241,13 +239,11 @@ describe('RoomManager', () => {
 
       const clientAfterReconnect = room.clients.get('playerA')!;
       expect(clientAfterReconnect.ws).toBe(replacement.ws);
-      expect(clientAfterReconnect.disconnectTimeout).toBeNull();
 
       manager.leaveRoom('room-stale-close', 'playerA', mock1.ws);
 
       const clientAfterStaleClose = room.clients.get('playerA')!;
       expect(clientAfterStaleClose.ws).toBe(replacement.ws);
-      expect(clientAfterStaleClose.disconnectTimeout).toBeNull();
     });
 
     test('joining non-existent room does nothing', () => {
@@ -261,8 +257,7 @@ describe('RoomManager', () => {
   // ─── Leave Room ──────────────────────────────────────────────
 
   describe('leaveRoom', () => {
-    test('sets ws to null and starts disconnect timeout during playing', () => {
-      // disconnectTimeout is only armed during 'playing' status
+    test('sets ws to null and keeps funded playing room open', () => {
       manager.createRoom('room-leave');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -284,7 +279,7 @@ describe('RoomManager', () => {
 
       const client = room.clients.get('playerA')!;
       expect(client.ws).toBeNull();
-      expect(client.disconnectTimeout).not.toBeNull();
+      expect(room.status).toBe('playing');
     });
 
     test('disconnect during depositing cancels the room immediately and does not requeue the opponent', async () => {
