@@ -32,6 +32,9 @@ pub enum BattleError {
     #[msg("Session timeout has not been reached yet")]
     TimeoutNotReached,
 
+    #[msg("End reason is not valid for this instruction")]
+    InvalidEndReason,
+
     #[msg("Session has expired due to timeout")]
     SessionExpired,
 
