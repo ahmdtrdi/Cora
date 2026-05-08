@@ -1,4 +1,5 @@
 [toolchain]
+anchor_version = "0.32.1"
 package_manager = "yarn"
 
 [features]
@@ -6,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-solana_program = "9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W"
+cora_battle = "3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8"
 
 [programs.localnet]
-solana_program = "9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W"
+cora_battle = "3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8"
 
 [provider]
 cluster = "localnet"
@@ -17,5 +18,3 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "cargo test"
-
-[hooks]
