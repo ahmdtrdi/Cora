@@ -465,3 +465,42 @@
 - [ ] **Probe wallet dependency.** The pricing workaround only returns prices for tokens held by the probe wallet (`vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg`). BONK and USDC return `null` because that wallet doesn't hold them. Switching to direct REST will fix this.
 - [ ] **`test-goldrush.ts` is not in CI.** It's a manual smoke test. Should be moved to a proper test suite once testing infrastructure is set up.
 
+
+## 2026-05-08 - Dynamic Supabase Match Questions
+
+**The Change:**
+- Added Supabase client to `apps/api/src/questions.ts`.
+- Implemented `fetchMatchQuestions()` executing the Supabase RPC `get_distributed_questions`.
+- Added mapping logic for `question_text` (snake_case from Postgres) to `questionText` (camelCase) to pass strict `@shared/question` validation.
+- Updated `apps/api/src/managers/room/Engine.ts` to asynchronously fetch a unique chunk of questions (`await fetchMatchQuestions()`) on match initialization.
+- Built a high-availability fallback mechanism to serve questions from `data/questions/pool.json` automatically if the database call fails, errors, or returns 0 records.
+- Generated DB seed and test scripts inside `apps/api/scratch/` for streamlined local development.
+
+**The Reasoning:**
+- **Dynamic Scaling:** Previously, loading a single `pool.json` at server boot meant all matches shared the same static question pool unless the server was restarted. Pulling per-match via Supabase allows for dynamic question balancing, limitless pool scaling, and eliminates stale questions.
+- **Zero Downtime Fallback:** As a live multiplayer game, losing the DB connection shouldn't crash active or starting matches. The local JSON fallback ensures the game server is highly resilient.
+- **Strict Data Contracts:** Explicitly mapping the payload to camelCase prevented catastrophic validation failures downstream in the unified `GameEngine`.
+
+**The Tech Debt:**
+- **Network Overhead:** We are now making an external database call *every* time a match starts. If matchmaking volume spikes significantly, this could become a bottleneck.
+- **Cache Invalidation:** We might need to implement a Redis or local memory cache with a TTL (Time-To-Live) later to reduce DB load while maintaining question freshness.
+
+## 2026-05-08 - Bag Shuffle Algorithm & Question Provider Refactor (SSOT)
+
+**The Change:**
+
+* Replaced the Postgres RPC `get_distributed_questions` with a "Fat Fetch" `get_match_deck` function that pulls exactly 60 distinct questions (20 Math, 20 Logical, 20 Sequence).
+* Implemented the "Bag Shuffle" algorithm inside `apps/api/src/questions.ts`. It groups the 60 questions into mini-batches of 3 (containing 1 of each category), shuffles them internally, and constructs the final master deck.
+* Refactored the `GET /api/questions` route in `apps/api/src/index.ts` to strip out duplicated database logic and point directly to `fetchMatchQuestions()`.
+* Established `questions.ts` as the definitive Single Source of Truth (SSOT) for all question fetching, formatting, and shuffling across both REST and WebSocket channels.
+
+**The Reasoning:**
+
+* **Preventing Deck Exhaustion:** A fast-paced 5-minute match with 10-second card timeouts can easily burn through the previous 10-card limit. Supplying a 60-card master deck mathematically guarantees a player will never run out of questions, preventing engine crashes or undefined states.
+* **Guaranteed Hand Diversity:** Pure SQL `ORDER BY RANDOM()` causes "clumping" (e.g., drawing 4 Math cards in a row). The Bag Shuffle system dictates the distribution sequence. Because it feeds the deck in micro-shuffled batches of `[Math, Logical, Sequence]`, it is impossible for a player drawing a 5-card hand to hold more than 2 cards of the exact same category.
+* **Architectural Cleanliness:** Removing the duplicate database query from `index.ts` prevents drift. If we change the question schema or shuffle logic later, we only update `questions.ts` and it automatically propagates to both the API and the GameEngine.
+
+**The Tech Debt:**
+
+* **Over-Fetching:** We are now querying and transferring 60 full question objects (with all nested options and explanations) from Supabase to the Bun server on every match initialization. In reality, most matches will end before 15 cards are played, meaning 75% of the fetched data is wasted bandwidth.
+* **Server Memory Footprint:** Holding a 60-card deck in memory for every active `Room` instance increases the memory overhead per match. If concurrent active matches scale significantly, this could put pressure on the Node/Bun garbage collector.
