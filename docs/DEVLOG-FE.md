@@ -2658,3 +2658,81 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Slot-provided action sizing is still caller-controlled; if more screens reuse this pattern, we should standardize secondary-action size tokens at the deposit component level.
 - Deposit CTA variant choices are now class-driven but still local to `DepositPanel`; a future button-variant utility could reduce repeated CTA class decisions across flows.
+
+## 2026-05-08 - Matchmaking Deposit UX Role Gating + Mystery Rival + Play Character Source Lock
+
+### The Change
+- Updated matchmaking handoff and deposit UX flow across:
+  - [apps/web/src/lib/matchmaking/queueMatch.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/queueMatch.ts)
+  - [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+  - [apps/web/src/lib/solana/signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts)
+  - [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts)
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx)
+- `/match` role propagation:
+  - extended `queueMatch` response typing to include optional `role` (`playerA`/`playerB`)
+  - stored role in `LobbyScreen` (`matchedRole`) and passed it into `OpponentFound` as `matchRole`
+- Player B deposit lock + unlock behavior in `OpponentFound`:
+  - disabled sign action for Player B until `depositUnlocked` is received
+  - removed websocket-connection-state requirement from sign button enablement (wallet + role gate + signing state now control gating)
+  - preserved `confirmDeposit` emission only after socket is `connected`
+  - added Player B helper copy while locked: `Waiting for Player A to deposit first.`
+  - on `depositUnlocked` for Player B, reset visible countdown to fresh 30s and show unlock copy: `Player A deposited — your turn.`
+  - paused countdown/auto-timeout while Player B is locked pre-unlock
+- Opponent identity privacy in `OpponentFound`:
+  - replaced rival portrait/name/base with mystery state (`?`, `Mystery Rival`, `Character hidden until battle`)
+  - kept opponent wallet/address visible
+- `/play` character source hardening:
+  - `BattleScreen` now sources player character from server `gameState.player.characterId` only (no FE query fallback)
+  - `BattleScreen` websocket join no longer sends `characterId`
+  - `useMatchSocket` now only appends `characterId` query when explicitly provided (removed default `einstein` fallback)
+- Added lightweight debug logs to distinguish failure stage:
+  - deposit click gating context in `OpponentFound`
+  - backend transaction fetch start/failure/receipt in `signDepositIntent`
+  - pre-`wallet.sendTransaction` log in `signDepositIntent`
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Role-aware deposit gating is needed so Player B cannot sign before backend unlock and receives clear, deterministic UX state transitions.
+- Decoupling sign-button enablement from transient socket reconnects avoids false-negative UX blocks while still preserving server confirmation sequencing.
+- Hiding rival character in deposit phase prevents premature identity reveal and aligns reveal timing with battle entry.
+- Removing FE character fallback in `/play` avoids stale local character assumptions after reconnect and makes server state authoritative.
+
+### The Tech Debt
+- Role fallback currently combines `/match` response with websocket `matchFound` payload; if backend role source-of-truth changes, this should be centralized in one shared match-session model.
+- Deposit unlock UX messaging is component-local; if reused in other phases, we should extract a small role/deposit-state presentation helper.
+- Logging is intentionally lightweight and ad hoc; if we formalize telemetry, these should be routed through a structured frontend observability layer.
+
+## 2026-05-08 - Gameplay/Deposit UX Follow-Up Polish (Role Lock, Card Type Fallback, Result Transition)
+
+### The Change
+- Applied focused frontend polish across:
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx)
+- OpponentFound deposit UX follow-up:
+  - preserved role-based Player B lock behavior and non-draining pre-unlock state
+  - updated Player B unlock copy to: `Player A deposited. Your turn to sign.`
+  - updated debug click log payload to include requested fields: `role`, `depositUnlockedAt`, `playerBLocked`, `countdownSeconds`, `canAttemptSign`
+  - retained reconnect-tolerant signing gate (signing not blocked solely by transient websocket reconnect)
+- Opponent identity copy polish:
+  - replaced `Mystery Rival` with `Your Rival`
+  - replaced subcopy with neutral: `Character revealed when battle starts.`
+  - kept `?` portrait placeholder and wallet/address visibility
+- Temporary card type visibility fallback during play:
+  - added simple readable hand-card label chips showing `Attack` or `Heal` on each playable card in battle hand
+  - kept existing card layout/interaction intact
+- Match result popup transition polish:
+  - wrapped result overlay in `AnimatePresence`
+  - added smooth fade for backdrop and subtle y/scale entrance/exit animation for result card using Framer Motion
+  - no changes to settlement/routing/share logic
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- This pass fixes remaining UX rough edges without touching backend, queue, or settlement systems.
+- Temporary card type text restores tactical readability until final art treatment lands.
+- Motion polish removes abrupt result popup appearance while keeping match flow responsive.
+
+### The Tech Debt
+- Player-role reliability remains dependent on role propagation source; if `/match` role availability changes across environments, role-origin handling should be centralized into one explicit match-session contract.
+- Temporary card type chips are intentionally stopgap UI and should be replaced once final card art/type indicators are delivered.
+- Result modal motion values are local constants; if more overlays adopt similar behavior, motion tokens should be shared.

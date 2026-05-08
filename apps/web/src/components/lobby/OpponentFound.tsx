@@ -15,9 +15,9 @@ import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
-  scientists: Scientist[];
   myWallet: string;
   roomId: string;
+  matchRole?: "playerA" | "playerB" | null;
   arena: Arena;
   wagerUsd: string;
   onTimeout: () => void;
@@ -36,9 +36,9 @@ function shortWallet(address: string) {
 
 export function OpponentFound({
   myScientist,
-  scientists,
   myWallet,
   roomId,
+  matchRole,
   arena,
   wagerUsd,
   onTimeout,
@@ -53,6 +53,7 @@ export function OpponentFound({
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
+  const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
   const signed = signingState === "waiting";
@@ -73,15 +74,19 @@ export function OpponentFound({
   });
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
+  const socketRole =
+    lastMatchFound?.roomId === roomId && (lastMatchFound.role === "playerA" || lastMatchFound.role === "playerB")
+      ? lastMatchFound.role
+      : null;
+  const effectiveRole = matchRole ?? socketRole;
+  const isPlayerBWaitingUnlock =
+    effectiveRole === "playerB" && !depositUnlockedAt && !signedDepositSignature && signingState !== "signing";
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
-    connectionState === "connected" &&
     signingState !== "signing" &&
     signingState !== "waiting" &&
+    !isPlayerBWaitingUnlock &&
     !signed;
-
-  const opponentScientist =
-    scientists.find((scientist) => scientist.id === gameState?.opponent?.characterId) ?? null;
   const reassignedRoomId =
     lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
   const {
@@ -111,6 +116,8 @@ export function OpponentFound({
       return;
     }
 
+    if (isPlayerBWaitingUnlock) return;
+
     if (secondsLeft <= 0) {
       onTimeout();
       return;
@@ -132,6 +139,7 @@ export function OpponentFound({
     myScientist.id,
     signedDepositSignature,
     gameState?.status,
+    isPlayerBWaitingUnlock,
   ]);
 
   useEffect(() => {
@@ -152,7 +160,26 @@ export function OpponentFound({
     depositIntentConfirmedRef.current = true;
   }, [confirmDeposit, connectionState, signedDepositSignature]);
 
+  useEffect(() => {
+    if (effectiveRole !== "playerB") return;
+    if (!depositUnlockedAt) return;
+    if (lastHandledDepositUnlockAtRef.current === depositUnlockedAt) return;
+    lastHandledDepositUnlockAtRef.current = depositUnlockedAt;
+    setSecondsLeft(AGREEMENT_TIMEOUT_SECONDS);
+  }, [depositUnlockedAt, effectiveRole]);
+
   async function onSignDeposit() {
+    console.info("[OpponentFound] Deposit click", {
+      roomId,
+      role: effectiveRole ?? "unknown",
+      connectionState,
+      hasWallet: Boolean(wallet.publicKey),
+      canAttemptSign,
+      playerBLocked: isPlayerBWaitingUnlock,
+      depositUnlockedAt,
+      countdownSeconds: secondsLeft,
+      signingState,
+    });
     if (!canAttemptSign) return;
 
     setErrorText(null);
@@ -175,6 +202,12 @@ export function OpponentFound({
       setSignedDepositSignature(signature);
       setSigningState("waiting");
     } catch (error) {
+      console.error("[OpponentFound] Deposit signing failed", {
+        roomId,
+        role: effectiveRole ?? "unknown",
+        connectionState,
+        error,
+      });
       const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
       setSigningState("error");
       setErrorText(message);
@@ -197,6 +230,10 @@ export function OpponentFound({
       return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
     }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
+    if (isPlayerBWaitingUnlock) return "Waiting for Player A to deposit first.";
+    if (effectiveRole === "playerB" && depositUnlockedAt && signingState === "idle") {
+      return "Player A deposited. Your turn to sign.";
+    }
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
@@ -220,6 +257,7 @@ export function OpponentFound({
   }
 
   function getPrimaryButtonLabel() {
+    if (isPlayerBWaitingUnlock) return "Waiting For Player A...";
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
@@ -413,12 +451,12 @@ export function OpponentFound({
               className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
-                background: opponentScientist?.portraitBg ?? "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
+                background: "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
               }}
             >
               <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                {opponentScientist?.initial ?? "R"}
+                ?
               </span>
             </div>
             <div className="min-w-0">
@@ -426,10 +464,10 @@ export function OpponentFound({
                 Rival
               </span>
               <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
-                {opponentScientist?.name ?? "Rival Synced"}
+                Your Rival
               </p>
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
-                {opponentScientist?.base ?? "Opponent identity confirmed"}
+                Character revealed when battle starts.
               </p>
               <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
                 {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
@@ -451,7 +489,7 @@ export function OpponentFound({
           wagerUsd={wagerUsd}
           status={getDepositStatus()}
           helperText={getDepositHint()}
-          countdownSeconds={secondsLeft}
+          countdownSeconds={isPlayerBWaitingUnlock ? undefined : secondsLeft}
           signature={signedDepositSignature}
           canPrimaryAction={canAttemptSign}
           primaryActionLabel={getPrimaryButtonLabel()}

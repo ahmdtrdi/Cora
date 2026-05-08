@@ -89,9 +89,10 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
   const [lastMatchFound, setLastMatchFound] = useState<(MatchFoundPayload & { at: number }) | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
+  const characterQuery = characterId ? `&characterId=${encodeURIComponent(characterId)}` : "";
   const socketUrl =
     roomId && address
-      ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}&characterId=${encodeURIComponent(characterId ?? "einstein")}`
+      ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}${characterQuery}`
       : null;
 
   useEffect(() => {
