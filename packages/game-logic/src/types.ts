@@ -11,6 +11,7 @@ export interface EnginePlayerState {
   score: number;
   roundsWon: number;
   correctAnswers: number;
+  currentCorrectStreak: number;
   hand: EngineCard[];
   characterState: CharacterState;
   lastPlayTimestamp?: number;

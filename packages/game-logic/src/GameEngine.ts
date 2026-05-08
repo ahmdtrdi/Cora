@@ -80,6 +80,7 @@ export class GameEngine {
         score: 0,
         roundsWon: 0,
         correctAnswers: 0,
+        currentCorrectStreak: 0,
         hand,
         characterState: 'stay',
         queueIndex: GameEngine.HAND_SIZE, // Next card to draw is at index 5
@@ -188,6 +189,7 @@ export class GameEngine {
 
     if (correct) {
       player.correctAnswers += 1;
+      player.currentCorrectStreak += 1;
       if (card.type === 'attack') {
         damage = GameEngine.BASE_DAMAGE * multiplier;
         opponent.health = Math.max(0, opponent.health - damage);
@@ -203,6 +205,7 @@ export class GameEngine {
       }
     } else {
       // Wrong answer — no effect, but still consume the card
+      player.currentCorrectStreak = 0;
       player.characterState = 'stay';
     }
 
@@ -547,6 +550,7 @@ export class GameEngine {
       score: player.score,
       roundsWon: player.roundsWon,
       correctAnswers: player.correctAnswers,
+      currentCorrectStreak: player.currentCorrectStreak,
       characterId: player.characterId,
       isConnected: true,
     };

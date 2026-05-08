@@ -490,3 +490,42 @@ This removes `correctAnswers` from the final match tie-break path.
 **Tech Debt:**
 
 - Round timeout logic still uses its own local comparison flow (`health`, then `correctAnswers`) for deciding the winner of an expiring round. That is separate from final room resolution, but we should document and review whether both policies are intentionally different long-term.
+
+---
+
+## 17. Live Streak Payload for FE - Separate Current Streak from Anti-Cheat (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `packages/shared-types/src/websocket.ts`
+- `packages/game-logic/src/types.ts`
+- `packages/game-logic/src/GameEngine.ts`
+- `apps/api/src/managers/room/Network.ts`
+- `packages/game-logic/test/GameEngine.test.ts`
+
+Added a dedicated live streak field, `currentCorrectStreak`, to the player state returned to the frontend. This gives FE the real UX-facing streak value without reusing the anti-cheat-only `longestCorrectStreak`.
+
+**What changed:**
+
+1. **Shared websocket contract:** Extended `PlayerState` with `currentCorrectStreak` so the value is part of the canonical backend-to-FE game state.
+2. **Engine live tracking:** `GameEngine` now stores and updates `currentCorrectStreak` per player during live play.
+3. **Correct reset behavior:** A correct answer increments the streak; a wrong answer resets it to `0`.
+4. **Pre-game payload compatibility:** Waiting/depositing room states now also include `currentCorrectStreak: 0` so FE gets a stable shape before the match starts.
+5. **Regression coverage:** Added a test confirming the streak increments across consecutive correct answers and resets after a wrong answer.
+
+**The Reasoning:**
+
+- FE needs the player's *current* streak for UX feedback, but anti-cheat needs the *longest* streak over the whole match for behavioral analysis. Those are different meanings and should not share one field.
+- Returning the live streak directly from the backend avoids fragile client-side reconstruction from prior events.
+- Keeping `longestCorrectStreak` internal to anti-cheat preserves the original detection signal while giving FE a clean, player-facing value.
+
+**Test:**
+
+- Verified with `bun test packages/game-logic/test/GameEngine.test.ts`
+- Result: `21 pass`, `0 fail`
+
+**Tech Debt:**
+
+- `currentCorrectStreak` currently lives only in live `gameStateUpdate` payloads. If we later want post-match UX summaries ("best streak this round" or "final streak before loss"), we should decide whether that belongs in final match result payloads too.
