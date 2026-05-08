@@ -26,7 +26,7 @@ pub const MIN_DAMAGE: u16 = 1;
 pub const SESSION_TIMEOUT: i64 = 900;
 
 /// Current state schema version for forward-compatible upgrades
-pub const CURRENT_VERSION: u8 = 1;
+pub const CURRENT_VERSION: u8 = 2;
 
 pub const END_REASON_NONE: u8 = 0;
 pub const END_REASON_NORMAL_WIN: u8 = 1;
@@ -35,3 +35,4 @@ pub const END_REASON_BOTH_PLAYERS_TIMEOUT: u8 = 3;
 pub const END_REASON_SERVER_CANCELLED: u8 = 4;
 pub const END_REASON_CHEATER_FLAGGED: u8 = 5;
 pub const END_REASON_FORCE_ENDED: u8 = 6;
+pub const END_REASON_DRAW_NO_CONTEST: u8 = 7;
