@@ -42,6 +42,8 @@ pub fn handler(
     session.end_reason = END_REASON_NONE;
     session.game_score_a = 0;
     session.game_score_b = 0;
+    session.round_damage_a = 0;
+    session.round_damage_b = 0;
 
     emit!(SessionCreatedEvent {
         match_id,
