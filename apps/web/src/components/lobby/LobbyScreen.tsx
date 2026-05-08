@@ -149,6 +149,7 @@ export function LobbyScreen() {
   });
   const [selectedScientist, setSelectedScientist] = useState<Scientist | null>(initialScientist);
   const [matchedRoomId, setMatchedRoomId] = useState<string | null>(null);
+  const [matchedRole, setMatchedRole] = useState<"playerA" | "playerB" | null>(null);
   const [matchmakingState, setMatchmakingState] = useState<MatchmakingState>("idle");
   const [matchmakingStage, setMatchmakingStage] = useState<MatchmakingStage>("finding");
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
@@ -243,6 +244,7 @@ export function LobbyScreen() {
     setMatchmakingStage("finding");
     setMatchmakingError(null);
     setMatchedRoomId(null);
+    setMatchedRole(null);
     clearFoundTransitionTimers();
 
     const timeoutId = setTimeout(() => {
@@ -251,7 +253,7 @@ export function LobbyScreen() {
     }, MATCHMAKING_TIMEOUT_MS);
 
     try {
-      const { roomId } = await queueMatch({
+      const { roomId, role } = await queueMatch({
         address: walletAddress,
         tokenMint: selectedArena?.token,
         signal: controller.signal,
@@ -259,6 +261,7 @@ export function LobbyScreen() {
 
       if (requestId !== matchmakingRequestIdRef.current) return;
       setMatchedRoomId(roomId);
+      setMatchedRole(role ?? null);
       setMatchmakingState("searching");
       setMatchmakingStage("verifying");
       clearFoundTransitionTimers();
@@ -305,6 +308,7 @@ export function LobbyScreen() {
     setMatchmakingState,
     setMatchmakingError,
     setMatchedRoomId,
+    setMatchedRole,
     setMatchmakingStage,
     setPhase,
   ]);
@@ -321,6 +325,7 @@ export function LobbyScreen() {
     userCancelledRef.current = true;
     matchmakingAbortRef.current?.abort();
     clearFoundTransitionTimers();
+    setMatchedRole(null);
     setMatchmakingState("idle");
     setMatchmakingStage("finding");
     setMatchmakingError(null);
@@ -519,6 +524,7 @@ export function LobbyScreen() {
                 type="button"
                 onClick={() => {
                   setMatchedRoomId(null);
+                  setMatchedRole(null);
                   setMatchmakingState("idle");
                   setMatchmakingStage("finding");
                   setMatchmakingError(null);
@@ -532,6 +538,7 @@ export function LobbyScreen() {
                 type="button"
                 onClick={() => {
                   setMatchedRoomId(null);
+                  setMatchedRole(null);
                   setSelectedScientist(initialScientist);
                   setMatchmakingState("idle");
                   setMatchmakingStage("finding");
@@ -638,9 +645,9 @@ export function LobbyScreen() {
           >
             <OpponentFound
               myScientist={selectedScientist}
-              scientists={SCIENTISTS}
               myWallet={walletAddr}
               roomId={matchedRoomId}
+              matchRole={matchedRole}
               arena={selectedArena}
               wagerUsd={FIXED_WAGER_USD}
               onTimeout={() => {
@@ -651,6 +658,7 @@ export function LobbyScreen() {
                 matchmakingAbortRef.current = null;
                 clearFoundTransitionTimers();
                 setMatchedRoomId(null);
+                setMatchedRole(null);
                 setMatchmakingState("idle");
                 setMatchmakingStage("finding");
                 setMatchmakingError(null);

@@ -7,6 +7,7 @@ type QueueMatchParams = {
 
 type QueueMatchResponse = {
   roomId: string;
+  role?: "playerA" | "playerB";
   tokenMint?: string;
   wagerAmount?: string;
   roomType?: "public" | "private";
@@ -53,6 +54,7 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
 
   const payload = (await response.json().catch(() => null)) as {
     roomId?: string;
+    role?: "playerA" | "playerB";
     tokenMint?: string;
     wagerAmount?: string;
     roomType?: "public" | "private";
@@ -70,6 +72,7 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
 
   return {
     roomId,
+    role: payload?.role,
     tokenMint: payload?.tokenMint,
     wagerAmount: payload?.wagerAmount,
     roomType: payload?.roomType,

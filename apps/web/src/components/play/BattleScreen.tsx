@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, useAnimationControls } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
@@ -171,7 +171,7 @@ export function BattleScreen() {
     playCard,
     confirmDeposit,
     reconnect,
-  } = useMatchSocket({ roomId, address, characterId: scientistId ?? "einstein" });
+  } = useMatchSocket({ roomId, address });
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
@@ -397,7 +397,7 @@ export function BattleScreen() {
   const opponentMetaLabel = opponent?.address
     ? `Score ${opponentScore} - Rounds ${opponentRoundsWon}`
     : "Waiting for opponent metadata";
-  const playerCharacterId = player?.characterId ?? scientistId ?? undefined;
+  const playerCharacterId = player?.characterId ?? undefined;
   const opponentCharacterId = opponent?.characterId ?? undefined;
   const playerVisual = getCharacterVisual(playerCharacterId);
   const opponentVisual = getCharacterVisual(opponentCharacterId);
@@ -1092,6 +1092,18 @@ export function BattleScreen() {
                             "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
                         }}
                       />
+                      {card && (
+                        <span
+                          className="absolute left-1/2 top-[18%] -translate-x-1/2 rounded-full px-2 py-0.5 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.12em]"
+                          style={{
+                            color: card.type === "heal" ? "#214335" : "#6f3a28",
+                            background: card.type === "heal" ? "rgba(216,234,212,0.82)" : "rgba(248,214,148,0.82)",
+                            border: "1px solid rgba(111,58,40,0.22)",
+                          }}
+                        >
+                          {card.type === "heal" ? "Heal" : "Attack"}
+                        </span>
+                      )}
                       <span
                         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-caprasimo text-4xl"
                         style={{ color: cardDisabled ? "rgba(111,58,40,0.48)" : "rgba(111,58,40,0.82)" }}
@@ -1196,9 +1208,22 @@ export function BattleScreen() {
         </div>
       )}
 
-      {isMatchComplete && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]">
-          <div
+      <AnimatePresence>
+        {isMatchComplete && (
+          <motion.div
+            key="match-result-backdrop"
+            className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <motion.div
+              key="match-result-card"
+              initial={{ opacity: 0, y: 14, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className="frame-cut w-full max-w-xl p-5 md:p-6"
             style={{
               border: "1px solid rgba(248,214,148,0.42)",
@@ -1347,9 +1372,10 @@ export function BattleScreen() {
                 View History
               </Link>
             </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {shareModalOpen && isMatchComplete && (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
