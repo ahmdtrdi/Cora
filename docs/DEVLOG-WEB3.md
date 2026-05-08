@@ -561,3 +561,47 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] Legacy `register_card` now creates ownerless attack cards (`owner = Pubkey::default()`) so old `apply_damage` flows keep working. New effect-aware flows must use `register_card_v2`.
 - [ ] `apply_damage` approximates gameplay score from applied damage only. That is acceptable for the legacy path, but BE should migrate to `apply_card_effect` whenever gameplay score can differ from raw damage.
 - [ ] No new pure-Rust helper tests were added in this step. LiteSVM remains disabled, so the next testing pass should either add isolated unit coverage around effect math or expand the disabled test plan once the harness is compatible again.
+
+---
+
+## Entry 18 — 2026-05-08: `resolve_round_by_state` for Normal Time-Up Rounds
+
+### The Change
+
+**ER state and round-resolution flow (9 files):**
+- `packages/battle-anchor-032/programs/cora-battle/src/state.rs` — Added `round_damage_a` and `round_damage_b` to `BattleSession` so ER can track per-round offensive contribution without any answer metadata.
+- `create_session.rs` and `activate_session.rs` — Initialize/reset `round_damage_*` to zero when sessions are created and when round 1 starts.
+- `instructions/apply_card_effect.rs` — `EFFECT_ATTACK` now increments the attacker's `round_damage_*` by the actual applied damage. `EFFECT_HEAL` and `EFFECT_NONE` do not affect round damage.
+- `instructions/apply_damage.rs` — Legacy attack path now also increments `round_damage_*` by actual damage so timer-based state resolution stays aligned across new and old flows.
+- `instructions/match_updates.rs` — Expanded the shared helper surface with centralized round advance, final winner emission, and draw/no-contest cancellation. Shared transitions now reset `round_damage_*` whenever a new round begins.
+- `instructions/timeout_player_for_round.rs` — Refactored to use the shared round-award helper so timeout wins, attack KOs, and normal round advancement do not drift in score syncing or reset behavior.
+- `instructions/resolve_round_by_state.rs` — **NEW**: Added `resolve_round_by_state()` for rounds that expire normally with both players still active. Winner ordering is `health -> round_damage -> draw`.
+- `events.rs` — Added `RoundResolvedByStateEvent` and expanded `BattleFinalizedEvent` with terminal `health_a` / `health_b` so final state is more auditable.
+- `lib.rs` and `instructions/mod.rs` — Exported the new instruction and module through the program surface.
+
+**Backend/dev-support updates (2 files):**
+- `apps/api/src/services/magicblock.ts` — Added `resolveRoundByState()` stub and manual decoder support for `roundDamageA` / `roundDamageB`.
+- `docs-archive/ROUND_TIMEOUT_TEST_PLAN.md` — Extended the disabled test plan with state-resolution and round-damage scenarios while LiteSVM remains incompatible.
+
+### The Reasoning
+
+1. **Normal time-up needed a fully public tiebreak path.** Once the round deadline passes, ER must be able to deterministically resolve the round from public state alone. Remaining HP is the cleanest primary signal, and `round_damage_*` gives ER a second public offensive tiebreak without introducing answer data.
+
+2. **`round_damage_*` is intentionally round-scoped, not match-scoped.** It resets on activation and on every round advance, so it only explains the current round's public offensive contribution. Match-level score remains `game_score_a/b`.
+
+3. **Final winner logic remains unchanged.** `resolve_round_by_state` only decides the round winner. Match outcome still follows the existing public rule: `score_a/score_b -> game_score_a/game_score_b -> remaining health -> draw/no-contest`.
+
+4. **Draw stays explicit and escrow stays blind.** If the final round ends with public state still fully tied, ER now records `END_REASON_DRAW_NO_CONTEST` and cancels the battle session. No escrow logic was touched, and no answer or hash data was added on-chain.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Generated IDL includes `resolveRoundByState` and `RoundResolvedByStateEvent`.
+- [x] Generated types include `roundDamageA` and `roundDamageB`.
+- [x] ATTACK paths write `round_damage_*`; HEAL does not.
+
+### The Tech Debt
+
+- [ ] No live Rust integration tests were re-enabled. Coverage for `resolve_round_by_state` currently lives in the disabled test plan only.
+- [ ] `RoundEndedEvent` still reports legacy `rounds_won_*` fields instead of canonical `score_*`. This remains safe because the counters stay synchronized, but the event vocabulary is still mixed.
+- [ ] The backend room flow still needs to decide when to call `resolve_round_by_state()` versus `timeout_player_for_round()` based on real disconnect state at deadline.
