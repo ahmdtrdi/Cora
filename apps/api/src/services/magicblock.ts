@@ -19,6 +19,12 @@ export const MAGICBLOCK_END_REASONS = {
   DRAW_NO_CONTEST: 7,
 } as const;
 
+export const MAGICBLOCK_EFFECT_TYPES = {
+  ATTACK: 1,
+  HEAL: 2,
+  NONE: 3,
+} as const;
+
 export function isMagicBlockConfigured(): boolean {
   return Boolean(process.env.MAGICBLOCK_ROUTER_RPC_URL || process.env.MAGICBLOCK_RPC_URL);
 }
@@ -88,8 +94,23 @@ export class MagicBlockService {
     damage: number;
     serverKeypair: Keypair;
   }): Promise<string> {
-    // TODO: Submit register_card instruction to Magic Router/ER.
+    // TODO: Submit legacy register_card for attack-only compatibility.
     console.log(`[MagicBlock] Registered dummy card mapping for session ${params.sessionPda}`);
+    return 'tx_hash_placeholder';
+  }
+
+  async registerCardV2(params: {
+    sessionPda: string;
+    cardId: Uint8Array;
+    owner: string;
+    effectType: number;
+    maxValue: number;
+    serverKeypair: Keypair;
+  }): Promise<string> {
+    // TODO: Submit register_card_v2 to Magic Router/ER for effect-aware cards.
+    console.log(
+      `[MagicBlock] Registered effect card ${params.cardId} for owner ${params.owner} in session ${params.sessionPda}`,
+    );
     return 'tx_hash_placeholder';
   }
 
@@ -118,8 +139,22 @@ export class MagicBlockService {
     cardId: Uint8Array;
     serverKeypair: Keypair;
   }): Promise<string> {
-    // TODO: Submit apply_damage through Magic Router/ER after off-chain correctness checks.
+    // TODO: Submit legacy apply_damage through Magic Router/ER after off-chain correctness checks.
     console.log(`[MagicBlock] Applied damage for attacker ${params.attacker} in session ${params.sessionPda}`);
+    return 'tx_hash_placeholder';
+  }
+
+  async applyCardEffect(params: {
+    sessionPda: string;
+    cardId: Uint8Array;
+    finalValue: number;
+    scoreDelta: number;
+    serverKeypair: Keypair;
+  }): Promise<string> {
+    // TODO: Submit apply_card_effect after BE computes final effect and gameplay score delta.
+    console.log(
+      `[MagicBlock] Applied card effect for card ${params.cardId} in session ${params.sessionPda} value=${params.finalValue} scoreDelta=${params.scoreDelta}`,
+    );
     return 'tx_hash_placeholder';
   }
 
