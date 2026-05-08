@@ -473,3 +473,46 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [x] Generated IDL includes `timeout_player_for_round`, `cancel_session`, `RoundTimedOutEvent`, `RoundAdvancedEvent`, and the extended finalized/cancelled events.
 - [x] Restored active Anchor CLI to `1.0.1` after the battle build.
 - [ ] `./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit` still fails on existing `apps/api/src/services/goldrush.ts` issues: missing `@covalenthq/client-sdk` type resolution and two implicit `any` parameters.
+
+---
+
+## Entry 16 — 2026-05-08: ER Gameplay Score Fields + Winner Rule Stabilization
+
+### The Change
+
+**ER state and events (7 files):**
+- `packages/battle-anchor-032/programs/cora-battle/src/state.rs` — Added `game_score_a: u32` and `game_score_b: u32`, documented `score_a/score_b` as canonical round-win counters, marked `rounds_won_a/b` as legacy duplicate fields, updated `BattleSession::LEN`, and added `determine_winner_by_match_rules()` using `round wins -> gameplay score -> health -> draw`.
+- `constants.rs` — Bumped `CURRENT_VERSION` to `2` and added `END_REASON_DRAW_NO_CONTEST = 7`.
+- `create_session.rs` — Initialized `game_score_a` and `game_score_b` to zero at session creation, before activation.
+- `events.rs` — Extended `BattleFinalizedEvent` with `game_score_a` and `game_score_b`, and clarified existing `score_*` event fields as round wins.
+- `apply_damage.rs` and `timeout_player_for_round.rs` — Kept `score_*` and `rounds_won_*` synchronized, with TODO notes that `rounds_won_*` is deprecated duplicate state retained for compatibility.
+- `finalize_match.rs` — Emitted the new gameplay-score fields in the final event payload.
+
+**Backend ER reader (1 file):**
+- `apps/api/src/services/magicblock.ts` — Added `gameScoreA` / `gameScoreB` to the TypeScript session shape, added `DRAW_NO_CONTEST` to the local constants mirror, and updated manual byte offsets to decode the new tail fields without changing legacy field offsets.
+
+**Documentation (1 file):**
+- `docs/DEVLOG-WEB3.md` — Appended this entry and moved the one-off package-local notes into the role-based devlog flow defined by `docs/AGENTS.md`.
+
+### The Reasoning
+
+1. **Gameplay score and round wins are different public facts.** The GameEngine's final ordering is rounds won, then gameplay score, then remaining health. Reusing `score_a/score_b` for both concepts would make the ER account ambiguous and impossible to trust as an audit source.
+
+2. **`score_a/score_b` stays canonical for round wins to minimize migration risk.** Those fields are already used by the active ER instructions and by the backend reader. Changing their meaning would ripple through state, events, offsets, and any external consumers. Adding explicit `game_score_*` fields is the safer Web3 migration.
+
+3. **Appending the new fields at the end preserves older offsets.** This keeps existing account decoding stable for `health_*`, `score_*`, `current_round`, `winner`, and `end_reason` while still allowing the backend to read the new gameplay score immediately.
+
+4. **Winner helper now matches the public match rule, even if write-paths are not done yet.** The helper gives the program a single authoritative place for the final rule before we wire BE-authorized gameplay-score mutations in the next step.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] `BattleSession` now stores explicit gameplay score fields separately from round wins.
+- [x] `score_a/score_b` remain canonical round-win counters.
+- [x] `rounds_won_a/b` remain synchronized but are documented as legacy duplicate state.
+
+### The Tech Debt
+
+- [ ] `game_score_a` and `game_score_b` are stored and emitted, but no ER instruction mutates them yet. The next step is a BE-authorized effect/write path that mirrors GameEngine score changes without moving answer validation on-chain.
+- [ ] `finalize_match` still emits the stored winner instead of computing from `determine_winner_by_match_rules()`. That is acceptable for this migration, but the helper should become the final source once gameplay-score writes exist.
+- [ ] `RoundEndedEvent` still exposes `rounds_won_a/b` rather than canonical `score_a/score_b`. Consumers are safe today because the fields stay synchronized, but the event vocabulary is still mixed.
