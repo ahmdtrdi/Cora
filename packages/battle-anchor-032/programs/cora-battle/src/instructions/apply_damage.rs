@@ -72,6 +72,8 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
         };
 
         if round_winner_is_a {
+            // TODO: rounds_won_* is a legacy duplicate of score_* and should be
+            // removed in a future account migration once downstream consumers move.
             session.rounds_won_a = session
                 .rounds_won_a
                 .checked_add(1)
@@ -126,6 +128,8 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
                 score_b: session.score_b,
                 rounds_won_a: session.rounds_won_a,
                 rounds_won_b: session.rounds_won_b,
+                game_score_a: session.game_score_a,
+                game_score_b: session.game_score_b,
             });
         } else if session.score_b >= u16::from(ROUNDS_TO_WIN) {
             session.status = BattleStatus::Finished;
@@ -142,6 +146,8 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
                 score_b: session.score_b,
                 rounds_won_a: session.rounds_won_a,
                 rounds_won_b: session.rounds_won_b,
+                game_score_a: session.game_score_a,
+                game_score_b: session.game_score_b,
             });
         } else {
             // Next round: reset health, advance round counter
