@@ -3029,3 +3029,40 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Projectile glow and motion constants are inline; if we introduce more VFX types, these should move to shared visual tokens/helpers.
 - Projectile asset preloading is not yet centralized; if first-hit latency appears on slower devices, a shared preload pass can be added for projectile paths similar to expression preloading.
+
+## 2026-05-08 - BattleScreen Refactor (View Extraction)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - kept socket state/effects/gameplay handlers in this file
+  - replaced large inline UI chunks with extracted component usage
+  - switched challenge-link derivation from `useMemo` to direct derivation (same behavior, cleaner lint outcome)
+- Added [apps/web/src/components/play/BattleScreenGateStates.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenGateStates.tsx):
+  - extracted "Match Context Missing" and "Wallet Required" screens
+- Added [apps/web/src/components/play/BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx):
+  - extracted alert stack and top notice banner
+- Added [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - extracted room/disconnect/question/surrender/result/share overlays
+
+### The Reasoning
+- `BattleScreen.tsx` had become too large to iterate on safely from FE side.
+- Separating presentation-heavy sections from gameplay/state logic reduces cognitive load and makes UI-only edits much faster.
+- Overlay extraction also makes modal flows easier to test and tweak independently.
+
+### The Tech Debt
+- The central battle arena section (header + character stage + card hand) is still large and can be extracted next into focused presentational components.
+- A few prop groups passed to overlay/status components are broad; introducing view-model objects by domain (room state, settlement state, share state) would further simplify contracts.
+
+## 2026-05-08 - BattleScreen Overlay Type Fix (challengeLink nullable)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - changed `challengeLink` prop type from `string` to `string | null` to match `createChallengeLink()` return type and `ChallengeShareCard` contract.
+
+### The Reasoning
+- `createChallengeLink` intentionally returns `null` when origin is unavailable.
+- Keeping overlay prop strict to `string` caused Next/TS build failure when passing nullable link.
+- Nullable typing aligns all layers without changing runtime behavior.
+
+### The Tech Debt
+- None introduced. Types are now consistent across link creator, overlay, and share card.

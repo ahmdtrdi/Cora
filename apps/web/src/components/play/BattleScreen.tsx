@@ -8,9 +8,10 @@ import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
+import { BattleScreenOverlays } from "./BattleScreenOverlays";
+import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
-import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
 
 type MatchOutcome = {
@@ -78,16 +79,6 @@ function clearLobbyReturnState() {
   window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
   window.sessionStorage.removeItem(LOBBY_DRAFT_STORAGE_KEY);
 }
-
-type UiAlert = {
-  id: string;
-  title: string;
-  message: string;
-  tone: "error" | "warning";
-  autoDismissMs: number;
-  actionLabel?: string;
-  onAction?: () => void;
-};
 
 type BattleSide = "player" | "opponent";
 
@@ -587,7 +578,22 @@ export function BattleScreen() {
     ? "Rejoining battle room after refresh. Waiting for server snapshot."
     : isRoomUnavailable
       ? "Your match is still active. Rejoin to continue."
-    : `Current room status: ${getStatusLabel(status)}.`;
+      : `Current room status: ${getStatusLabel(status)}.`;
+  const statusLabel = getStatusLabel(status);
+  const phaseKey = gameState?.timer?.phase ?? currentPhase;
+  const phaseLabel = phaseKey === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal";
+  const playerAddressLabel = address ? shortenAddress(address) : null;
+  const winnerLineText =
+    showWinnerLine && winnerAddress
+      ? `Winner: ${shortenAddress(winnerAddress)}`
+      : null;
+  const settlementPayload = settlementResult
+    ? {
+        matchId: settlementResult.matchId,
+        serverPublicKey: settlementResult.serverPublicKey,
+        settlementSignature: settlementResult.settlementSignature,
+      }
+    : null;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
     : isRoomStateLoading
@@ -632,16 +638,14 @@ export function BattleScreen() {
     preloadExpressions(opponentCharacterId);
   }, [playerCharacterId, opponentCharacterId]);
 
-  const challengeLink = useMemo(() => {
-    const origin = typeof window === "undefined" ? null : window.location.origin;
-    return createChallengeLink({
-      origin,
-      arenaId,
-      token: arenaToken,
-      wagerUsd,
-      refAddress: address,
-    });
-  }, [arenaId, arenaToken, wagerUsd, address]);
+  const challengeOrigin = typeof window === "undefined" ? null : window.location.origin;
+  const challengeLink = createChallengeLink({
+    origin: challengeOrigin,
+    arenaId,
+    token: arenaToken,
+    wagerUsd,
+    refAddress: address,
+  });
   const cleanLobbyHref = "/lobby";
   useEffect(() => {
     if (playerSpriteState !== "action") {
@@ -750,7 +754,7 @@ export function BattleScreen() {
     }
   }, [opponentCurrentCorrectStreak, showReaction]);
 
-  const alerts: UiAlert[] = [];
+  const alerts: BattleUiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
   if (lastSocketIssueAt && !showDisconnectedOverlay) {
     alerts.push({
@@ -817,8 +821,8 @@ export function BattleScreen() {
     };
   }, [autoDismissKeys, visibleAlerts]);
 
-  function dismissAlert(alert: UiAlert) {
-    setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
+  function dismissAlert(alertId: string) {
+    setDismissedAlerts((prev) => ({ ...prev, [alertId]: true }));
   }
 
   function markCharacterSpriteFailed(src: string) {
@@ -928,58 +932,11 @@ export function BattleScreen() {
   }, [shareNotice]);
 
   if (playGuardError) {
-    return (
-      <main
-        className="grid min-h-[100svh] place-items-center px-4"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
-        }}
-      >
-        <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
-          <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Match Context Missing</p>
-          <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">{playGuardError}</p>
-          <div className="mt-4">
-            <Link
-              href="/lobby"
-              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-            >
-              Back To Lobby
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+    return <MatchContextMissingState errorMessage={playGuardError} />;
   }
 
   if (requiresWalletConnect) {
-    return (
-      <main
-        className="grid min-h-[100svh] place-items-center px-4"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
-        }}
-      >
-        <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
-          <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Wallet Required</p>
-          <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">
-            Connect Phantom to enter battle and sign match deposit.
-          </p>
-          <div className="mt-4 flex flex-col items-center gap-3">
-            <HydratedWalletButton />
-            <Link
-              href="/lobby"
-              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-            >
-              Back To Lobby
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+    return <WalletRequiredState />;
   }
 
   return (
@@ -990,109 +947,12 @@ export function BattleScreen() {
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
-      <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
-        {visibleAlerts.map((alert) => (
-          <div
-            key={alert.id}
-            className="frame-cut px-3 py-2"
-            style={{
-              border:
-                alert.tone === "error"
-                  ? "1px solid rgba(186,105,49,0.42)"
-                  : "1px solid rgba(248,214,148,0.42)",
-              background:
-                alert.tone === "error"
-                  ? "rgba(43,24,16,0.94)"
-                  : "rgba(13,24,20,0.94)",
-            }}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p
-                className="font-gabarito text-xs font-bold uppercase tracking-wide"
-                style={{ color: alert.tone === "error" ? "#f8d694" : "#f8d694" }}
-              >
-                {alert.title}
-              </p>
-              <button
-                type="button"
-                onClick={() => dismissAlert(alert)}
-                className="font-gabarito text-xs font-bold leading-none text-[var(--tone-cream)] opacity-80"
-                aria-label="Close alert"
-              >
-                X
-              </button>
-            </div>
-            <p
-              className="mt-1 break-words font-gabarito text-xs"
-              style={{ color: "rgba(244,240,230,0.88)" }}
-            >
-              {alert.message}
-            </p>
-            {alert.id.startsWith("socket:") && socketUrl && (
-              <p className="mt-1 break-all font-gabarito text-[11px] text-[rgba(244,240,230,0.74)]">
-                {socketUrl}
-              </p>
-            )}
-            <div className="mt-2 flex gap-2">
-              {alert.actionLabel && alert.onAction && (
-                <button
-                  type="button"
-                  onClick={alert.onAction}
-                  className="frame-cut frame-cut-sm px-2 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(248,214,148,0.35)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-                >
-                  {alert.actionLabel}
-                </button>
-              )}
-            </div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(248,214,148,0.16)]">
-              <div
-                className="h-full"
-                style={{
-                  width: "100%",
-                  background:
-                    alert.tone === "error"
-                      ? "linear-gradient(90deg,#d9a85b,#ba6931)"
-                      : "linear-gradient(90deg,#d9a85b,#ba6931)",
-                  animationName: alert.autoDismissMs > 0 ? "alertDrain" : undefined,
-                  animationDuration: alert.autoDismissMs > 0 ? `${alert.autoDismissMs}ms` : undefined,
-                  animationTimingFunction: alert.autoDismissMs > 0 ? "linear" : undefined,
-                  animationFillMode: alert.autoDismissMs > 0 ? "forwards" : undefined,
-                }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="pointer-events-none fixed left-1/2 top-20 z-[60] w-full max-w-sm -translate-x-1/2 px-4">
-        <AnimatePresence mode="wait">
-          {gameNotice && (
-            <motion.div
-              key={gameNotice.id}
-              initial={{ opacity: 0, y: -10, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="frame-cut px-4 py-2 text-center shadow-xl"
-              style={{
-                border:
-                  gameNotice.tone === "phase"
-                    ? "1px solid rgba(248,214,148,0.45)"
-                    : "1px solid rgba(157,180,150,0.42)",
-                background:
-                  gameNotice.tone === "phase"
-                    ? "linear-gradient(145deg, rgba(46,31,17,0.95), rgba(33,22,13,0.95))"
-                    : "linear-gradient(145deg, rgba(19,32,26,0.95), rgba(13,24,20,0.95))",
-              }}
-            >
-              <p className="font-gabarito text-xs font-bold uppercase tracking-[0.12em] text-[var(--tone-cream)]">
-                {gameNotice.message}
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <BattleScreenStatusLayer
+        visibleAlerts={visibleAlerts}
+        socketUrl={socketUrl}
+        gameNotice={gameNotice}
+        onDismissAlert={dismissAlert}
+      />
 
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-7xl flex-col">
         <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1116,20 +976,20 @@ export function BattleScreen() {
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
-              {getStatusLabel(status)} - {connectionState}
+              {statusLabel} - {connectionState}
             </span>
             <span
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{
                 border: "1px solid rgba(39,65,55,0.2)",
                 background:
-                  (gameState?.timer?.phase ?? currentPhase) === "extra_point"
+                  phaseKey === "extra_point"
                     ? "rgba(53,93,63,0.92)"
                     : "rgba(19,32,26,0.86)",
                 color: "var(--tone-cream)",
               }}
             >
-              {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
+              {phaseLabel}
             </span>
             {canCancelMatch && (
               <button
@@ -1187,8 +1047,8 @@ export function BattleScreen() {
             <div>
               <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">You</p>
               <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">Score {playerScore} - Rounds {playerRoundsWon}</p>
-              {address && (
-                <p className="mt-1 font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{shortenAddress(address)}</p>
+              {playerAddressLabel && (
+                <p className="mt-1 font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{playerAddressLabel}</p>
               )}
             </div>
             <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
@@ -1515,360 +1375,55 @@ export function BattleScreen() {
         </section>
       </div>
 
-      {showRoomGateModal && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(2,6,5,0.62)] p-4 backdrop-blur-[1px]">
-          <div
-            className="frame-cut w-full max-w-md p-4 md:p-5"
-            style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(13,24,20,0.94)" }}
-          >
-            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">{roomGateTitle}</p>
-            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">{roomGateMessage}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {hasSocketIssue && (
-                <button
-                  type="button"
-                  onClick={reconnect}
-                  className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-                >
-                  Rejoin Room
-                </button>
-              )}
-              <Link
-                href={cleanLobbyHref}
-                onClick={clearLobbyReturnState}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Return To Lobby
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showDisconnectedOverlay && (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]">
-          <div
-            className="frame-cut w-full max-w-lg p-5 md:p-6"
-            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
-          >
-            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">You were disconnected</p>
-            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-              Your match is still active. Rejoin to continue, or surrender to end the match.
-            </p>
-            {pendingSurrenderAfterReconnect && (
-              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
-                Rejoining room to submit surrender...
-              </p>
-            )}
-            {!canSurrenderByState && (
-              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
-                Surrender is only available after the match is committed.
-              </p>
-            )}
-            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={reconnect}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Rejoin Room
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmSurrender}
-                disabled={!canSurrenderByState || pendingSurrenderAfterReconnect}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:opacity-50"
-                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
-              >
-                Surrender
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeCard && status === "playing" && !isMatchComplete && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">
-          <div
-            className="relative w-full max-w-xl overflow-hidden rounded-[28px] p-4 md:p-5"
-            style={{
-              border: "2px solid rgba(248,214,148,0.45)",
-              background: "linear-gradient(150deg, #fff6e4 0%, #f3ddb9 100%)",
-              boxShadow: "0 24px 42px rgba(0,0,0,0.36)",
-            }}
-          >
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.38), transparent 42%), radial-gradient(circle at 85% 86%, rgba(111,58,40,0.08), transparent 45%)",
-              }}
-            />
-            <div className="mb-2 flex items-center justify-between">
-              <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
-              <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
-            </div>
-
-            <p className="font-gabarito text-lg font-semibold leading-relaxed text-[#1f2b24]">
-              {activeCard.question.text}
-            </p>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {activeCard.question.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  disabled={answerLocked}
-                  onClick={() => onAnswer(option.id)}
-                  className="relative overflow-hidden rounded-2xl px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
-                  style={{
-                    border: "2px solid rgba(111,58,40,0.3)",
-                    background: "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
-                    boxShadow: "0 8px 14px rgba(77,42,24,0.14)",
-                  }}
-                >
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                      background:
-                        "radial-gradient(circle at 18% 16%, rgba(255,255,255,0.34), transparent 38%), linear-gradient(180deg, rgba(255,255,255,0.1), rgba(111,58,40,0.03))",
-                    }}
-                  />
-                  <p className="font-gabarito text-xs font-bold uppercase tracking-wider text-[#6d8373]">
-                    {option.id}
-                  </p>
-                  <p className="mt-1 font-gabarito text-sm text-[#1f2b24]">{option.text}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {surrenderModalOpen && canSurrenderMatch && (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4">
-          <div
-            className="frame-cut w-full max-w-lg p-5 md:p-6"
-            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
-          >
-            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">Surrender match?</p>
-            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-              Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby.
-            </p>
-            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setSurrenderModalOpen(false)}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Keep Playing
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmSurrender}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
-              >
-                Surrender
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {isMatchComplete && (
-          <motion.div
-            key="match-result-backdrop"
-            className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <motion.div
-              key="match-result-card"
-              initial={{ opacity: 0, y: 14, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-            className="frame-cut w-full max-w-xl p-5 md:p-6"
-            style={{
-              border: "1px solid rgba(248,214,148,0.42)",
-              background:
-                "radial-gradient(circle at top, rgba(255,243,215,0.9) 0%, rgba(247,227,190,0.9) 34%, rgba(239,213,170,0.95) 100%)",
-              boxShadow: "0 24px 48px rgba(0,0,0,0.45)",
-            }}
-          >
-            <div className="text-center">
-              <p className="font-caprasimo text-5xl leading-none text-[#1f2b24] md:text-6xl">{settlementText}</p>
-              <p className="mt-2 font-gabarito text-sm text-[#4f6759]">{settlementSubtitle}</p>
-              <div className="mt-3 flex justify-center">
-                <span
-                  className="rounded-full px-3 py-1 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.14em]"
-                  style={settlementStatusStyle}
-                >
-                  {settlementStatus}
-                </span>
-              </div>
-              {showWinnerLine && (
-                <p className="mt-2 font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress ?? "")}</p>
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div
-                className="frame-cut frame-cut-sm p-3 text-center"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", background: "rgba(255,248,236,0.92)" }}
-              >
-                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Your Rounds</p>
-                <p className="font-caprasimo text-3xl text-[#274137]">{playerRoundsWon}</p>
-              </div>
-              <div
-                className="frame-cut frame-cut-sm p-3 text-center"
-                style={{ border: "1px solid rgba(111,58,40,0.2)", background: "rgba(255,248,236,0.92)" }}
-              >
-                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Opponent Rounds</p>
-                <p className="font-caprasimo text-3xl text-[#6f3a28]">{opponentRoundsWon}</p>
-              </div>
-            </div>
-
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              <div
-                className="frame-cut frame-cut-sm p-2 text-center"
-                style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#edf4eb" }}
-              >
-                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Correct</p>
-                <p className="font-caprasimo text-2xl text-[#274137]">{correctCount}</p>
-              </div>
-              <div
-                className="frame-cut frame-cut-sm p-2 text-center"
-                style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f6eee0" }}
-              >
-                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Timeout</p>
-                <p className="font-caprasimo text-2xl text-[#6f3a28]">{timeoutCount}</p>
-              </div>
-              <div
-                className="frame-cut frame-cut-sm p-2 text-center"
-                style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f4e8e2" }}
-              >
-                <p className="font-gabarito text-[10px] uppercase tracking-[0.12em] text-[#6d8373]">Wrong</p>
-                <p className="font-caprasimo text-2xl text-[#7c4a36]">{wrongCount}</p>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setSettlementDetailsOpen((prev) => !prev)}
-                className="font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[#4f6759] underline decoration-dotted underline-offset-2"
-              >
-                {settlementDetailsOpen ? "Hide Settlement Details" : "Show Settlement Details"}
-              </button>
-            </div>
-
-            {settlementDetailsOpen && (
-              <div
-                className="mt-2 frame-cut frame-cut-sm space-y-1 p-3"
-                style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}
-              >
-                <p className="font-gabarito text-xs font-bold uppercase tracking-[0.1em] text-[#274137]">
-                  Settlement Details
-                </p>
-                {settlementResult ? (
-                  <>
-                    <p className="font-gabarito text-xs text-[#5e7768]">
-                      Result signed by backend oracle and submitted by backend settlement flow.
-                    </p>
-                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">Match ID: {settlementResult.matchId}</p>
-                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">
-                      Server Pubkey: {settlementResult.serverPublicKey}
-                    </p>
-                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">
-                      Settlement Signature: {settlementResult.settlementSignature}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-gabarito text-xs text-[#5e7768]">
-                      Waiting for server settlement payload...
-                    </p>
-                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">Match ID: unavailable</p>
-                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">Server Pubkey: unavailable</p>
-                    <p className="break-all font-gabarito text-[11px] text-[#5e7768]">
-                      Settlement Signature: unavailable
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
-
-            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setShareModalOpen(true)}
-                className="frame-cut frame-cut-sm px-5 py-3 font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
-                style={{
-                  border: "1px solid rgba(111,58,40,0.26)",
-                  color: "#fff8e9",
-                  background: "linear-gradient(160deg, #6f3a28 0%, #95512f 100%)",
-                  boxShadow: "0 10px 14px rgba(64,29,20,0.24)",
-                }}
-              >
-                Blink Share
-              </button>
-              <Link
-                href="/lobby"
-                onClick={clearLobbyReturnState}
-                className="frame-cut frame-cut-sm px-5 py-3 text-center font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
-                style={{
-                  border: "1px solid rgba(39,65,55,0.22)",
-                  color: "#274137",
-                  background: "rgba(255,248,236,0.96)",
-                  boxShadow: "0 10px 14px rgba(33,67,53,0.16)",
-                }}
-              >
-                Back To Lobby
-              </Link>
-            </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {shareModalOpen && isMatchComplete && (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
-          <div className="relative w-full max-w-3xl">
-            <button
-              type="button"
-              onClick={() => setShareModalOpen(false)}
-              className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-            >
-              Close
-            </button>
-            <ChallengeShareCard
-              title="Challenge Me"
-              challengerName="You"
-              challengerAddress={address}
-              arenaLabel={arenaLabel}
-              token={arenaToken}
-              wagerUsd={wagerUsd}
-              challengeLink={challengeLink}
-              description={challengeDescription}
-              statusLabel={challengeStatusLabel}
-              onCopy={onCopyChallengeLink}
-              onSaveJpg={onSaveChallengeJpg}
-              onShareX={onShareChallengeToX}
-              notice={shareNotice}
-            />
-          </div>
-        </div>
-      )}
+      <BattleScreenOverlays
+        showRoomGateModal={showRoomGateModal}
+        roomGateTitle={roomGateTitle}
+        roomGateMessage={roomGateMessage}
+        hasSocketIssue={hasSocketIssue}
+        onReconnect={reconnect}
+        cleanLobbyHref={cleanLobbyHref}
+        onReturnToLobby={clearLobbyReturnState}
+        showDisconnectedOverlay={showDisconnectedOverlay}
+        pendingSurrenderAfterReconnect={pendingSurrenderAfterReconnect}
+        canSurrenderByState={canSurrenderByState}
+        onConfirmSurrender={onConfirmSurrender}
+        activeCard={activeCard}
+        status={status}
+        isMatchComplete={isMatchComplete}
+        displaySecondsLeft={displaySecondsLeft}
+        answerLocked={answerLocked}
+        onAnswer={onAnswer}
+        surrenderModalOpen={surrenderModalOpen}
+        canSurrenderMatch={canSurrenderMatch}
+        onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
+        settlementText={settlementText}
+        settlementSubtitle={settlementSubtitle}
+        settlementStatus={settlementStatus}
+        settlementStatusStyle={settlementStatusStyle}
+        winnerLineText={winnerLineText}
+        playerRoundsWon={playerRoundsWon}
+        opponentRoundsWon={opponentRoundsWon}
+        correctCount={correctCount}
+        timeoutCount={timeoutCount}
+        wrongCount={wrongCount}
+        settlementDetailsOpen={settlementDetailsOpen}
+        onToggleSettlementDetails={() => setSettlementDetailsOpen((prev) => !prev)}
+        settlementPayload={settlementPayload}
+        onOpenShareModal={() => setShareModalOpen(true)}
+        shareModalOpen={shareModalOpen}
+        onCloseShareModal={() => setShareModalOpen(false)}
+        address={address}
+        arenaLabel={arenaLabel}
+        arenaToken={arenaToken}
+        wagerUsd={wagerUsd}
+        challengeLink={challengeLink}
+        challengeDescription={challengeDescription}
+        challengeStatusLabel={challengeStatusLabel}
+        onCopyChallengeLink={onCopyChallengeLink}
+        onSaveChallengeJpg={onSaveChallengeJpg}
+        onShareChallengeToX={onShareChallengeToX}
+        shareNotice={shareNotice}
+      />
     </main>
   );
 }
