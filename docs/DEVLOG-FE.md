@@ -3002,3 +3002,30 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Expression asset resolution is component-local in `OpponentFound`; if more pre-battle surfaces need this behavior, a shared character portrait resolver helper would reduce duplication.
+
+## 2026-05-08 - Battle Projectile Asset Wiring (Attacker-Based, Turing Variants, Heal Skip)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - replaced placeholder projectile visual with character projectile assets
+  - added projectile source resolver:
+    - Einstein/Curie/others: `/assets/characters/{characterId}/projectile.png`
+    - Turing: random per spawn between:
+      - `/assets/characters/turing/projectile_0.png`
+      - `/assets/characters/turing/projectile_1.png`
+  - projectile asset is now selected from the attacker character (`playerCharacterId` or `opponentCharacterId` based on event side)
+  - heal events no longer spawn projectile visuals
+    - heal base FX and heal-related reaction behavior remain intact
+  - removed framed projectile container/box styling
+  - added subtle warm/gold radial glow behind projectile for dark-scene readability
+  - added projectile asset failure tracking (`failedProjectileSprites`) and fallback rendering (glow + glyph) when image load fails
+
+### The Reasoning
+- Projectile visuals should match the active attacker identity to improve combat readability and character personality.
+- Turing’s randomized binary projectile variants add variety while preserving deterministic gameplay logic.
+- Heal should remain a non-projectile feedback channel, so visuals align with intended semantics.
+- A free-floating asset with soft glow feels integrated into battle motion and avoids UI-card framing artifacts.
+
+### The Tech Debt
+- Projectile glow and motion constants are inline; if we introduce more VFX types, these should move to shared visual tokens/helpers.
+- Projectile asset preloading is not yet centralized; if first-hit latency appears on slower devices, a shared preload pass can be added for projectile paths similar to expression preloading.

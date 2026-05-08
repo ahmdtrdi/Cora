@@ -95,7 +95,7 @@ type ProjectileState = {
   id: string;
   from: BattleSide;
   to: BattleSide;
-  kind: "attack" | "heal";
+  src: string | null;
 };
 
 type BaseFxState = "idle" | "hit" | "heal";
@@ -150,6 +150,16 @@ function getCharacterExpressionSrc(characterId?: string, expression: CharacterEx
   const normalizedId = characterId?.trim().toLowerCase();
   if (!normalizedId) return null;
   return `/assets/characters/${normalizedId}/exp/${expression}.png`;
+}
+
+function getCharacterProjectileSrc(characterId?: string) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  if (normalizedId === "turing") {
+    const variant = Math.random() < 0.5 ? 0 : 1;
+    return `/assets/characters/turing/projectile_${variant}.png`;
+  }
+  return `/assets/characters/${normalizedId}/projectile.png`;
 }
 
 export function BattleScreen() {
@@ -215,6 +225,7 @@ export function BattleScreen() {
   const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
   const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
+  const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -359,14 +370,23 @@ export function BattleScreen() {
             ? "opponent"
             : "player";
     const actionKind = lastDamageEvent.type === "heal" ? "heal" : "attack";
+    const attackerCharacterId = attackerSide === "player" ? player?.characterId : opponent?.characterId;
+    const shouldSpawnProjectile = actionKind === "attack" && lastDamageEvent.damage > 0;
+    const projectileSrc = shouldSpawnProjectile ? getCharacterProjectileSrc(attackerCharacterId) : null;
 
     setCharacterActionSide(attackerSide);
-    setProjectile({
-      id: `${lastDamageEvent.timestamp}`,
-      from: attackerSide,
-      to: targetSide,
-      kind: actionKind,
-    });
+    const projectileSpawnTimer = setTimeout(() => {
+      if (shouldSpawnProjectile) {
+        setProjectile({
+          id: `${lastDamageEvent.timestamp}`,
+          from: attackerSide,
+          to: targetSide,
+          src: projectileSrc,
+        });
+      } else {
+        setProjectile(null);
+      }
+    }, 0);
 
     const actionResetTimer = setTimeout(() => {
       setCharacterActionSide(null);
@@ -391,6 +411,7 @@ export function BattleScreen() {
         : null;
 
     return () => {
+      clearTimeout(projectileSpawnTimer);
       clearTimeout(actionResetTimer);
       clearTimeout(projectileHitTimer);
       clearTimeout(baseFxResetTimer);
@@ -398,7 +419,7 @@ export function BattleScreen() {
         clearTimeout(hurtReactionTimer);
       }
     };
-  }, [lastDamageEvent, opponent?.address, player?.address, showReaction]);
+  }, [lastDamageEvent, opponent?.address, player?.address, opponent?.characterId, player?.characterId, showReaction]);
 
   const isPlayable = status === "playing" && connectionState === "connected";
   const hasTerminalResult = Boolean(settlementResult) || Boolean(matchSummaryResult) || Boolean(matchInvalidated);
@@ -802,6 +823,13 @@ export function BattleScreen() {
 
   function markCharacterSpriteFailed(src: string) {
     setFailedCharacterSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markProjectileSpriteFailed(src: string) {
+    setFailedProjectileSprites((prev) => {
       if (prev[src]) return prev;
       return { ...prev, [src]: true };
     });
@@ -1368,15 +1396,15 @@ export function BattleScreen() {
               </div>
             </motion.div>
 
-            {projectile && (
+                        {projectile && (
               <motion.div
                 key={projectile.id}
-                className="pointer-events-none absolute left-1/2 top-[42%] h-10 w-10 -translate-x-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute left-1/2 top-[42%] h-12 w-12 -translate-x-1/2 -translate-y-1/2"
                 initial={{
                   x: projectile.from === "player" ? -180 : 180,
                   y: projectile.from === "player" ? 40 : -40,
-                  opacity: 0.25,
-                  scale: 0.65,
+                  opacity: 0.22,
+                  scale: 0.72,
                 }}
                 animate={{
                   x: projectile.to === "player" ? -210 : 210,
@@ -1386,23 +1414,30 @@ export function BattleScreen() {
                 }}
                 transition={{ duration: 0.42, ease: [0.2, 1, 0.3, 1] }}
               >
-                <div
-                  className="grid h-full w-full place-items-center rounded-lg border"
-                  style={{
-                    borderColor: projectile.kind === "heal" ? "rgba(157,180,150,0.72)" : "rgba(248,214,148,0.7)",
-                    background:
-                      projectile.kind === "heal"
-                        ? "linear-gradient(145deg, rgba(39,93,52,0.9), rgba(21,52,30,0.95))"
-                        : "linear-gradient(145deg, rgba(122,69,41,0.9), rgba(77,42,24,0.95))",
-                    boxShadow:
-                      projectile.kind === "heal"
-                        ? "0 0 18px rgba(157,180,150,0.48)"
-                        : "0 0 18px rgba(248,214,148,0.44)",
-                  }}
-                >
-                  <span className="font-caprasimo text-lg text-[var(--tone-cream)]">
-                    {projectile.kind === "heal" ? "✚" : "✦"}
-                  </span>
+                <div className="relative h-full w-full">
+                  <div
+                    className="absolute inset-0 rounded-full blur-[7px]"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(248,214,148,0.62) 0%, rgba(248,214,148,0.28) 46%, rgba(248,214,148,0) 76%)",
+                    }}
+                  />
+                  {projectile.src && !failedProjectileSprites[projectile.src] ? (
+                    <Image
+                      src={projectile.src}
+                      alt="Projectile effect"
+                      fill
+                      sizes="48px"
+                      className="object-contain object-center drop-shadow-[0_0_8px_rgba(248,214,148,0.38)]"
+                      onError={() => markProjectileSpriteFailed(projectile.src!)}
+                    />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center">
+                      <span className="font-caprasimo text-lg text-[var(--tone-cream)] drop-shadow-[0_0_8px_rgba(248,214,148,0.5)]">
+                        {"\u2726"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -1837,3 +1872,4 @@ export function BattleScreen() {
     </main>
   );
 }
+
