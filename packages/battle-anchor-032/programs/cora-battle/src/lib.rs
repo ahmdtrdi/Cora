@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use ephemeral_rollups_sdk::anchor::ephemeral;
 
 pub mod constants;
 pub mod error;
@@ -10,6 +11,7 @@ use instructions::*;
 
 declare_id!("3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8");
 
+#[ephemeral]
 #[program]
 pub mod cora_battle {
     use super::*;
@@ -26,11 +28,7 @@ pub mod cora_battle {
 
     /// Register a card (question mapping) for a battle session.
     /// Authority-only. Only allowed in WaitingCards status.
-    pub fn register_card(
-        ctx: Context<RegisterCard>,
-        card_id: [u8; 16],
-        damage: u16,
-    ) -> Result<()> {
+    pub fn register_card(ctx: Context<RegisterCard>, card_id: [u8; 16], damage: u16) -> Result<()> {
         instructions::register_card::handler(ctx, card_id, damage)
     }
 
@@ -43,10 +41,7 @@ pub mod cora_battle {
     /// Apply damage to the opponent of the attacker.
     /// Authority-only. Backend verifies the answer off-chain,
     /// then calls this to record damage on-chain.
-    pub fn apply_damage(
-        ctx: Context<ApplyDamage>,
-        attacker: Pubkey,
-    ) -> Result<()> {
+    pub fn apply_damage(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
         instructions::apply_damage::handler(ctx, attacker)
     }
 
@@ -66,5 +61,38 @@ pub mod cora_battle {
     /// Authority-only. Only Finished or Cancelled sessions.
     pub fn close_session(ctx: Context<CloseSession>) -> Result<()> {
         instructions::close_session::handler(ctx)
+    }
+
+    /// Delegate the BattleSession PDA from the Solana base layer to MagicBlock ER.
+    pub fn delegate_battle_session(ctx: Context<DelegateBattleSession>) -> Result<()> {
+        instructions::delegate_battle_session::handler(ctx)
+    }
+
+    /// Delegate one RegisteredCard PDA so replay state can be mutated in ER.
+    pub fn delegate_registered_card(
+        ctx: Context<DelegateRegisteredCard>,
+        card_id: [u8; 16],
+    ) -> Result<()> {
+        instructions::delegate_registered_card::handler(ctx, card_id)
+    }
+
+    /// Schedule a BattleSession state commit from ER back to Solana.
+    pub fn commit_battle_session(ctx: Context<CommitBattleSession>) -> Result<()> {
+        instructions::commit_battle_session::commit_handler(ctx)
+    }
+
+    /// Commit and undelegate the BattleSession PDA when the battle has ended.
+    pub fn undelegate_battle_session(ctx: Context<CommitBattleSession>) -> Result<()> {
+        instructions::commit_battle_session::undelegate_handler(ctx)
+    }
+
+    /// Schedule a RegisteredCard state commit from ER back to Solana.
+    pub fn commit_registered_card(ctx: Context<CommitRegisteredCard>) -> Result<()> {
+        instructions::commit_registered_card::commit_handler(ctx)
+    }
+
+    /// Commit and undelegate a RegisteredCard PDA when the battle has ended.
+    pub fn undelegate_registered_card(ctx: Context<CommitRegisteredCard>) -> Result<()> {
+        instructions::commit_registered_card::undelegate_handler(ctx)
     }
 }
