@@ -109,9 +109,9 @@ fn test_refund_active_match_timeout() {
     do_deposit(&mut svm, pid, &player_a, match_pda, vault_pda, pa_tok.pubkey(), token_mint.pubkey());
     do_deposit(&mut svm, pid, &player_b, match_pda, vault_pda, pb_tok.pubkey(), token_mint.pubkey());
 
-    // Advance clock past MATCH_TIMEOUT (600s)
+    // Advance clock past MATCH_TIMEOUT (900s)
     let mut clock = svm.get_sysvar::<Clock>();
-    clock.unix_timestamp += 610;
+    clock.unix_timestamp += 910;
     svm.set_sysvar(&clock);
 
     let refund_ix = build_refund_ix(
@@ -169,7 +169,7 @@ fn test_refund_after_settled_fails() {
 
     // Advance clock and try to refund — should fail (already settled)
     let mut clock = svm.get_sysvar::<Clock>();
-    clock.unix_timestamp += 610;
+    clock.unix_timestamp += 910;
     svm.set_sysvar(&clock);
 
     let refund_ix = build_refund_ix(

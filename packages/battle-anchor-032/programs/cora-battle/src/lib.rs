@@ -45,6 +45,20 @@ pub mod cora_battle {
         instructions::apply_damage::handler(ctx, attacker)
     }
 
+    /// Resolve a single-player round timeout after the round deadline.
+    /// Reconnects before this deadline are handled off-chain by the backend.
+    pub fn timeout_player_for_round(
+        ctx: Context<TimeoutPlayerForRound>,
+        timed_out_player: Pubkey,
+    ) -> Result<()> {
+        instructions::timeout_player_for_round::handler(ctx, timed_out_player)
+    }
+
+    /// Cancel an unresolved session with an explicit ER outcome reason.
+    pub fn cancel_session(ctx: Context<CancelSession>, reason: u8) -> Result<()> {
+        instructions::cancel_session::handler(ctx, reason)
+    }
+
     /// Emit the BattleFinalized event for the settlement oracle.
     /// Authority-only. Session must be in Finished status.
     pub fn finalize_match(ctx: Context<FinalizeMatch>) -> Result<()> {

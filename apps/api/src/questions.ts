@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Question } from '@shared/question';
 import { validateQuestion } from '@shared/question';
+import { supabase } from './services/supabase';
 
 /**
  * Load and validate all question JSON files from the data/questions directory.
@@ -46,4 +47,50 @@ export function loadQuestions(): Question[] {
 export function reloadQuestions(): Question[] {
   cachedQuestions = null;
   return loadQuestions();
+}
+
+/**
+ * Fetch a perfectly balanced set of questions per match from Supabase.
+ * Falls back to local JSON if the database fails.
+ */
+export async function fetchMatchQuestions(): Promise<Question[]> {
+  try {
+    const { data: selected, error } = await supabase.rpc('get_distributed_questions');
+
+    if (error) {
+      console.error('Supabase RPC Error in fetchMatchQuestions:', error);
+      throw error;
+    }
+    
+    if (!selected || selected.length === 0) {
+      console.warn('Supabase returned 0 questions, falling back to local JSON...');
+      return loadQuestions();
+    }
+
+    const validated: Question[] = [];
+    for (const raw of selected) {
+      // Map postgres snake_case to typescript camelCase if needed
+      const mapped = {
+        ...raw,
+        questionText: raw.questionText || raw.question_text
+      };
+      
+      if (validateQuestion(mapped)) {
+        validated.push(mapped as Question);
+      } else {
+        console.warn('Failed validation on mapped question:', mapped);
+      }
+    }
+    
+    if (validated.length === 0) {
+       console.warn('Supabase questions failed validation, falling back to local JSON...');
+       return loadQuestions();
+    }
+    
+    return validated;
+  } catch (err) {
+    console.error('Error in fetchMatchQuestions:', err);
+    console.warn('Falling back to local pool...');
+    return loadQuestions(); // Fallback
+  }
 }

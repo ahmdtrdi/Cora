@@ -114,6 +114,58 @@
       ]
     },
     {
+      "name": "cancel_session",
+      "docs": [
+        "Cancel an unresolved session with an explicit ER outcome reason."
+      ],
+      "discriminator": [
+        57,
+        207,
+        155,
+        166,
+        136,
+        32,
+        99,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "close_session",
       "docs": [
         "Close a terminal session account and reclaim rent SOL.",
@@ -714,6 +766,7 @@
         },
         {
           "name": "battle_session",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -895,6 +948,59 @@
       ]
     },
     {
+      "name": "timeout_player_for_round",
+      "docs": [
+        "Resolve a single-player round timeout after the round deadline.",
+        "Reconnects before this deadline are handled off-chain by the backend."
+      ],
+      "discriminator": [
+        252,
+        81,
+        161,
+        108,
+        203,
+        35,
+        169,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "timed_out_player",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "undelegate_battle_session",
       "docs": [
         "Commit and undelegate the BattleSession PDA when the battle has ended."
@@ -1061,6 +1167,19 @@
       ]
     },
     {
+      "name": "RoundAdvancedEvent",
+      "discriminator": [
+        68,
+        10,
+        218,
+        225,
+        156,
+        83,
+        179,
+        174
+      ]
+    },
+    {
       "name": "RoundEndedEvent",
       "discriminator": [
         225,
@@ -1071,6 +1190,19 @@
         107,
         81,
         122
+      ]
+    },
+    {
+      "name": "RoundTimedOutEvent",
+      "discriminator": [
+        173,
+        100,
+        219,
+        75,
+        250,
+        125,
+        235,
+        153
       ]
     },
     {
@@ -1166,11 +1298,16 @@
     },
     {
       "code": 6010,
+      "name": "InvalidEndReason",
+      "msg": "End reason is not valid for this instruction"
+    },
+    {
+      "code": 6011,
       "name": "SessionExpired",
       "msg": "Session has expired due to timeout"
     },
     {
-      "code": 6011,
+      "code": 6012,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
     }
@@ -1181,6 +1318,10 @@
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1193,6 +1334,10 @@
           {
             "name": "winner",
             "type": "pubkey"
+          },
+          {
+            "name": "end_reason",
+            "type": "u8"
           },
           {
             "name": "score_a",
@@ -1281,21 +1426,21 @@
           {
             "name": "score_a",
             "docs": [
-              "Player A's total correct answers across all rounds"
+              "Player A's round score in this best-of-3 battle"
             ],
             "type": "u16"
           },
           {
             "name": "score_b",
             "docs": [
-              "Player B's total correct answers across all rounds"
+              "Player B's round score in this best-of-3 battle"
             ],
             "type": "u16"
           },
           {
             "name": "current_round",
             "docs": [
-              "Current round number (1-indexed, max MAX_ROUNDS)"
+              "Current round number (1-indexed while active, 0 before activation)"
             ],
             "type": "u8"
           },
@@ -1310,6 +1455,34 @@
             "name": "rounds_won_b",
             "docs": [
               "Rounds won by player B"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "round_started_at",
+            "docs": [
+              "Unix timestamp when the current round started"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "round_deadline",
+            "docs": [
+              "Unix timestamp when the current round may be resolved by timeout"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "player_a_missed_rounds",
+            "docs": [
+              "Rounds missed by player A due to timeout"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "player_b_missed_rounds",
+            "docs": [
+              "Rounds missed by player B due to timeout"
             ],
             "type": "u8"
           },
@@ -1370,6 +1543,13 @@
               "Unix timestamp when session finished (0 if not finished)"
             ],
             "type": "i64"
+          },
+          {
+            "name": "end_reason",
+            "docs": [
+              "Terminal outcome reason. See END_REASON_* constants."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -1521,10 +1701,43 @@
       }
     },
     {
+      "name": "RoundAdvancedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "round_deadline",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RoundEndedEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1554,10 +1767,14 @@
       }
     },
     {
-      "name": "SessionActivatedEvent",
+      "name": "RoundTimedOutEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1566,6 +1783,55 @@
                 32
               ]
             }
+          },
+          {
+            "name": "timed_out_player",
+            "type": "pubkey"
+          },
+          {
+            "name": "round_winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "score_a",
+            "type": "u16"
+          },
+          {
+            "name": "score_b",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionActivatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "round_deadline",
+            "type": "i64"
           }
         ]
       }
@@ -1575,6 +1841,10 @@
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
           {
             "name": "match_id",
             "type": {
@@ -1586,7 +1856,11 @@
           },
           {
             "name": "reason",
-            "type": "string"
+            "type": "u8"
+          },
+          {
+            "name": "finished_at",
+            "type": "i64"
           }
         ]
       }

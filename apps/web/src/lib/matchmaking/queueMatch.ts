@@ -25,6 +25,15 @@ type ActiveMatchResponse = {
   playerB?: string | null;
 };
 
+type MatchPresenceResponse = {
+  inRoom: boolean;
+  queued: boolean;
+  roomId?: string;
+  role?: "playerA" | "playerB";
+  roomType?: "public" | "private";
+  status?: string;
+};
+
 function trimTrailingSlash(input: string) {
   return input.replace(/\/+$/, "");
 }
@@ -109,4 +118,20 @@ export async function getActiveMatchForAddress(address: string, signal?: AbortSi
   }
 
   return payload as ActiveMatchResponse;
+}
+
+export async function getMatchPresenceForAddress(address: string, signal?: AbortSignal): Promise<MatchPresenceResponse> {
+  const apiBaseUrl = resolveApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/match/presence/${encodeURIComponent(address)}`, { signal });
+  const payload = (await response.json().catch(() => null)) as MatchPresenceResponse | { error?: string } | null;
+
+  if (!response.ok) {
+    throw new Error((payload as { error?: string } | null)?.error ?? `Match presence lookup failed (${response.status}).`);
+  }
+
+  if (!payload || typeof (payload as MatchPresenceResponse).inRoom !== "boolean" || typeof (payload as MatchPresenceResponse).queued !== "boolean") {
+    throw new Error("Match presence response missing queue state.");
+  }
+
+  return payload as MatchPresenceResponse;
 }

@@ -1,37 +1,38 @@
+use anchor_lang::prelude::*;
+
 use crate::constants::*;
 use crate::error::BattleError;
 use crate::events::SessionCancelledEvent;
 use crate::state::{BattleSession, BattleStatus};
-use anchor_lang::prelude::*;
 
-/// Force-end a stale or timed-out session.
-/// Only callable by the session authority after SESSION_TIMEOUT has elapsed.
-/// This prevents SOL from being locked in abandoned sessions.
-pub fn handler(ctx: Context<ForceEnd>) -> Result<()> {
+/// Authority-controlled no-contest cancellation.
+/// Escrow remains responsible for refund/settlement; ER only records the
+/// outcome reason for downstream verification.
+pub fn handler(ctx: Context<CancelSession>, reason: u8) -> Result<()> {
     let session = &mut ctx.accounts.battle_session;
 
-    // Cannot force-end already terminal states
+    require!(
+        reason == END_REASON_BOTH_PLAYERS_TIMEOUT
+            || reason == END_REASON_SERVER_CANCELLED
+            || reason == END_REASON_FORCE_ENDED,
+        BattleError::InvalidEndReason
+    );
+
     require!(
         session.status == BattleStatus::WaitingCards || session.status == BattleStatus::Active,
         BattleError::InvalidStatus
     );
 
-    // Verify timeout has elapsed
     let now = Clock::get()?.unix_timestamp;
-    require!(
-        now.saturating_sub(session.created_at) > SESSION_TIMEOUT,
-        BattleError::TimeoutNotReached
-    );
-
     session.status = BattleStatus::Cancelled;
     session.winner = Pubkey::default();
+    session.end_reason = reason;
     session.finished_at = now;
-    session.end_reason = END_REASON_FORCE_ENDED;
 
     emit!(SessionCancelledEvent {
         session: session.key(),
         match_id: session.match_id,
-        reason: END_REASON_FORCE_ENDED,
+        reason,
         finished_at: now,
     });
 
@@ -39,7 +40,7 @@ pub fn handler(ctx: Context<ForceEnd>) -> Result<()> {
 }
 
 #[derive(Accounts)]
-pub struct ForceEnd<'info> {
+pub struct CancelSession<'info> {
     pub authority: Signer<'info>,
     #[account(
         mut,

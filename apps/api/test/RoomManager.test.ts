@@ -128,6 +128,28 @@ describe('RoomManager', () => {
 
       expect(roomId2).toBe(roomId3);
     });
+
+    test('re-queue destroys abandoned deposit room before matching again', async () => {
+      const playerAQueue = manager.queueMatch('playerA');
+      const roomId = await manager.queueMatch('playerB');
+      await playerAQueue;
+
+      const mockB = createMockWs();
+      manager.joinRoom(roomId, 'playerB', mockB.ws);
+
+      const room = manager.getRoom(roomId)!;
+      expect(room.status).toBe('depositing');
+
+      const nextPlayerPromise = manager.queueMatch('playerC');
+      const requeuedRoomId = await manager.queueMatch('playerA');
+      const playerCRoomId = await nextPlayerPromise;
+
+      expect(manager.getRoom(roomId)).toBeUndefined();
+      expect(requeuedRoomId).toBe(playerCRoomId);
+
+      const cancelledMsg = mockB.messages.find((m: any) => m.type === 'roomCancelled');
+      expect(cancelledMsg).toBeDefined();
+    });
   });
 
   // ─── Join Room ───────────────────────────────────────────────
@@ -684,8 +706,8 @@ describe('RoomManager', () => {
       expect(payload.player.characterState).toBe('stay');
       expect(payload.player.score).toBe(0);
       expect(payload.hand).toEqual([]);
-      expect(payload.timer.totalDurationMs).toBe(300_000);
-      expect(payload.timer.remainingMs).toBe(300_000);
+      expect(payload.timer.totalDurationMs).toBe(180_000);
+      expect(payload.timer.remainingMs).toBe(180_000);
       expect(payload.timer.phase).toBe('normal');
       expect(payload.damageLog).toEqual([]);
     });

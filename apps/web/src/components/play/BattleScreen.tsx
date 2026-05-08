@@ -63,7 +63,7 @@ function shortenAddress(address?: string) {
 
 function formatMatchClock(remainingMs?: number) {
   if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
-    return "05:00";
+    return "03:00";
   }
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -150,7 +150,6 @@ export function BattleScreen() {
   const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
   const preSignedDepositSig = searchParams.get("depositSig");
-  const scientistId = searchParams.get("scientist");
   const wallet = useWallet();
   const { publicKey } = wallet;
 
@@ -170,6 +169,8 @@ export function BattleScreen() {
     settlementResult,
     matchSummaryResult,
     matchInvalidated,
+    lastPresenceUpdate,
+    lastRoomCancelled,
     lastDamageEvent,
     lastPlayResult,
     lastCardCountdown,
@@ -178,6 +179,7 @@ export function BattleScreen() {
     openCard,
     playCard,
     confirmDeposit,
+    cancelMatch,
     surrender,
     reconnect,
   } = useMatchSocket({ roomId, address });
@@ -195,6 +197,8 @@ export function BattleScreen() {
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
+  const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
+  const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
@@ -203,6 +207,7 @@ export function BattleScreen() {
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
   const extraPointShownRef = useRef(false);
+  const previousOpponentConnectedRef = useRef<boolean | null>(null);
   const gameNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
@@ -331,7 +336,13 @@ export function BattleScreen() {
   }, [lastDamageEvent, opponent?.address, player?.address]);
 
   const isPlayable = status === "playing" && connectionState === "connected";
-  const isMatchComplete = Boolean(settlementResult) || Boolean(matchInvalidated) || status === "finished";
+  const hasTerminalResult = Boolean(settlementResult) || Boolean(matchSummaryResult) || Boolean(matchInvalidated);
+  const isRoomCancelled = Boolean(lastRoomCancelled);
+  const isMatchComplete = hasTerminalResult || isRoomCancelled || status === "finished";
+  const isCommittedState = status === "playing" || status === "settling";
+  const canSurrenderByState = !isMatchComplete && isCommittedState;
+  const canCancelMatch = connectionState === "connected" && !isMatchComplete && (status === "waiting" || status === "depositing");
+  const canSurrenderMatch = connectionState === "connected" && canSurrenderByState;
 
   function onOpenCard(card: Card) {
     if (!isPlayable || activeCardId || isMatchComplete) return;
@@ -349,11 +360,26 @@ export function BattleScreen() {
     playCard(activeCard.id, optionId);
   }
 
-  function onSurrender() {
-    if (!isPlayable || isMatchComplete) return;
-    const ok = window.confirm("Surrender this match?");
-    if (!ok) return;
-    surrender();
+  function onCancelMatch() {
+    if (!canCancelMatch) return;
+    cancelMatch();
+  }
+
+  function onOpenSurrenderModal() {
+    if (!canSurrenderMatch) return;
+    setSurrenderModalOpen(true);
+  }
+
+  function onConfirmSurrender() {
+    if (!canSurrenderByState) return;
+    if (connectionState === "connected") {
+      surrender();
+      setSurrenderModalOpen(false);
+      return;
+    }
+    setPendingSurrenderAfterReconnect(true);
+    reconnect();
+    setSurrenderModalOpen(false);
   }
 
   const playerScore = player?.score ?? 0;
@@ -369,32 +395,63 @@ export function BattleScreen() {
 
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
-  const isDraw = matchSummaryResult?.reason === "draw";
-  const settlementText = winnerAddress
-    ? winnerAddress === player?.address
-      ? "You Win"
-      : "You Lose"
-    : isDraw
-      ? "Draw"
+  const matchResultReason = matchSummaryResult?.reason ?? matchInvalidated?.reason ?? null;
+  const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
+  const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
+  const didOpponentSurrender =
+    matchResultReason === "surrender" && Boolean(surrenderedAddress) && surrenderedAddress !== address;
+  const isDraw = matchResultReason === "draw";
+  const roomCancelledTitle =
+    lastRoomCancelled?.reason === "deposit_timeout"
+      ? "Deposit timed out"
+      : lastRoomCancelled?.reason === "disconnect"
+        ? "Match cancelled before battle start"
+        : "Match cancelled";
+  const roomCancelledSubtitle =
+    lastRoomCancelled?.reason === "deposit_timeout"
+      ? "Deposit confirmation did not complete in time."
+      : lastRoomCancelled?.reason === "disconnect"
+        ? "A player disconnected before the battle was ready."
+        : "A player cancelled this room before battle start.";
+  const settlementText = isRoomCancelled
+    ? roomCancelledTitle
+    : didCurrentPlayerSurrender
+      ? "You Surrendered"
+      : didOpponentSurrender
+        ? "Opponent Surrendered"
+        : winnerAddress
+          ? winnerAddress === player?.address
+            ? "You Win"
+            : "You Lose"
+          : isDraw
+            ? "Draw"
+            : matchInvalidated
+              ? "Match Invalidated"
+              : "Match Finished";
+  const settlementSubtitle = isRoomCancelled
+    ? roomCancelledSubtitle
     : matchInvalidated
-      ? "Match Invalidated"
-      : "Match Finished";
-  const settlementSubtitle = matchInvalidated
-    ? "Match invalidated."
-    : isDraw
-      ? "All checks were equal. Wagers are being refunded."
-    : winnerAddress
-      ? winnerAddress === address
-        ? "Victory secured."
-        : "Rival took this round."
-      : "Match results are being finalized."
-  const settlementStatus = matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
-  const settlementStatusStyle = matchInvalidated
-    ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
-    : settlementResult
-      ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
-      : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
-  const showWinnerLine = Boolean(winnerAddress && (matchInvalidated || winnerAddress !== address));
+      ? "Match invalidated."
+      : didCurrentPlayerSurrender
+        ? "You forfeited this match. Settlement is being resolved."
+        : didOpponentSurrender
+          ? "Your rival surrendered. Settlement is being resolved."
+          : isDraw
+            ? "The match ended evenly. Settlement is being resolved."
+            : winnerAddress
+              ? winnerAddress === address
+                ? "Victory secured."
+                : "Rival took this round."
+              : "Match results are being finalized."
+  const settlementStatus = isRoomCancelled ? "Cancelled" : matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
+  const settlementStatusStyle = isRoomCancelled
+    ? { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" }
+    : matchInvalidated
+      ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
+      : settlementResult
+        ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
+        : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
+  const showWinnerLine = Boolean(winnerAddress && !isRoomCancelled && !didCurrentPlayerSurrender && !didOpponentSurrender && (matchInvalidated || winnerAddress !== address));
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
@@ -414,23 +471,34 @@ export function BattleScreen() {
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
   const isRoomStateLoading = !gameState && isSocketRecovering;
   const isRoomUnavailable = !gameState && hasSocketIssue;
+  const presenceOpponentConnected =
+    opponent?.address && lastPresenceUpdate?.players
+      ? lastPresenceUpdate.players[opponent.address]?.isConnected
+      : undefined;
+  const opponentIsConnected = presenceOpponentConnected ?? opponent?.isConnected ?? true;
+  const showOpponentAwayStatus = connectionState === "connected" && !isMatchComplete && !opponentIsConnected;
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
+  const showDisconnectedOverlay =
+    Boolean(lastSocketIssueAt) &&
+    connectionState !== "connected" &&
+    !isMatchComplete &&
+    !isRoomCancelled;
   const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
   const shouldShowPlayStateGate = !isPlayStateReady;
-  const showRoomGateModal = isRoomStateLoading || shouldShowPlayStateGate;
+  const showRoomGateModal = (isRoomStateLoading || shouldShowPlayStateGate) && !showOpponentAwayStatus && !showDisconnectedOverlay;
   const roomGateTitle = isRoomStateLoading
     ? "Syncing Room State"
     : isRoomUnavailable
-      ? "Unable To Enter Room"
+      ? "You were disconnected"
     : status === "waiting"
       ? "Waiting For Battle"
       : "Room Locked";
   const roomGateMessage = isRoomStateLoading
     ? "Rejoining battle room after refresh. Waiting for server snapshot."
     : isRoomUnavailable
-      ? socketCloseText ?? lastSocketError ?? "The room is unavailable or already finished."
+      ? "Your match is still active. Rejoin to continue."
     : `Current room status: ${getStatusLabel(status)}.`;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
@@ -460,13 +528,6 @@ export function BattleScreen() {
       refAddress: address,
     });
   }, [arenaId, arenaToken, wagerUsd, address]);
-  const resumeQueueHref = useMemo(() => {
-    const params = new URLSearchParams({ resumeQueue: "1", arena: arenaId });
-    if (scientistId) {
-      params.set("scientist", scientistId);
-    }
-    return `/lobby?${params.toString()}`;
-  }, [arenaId, scientistId]);
   const cleanLobbyHref = "/lobby";
   useEffect(() => {
     if (playerSpriteState !== "action") {
@@ -521,28 +582,62 @@ export function BattleScreen() {
   }, [currentPhase, gameState?.timer?.phase, showGameNotice]);
 
   useEffect(() => {
-    if (!isMatchComplete) return;
+    if (!isMatchComplete && !isRoomCancelled) return;
     clearLobbyReturnState();
-  }, [isMatchComplete]);
+  }, [isMatchComplete, isRoomCancelled]);
+
+  useEffect(() => {
+    if (!pendingSurrenderAfterReconnect) return;
+    if (connectionState !== "connected") return;
+
+    const timerId = setTimeout(() => {
+      if (!canSurrenderByState) {
+        setPendingSurrenderAfterReconnect(false);
+        return;
+      }
+      surrender();
+      setPendingSurrenderAfterReconnect(false);
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [pendingSurrenderAfterReconnect, connectionState, canSurrenderByState, surrender]);
+
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    if (!opponent?.address) return;
+
+    const previous = previousOpponentConnectedRef.current;
+    previousOpponentConnectedRef.current = opponentIsConnected;
+    if (previous === null || previous === opponentIsConnected) return;
+
+    const notifyTimer = setTimeout(() => {
+      if (opponentIsConnected) {
+        showGameNotice("Opponent reconnected", "phase");
+      } else {
+        showGameNotice("Opponent disconnected", "phase");
+      }
+    }, 0);
+
+    return () => clearTimeout(notifyTimer);
+  }, [connectionState, opponent?.address, opponentIsConnected, showGameNotice]);
 
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
-  if (lastSocketIssueAt) {
+  if (lastSocketIssueAt && !showDisconnectedOverlay) {
     alerts.push({
       id: `socket:${lastSocketIssueAt}`,
       title: "Server Connection Issue",
       message: socketMessage,
       tone: "error",
       autoDismissMs: SOCKET_ALERT_DISPLAY_MS,
-      actionLabel: hasSocketIssue ? "Retry" : undefined,
-      onAction: hasSocketIssue ? reconnect : undefined,
+      actionLabel: undefined,
+      onAction: undefined,
     });
   }
-  if (connectionState === "reconnecting") {
+  if (connectionState === "reconnecting" && !showDisconnectedOverlay) {
     alerts.push({
       id: "socket:reconnecting",
-      title: "Reconnecting",
-      message: "Restoring room connection. Keep this page open.",
+      title: "Rejoining room",
+      message: "Your match is still active. Rejoining battle room now.",
       tone: "warning",
       autoDismissMs: 0,
     });
@@ -553,7 +648,16 @@ export function BattleScreen() {
     alerts.push({
       id: "deposit:missing_pre_signed_intent",
       title: "Deposit Sync Error",
-      message: "Missing pre-signed deposit intent. Return to lobby and re-queue.",
+      message: "Missing pre-signed deposit intent. Return to lobby and start from match setup.",
+      tone: "warning",
+      autoDismissMs: 0,
+    });
+  }
+  if (lastRoomCancelled) {
+    alerts.push({
+      id: `room:cancelled:${lastRoomCancelled.at}`,
+      title: roomCancelledTitle,
+      message: roomCancelledSubtitle,
       tone: "warning",
       autoDismissMs: 0,
     });
@@ -890,55 +994,47 @@ export function BattleScreen() {
             >
               {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
             </span>
-            <button
-              type="button"
-              onClick={onSurrender}
-              disabled={!isPlayable || isMatchComplete}
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide disabled:opacity-50"
-              style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
-            >
-              Surrender
-            </button>
-            <Link
-              href={isMatchComplete ? cleanLobbyHref : resumeQueueHref}
-              onClick={() => {
-                if (isMatchComplete) {
-                  clearLobbyReturnState();
-                }
-              }}
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
-            >
-              Exit
-            </Link>
+            {canCancelMatch && (
+              <button
+                type="button"
+                onClick={onCancelMatch}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(19,32,26,0.9)", color: "var(--tone-cream)" }}
+              >
+                Cancel Match
+              </button>
+            )}
+            {canSurrenderMatch && (
+              <button
+                type="button"
+                onClick={onOpenSurrenderModal}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
+              >
+                Surrender
+              </button>
+            )}
+            {(isMatchComplete || isRoomCancelled) && (
+              <Link
+                href={cleanLobbyHref}
+                onClick={clearLobbyReturnState}
+                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
+              >
+                Return To Lobby
+              </Link>
+            )}
           </div>
         </header>
 
-        {hasSocketIssue && !gameState && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.4)", background: "rgba(43,24,16,0.88)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#f8d694]">
-              Unable to enter battle room
+        {showOpponentAwayStatus && (
+          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.34)", background: "rgba(19,32,26,0.82)" }}>
+            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
+              Opponent disconnected
             </p>
             <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Connection to this match room failed. Retry socket or return to lobby queue without refreshing.
+              Your rival may reconnect while the match is still active.
             </p>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={reconnect}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Retry Room
-              </button>
-              <Link
-                href={resumeQueueHref}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Return And Requeue
-              </Link>
-            </div>
           </div>
         )}
 
@@ -961,6 +1057,18 @@ export function BattleScreen() {
             <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
             <div className="text-right">
               <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Rival</p>
+              <div className="mt-1 flex justify-end">
+                <span
+                  className="rounded-full px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.32)",
+                    background: opponentIsConnected ? "rgba(39,65,55,0.46)" : "rgba(111,58,40,0.46)",
+                    color: "var(--tone-cream)",
+                  }}
+                >
+                  {opponentIsConnected ? "Connected" : "Away"}
+                </span>
+              </div>
               <p className="mt-1 font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
               <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">{opponentMetaLabel}</p>
             </div>
@@ -1201,16 +1309,60 @@ export function BattleScreen() {
                   className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
                   style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
                 >
-                  Retry Room
+                  Rejoin Room
                 </button>
               )}
               <Link
-                href={resumeQueueHref}
+                href={cleanLobbyHref}
+                onClick={clearLobbyReturnState}
                 className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
               >
-                Return And Requeue
+                Return To Lobby
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDisconnectedOverlay && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-lg p-5 md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">You were disconnected</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
+              Your match is still active. Rejoin to continue, or surrender to end the match.
+            </p>
+            {pendingSurrenderAfterReconnect && (
+              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
+                Rejoining room to submit surrender...
+              </p>
+            )}
+            {!canSurrenderByState && (
+              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
+                Surrender is only available after the match is committed.
+              </p>
+            )}
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={reconnect}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Rejoin Room
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmSurrender}
+                disabled={!canSurrenderByState || pendingSurrenderAfterReconnect}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:opacity-50"
+                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
+              >
+                Surrender
+              </button>
             </div>
           </div>
         </div>
@@ -1269,6 +1421,38 @@ export function BattleScreen() {
                   <p className="mt-1 font-gabarito text-sm text-[#1f2b24]">{option.text}</p>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {surrenderModalOpen && canSurrenderMatch && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4">
+          <div
+            className="frame-cut w-full max-w-lg p-5 md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">Surrender match?</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
+              Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSurrenderModalOpen(false)}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Keep Playing
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmSurrender}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
+              >
+                Surrender
+              </button>
             </div>
           </div>
         </div>

@@ -8,10 +8,14 @@ import type { EngineCard } from './types';
  * Each question is dealt at most once per match.
  */
 export class QuestionDealer {
+  private static readonly HEAL_BATCH_SIZE = 5;
+
   private categories: string[];
   private poolsByCategory: Record<string, SchemaQuestion[]> = {};
   private currentCategoryIndex: number = 0;
   private totalRemaining: number = 0;
+  private dealtCount: number = 0;
+  private healSlotInBatch: number = this.rollHealSlot();
 
   constructor(questions: SchemaQuestion[]) {
     // Only keep questions that have exactly one correct answer
@@ -87,8 +91,7 @@ export class QuestionDealer {
       return this.dealOne(); // Attempt to draw again
     }
 
-    // Randomly assign card type (60% attack, 40% heal)
-    const type: CardType = Math.random() < 0.6 ? 'attack' : 'heal';
+    const type: CardType = this.getNextCardType();
 
     return {
       id: `card-${question.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -113,5 +116,26 @@ export class QuestionDealer {
       const j = Math.floor(Math.random() * (i + 1));
       [array[i], array[j]] = [array[j], array[i]];
     }
+  }
+
+  /**
+   * Guarantees exactly 1 heal card in every batch of 5 dealt cards.
+   * The heal position is randomized inside each batch to keep the sequence less predictable.
+   */
+  private getNextCardType(): CardType {
+    const slotInBatch = this.dealtCount % QuestionDealer.HEAL_BATCH_SIZE;
+    const type: CardType = slotInBatch === this.healSlotInBatch ? 'heal' : 'attack';
+
+    this.dealtCount += 1;
+
+    if (this.dealtCount % QuestionDealer.HEAL_BATCH_SIZE === 0) {
+      this.healSlotInBatch = this.rollHealSlot();
+    }
+
+    return type;
+  }
+
+  private rollHealSlot(): number {
+    return Math.floor(Math.random() * QuestionDealer.HEAL_BATCH_SIZE);
   }
 }
