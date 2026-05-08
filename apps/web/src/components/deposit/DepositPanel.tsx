@@ -63,22 +63,9 @@ export function DepositPanel({
             type="button"
             onClick={onPrimaryAction}
             disabled={!canPrimaryAction}
-            className={`frame-cut frame-cut-sm min-w-[210px] px-5 py-3 font-gabarito text-sm font-extrabold uppercase tracking-wide transition ${
-              canPrimaryAction ? "hover:-translate-y-0.5" : ""
+            className={`btn-game btn-game-primary min-w-[220px] px-8 py-3.5 text-base shadow-2xl transition-all ${
+              canPrimaryAction ? "" : "cursor-not-allowed opacity-55 grayscale"
             }`}
-            style={{
-              border: canPrimaryAction
-                ? "1px solid rgba(248,214,148,0.5)"
-                : "1px solid rgba(248,214,148,0.2)",
-              background: canPrimaryAction
-                ? "linear-gradient(145deg, rgba(122,69,41,0.96), rgba(79,43,25,0.96))"
-                : "linear-gradient(145deg, rgba(28,44,36,0.96), rgba(18,30,24,0.96))",
-              color: canPrimaryAction ? "var(--tone-cream)" : "rgba(244,240,230,0.68)",
-              boxShadow: canPrimaryAction
-                ? "0 10px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.16)"
-                : "0 6px 12px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08)",
-              opacity: canPrimaryAction ? 1 : 0.76,
-            }}
           >
             {primaryActionLabel}
           </motion.button>

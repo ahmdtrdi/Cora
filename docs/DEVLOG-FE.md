@@ -2636,3 +2636,25 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - This gate modal styling is local to `BattleScreen.tsx`; if similar blocking gates are needed elsewhere, we should extract a shared modal-gate primitive.
 - There is still a separate `Unable to enter battle room` inline banner path; if we want full consistency, that path can be unified into the same overlay pattern in a follow-up pass.
+
+## 2026-05-08 - OpponentFound Deposit Action Hierarchy Polish
+
+### The Change
+- Polished deposit action presentation for `OpponentFound` flow using:
+  - [apps/web/src/components/deposit/DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx)
+  - [apps/web/src/components/deposit/DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx)
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+- Centered secondary action group in `DepositStatusCard` so `retrySlot` + `cancelSlot` are always centered together, and `Cancel Match` stays centered when alone.
+- Reduced secondary action visual weight in `OpponentFound` by shrinking `Retry Connection` and `Cancel Match` padding/size (`px-3 py-1.5 text-[10px] shadow-sm`).
+- Updated `DepositPanel` primary action button to the shared chunky primary game button family (`btn-game btn-game-primary`) with larger dominant CTA sizing and muted disabled styling in the same family.
+- Kept all behavior intact: signing, retry, cancel, deposit status logic, and slot wiring unchanged.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The previous secondary actions looked too prominent and defaulted left alignment, which weakened the action hierarchy.
+- Centering secondary actions and reducing their scale creates a clear primary-first flow while preserving utility access.
+- Using the shared primary button family aligns deposit CTA visuals with established game CTAs like queue entry.
+
+### The Tech Debt
+- Slot-provided action sizing is still caller-controlled; if more screens reuse this pattern, we should standardize secondary-action size tokens at the deposit component level.
+- Deposit CTA variant choices are now class-driven but still local to `DepositPanel`; a future button-variant utility could reduce repeated CTA class decisions across flows.

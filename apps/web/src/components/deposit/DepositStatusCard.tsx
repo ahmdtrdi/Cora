@@ -61,7 +61,7 @@ export function DepositStatusCard({
       {walletSlot && <div className="mt-3">{walletSlot}</div>}
 
       {(retrySlot || cancelSlot) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex w-full flex-wrap items-center justify-center gap-2">
           {retrySlot}
           {cancelSlot}
         </div>

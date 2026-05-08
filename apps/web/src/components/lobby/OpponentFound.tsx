@@ -468,7 +468,7 @@ export function OpponentFound({
               <button
                 type="button"
                 onClick={reconnect}
-                className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+                className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
               >
                 Retry Connection
               </button>
@@ -478,7 +478,7 @@ export function OpponentFound({
             <button
               type="button"
               onClick={onTimeout}
-              className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+              className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
             >
               Cancel Match
             </button>
