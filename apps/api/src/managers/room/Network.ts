@@ -1,11 +1,10 @@
-import type { ServerWebSocket } from 'bun';
 import type { GameState, PresenceUpdateData, ScoreUpdateData, WsMessage } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
-import { Room } from './types';
+import type { Room, RoomSocket } from './types';
 
 export class Network {
   /** Safe WebSocket send wrapper */
-  public safeSend(ws: ServerWebSocket<unknown> | null | undefined, data: any): void {
+  public safeSend(ws: RoomSocket | null | undefined, data: unknown): void {
     if (!ws) return;
     try {
       ws.send(typeof data === 'string' ? data : JSON.stringify(data));

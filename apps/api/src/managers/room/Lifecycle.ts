@@ -1,6 +1,5 @@
-import type { ServerWebSocket } from 'bun';
 import type { WsMessage, MatchResult } from '@shared/websocket';
-import { Room } from './types';
+import type { Room, RoomSocket } from './types';
 import type { RoomManager } from '../RoomManager';
 
 export class Lifecycle {
@@ -40,7 +39,7 @@ export class Lifecycle {
     return 'ok';
   }
 
-  public joinRoom(roomId: string, address: string, ws: ServerWebSocket<unknown>, characterId: string = 'einstein') {
+  public joinRoom(roomId: string, address: string, ws: RoomSocket, characterId: string = 'einstein') {
     const room = this.manager.store.getRoom(roomId);
     if (!room) {
       console.warn(`Room ${roomId} not found for join.`);
@@ -113,7 +112,7 @@ export class Lifecycle {
     this.manager.network.broadcastPresence(room);
   }
 
-  public leaveRoom(roomId: string, address: string, ws?: ServerWebSocket<unknown>) {
+  public leaveRoom(roomId: string, address: string, ws?: RoomSocket) {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
 

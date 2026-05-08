@@ -1,9 +1,13 @@
-import type { ServerWebSocket } from 'bun';
 import type { GameStatus } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 
+export interface RoomSocket {
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
 export interface RoomClient {
-  ws: ServerWebSocket<unknown> | null;
+  ws: RoomSocket | null;
   lastSeenAt: number;
 }
 

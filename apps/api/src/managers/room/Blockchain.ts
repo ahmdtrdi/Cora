@@ -84,7 +84,7 @@ export class Blockchain {
 
     for (const client of room.clients.values()) {
       this.manager.network.safeSend(client.ws, {
-        type: 'matchResult',
+        type: 'settlementAuthorization',
         payload: {
           winner: winnerAddress,
           matchId: Buffer.from(room.matchIdBytes).toString('hex'),

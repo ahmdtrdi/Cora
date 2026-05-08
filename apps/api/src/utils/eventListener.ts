@@ -1,4 +1,5 @@
 import { Connection, PublicKey } from '@solana/web3.js';
+import { CORA_ESCROW_PROGRAM_ID } from '../config/solana';
 
 /**
  * Anchor Event Listener — subscribes to on-chain program logs via WebSocket
@@ -10,8 +11,6 @@ import { Connection, PublicKey } from '@solana/web3.js';
  * This listener is embedded in the API server process (not a standalone service)
  * and only activates when SOLANA_RPC_URL is configured.
  */
-
-const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
 
 // Discriminators from solana_program.ts IDL (sha256 of "event:<EventName>")
 const EVENT_DISCRIMINATORS: Record<string, number[]> = {
@@ -128,7 +127,7 @@ export function startEventListener(rpcUrl: string, wsUrl?: string): number | nul
   }
 
   const subscriptionId = connection.onLogs(
-    PROGRAM_ID,
+    CORA_ESCROW_PROGRAM_ID,
     (logInfo) => {
       if (logInfo.err) return; // Skip failed transactions
 
