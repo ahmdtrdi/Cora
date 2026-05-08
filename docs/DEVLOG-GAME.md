@@ -383,3 +383,45 @@ Added explicit **match cancellation** and **surrender** flows across the full st
 - Presence and cancellation logic are growing into a real state machine, but are still implemented as imperative lifecycle branches and timers. A formal statechart would reduce the chance of future edge-case regressions.
 - Draw handling needs an end-to-end audit with the blockchain settlement path to guarantee refund behavior is fully deterministic and matches on-chain assumptions.
 - The lobby recovery code is compensating for the current HTTP matchmaking design. A websocket-native queue/ready flow would simplify this significantly and remove some of the persistence glue.
+
+---
+
+## 14. Queue Hardening - Deposit Cancel Recovery & Phantom Prompt Guard (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/index.ts`
+- `apps/api/src/managers/room/Queue.ts`
+- `apps/api/test/RoomManager.test.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/components/lobby/OpponentFound.tsx`
+- `apps/web/src/lib/matchmaking/queueMatch.ts`
+- `apps/web/src/lib/solana/signDepositIntent.ts`
+
+Hardened the public queue and deposit flow so cancelled deposit rooms stop trapping players, queue desync is auto-healed from the frontend, and slow Phantom approval now surfaces a clear stale-transaction warning.
+
+**What changed:**
+
+1. **Backend queue reclamation:** `Queue.queueMatch()` now reclaims abandoned `depositing` rooms before honoring a fresh queue request from the same wallet, cancelling and destroying the old room first.
+2. **Zombie room cleanup:** `findActiveRoomForAddress()` now ignores and destroys deposit rooms that have no live sockets, no active deposit timers, and no deposits, preventing dead rooms from blocking matchmaking recovery.
+3. **Queue presence endpoint:** Added `GET /match/presence/:address` so the frontend can distinguish between:
+   - still queued
+   - already inside a room
+   - no longer present in queue state
+4. **Lobby self-heal:** While on the waiting screen, the frontend now polls queue presence every 4 seconds. If the backend says the player is neither queued nor already matched, the lobby automatically restarts the matchmaking request instead of leaving the user in a fake "searching" state.
+5. **Deposit UX hardening:** On the deposit screen, if Phantom approval stays open too long, the UI now warns the player that the transaction may expire and tells them to close the stale prompt and retry for a fresh transaction.
+6. **Wallet error clarity:** RPC/blockhash-expiry style errors are now mapped to a clearer retry message rather than a generic Solana confirmation failure.
+7. **Regression test coverage:** Added a RoomManager test covering the abandoned-deposit-room requeue case so the intended recovery path is documented in code, even though the current test environment still needs API-key isolation cleanup.
+
+**The Reasoning:**
+
+- The worst queue bug was not the manual cancel itself; it was stale room state surviving just long enough to make the next queue attempt fail. Reclaiming and destroying abandoned deposit rooms closes that gap.
+- Since `/match` still relies on long-polling, the frontend needs a server-visible truth source for "am I really still queued?" Polling lightweight queue presence is much safer than trusting the local waiting screen blindly.
+- Phantom popups that sit open too long often produce expired blockhash behavior. We cannot forcibly close the wallet, but we can detect the pattern, explain it immediately, and guide the player toward a fresh signing attempt.
+
+**Tech Debt:**
+
+- The public queue is still HTTP long-polling based. The new presence endpoint mitigates desync, but a websocket-native queue would remove this whole class of issues more cleanly.
+- The RoomManager test suite currently imports services that expect external Goldrush credentials, which blocks clean local execution for pure room-lifecycle tests. Those dependencies should be isolated or mocked at the boundary.

@@ -64,9 +64,12 @@ function mapWalletError(error: unknown): DepositIntentError {
 
   if (
     lowered.includes("blockhash") ||
+    lowered.includes("block height exceeded") ||
+    lowered.includes("transaction expired") ||
+    lowered.includes("signature has expired") ||
     lowered.includes("rpc")
   ) {
-    return new DepositIntentError("rpc_error", "Transaction failed to confirm on Solana.");
+    return new DepositIntentError("rpc_error", "Transaction expired before confirmation. Close any stale wallet prompt and retry.");
   }
 
   if (lowered.includes("failed on-chain")) {

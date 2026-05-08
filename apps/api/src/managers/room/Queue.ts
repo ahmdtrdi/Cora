@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
 import type { RoomManager } from '../RoomManager';
+import type { Room } from './types';
 
 interface QueueItem {
   address: string;
@@ -16,13 +17,23 @@ export class Queue {
   constructor(private manager: RoomManager) {}
 
   public findActiveRoomForAddress(address: string) {
-    return this.manager.store.getAllRooms().find((room) => (
+    const activeRoom = this.manager.store.getAllRooms().find((room) => (
       (room.playerA === address || room.playerB === address) &&
       room.status !== 'finished'
     ));
+
+    if (activeRoom && this.isZombieDepositRoom(activeRoom)) {
+      console.warn(`[Queue] Ignoring zombie deposit room ${activeRoom.id} for ${this.shortAddr(address)}.`);
+      this.manager.lifecycle.destroyRoom(activeRoom.id);
+      return undefined;
+    }
+
+    return activeRoom;
   }
 
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
+    this.reclaimAbandonedDepositRoom(address);
+
     const activeRoom = this.findActiveRoomForAddress(address);
     if (activeRoom) {
       this.printQueueState('RECONNECT', `${this.shortAddr(address)} already in room ${activeRoom.id}`);
@@ -94,6 +105,10 @@ export class Queue {
     this.printQueueState('REQUEUED', `${this.shortAddr(address)} returned to queue`);
   }
 
+  public isQueued(address: string): boolean {
+    return this.queue.some((item) => item.address === address);
+  }
+
   private bindAbort(signal: AbortSignal | undefined, queueItem: QueueItem, address: string): void {
     if (!signal) return;
     signal.addEventListener('abort', () => {
@@ -109,6 +124,40 @@ export class Queue {
     if (index === -1) return false;
     this.queue.splice(index, 1);
     return true;
+  }
+
+  private reclaimAbandonedDepositRoom(address: string): void {
+    const activeRoom = this.manager.store.getAllRooms().find((room) => (
+      (room.playerA === address || room.playerB === address) &&
+      room.status === 'depositing'
+    ));
+
+    if (!activeRoom) return;
+
+    const playerMeta = activeRoom.playerMeta.get(address);
+    const hasDeposited = playerMeta?.hasDeposited ?? false;
+    const hasLiveSocket = Boolean(activeRoom.clients.get(address)?.ws);
+    if (hasDeposited || hasLiveSocket) return;
+
+    console.warn(`[Queue] Reclaiming abandoned deposit room ${activeRoom.id} for ${this.shortAddr(address)} before re-queue.`);
+    const opponentAddress = address === activeRoom.playerA ? activeRoom.playerB : activeRoom.playerA;
+    this.manager.lifecycle.cancelRoom(activeRoom.id, opponentAddress ?? undefined, {
+      reason: 'disconnect',
+      cancelledBy: address,
+    });
+  }
+
+  private isZombieDepositRoom(room: Room): boolean {
+    if (room.status !== 'depositing') return false;
+
+    const hasAnyDepositTimer = room.depositTimeouts.size > 0;
+    const hasAnyLiveSocket = Array.from(room.clients.values()).some((client) => Boolean(client.ws));
+    const hasAnyDeposit = [room.playerA, room.playerB].some((address) => {
+      if (!address) return false;
+      return room.playerMeta.get(address)?.hasDeposited ?? false;
+    });
+
+    return !hasAnyDepositTimer && !hasAnyLiveSocket && !hasAnyDeposit;
   }
 
   private shortAddr(address: string): string {

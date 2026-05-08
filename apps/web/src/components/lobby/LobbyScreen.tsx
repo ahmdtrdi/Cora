@@ -8,7 +8,7 @@ import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
-import { getActiveMatchForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
+import { getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
 import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
@@ -104,6 +104,7 @@ type MatchmakingState = "idle" | "searching" | "timeout" | "error";
 type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
 const MATCHMAKING_TIMEOUT_MS = 45_000;
+const MATCHMAKING_PRESENCE_POLL_MS = 4_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
 const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
@@ -191,6 +192,7 @@ export function LobbyScreen() {
   const userCancelledRef = useRef(false);
   const foundTransitionTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const autoRequeueStartedRef = useRef(false);
+  const queueSelfHealInFlightRef = useRef(false);
   const draftHydratedRef = useRef(false);
   const activeRoomHydratedRef = useRef(false);
   const activeRoomLookupAbortRef = useRef<AbortController | null>(null);
@@ -468,6 +470,69 @@ export function LobbyScreen() {
       foundTransitionTimeoutsRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    if (phase !== "waiting") return;
+    if (matchmakingState !== "searching") return;
+    if (!walletAddress) return;
+
+    let cancelled = false;
+
+    const pollPresence = async () => {
+      try {
+        const presence = await getMatchPresenceForAddress(walletAddress);
+        if (cancelled) return;
+
+        if (presence.inRoom && presence.roomId) {
+          openRecoveredRoom({
+            roomId: presence.roomId,
+            role: presence.role ?? null,
+            status: presence.status ?? null,
+            arenaId: selectedArena?.id ?? null,
+            token: selectedArena?.token ?? null,
+            wagerUsd: FIXED_WAGER_USD,
+            scientistId: selectedScientist?.id ?? null,
+          });
+          return;
+        }
+
+        if (presence.queued || queueSelfHealInFlightRef.current) {
+          return;
+        }
+
+        queueSelfHealInFlightRef.current = true;
+        console.warn("[LobbyScreen] Queue presence lost on backend; restarting matchmaking request.");
+        matchmakingAbortRef.current?.abort();
+        await startMatchmakingSearch();
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("[LobbyScreen] Queue presence check failed.", error);
+        }
+      } finally {
+        queueSelfHealInFlightRef.current = false;
+      }
+    };
+
+    void pollPresence();
+    const intervalId = setInterval(() => {
+      void pollPresence();
+    }, MATCHMAKING_PRESENCE_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      queueSelfHealInFlightRef.current = false;
+    };
+  }, [
+    matchmakingState,
+    openRecoveredRoom,
+    phase,
+    selectedArena?.id,
+    selectedArena?.token,
+    selectedScientist?.id,
+    startMatchmakingSearch,
+    walletAddress,
+  ]);
 
   useEffect(() => {
     if (!resumeQueue || autoRequeueStartedRef.current) return;
