@@ -383,3 +383,26 @@ Added explicit **match cancellation** and **surrender** flows across the full st
 - Presence and cancellation logic are growing into a real state machine, but are still implemented as imperative lifecycle branches and timers. A formal statechart would reduce the chance of future edge-case regressions.
 - Draw handling needs an end-to-end audit with the blockchain settlement path to guarantee refund behavior is fully deterministic and matches on-chain assumptions.
 - The lobby recovery code is compensating for the current HTTP matchmaking design. A websocket-native queue/ready flow would simplify this significantly and remove some of the persistence glue.
+
+---
+
+## 14. Card Distribution Rebalance - Heal 1 per 5 Cards (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `packages/game-logic/src/QuestionDealer.ts`
+- `packages/game-logic/test/QuestionDealer.test.ts`
+
+Reworked card-type assignment so `heal` no longer uses loose probability. The dealer now guarantees **exactly 1 heal card in every batch of 5 dealt cards**, while randomizing the heal slot inside each batch. That keeps the sequence less predictable without letting heal cards bunch up too often.
+
+**The Reasoning:**
+
+- The previous random distribution could create streaks that felt unfair, including too many heals appearing close together.
+- The new batch-based rule matches the intended balancing target more directly: roughly 20% heal rate, with spacing controlled at the queue level.
+- Because the match uses one shared pre-generated queue for both players, enforcing the rule in `QuestionDealer` keeps both fairness and determinism intact.
+
+**Tech Debt:**
+
+- The 5-card batch size is still hardcoded. If balancing keeps changing, this should become a configurable gameplay parameter instead of living inside `QuestionDealer`.
