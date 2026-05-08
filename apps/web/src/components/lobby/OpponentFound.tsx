@@ -52,6 +52,7 @@ export function OpponentFound({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
+  const [isCancellingMatch, setIsCancellingMatch] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
 
@@ -64,8 +65,10 @@ export function OpponentFound({
     lastSocketError,
     depositUnlockedAt,
     opponentFailedDepositAt,
+    lastRoomCancelled,
     lastMatchFound,
     confirmDeposit,
+    cancelMatch,
     reconnect,
   } = useMatchSocket({
     roomId,
@@ -146,12 +149,13 @@ export function OpponentFound({
   ]);
 
   useEffect(() => {
+    if (!lastRoomCancelled) return;
+    onTimeout();
+  }, [lastRoomCancelled, onTimeout]);
+
+  useEffect(() => {
     if (!opponentFailedDepositAt) return;
-    // Give the user time to read the "opponent didn't deposit" status before navigating back
-    const timerId = setTimeout(() => {
-      onTimeout();
-    }, 3500);
-    return () => clearTimeout(timerId);
+    onTimeout();
   }, [opponentFailedDepositAt, onTimeout]);
 
   useEffect(() => {
@@ -218,6 +222,13 @@ export function OpponentFound({
     }
   }
 
+  function onCancelMatch() {
+    if (isCancellingMatch) return;
+    setIsCancellingMatch(true);
+    cancelMatch();
+    onTimeout();
+  }
+
   useEffect(() => {
     if (!errorVisible) return;
     const timerId = setTimeout(() => {
@@ -240,6 +251,8 @@ export function OpponentFound({
     }
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
+    if (isCancellingMatch) return "Cancelling match...";
+    if (lastRoomCancelled?.reason === "player_cancelled") return "Match cancelled. Returning to lobby.";
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
     if (signingState === "signing") return "Confirm this transaction in Phantom.";
     if (signingState === "waiting") {
@@ -520,10 +533,11 @@ export function OpponentFound({
           cancelSlot={
             <button
               type="button"
-              onClick={onTimeout}
+              onClick={onCancelMatch}
+              disabled={isCancellingMatch}
               className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
             >
-              Cancel Match
+              {isCancellingMatch ? "Cancelling..." : "Cancel Match"}
             </button>
           }
           extraSlot={

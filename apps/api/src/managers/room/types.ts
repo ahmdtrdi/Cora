@@ -4,7 +4,7 @@ import { GameEngine } from '@cora/game-logic';
 
 export interface RoomClient {
   ws: ServerWebSocket<unknown> | null;
-  disconnectTimeout: ReturnType<typeof setTimeout> | null;
+  lastSeenAt: number;
 }
 
 export interface ServerPlayerMeta {

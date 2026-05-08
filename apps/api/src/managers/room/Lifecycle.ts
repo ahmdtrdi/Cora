@@ -4,7 +4,6 @@ import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
 
 export class Lifecycle {
-  private DISCONNECT_TIMEOUT_MS = 10_000;
   private DEPOSIT_TIMEOUT_MS = 30_000;
 
   constructor(private manager: RoomManager) {}
@@ -45,6 +44,13 @@ export class Lifecycle {
     const room = this.manager.store.getRoom(roomId);
     if (!room) {
       console.warn(`Room ${roomId} not found for join.`);
+      ws.close(1008, 'Room not found or already finished');
+      return;
+    }
+
+    if (room.status === 'finished') {
+      console.warn(`Room ${roomId} already finished for join.`);
+      ws.close(1008, 'Room already finished');
       return;
     }
 
@@ -53,11 +59,8 @@ export class Lifecycle {
     if (client) {
       console.log(`Player ${address} reconnected to room ${roomId}`);
       const previousWs = client.ws;
-      if (client.disconnectTimeout) {
-        clearTimeout(client.disconnectTimeout);
-        client.disconnectTimeout = null;
-      }
       client.ws = ws;
+      client.lastSeenAt = Date.now();
       if (previousWs && previousWs !== ws) {
         try {
           previousWs.close(1000, 'Replaced by newer connection');
@@ -77,7 +80,7 @@ export class Lifecycle {
       console.log(`Player ${address} joined room ${roomId} as ${characterId}`);
       room.clients.set(address, {
         ws,
-        disconnectTimeout: null,
+        lastSeenAt: Date.now(),
       });
 
       room.playerMeta.set(address, {
@@ -94,7 +97,9 @@ export class Lifecycle {
     if (room.status === 'depositing' && room.clients.size === 2 && room.playerA && room.playerB) {
       const metaA = room.playerMeta.get(room.playerA);
       const metaB = room.playerMeta.get(room.playerB);
-      if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false)) {
+      const playerAConnected = Boolean(room.clients.get(room.playerA)?.ws);
+      const playerBConnected = Boolean(room.clients.get(room.playerB)?.ws);
+      if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false) && playerAConnected && playerBConnected) {
         for (const t of room.depositTimeouts.values()) clearTimeout(t);
         room.depositTimeouts.clear();
         room.status = 'playing';
@@ -105,6 +110,7 @@ export class Lifecycle {
     }
 
     this.manager.network.broadcastGameState(room);
+    this.manager.network.broadcastPresence(room);
   }
 
   public leaveRoom(roomId: string, address: string, ws?: ServerWebSocket<unknown>) {
@@ -121,18 +127,38 @@ export class Lifecycle {
     }
 
     client.ws = null;
+    client.lastSeenAt = Date.now();
 
     if (room.status === 'playing') {
-      console.log(`Player ${address} disconnected from room ${roomId}. Starting 10s forfeit timer.`);
-      client.disconnectTimeout = setTimeout(() => {
-        console.log(`Player ${address} forfeit room ${roomId} due to timeout.`);
-        this.forfeitMatch(roomId, address);
-      }, this.DISCONNECT_TIMEOUT_MS);
+      console.log(`Player ${address} disconnected from active room ${roomId}. Presence updated; match remains open.`);
+      this.manager.network.broadcastPresence(room);
+      this.manager.network.broadcastGameState(room);
     } else if (room.status === 'depositing') {
+      const metaA = room.playerA ? room.playerMeta.get(room.playerA) : null;
+      const metaB = room.playerB ? room.playerMeta.get(room.playerB) : null;
+      const allDeposited = (metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false);
+
+      if (allDeposited) {
+        console.log(`Player ${address} disconnected from funded room ${roomId}. Presence updated; waiting for reconnect or surrender.`);
+        this.manager.network.broadcastPresence(room);
+        this.manager.network.broadcastGameState(room);
+        return;
+      }
+
       const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
       console.log(`Player ${address} disconnected during depositing in room ${roomId}. Cancelling room immediately.`);
-      this.cancelRoom(roomId, opponentAddress ?? undefined);
+      this.cancelRoom(roomId, opponentAddress ?? undefined, { reason: 'disconnect', cancelledBy: address });
     }
+  }
+
+  public cancelDuringDeposit(roomId: string, cancelledBy: string): void {
+    const room = this.manager.store.getRoom(roomId);
+    if (!room) return;
+    if (room.status !== 'depositing') return;
+    if (cancelledBy !== room.playerA && cancelledBy !== room.playerB) return;
+
+    console.log(`[Cancel] ${cancelledBy} cancelled deposit room ${roomId}.`);
+    this.cancelRoom(roomId, undefined, { reason: 'player_cancelled', cancelledBy });
   }
 
   public handleDeposit(room: Room, address: string, signature: string) {
@@ -171,13 +197,18 @@ export class Lifecycle {
     const allDeposited = (metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false);
 
     if (allDeposited && room.status === 'depositing') {
-      if (room.clients.size < 2) {
-        console.log(`Room ${room.id}: Both deposited but only ${room.clients.size} player(s) connected. Waiting for both.`);
-        return;
-      }
-
       for (const t of room.depositTimeouts.values()) clearTimeout(t);
       room.depositTimeouts.clear();
+
+      const playerAConnected = Boolean(room.clients.get(room.playerA)?.ws);
+      const playerBConnected = Boolean(room.clients.get(room.playerB)?.ws);
+
+      if (!playerAConnected || !playerBConnected) {
+        console.log(`Room ${room.id}: Both deposited but not all sockets are connected. Waiting for reconnect.`);
+        this.manager.network.broadcastGameState(room);
+        this.manager.network.broadcastPresence(room);
+        return;
+      }
 
       room.status = 'playing';
       console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
@@ -192,21 +223,34 @@ export class Lifecycle {
     const timer = setTimeout(() => {
       console.log(`[ShotClock] Player ${address} timed out in room ${room.id}. Cancelling.`);
       const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
-      this.cancelRoom(room.id, opponentAddress ?? undefined);
+      this.cancelRoom(room.id, opponentAddress ?? undefined, { reason: 'deposit_timeout', cancelledBy: address });
     }, this.DEPOSIT_TIMEOUT_MS);
 
     room.depositTimeouts.set(address, timer);
   }
 
-  public cancelRoom(roomId: string, innocentAddress?: string): void {
+  public cancelRoom(
+    roomId: string,
+    innocentAddress?: string,
+    options?: { reason?: 'player_cancelled' | 'deposit_timeout' | 'disconnect'; cancelledBy?: string },
+  ): void {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
     const shouldRequeueInnocent = room.status !== 'depositing';
+    const reason = options?.reason ?? 'deposit_timeout';
 
     console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'}`);
 
     for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
     room.depositTimeouts.clear();
+
+    this.manager.network.broadcastToRoom(room, {
+      type: 'roomCancelled',
+      payload: {
+        cancelledBy: options?.cancelledBy ?? null,
+        reason,
+      },
+    });
 
     if (innocentAddress) {
       const client = room.clients.get(innocentAddress);
@@ -245,37 +289,56 @@ export class Lifecycle {
     this.manager.store.deleteRoom(roomId);
   }
 
-  private forfeitMatch(roomId: string, disconnectedAddress: string) {
+  public surrender(roomId: string, surrenderedAddress: string): void {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
+    if (room.status !== 'playing' && room.status !== 'depositing') return;
+    if (surrenderedAddress !== room.playerA && surrenderedAddress !== room.playerB) return;
 
-    room.status = 'settling';
-    this.manager.network.broadcastGameState(room);
+    const winnerAddress = surrenderedAddress === room.playerA ? room.playerB : room.playerA;
+    if (!winnerAddress) return;
+    const metaA = room.playerA ? room.playerMeta.get(room.playerA) : null;
+    const metaB = room.playerB ? room.playerMeta.get(room.playerB) : null;
+    const allDeposited = (metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false);
+    if (!allDeposited) {
+      console.log(`[Surrender] Ignoring surrender in room ${roomId}; both deposits are not confirmed.`);
+      return;
+    }
 
+    console.log(`[Surrender] ${surrenderedAddress} surrendered room ${roomId}. Winner: ${winnerAddress}`);
+
+    for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
+    room.depositTimeouts.clear();
     this.clearAllOpenedCards(room);
 
     if (room.engine) {
-      room.engine.stop(disconnectedAddress);
-    } else {
-      const opponentAddress = Array.from(room.clients.keys()).find(a => a !== disconnectedAddress);
-      if (opponentAddress) {
-        const result: MatchResult = {
-          winnerAddress: opponentAddress,
-          reason: 'forfeit',
-          finalScores: {},
-          finalHealth: {},
-        };
-        this.manager.network.broadcastToRoom(room, {
-          type: 'matchResult',
-          payload: result,
-        });
-      }
+      room.engine.surrender(surrenderedAddress);
+      return;
     }
 
+    room.status = 'settling';
+    this.manager.network.broadcastGameState(room);
+    this.manager.blockchain.settleMatch(room, winnerAddress);
+
+    const result: MatchResult = {
+      winnerAddress,
+      reason: 'surrender',
+      surrenderedAddress,
+      finalScores: {},
+      finalHealth: {},
+      finalRoundsWon: {},
+      finalCorrectAnswers: {},
+    };
+
+    this.manager.network.broadcastToRoom(room, {
+      type: 'matchResult',
+      payload: result,
+    });
     room.status = 'finished';
     this.manager.network.broadcastGameState(room);
-
-    this.destroyRoom(roomId);
+    setTimeout(() => {
+      this.destroyRoom(roomId);
+    }, 15_000);
   }
 
   public clearOpenedCard(room: Room, address: string) {

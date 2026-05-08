@@ -324,3 +324,62 @@ _Files touched:_ `apps/api/src/managers/RoomManager.ts`, `packages/game-logic/sr
 **Tech Debt:**
 
 - Room state management is heavily reliant on timeouts. A state-machine approach (like XState) would formally prevent invalid transitions and zombie states.
+
+---
+
+## 13. Match Lifecycle Upgrade - Cancel, Surrender, Presence Recovery (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/index.ts`
+- `apps/api/src/managers/RoomManager.ts`
+- `apps/api/src/managers/room/Blockchain.ts`
+- `apps/api/src/managers/room/Engine.ts`
+- `apps/api/src/managers/room/Lifecycle.ts`
+- `apps/api/src/managers/room/Network.ts`
+- `apps/api/src/managers/room/Queue.ts`
+- `apps/api/src/managers/room/types.ts`
+- `apps/api/src/utils/settlement.ts`
+- `apps/api/test/RoomManager.test.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/components/lobby/OpponentFound.tsx`
+- `apps/web/src/components/play/BattleScreen.tsx`
+- `apps/web/src/hooks/useMatchSocket.ts`
+- `apps/web/src/lib/matchmaking/queueMatch.ts`
+- `packages/game-logic/src/GameEngine.ts`
+- `packages/game-logic/src/types.ts`
+- `packages/game-logic/test/GameEngine.test.ts`
+- `packages/shared-types/src/websocket.ts`
+
+Added explicit **match cancellation** and **surrender** flows across the full stack, then reworked disconnect handling so funded and active rooms stay recoverable instead of auto-forfeiting immediately.
+
+**What changed:**
+
+1. **Room lifecycle actions:** Added `cancelMatch` and `surrender` as first-class client intents instead of overloading disconnect behavior.
+2. **Cancellation reasons:** Deposit-stage rooms can now end with explicit reasons:
+   - player manually cancelled
+   - deposit timeout expired
+   - a player disconnected before the room was safely ready to start
+3. **Presence-aware reconnects:** Once both players are funded, disconnect no longer triggers an automatic 10-second loss. The room remains open, the socket is nulled, `lastSeenAt` is tracked, and the server broadcasts presence changes until the player reconnects or surrenders.
+4. **Surrender path:** A funded player can now concede during `depositing` or `playing`, and the room settles with `reason: 'surrender'` plus `surrenderedAddress`.
+5. **Shared websocket contract:** Added `roomCancelled` and `presenceUpdate` events, expanded `PlayerState` with `isConnected`, `lastSeenAt`, and `correctAnswers`, and expanded `MatchResult` to support `winnerAddress: null`, `draw`, and richer final stats.
+6. **Game engine tie resolution:** The engine now tracks `correctAnswers`, resolves round timeout by HP then correct answers, resolves final match outcome by rounds won then HP then correct answers, and emits a true `draw` if everything is still equal.
+7. **Lobby recovery UX:** FE now stores an `active-room` snapshot, restores active rooms after refresh/reopen, and redirects players back into deposit or play flow when the backend confirms they are already in a live room.
+8. **Battle UI updates:** Added a visible `Surrender` action and cleanup of persisted lobby/room recovery state once the match is complete or the player exits cleanly.
+
+**The Reasoning:**
+
+- Auto-forfeiting on disconnect was too harsh for real network conditions. Refreshes, browser restarts, and unstable tunnels should not instantly decide a wagered match.
+- Cancellation and surrender represent different phases of intent. Cancelling is a pre-match lifecycle action; surrender is an in-match competitive outcome. Splitting them keeps room logic explicit and easier to reason about.
+- Presence is part of game correctness now, not just UI polish. The server must know whether both sockets are actually alive before starting play or deciding whether a room should remain recoverable.
+- A deterministic draw path is safer than arbitrarily choosing a winner in perfect ties. Since we already track rounds, HP, and answer accuracy, the engine can now explain why a match ended the way it did.
+- FE persistence plus server-side active room lookup makes matchmaking and reconnect flow more resilient while the queue system still relies on HTTP request/response timing.
+
+**Tech Debt:**
+
+- Active-room recovery is currently split between `localStorage` snapshots and in-memory backend room lookup. It works, but the source of truth is still distributed across layers.
+- Presence and cancellation logic are growing into a real state machine, but are still implemented as imperative lifecycle branches and timers. A formal statechart would reduce the chance of future edge-case regressions.
+- Draw handling needs an end-to-end audit with the blockchain settlement path to guarantee refund behavior is fully deterministic and matches on-chain assumptions.
+- The lobby recovery code is compensating for the current HTTP matchmaking design. A websocket-native queue/ready flow would simplify this significantly and remove some of the persistence glue.

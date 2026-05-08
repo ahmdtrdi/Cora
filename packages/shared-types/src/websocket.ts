@@ -9,7 +9,10 @@ export interface PlayerState {
   characterState: CharacterState;
   score: number;
   roundsWon: number;
+  correctAnswers: number;
   characterId: string;
+  isConnected: boolean;
+  lastSeenAt?: number;
 }
 
 export interface TimerState {
@@ -108,6 +111,8 @@ export type ClientToServerEvents = {
   openCard: (data: { cardId: string }) => void;
   playCard: (cardId: string, selectedOptionId: string) => void;
   confirmDeposit: (signature: string) => void;
+  cancelMatch: () => void;
+  surrender: () => void;
 };
 
 // Settlement result payload sent after match ends
@@ -124,6 +129,7 @@ export interface MatchResultPayload {
 // Messages sent from Server -> Client
 export type ServerToClientEvents = {
   opponentFailedDeposit: (data: {}) => void;
+  roomCancelled: (data: { cancelledBy?: string | null; reason: 'player_cancelled' | 'deposit_timeout' | 'disconnect' }) => void;
   matchFound: (data: { roomId: string; role: 'playerA' | 'playerB'; opponentAddress: string }) => void;
   depositUnlocked: (data: { roomId: string }) => void;
   gameStateUpdate: (state: GameState) => void;
@@ -137,14 +143,22 @@ export type ServerToClientEvents = {
   cardCountdown: (data: CardCountdownData) => void;
   cardExpired: (data: CardExpiredData) => void;
   scoreUpdate: (data: ScoreUpdateData) => void;
+  presenceUpdate: (data: PresenceUpdateData) => void;
 };
 
 export interface MatchResult {
-  winnerAddress: string;
-  reason: 'hp_zero' | 'time_up' | 'forfeit' | 'anti_cheat';
+  winnerAddress: string | null;
+  reason: 'hp_zero' | 'time_up' | 'surrender' | 'anti_cheat' | 'draw' | 'server_error';
   finalScores: Record<string, number>;
   finalHealth: Record<string, number>;
+  finalRoundsWon?: Record<string, number>;
+  finalCorrectAnswers?: Record<string, number>;
+  surrenderedAddress?: string;
   antiCheatWarning?: boolean; // True if the match was suspicious but still settled
+}
+
+export interface PresenceUpdateData {
+  players: Record<string, { isConnected: boolean; lastSeenAt?: number }>;
 }
 
 // Serialization format for native WebSocket (since we aren't using Socket.io)

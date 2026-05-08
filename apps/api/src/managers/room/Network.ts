@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from 'bun';
-import type { GameState, ScoreUpdateData, WsMessage } from '@shared/websocket';
+import type { GameState, PresenceUpdateData, ScoreUpdateData, WsMessage } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 import { Room } from './types';
 
@@ -42,6 +42,7 @@ export class Network {
           wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
         };
+        this.applyPresence(room, payload);
       } else {
         // Pre-game state (waiting / depositing)
         const opponentAddress = addresses.find(a => a !== address);
@@ -53,7 +54,10 @@ export class Network {
             characterState: 'stay',
             score: 0,
             roundsWon: 0,
+            correctAnswers: 0,
             characterId: room.playerMeta.get(address)?.characterId || 'einstein',
+            isConnected: Boolean(room.clients.get(address)?.ws),
+            lastSeenAt: room.clients.get(address)?.lastSeenAt,
           },
           opponent: opponentAddress
             ? {
@@ -62,7 +66,10 @@ export class Network {
               characterState: 'stay',
               score: 0,
               roundsWon: 0,
+              correctAnswers: 0,
               characterId: room.playerMeta.get(opponentAddress)?.characterId || 'einstein',
+              isConnected: Boolean(room.clients.get(opponentAddress)?.ws),
+              lastSeenAt: room.clients.get(opponentAddress)?.lastSeenAt,
             }
             : {
               address: 'Waiting for opponent...',
@@ -70,7 +77,9 @@ export class Network {
               characterState: 'stay',
               score: 0,
               roundsWon: 0,
+              correctAnswers: 0,
               characterId: 'einstein',
+              isConnected: false,
             },
           hand: [],
           timer: {
@@ -94,6 +103,27 @@ export class Network {
         payload,
       } as WsMessage<GameState>);
     }
+  }
+
+  public broadcastPresence(room: Room) {
+    const payload: PresenceUpdateData = { players: {} };
+    for (const [address, client] of room.clients) {
+      payload.players[address] = {
+        isConnected: Boolean(client.ws),
+        lastSeenAt: client.lastSeenAt,
+      };
+    }
+    this.broadcastToRoom(room, { type: 'presenceUpdate', payload });
+  }
+
+  private applyPresence(room: Room, state: GameState): void {
+    const playerClient = room.clients.get(state.player.address);
+    const opponentClient = room.clients.get(state.opponent.address);
+
+    state.player.isConnected = Boolean(playerClient?.ws);
+    state.player.lastSeenAt = playerClient?.lastSeenAt;
+    state.opponent.isConnected = Boolean(opponentClient?.ws);
+    state.opponent.lastSeenAt = opponentClient?.lastSeenAt;
   }
 
   /**

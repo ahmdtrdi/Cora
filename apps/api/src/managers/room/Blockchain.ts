@@ -1,4 +1,4 @@
-import { serverPublicKey, signSettlementAuthorization, submitSettlementTransaction, getServerKeypair } from '../../utils/settlement';
+import { serverPublicKey, signSettlementAuthorization, submitRefundTransaction, submitSettlementTransaction, getServerKeypair } from '../../utils/settlement';
 import { isMagicBlockConfigured, magicBlockService } from '../../services/magicblock';
 import { getWagerUsdValue } from '../../services/goldrush';
 import { Room } from './types';
@@ -107,5 +107,14 @@ export class Blockchain {
     submitSettlementTransaction(action, room.matchIdBytes, cheaterAddress)
       .then(tx => console.log(`[RoomBlockchain] Anti-Cheat penalty on-chain settlement completed. Tx: ${tx}`))
       .catch(err => console.error(`[RoomBlockchain] Anti-Cheat Auto-settlement failed:`, err));
+  }
+
+  /**
+   * Refunds both players. This should only be used for draws and server errors.
+   */
+  public refundMatch(room: Room, reason: 'draw' | 'server_error'): void {
+    submitRefundTransaction(room.matchIdBytes)
+      .then(tx => console.log(`[RoomBlockchain] Refund completed for ${reason}. Tx: ${tx}`))
+      .catch(err => console.error(`[RoomBlockchain] Refund failed for ${reason}:`, err));
   }
 }

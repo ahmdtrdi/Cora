@@ -104,6 +104,7 @@ app.post('/match', async (c) => {
     return c.json({ error: 'Address is required' }, 400);
   }
 
+  const existingRoom = roomManager.queue.findActiveRoomForAddress(address);
   const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
   const room = roomManager.getRoom(roomId);
   const role =
@@ -111,7 +112,37 @@ app.post('/match', async (c) => {
     room?.playerB === address ? 'playerB' :
     undefined;
 
-  return c.json({ roomId, role, roomType: room?.roomType });
+  return c.json({
+    roomId,
+    role,
+    roomType: room?.roomType,
+    alreadyInRoom: Boolean(existingRoom),
+    status: room?.status,
+  });
+});
+
+app.get('/match/active/:address', (c) => {
+  const address = c.req.param('address');
+  const room = roomManager.queue.findActiveRoomForAddress(address);
+
+  if (!room) {
+    return c.json({ inRoom: false });
+  }
+
+  const role =
+    room.playerA === address ? 'playerA' :
+    room.playerB === address ? 'playerB' :
+    undefined;
+
+  return c.json({
+    inRoom: true,
+    roomId: room.id,
+    role,
+    roomType: room.roomType,
+    status: room.status,
+    playerA: room.playerA,
+    playerB: room.playerB,
+  });
 });
 
 // Private room creation — for Blinks / direct challenge invites

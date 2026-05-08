@@ -61,6 +61,14 @@ export class RoomManager {
       this.lifecycle.handleDeposit(room, address, message.payload?.signature);
     }
 
+    if (message.type === 'cancelMatch') {
+      this.lifecycle.cancelDuringDeposit(roomId, address);
+    }
+
+    if (message.type === 'surrender') {
+      this.lifecycle.surrender(roomId, address);
+    }
+
     if (message.type === 'openCard' && room.status === 'playing') {
       this.engine.handleOpenCard(room, address, message.payload?.cardId);
     }

@@ -25,6 +25,8 @@ const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
+const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
+const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
@@ -67,6 +69,12 @@ function formatMatchClock(remainingMs?: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function clearLobbyReturnState() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+  window.sessionStorage.removeItem(LOBBY_DRAFT_STORAGE_KEY);
 }
 
 type UiAlert = {
@@ -170,6 +178,7 @@ export function BattleScreen() {
     openCard,
     playCard,
     confirmDeposit,
+    surrender,
     reconnect,
   } = useMatchSocket({ roomId, address });
 
@@ -340,6 +349,13 @@ export function BattleScreen() {
     playCard(activeCard.id, optionId);
   }
 
+  function onSurrender() {
+    if (!isPlayable || isMatchComplete) return;
+    const ok = window.confirm("Surrender this match?");
+    if (!ok) return;
+    surrender();
+  }
+
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
   const playerRoundsWon = player?.roundsWon ?? 0;
@@ -353,15 +369,20 @@ export function BattleScreen() {
 
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
+  const isDraw = matchSummaryResult?.reason === "draw";
   const settlementText = winnerAddress
     ? winnerAddress === player?.address
       ? "You Win"
       : "You Lose"
+    : isDraw
+      ? "Draw"
     : matchInvalidated
       ? "Match Invalidated"
       : "Match Finished";
   const settlementSubtitle = matchInvalidated
     ? "Match invalidated."
+    : isDraw
+      ? "All checks were equal. Wagers are being refunded."
     : winnerAddress
       ? winnerAddress === address
         ? "Victory secured."
@@ -392,6 +413,7 @@ export function BattleScreen() {
   const isSocketRecovering = connectionState === "connecting" || connectionState === "reconnecting";
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
   const isRoomStateLoading = !gameState && isSocketRecovering;
+  const isRoomUnavailable = !gameState && hasSocketIssue;
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
@@ -400,11 +422,15 @@ export function BattleScreen() {
   const showRoomGateModal = isRoomStateLoading || shouldShowPlayStateGate;
   const roomGateTitle = isRoomStateLoading
     ? "Syncing Room State"
+    : isRoomUnavailable
+      ? "Unable To Enter Room"
     : status === "waiting"
       ? "Waiting For Battle"
       : "Room Locked";
   const roomGateMessage = isRoomStateLoading
     ? "Rejoining battle room after refresh. Waiting for server snapshot."
+    : isRoomUnavailable
+      ? socketCloseText ?? lastSocketError ?? "The room is unavailable or already finished."
     : `Current room status: ${getStatusLabel(status)}.`;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
@@ -441,6 +467,7 @@ export function BattleScreen() {
     }
     return `/lobby?${params.toString()}`;
   }, [arenaId, scientistId]);
+  const cleanLobbyHref = "/lobby";
   useEffect(() => {
     if (playerSpriteState !== "action") {
       playerActionControls.start({
@@ -492,6 +519,11 @@ export function BattleScreen() {
     extraPointShownRef.current = true;
     showGameNotice("Extra Point - every move matters.", "phase");
   }, [currentPhase, gameState?.timer?.phase, showGameNotice]);
+
+  useEffect(() => {
+    if (!isMatchComplete) return;
+    clearLobbyReturnState();
+  }, [isMatchComplete]);
 
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
@@ -858,8 +890,22 @@ export function BattleScreen() {
             >
               {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
             </span>
+            <button
+              type="button"
+              onClick={onSurrender}
+              disabled={!isPlayable || isMatchComplete}
+              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide disabled:opacity-50"
+              style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
+            >
+              Surrender
+            </button>
             <Link
-              href={resumeQueueHref}
+              href={isMatchComplete ? cleanLobbyHref : resumeQueueHref}
+              onClick={() => {
+                if (isMatchComplete) {
+                  clearLobbyReturnState();
+                }
+              }}
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
@@ -1371,6 +1417,7 @@ export function BattleScreen() {
               </button>
               <Link
                 href="/lobby"
+                onClick={clearLobbyReturnState}
                 className="frame-cut frame-cut-sm px-5 py-3 text-center font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
                 style={{
                   border: "1px solid rgba(39,65,55,0.22)",

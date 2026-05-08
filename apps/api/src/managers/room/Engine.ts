@@ -52,13 +52,17 @@ export class Engine {
     });
 
     engine.on('gameOver', (data) => {
-      console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress} (${data.reason})`);
-      console.log('SETTLING: Winner determined server-side, beginning settlement...');
+      console.log(`Room ${room.id} game over! Winner: ${data.winnerAddress ?? 'draw'} (${data.reason})`);
+      console.log('SETTLING: Outcome determined server-side, beginning payout flow...');
 
       room.status = 'settling';
       this.manager.network.broadcastGameState(room);
 
       try {
+        const finalScores = engine.getScores();
+        const finalHealth = engine.getHealth();
+        const finalRoundsWon = engine.getRoundsWon();
+        const finalCorrectAnswers = engine.getCorrectAnswers();
         const verdicts = data.antiCheatVerdicts || {};
         let isRejected = false;
         let cheaterAddress: string | null = null;
@@ -85,20 +89,41 @@ export class Engine {
           const result: MatchResult = {
             winnerAddress: data.winnerAddress,
             reason: 'anti_cheat',
-            finalScores: engine.getScores(),
-            finalHealth: engine.getHealth(),
+            finalScores,
+            finalHealth,
+            finalRoundsWon,
+            finalCorrectAnswers,
           };
 
           this.manager.network.broadcastToRoom(room, {
             type: 'matchInvalidated',
             payload: result,
           });
+        } else if (!data.winnerAddress || data.reason === 'draw') {
+          const result: MatchResult = {
+            winnerAddress: null,
+            reason: 'draw',
+            finalScores,
+            finalHealth,
+            finalRoundsWon,
+            finalCorrectAnswers,
+            antiCheatWarning: isSuspicious,
+          };
+
+          this.manager.blockchain.refundMatch(room, 'draw');
+          this.manager.network.broadcastToRoom(room, {
+            type: 'matchResult',
+            payload: result,
+          });
         } else {
           const result: MatchResult = {
             winnerAddress: data.winnerAddress,
             reason: data.reason,
-            finalScores: engine.getScores(),
-            finalHealth: engine.getHealth(),
+            surrenderedAddress: data.surrenderedAddress,
+            finalScores,
+            finalHealth,
+            finalRoundsWon,
+            finalCorrectAnswers,
             antiCheatWarning: isSuspicious,
           };
 
@@ -110,6 +135,18 @@ export class Engine {
         }
       } catch (e) {
         console.error(`[RoomEngineManager] Error during game over processing for room ${room.id}:`, e);
+        this.manager.blockchain.refundMatch(room, 'server_error');
+        this.manager.network.broadcastToRoom(room, {
+          type: 'matchResult',
+          payload: {
+            winnerAddress: null,
+            reason: 'server_error',
+            finalScores: engine.getScores(),
+            finalHealth: engine.getHealth(),
+            finalRoundsWon: engine.getRoundsWon(),
+            finalCorrectAnswers: engine.getCorrectAnswers(),
+          } satisfies MatchResult,
+        });
       } finally {
         room.status = 'finished';
         console.log(`FINISHED: Room ${room.id} settlement dispatched.`);

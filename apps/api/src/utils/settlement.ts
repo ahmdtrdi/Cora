@@ -9,6 +9,7 @@ import {
   sendAndConfirmTransaction,
   TransactionInstruction,
 } from '@solana/web3.js';
+import { createHash } from 'crypto';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
@@ -226,5 +227,67 @@ export async function submitSettlementTransaction(
   console.log(`[Settlement] Success! TxHash: ${txHash}`);
   console.log(`[Settlement] MatchState PDA and Vault closed on-chain. Rent reclaimed by caller.`);
   
+  return txHash;
+}
+
+function anchorDiscriminator(name: string): Buffer {
+  return createHash('sha256').update(`global:${name}`).digest().subarray(0, 8);
+}
+
+/**
+ * Submits the refund transaction directly to the Solana blockchain.
+ *
+ * Used only for draw/server-error outcomes. The current on-chain refund
+ * instruction is timeout-gated, so this will fail until the deployed program
+ * allows immediate referee refunds for those outcomes.
+ */
+export async function submitRefundTransaction(matchId: Uint8Array): Promise<string> {
+  if (!hasExplicitRpc) {
+    console.log(`[Refund] Skipped - no SOLANA_RPC_URL configured. Set it in .env to enable on-chain refunds.`);
+    return 'SKIPPED_NO_RPC';
+  }
+
+  const matchStatePda = PublicKey.findProgramAddressSync(
+    [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchId],
+    PROGRAM_ID
+  )[0];
+  const vaultPda = PublicKey.findProgramAddressSync(
+    [Buffer.from(ESCROW_CONSTANTS.VAULT_SEED), matchId],
+    PROGRAM_ID
+  )[0];
+
+  const accountInfo = await withRetry(() => connection.getAccountInfo(matchStatePda));
+  if (!accountInfo) {
+    console.warn(`[Refund] MatchState PDA not found on-chain. It may already be settled/refunded. Skipping.`);
+    return 'SKIPPED_NO_ONCHAIN_MATCH';
+  }
+
+  const matchStateData = accountInfo.data;
+  const playerA = new PublicKey(matchStateData.subarray(41, 73));
+  const playerB = new PublicKey(matchStateData.subarray(73, 105));
+  const tokenMint = new PublicKey(matchStateData.subarray(105, 137));
+
+  const playerATa = getAssociatedTokenAddressSync(tokenMint, playerA, true);
+  const playerBTa = getAssociatedTokenAddressSync(tokenMint, playerB, true);
+
+  const refundIx = new TransactionInstruction({
+    programId: PROGRAM_ID,
+    data: anchorDiscriminator('refund'),
+    keys: [
+      { pubkey: serverKeypair.publicKey, isSigner: true, isWritable: true },
+      { pubkey: matchStatePda, isSigner: false, isWritable: true },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: playerATa, isSigner: false, isWritable: true },
+      { pubkey: playerBTa, isSigner: false, isWritable: true },
+      { pubkey: tokenMint, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+  });
+
+  const tx = new Transaction().add(refundIx);
+  console.log(`[Refund] Submitting refund for match: ${Buffer.from(matchId).toString('hex')}`);
+
+  const txHash = await withRetry(() => sendAndConfirmTransaction(connection, tx, [serverKeypair]));
+  console.log(`[Refund] Success! TxHash: ${txHash}`);
   return txHash;
 }
