@@ -1,8 +1,9 @@
 use crate::constants::*;
 use crate::error::BattleError;
 use crate::events::{
-    BattleFinalizedEvent, DamageAppliedEvent, RoundAdvancedEvent, RoundEndedEvent,
+    DamageAppliedEvent,
 };
+use crate::instructions::match_updates::award_round_and_progress;
 use crate::state::{BattleSession, BattleStatus, RegisteredCard};
 use anchor_lang::prelude::*;
 
@@ -30,6 +31,10 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
 
     // Replay protection: each card can only be used once
     require!(!card.is_used, BattleError::CardAlreadyUsed);
+    require!(
+        card.effect_type == EFFECT_ATTACK,
+        BattleError::InvalidEffectType
+    );
 
     // Attacker must be a valid participant
     let is_player_a = attacker == session.player_a;
@@ -41,10 +46,25 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
 
     // Apply damage to the opponent
     let damage = card.damage;
+    let actual_damage = if is_player_a {
+        session.health_b.min(damage)
+    } else {
+        session.health_a.min(damage)
+    };
     if is_player_a {
         session.health_b = session.health_b.saturating_sub(damage);
+        // Legacy apply_damage approximates gameplay score from applied damage.
+        session.game_score_a = session
+            .game_score_a
+            .checked_add(u32::from(actual_damage))
+            .ok_or(BattleError::ArithmeticOverflow)?;
     } else {
         session.health_a = session.health_a.saturating_sub(damage);
+        // Legacy apply_damage approximates gameplay score from applied damage.
+        session.game_score_b = session
+            .game_score_b
+            .checked_add(u32::from(actual_damage))
+            .ok_or(BattleError::ArithmeticOverflow)?;
     }
 
     session.total_plays = session
@@ -70,105 +90,7 @@ pub fn handler(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
         } else {
             session.health_b == 0
         };
-
-        if round_winner_is_a {
-            // TODO: rounds_won_* is a legacy duplicate of score_* and should be
-            // removed in a future account migration once downstream consumers move.
-            session.rounds_won_a = session
-                .rounds_won_a
-                .checked_add(1)
-                .ok_or(BattleError::ArithmeticOverflow)?;
-        } else {
-            session.rounds_won_b = session
-                .rounds_won_b
-                .checked_add(1)
-                .ok_or(BattleError::ArithmeticOverflow)?;
-        }
-
-        let round_winner = if round_winner_is_a {
-            session.player_a
-        } else {
-            session.player_b
-        };
-
-        if round_winner_is_a {
-            session.score_a = session
-                .score_a
-                .checked_add(1)
-                .ok_or(BattleError::ArithmeticOverflow)?;
-        } else {
-            session.score_b = session
-                .score_b
-                .checked_add(1)
-                .ok_or(BattleError::ArithmeticOverflow)?;
-        }
-
-        emit!(RoundEndedEvent {
-            session: session_key,
-            match_id: session.match_id,
-            round: session.current_round,
-            round_winner,
-            rounds_won_a: session.rounds_won_a,
-            rounds_won_b: session.rounds_won_b,
-        });
-
-        // Check if match is over (best-of-3, need 2 wins)
-        if session.score_a >= u16::from(ROUNDS_TO_WIN) {
-            session.status = BattleStatus::Finished;
-            session.winner = session.player_a;
-            session.finished_at = now;
-            session.end_reason = END_REASON_NORMAL_WIN;
-
-            emit!(BattleFinalizedEvent {
-                session: session_key,
-                match_id: session.match_id,
-                winner: session.player_a,
-                end_reason: session.end_reason,
-                score_a: session.score_a,
-                score_b: session.score_b,
-                rounds_won_a: session.rounds_won_a,
-                rounds_won_b: session.rounds_won_b,
-                game_score_a: session.game_score_a,
-                game_score_b: session.game_score_b,
-            });
-        } else if session.score_b >= u16::from(ROUNDS_TO_WIN) {
-            session.status = BattleStatus::Finished;
-            session.winner = session.player_b;
-            session.finished_at = now;
-            session.end_reason = END_REASON_NORMAL_WIN;
-
-            emit!(BattleFinalizedEvent {
-                session: session_key,
-                match_id: session.match_id,
-                winner: session.player_b,
-                end_reason: session.end_reason,
-                score_a: session.score_a,
-                score_b: session.score_b,
-                rounds_won_a: session.rounds_won_a,
-                rounds_won_b: session.rounds_won_b,
-                game_score_a: session.game_score_a,
-                game_score_b: session.game_score_b,
-            });
-        } else {
-            // Next round: reset health, advance round counter
-            session.health_a = INITIAL_HEALTH;
-            session.health_b = INITIAL_HEALTH;
-            session.current_round = session
-                .current_round
-                .checked_add(1)
-                .ok_or(BattleError::ArithmeticOverflow)?;
-            session.round_started_at = now;
-            session.round_deadline = now
-                .checked_add(ROUND_DURATION_SECONDS)
-                .ok_or(BattleError::ArithmeticOverflow)?;
-
-            emit!(RoundAdvancedEvent {
-                session: session_key,
-                match_id: session.match_id,
-                current_round: session.current_round,
-                round_deadline: session.round_deadline,
-            });
-        }
+        award_round_and_progress(session, session_key, round_winner_is_a, now)?;
     }
 
     Ok(())

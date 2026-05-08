@@ -27,9 +27,21 @@ pub mod cora_battle {
     }
 
     /// Register a card (question mapping) for a battle session.
-    /// Authority-only. Only allowed in WaitingCards status.
+    /// Legacy damage-only path. New effect-aware flows should use register_card_v2.
     pub fn register_card(ctx: Context<RegisterCard>, card_id: [u8; 16], damage: u16) -> Result<()> {
         instructions::register_card::handler(ctx, card_id, damage)
+    }
+
+    /// Register an effect-aware card for ER resolution.
+    /// Authority-only. Only allowed in WaitingCards status.
+    pub fn register_card_v2(
+        ctx: Context<RegisterCardV2>,
+        card_id: [u8; 16],
+        owner: Pubkey,
+        effect_type: u8,
+        max_value: u16,
+    ) -> Result<()> {
+        instructions::register_card::handler_v2(ctx, card_id, owner, effect_type, max_value)
     }
 
     /// Activate the session after card registration is complete.
@@ -43,6 +55,17 @@ pub mod cora_battle {
     /// then calls this to record damage on-chain.
     pub fn apply_damage(ctx: Context<ApplyDamage>, attacker: Pubkey) -> Result<()> {
         instructions::apply_damage::handler(ctx, attacker)
+    }
+
+    /// Apply a backend-authorized final card effect to ER battle state.
+    /// The backend remains the source of truth for answer validation and
+    /// private multiplier computation; ER only stores the final public effect.
+    pub fn apply_card_effect(
+        ctx: Context<ApplyCardEffect>,
+        final_value: u16,
+        score_delta: u32,
+    ) -> Result<()> {
+        instructions::apply_card_effect::handler(ctx, final_value, score_delta)
     }
 
     /// Resolve a single-player round timeout after the round deadline.

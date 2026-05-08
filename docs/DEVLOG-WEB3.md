@@ -516,3 +516,48 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] `game_score_a` and `game_score_b` are stored and emitted, but no ER instruction mutates them yet. The next step is a BE-authorized effect/write path that mirrors GameEngine score changes without moving answer validation on-chain.
 - [ ] `finalize_match` still emits the stored winner instead of computing from `determine_winner_by_match_rules()`. That is acceptable for this migration, but the helper should become the final source once gameplay-score writes exist.
 - [ ] `RoundEndedEvent` still exposes `rounds_won_a/b` rather than canonical `score_a/score_b`. Consumers are safe today because the fields stay synchronized, but the event vocabulary is still mixed.
+
+---
+
+## Entry 17 — 2026-05-08: BE-Authorized `apply_card_effect` for ATTACK / HEAL / NONE
+
+### The Change
+
+**ER instruction surface and shared logic (7 files):**
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` — Added `register_card_v2` and `apply_card_effect` to the program interface while keeping `register_card` and `apply_damage` intact for compatibility.
+- `instructions/apply_card_effect.rs` — **NEW**: Added the backend-authorized effect instruction. It validates authority, owner, effect type, card replay protection, score delta bounds, and max-value bounds, then applies ATTACK / HEAL / NONE state transitions and writes `game_score_*` through `score_delta`.
+- `instructions/match_updates.rs` — **NEW**: Centralized the normal round-win path shared by `apply_damage` and `apply_card_effect` so round award, round advance, and finalization stay aligned.
+- `instructions/apply_damage.rs` — Kept the legacy damage-only entrypoint, but now requires `EFFECT_ATTACK` cards and increments gameplay score using the applied damage amount as a compatibility approximation.
+- `instructions/register_card.rs` — Kept legacy `register_card(damage)` as an attack-only compatibility path, and added `register_card_v2(card_id, owner, effect_type, max_value)` for effect-aware cards.
+- `state.rs` — Extended `RegisteredCard` with `owner`, `effect_type`, and `max_value`, while keeping `damage` as the legacy attack value for `apply_damage`.
+- `events.rs` — Added `CardEffectAppliedEvent` and expanded `CardRegisteredEvent` with owner/effect metadata without removing the legacy damage field.
+
+**Constants and errors (2 files):**
+- `constants.rs` — Added `EFFECT_ATTACK`, `EFFECT_HEAL`, `EFFECT_NONE`, `MAX_EFFECT_VALUE`, and `MAX_SCORE_DELTA`, and bumped the account schema version to `3`.
+- `error.rs` — Added `InvalidEffectType`, `InvalidEffectValue`, `InvalidScoreDelta`, and `InvalidCardOwner`.
+
+**Backend stub surface (1 file):**
+- `apps/api/src/services/magicblock.ts` — Added `MAGICBLOCK_EFFECT_TYPES`, plus new stubs for `registerCardV2()` and `applyCardEffect()`. Legacy `registerCard()` and `applyDamage()` remain in place and are now documented as compatibility paths.
+
+### The Reasoning
+
+1. **ER now mirrors final public battle effects instead of only raw damage.** The backend still owns answer validation, specialty multipliers, and any private scoring logic. ER receives only the final effect value plus the final gameplay-score delta, which preserves privacy while making state transitions auditable.
+
+2. **Gameplay score needed a write path, not a winner shortcut.** `game_score_a/b` is now mutable through `score_delta`, but it does not trigger an instant win. Round wins remain the only immediate match progression signal; gameplay score is still only a final tie-break after rounds.
+
+3. **`register_card_v2` is the clean Web3 path; legacy `register_card` remains intentionally narrow.** The old instruction does not carry an owner, so it cannot safely support owner-bound effect resolution. Rather than invent unsafe owner derivation, it remains an ATTACK-only compatibility path for `apply_damage`, while the new instruction carries explicit owner/effect metadata.
+
+4. **No answer intelligence moved on-chain.** The ER program still does not store correct answers, answer hashes, question contents, or correct-answer counts. The backend remains the private game brain; ER remains the auditable state executor.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Generated IDL includes `applyCardEffect`, `registerCardV2`, and `CardEffectAppliedEvent`.
+- [x] `apply_damage` still exists and compiles as the legacy damage-only compatibility path.
+- [x] `apply_card_effect` supports ATTACK / HEAL / NONE and writes `game_score_*` via `score_delta`.
+
+### The Tech Debt
+
+- [ ] Legacy `register_card` now creates ownerless attack cards (`owner = Pubkey::default()`) so old `apply_damage` flows keep working. New effect-aware flows must use `register_card_v2`.
+- [ ] `apply_damage` approximates gameplay score from applied damage only. That is acceptable for the legacy path, but BE should migrate to `apply_card_effect` whenever gameplay score can differ from raw damage.
+- [ ] No new pure-Rust helper tests were added in this step. LiteSVM remains disabled, so the next testing pass should either add isolated unit coverage around effect math or expand the disabled test plan once the harness is compatible again.

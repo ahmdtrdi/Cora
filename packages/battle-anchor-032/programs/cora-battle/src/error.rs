@@ -26,6 +26,18 @@ pub enum BattleError {
     #[msg("Damage value is out of allowed range")]
     InvalidDamage,
 
+    #[msg("Effect type is not valid for this card")]
+    InvalidEffectType,
+
+    #[msg("Effect value is not valid for this card")]
+    InvalidEffectValue,
+
+    #[msg("Gameplay score delta is out of allowed range")]
+    InvalidScoreDelta,
+
+    #[msg("Registered card owner is not valid for this session")]
+    InvalidCardOwner,
+
     #[msg("Target must be a participant in this session")]
     InvalidTarget,
 

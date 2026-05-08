@@ -1,4 +1,5 @@
 pub mod activate_session;
+pub mod apply_card_effect;
 pub mod apply_damage;
 pub mod cancel_session;
 pub mod close_session;
@@ -9,11 +10,14 @@ pub mod delegate_battle_session;
 pub mod delegate_registered_card;
 pub mod finalize_match;
 pub mod force_end;
+pub(crate) mod match_updates;
 pub mod register_card;
 pub mod timeout_player_for_round;
 
 #[allow(ambiguous_glob_reexports)]
 pub use activate_session::*;
+#[allow(ambiguous_glob_reexports)]
+pub use apply_card_effect::*;
 #[allow(ambiguous_glob_reexports)]
 pub use apply_damage::*;
 #[allow(ambiguous_glob_reexports)]
