@@ -162,6 +162,17 @@ function getCharacterProjectileSrc(characterId?: string) {
   return `/assets/characters/${normalizedId}/projectile.png`;
 }
 
+function getCharacterBaseSrc(characterId: string | undefined, side: BattleSide) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  if (normalizedId === "einstein") {
+    return side === "player"
+      ? "/assets/characters/einstein/base_left.png"
+      : "/assets/characters/einstein/base_right.png";
+  }
+  return `/assets/characters/${normalizedId}/base.png`;
+}
+
 export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
@@ -226,6 +237,7 @@ export function BattleScreen() {
   const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
   const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
+  const [failedBaseSprites, setFailedBaseSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -241,6 +253,8 @@ export function BattleScreen() {
   const previousOpponentStreakRef = useRef(0);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
+  const playerBaseControls = useAnimationControls();
+  const opponentBaseControls = useAnimationControls();
 
   const showGameNotice = useCallback((message: string, tone: "action" | "phase" = "action") => {
     if (gameNoticeTimerRef.current) {
@@ -593,9 +607,6 @@ export function BattleScreen() {
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const opponentMetaLabel = opponent?.address
-    ? `Score ${opponentScore} - Rounds ${opponentRoundsWon}`
-    : "Waiting for opponent metadata";
   const playerCharacterId = player?.characterId ?? undefined;
   const opponentCharacterId = opponent?.characterId ?? undefined;
   const playerVisual = getCharacterVisual(playerCharacterId);
@@ -604,6 +615,8 @@ export function BattleScreen() {
   const opponentSpriteState = resolveCharacterSpriteState(opponent?.characterState, characterActionSide === "opponent");
   const playerSpriteSrc = getCharacterSpriteSrc(playerCharacterId, playerSpriteState);
   const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
+  const playerBaseSrc = getCharacterBaseSrc(playerCharacterId, "player");
+  const opponentBaseSrc = getCharacterBaseSrc(opponentCharacterId, "opponent");
   const playerReactionSrc = playerReaction
     ? getCharacterExpressionSrc(playerCharacterId, playerReaction.expression)
     : null;
@@ -612,8 +625,12 @@ export function BattleScreen() {
     : null;
   const hasPlayerSprite = Boolean(playerSpriteSrc && !failedCharacterSprites[playerSpriteSrc]);
   const hasOpponentSprite = Boolean(opponentSpriteSrc && !failedCharacterSprites[opponentSpriteSrc]);
+  const hasPlayerBaseSprite = Boolean(playerBaseSrc && !failedBaseSprites[playerBaseSrc]);
+  const hasOpponentBaseSprite = Boolean(opponentBaseSrc && !failedBaseSprites[opponentBaseSrc]);
   const hasPlayerReactionSprite = Boolean(playerReactionSrc && !failedCharacterSprites[playerReactionSrc]);
   const hasOpponentReactionSprite = Boolean(opponentReactionSrc && !failedCharacterSprites[opponentReactionSrc]);
+  const playerBaseHpPct = Math.max(0, Math.min(100, playerBaseHp));
+  const opponentBaseHpPct = Math.max(0, Math.min(100, opponentBaseHp));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -676,6 +693,60 @@ export function BattleScreen() {
       transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
     });
   }, [opponentSpriteState, opponentActionControls]);
+
+  useEffect(() => {
+    if (playerBaseFx === "hit") {
+      playerBaseControls.start({
+        x: [0, -8, 7, -5, 3, 0],
+        y: [0, -1, 0],
+        scale: [1, 1.01, 1],
+        transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    if (playerBaseFx === "heal") {
+      playerBaseControls.start({
+        x: 0,
+        y: [0, -2, 0],
+        scale: [1, 1.04, 1],
+        transition: { duration: 0.36, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    playerBaseControls.start({
+      x: 0,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [playerBaseFx, playerBaseControls]);
+
+  useEffect(() => {
+    if (opponentBaseFx === "hit") {
+      opponentBaseControls.start({
+        x: [0, 8, -7, 5, -3, 0],
+        y: [0, -1, 0],
+        scale: [1, 1.01, 1],
+        transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    if (opponentBaseFx === "heal") {
+      opponentBaseControls.start({
+        x: 0,
+        y: [0, -2, 0],
+        scale: [1, 1.04, 1],
+        transition: { duration: 0.36, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    opponentBaseControls.start({
+      x: 0,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [opponentBaseFx, opponentBaseControls]);
 
   useEffect(() => {
     if (status !== "depositing" || connectionState !== "connected") return;
@@ -830,6 +901,13 @@ export function BattleScreen() {
 
   function markProjectileSpriteFailed(src: string) {
     setFailedProjectileSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markBaseSpriteFailed(src: string) {
+    setFailedBaseSprites((prev) => {
       if (prev[src]) return prev;
       return { ...prev, [src]: true };
     });
@@ -1095,11 +1173,11 @@ export function BattleScreen() {
       </div>
 
       <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-7xl flex-col">
-        <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <header className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
           <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
             Battle Room - {roomId}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span
               className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
@@ -1130,6 +1208,16 @@ export function BattleScreen() {
               }}
             >
               {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
+            </span>
+            <span
+              className="rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{
+                border: "1px solid rgba(248,214,148,0.32)",
+                background: opponentIsConnected ? "rgba(39,65,55,0.52)" : "rgba(111,58,40,0.52)",
+                color: "var(--tone-cream)",
+              }}
+            >
+              Rival {opponentIsConnected ? "Connected" : "Away"}
             </span>
             {canCancelMatch && (
               <button
@@ -1164,110 +1252,185 @@ export function BattleScreen() {
           </div>
         </header>
 
-        {showOpponentAwayStatus && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.34)", background: "rgba(19,32,26,0.82)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Opponent disconnected
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Your rival may reconnect while the match is still active.
-            </p>
-          </div>
-        )}
-
         <section
-          className="frame-cut relative flex flex-1 flex-col overflow-hidden px-4 py-5 md:px-6"
+          className="frame-cut relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 md:px-6"
           style={{
             border: "1px solid rgba(248,214,148,0.28)",
             background:
               "radial-gradient(circle at 50% 18%, rgba(248,214,148,0.16), transparent 45%), linear-gradient(160deg, rgba(12,21,17,0.92), rgba(17,29,24,0.94))",
           }}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">You</p>
-              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">Score {playerScore} - Rounds {playerRoundsWon}</p>
+          <div
+            className="relative z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-2 pb-2"
+            style={{ borderBottom: "1px solid rgba(248,214,148,0.12)" }}
+          >
+            <div className="min-w-0">
+              <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+                <span className="font-bold text-[var(--tone-cream)]">You</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {playerScore}</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {playerRoundsWon}</span>
+              </p>
               {address && (
-                <p className="mt-1 font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{shortenAddress(address)}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{shortenAddress(address)}</p>
               )}
             </div>
-            <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
-            <div className="text-right">
-              <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Rival</p>
-              <div className="mt-1 flex justify-end">
-                <span
-                  className="rounded-full px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
-                  style={{
-                    border: "1px solid rgba(248,214,148,0.32)",
-                    background: opponentIsConnected ? "rgba(39,65,55,0.46)" : "rgba(111,58,40,0.46)",
-                    color: "var(--tone-cream)",
-                  }}
-                >
-                  {opponentIsConnected ? "Connected" : "Away"}
-                </span>
-              </div>
-              <p className="mt-1 font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
-              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">{opponentMetaLabel}</p>
+            <p className="font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
+            <div className="min-w-0 text-right">
+              <p className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+                <span className="font-bold text-[var(--tone-cream)]">Rival</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {opponentScore}</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {opponentRoundsWon}</span>
+              </p>
+              <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{opponentIdentityLabel}</p>
             </div>
           </div>
 
-          <div className="relative mt-4 flex-1 min-h-[420px]">
-            <div className="absolute left-0 top-2 flex flex-col items-start gap-2">
-              <div
-                className="grid aspect-square w-24 place-items-center overflow-hidden rounded-xl border"
-                style={{
-                  borderColor: "rgba(248,214,148,0.36)",
-                  background:
-                    playerBaseFx === "hit"
-                      ? "linear-gradient(150deg, rgba(124,55,38,0.92), rgba(62,31,21,0.95))"
-                      : playerBaseFx === "heal"
-                        ? "linear-gradient(150deg, rgba(39,93,52,0.92), rgba(24,58,34,0.95))"
-                        : "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
-                  boxShadow:
-                    playerBaseFx === "hit"
-                      ? "0 0 0 2px rgba(186,105,49,0.45), 0 10px 20px rgba(0,0,0,0.35)"
-                      : playerBaseFx === "heal"
-                        ? "0 0 0 2px rgba(157,180,150,0.52), 0 10px 20px rgba(0,0,0,0.35)"
-                        : "0 10px 20px rgba(0,0,0,0.35)",
-                }}
-              >
-                <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{playerVisual.baseGlyph}</span>
+          <div className="relative min-h-[320px] flex-1 overflow-hidden md:min-h-[380px] lg:min-h-[420px]">
+            <div
+              className="pointer-events-none absolute inset-x-[6%] bottom-[7%] z-0 h-[28%]"
+              style={{
+                background:
+                  "radial-gradient(ellipse at center, rgba(248,214,148,0.22) 0%, rgba(82,96,68,0.18) 42%, transparent 72%)",
+              }}
+            />
+            <motion.div
+              className="absolute -left-[7%] bottom-[14%] z-0 w-[clamp(220px,30vw,440px)] opacity-90"
+              style={{
+                aspectRatio: "1700 / 1269",
+                filter:
+                  playerBaseFx === "hit"
+                    ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
+                    : playerBaseFx === "heal"
+                      ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
+                      : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+              }}
+              animate={playerBaseControls}
+            >
+              <div className="relative h-full w-full">
+                {hasPlayerBaseSprite && playerBaseSrc ? (
+                  <Image
+                    src={playerBaseSrc}
+                    alt={`${playerCharacterId ?? "player"} base`}
+                    fill
+                    sizes="(max-width: 768px) 220px, 440px"
+                    className="object-contain object-left-bottom"
+                    onError={() => markBaseSpriteFailed(playerBaseSrc)}
+                  />
+                ) : (
+                  <div
+                    className="grid h-full w-full place-items-center rounded-2xl border"
+                    style={{
+                      borderColor: "rgba(248,214,148,0.36)",
+                      background: "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
+                      boxShadow: "0 10px 20px rgba(0,0,0,0.35)",
+                    }}
+                  >
+                    <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{playerVisual.baseGlyph}</span>
+                  </div>
+                )}
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-2xl"
+                  style={{
+                    background:
+                      playerBaseFx === "hit"
+                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.26), rgba(186,105,49,0))"
+                        : playerBaseFx === "heal"
+                          ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
+                          : "transparent",
+                  }}
+                />
               </div>
-              <div>
-                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[rgba(244,240,230,0.72)]">Base HP</p>
-                <p className="font-caprasimo text-2xl text-[var(--tone-cream)]">{playerBaseHp}</p>
+            </motion.div>
+
+            <motion.div
+              className="absolute -right-[7%] bottom-[14%] z-0 w-[clamp(220px,30vw,440px)] opacity-90"
+              style={{
+                aspectRatio: "1700 / 1269",
+                filter:
+                  opponentBaseFx === "hit"
+                    ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
+                    : opponentBaseFx === "heal"
+                      ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
+                      : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+              }}
+              animate={opponentBaseControls}
+            >
+              <div className="relative h-full w-full">
+                {hasOpponentBaseSprite && opponentBaseSrc ? (
+                  <Image
+                    src={opponentBaseSrc}
+                    alt={`${opponentCharacterId ?? "opponent"} base`}
+                    fill
+                    sizes="(max-width: 768px) 220px, 440px"
+                    className={`object-contain object-right-bottom ${
+                      opponentCharacterId?.trim().toLowerCase() === "einstein" ? "" : "-scale-x-100"
+                    }`}
+                    onError={() => markBaseSpriteFailed(opponentBaseSrc)}
+                  />
+                ) : (
+                  <div
+                    className="grid h-full w-full place-items-center rounded-2xl border"
+                    style={{
+                      borderColor: "rgba(248,214,148,0.36)",
+                      background: "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
+                      boxShadow: "0 10px 20px rgba(0,0,0,0.35)",
+                    }}
+                  >
+                    <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{opponentVisual.baseGlyph}</span>
+                  </div>
+                )}
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-2xl"
+                  style={{
+                    background:
+                      opponentBaseFx === "hit"
+                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.26), rgba(186,105,49,0))"
+                        : opponentBaseFx === "heal"
+                          ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
+                          : "transparent",
+                  }}
+                />
+              </div>
+            </motion.div>
+
+            <div className="absolute left-1 top-2 z-[14] w-[clamp(132px,17vw,190px)] md:left-4 md:top-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${playerBaseHpPct}%`,
+                    background: "linear-gradient(90deg, #d9a85b, #ba6931)",
+                  }}
+                />
               </div>
             </div>
 
-            <div className="absolute right-0 top-2 flex flex-col items-end gap-2">
-              <div
-                className="grid aspect-square w-24 place-items-center overflow-hidden rounded-xl border"
-                style={{
-                  borderColor: "rgba(248,214,148,0.36)",
-                  background:
-                    opponentBaseFx === "hit"
-                      ? "linear-gradient(150deg, rgba(124,55,38,0.92), rgba(62,31,21,0.95))"
-                      : opponentBaseFx === "heal"
-                        ? "linear-gradient(150deg, rgba(39,93,52,0.92), rgba(24,58,34,0.95))"
-                        : "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
-                  boxShadow:
-                    opponentBaseFx === "hit"
-                      ? "0 0 0 2px rgba(186,105,49,0.45), 0 10px 20px rgba(0,0,0,0.35)"
-                      : opponentBaseFx === "heal"
-                        ? "0 0 0 2px rgba(157,180,150,0.52), 0 10px 20px rgba(0,0,0,0.35)"
-                        : "0 10px 20px rgba(0,0,0,0.35)",
-                }}
-              >
-                <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{opponentVisual.baseGlyph}</span>
+            <div className="absolute right-1 top-2 z-[14] w-[clamp(132px,17vw,190px)] text-right md:right-4 md:top-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
               </div>
-              <div className="text-right">
-                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[rgba(244,240,230,0.72)]">Base HP</p>
-                <p className="font-caprasimo text-2xl text-[var(--tone-cream)]">{opponentBaseHp}</p>
+              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+                <div
+                  className="ml-auto h-full rounded-full"
+                  style={{
+                    width: `${opponentBaseHpPct}%`,
+                    background: "linear-gradient(270deg, #d9a85b, #ba6931)",
+                  }}
+                />
               </div>
             </div>
 
             <motion.div
-              className={`absolute left-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] transition-all duration-300 ${
+              className={`absolute left-[21%] bottom-[14%] z-[6] aspect-[4/5] w-[clamp(120px,18vw,190px)] transition-all duration-300 ${
                 characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
               }`}
               animate={playerActionControls}
@@ -1332,7 +1495,7 @@ export function BattleScreen() {
             </motion.div>
 
             <motion.div
-              className={`absolute right-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] transition-all duration-300 ${
+              className={`absolute right-[21%] bottom-[14%] z-[6] aspect-[4/5] w-[clamp(120px,18vw,190px)] transition-all duration-300 ${
                 characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
               }`}
               animate={opponentActionControls}
@@ -1396,10 +1559,10 @@ export function BattleScreen() {
               </div>
             </motion.div>
 
-                        {projectile && (
+            {projectile && (
               <motion.div
                 key={projectile.id}
-                className="pointer-events-none absolute left-1/2 top-[42%] h-12 w-12 -translate-x-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute left-1/2 top-[42%] z-[12] h-12 w-12 -translate-x-1/2 -translate-y-1/2"
                 initial={{
                   x: projectile.from === "player" ? -180 : 180,
                   y: projectile.from === "player" ? 40 : -40,
@@ -1442,12 +1605,14 @@ export function BattleScreen() {
               </motion.div>
             )}
 
-            <div className="absolute bottom-0 left-1/2 w-full max-w-4xl -translate-x-1/2">
+          </div>
+
+          <div className="relative z-20 shrink-0 pb-5 pt-1">
               <p className="mb-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
                 {isPlayable ? "Pick a card from your hand." : "Waiting for server state..."}
               </p>
 
-              <div className="flex items-end justify-center gap-2 md:gap-3">
+              <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
                 {Array.from({ length: displaySlots }).map((_, index) => {
                   const card = hand[index] ?? null;
                   const active = card ? activeCardId === card.id : false;
@@ -1461,7 +1626,7 @@ export function BattleScreen() {
                         if (card) onOpenCard(card);
                       }}
                       disabled={cardDisabled}
-                      className={`relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] overflow-hidden rounded-[20px] px-2 py-2 text-left transition ${transformClass}`}
+                      className={`relative aspect-[5/7] w-[17vw] min-w-[66px] max-w-[132px] overflow-hidden rounded-[20px] px-2 py-2 text-left transition ${transformClass}`}
                       style={{
                         border: active ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
                         background: cardDisabled
@@ -1511,7 +1676,6 @@ export function BattleScreen() {
                 })}
               </div>
             </div>
-          </div>
         </section>
       </div>
 
@@ -1872,4 +2036,3 @@ export function BattleScreen() {
     </main>
   );
 }
-

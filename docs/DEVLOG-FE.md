@@ -3029,3 +3029,137 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Projectile glow and motion constants are inline; if we introduce more VFX types, these should move to shared visual tokens/helpers.
 - Projectile asset preloading is not yet centralized; if first-hit latency appears on slower devices, a shared preload pass can be added for projectile paths similar to expression preloading.
+
+## 2026-05-08 - Real Base Asset Integration in Battle Arena
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to replace square base placeholders with real base art:
+  - player base now resolves from player character ID
+  - opponent base now resolves from opponent character ID
+  - base source rules:
+    - Einstein player: `/assets/characters/einstein/projectile_left.png`
+    - Einstein opponent: `/assets/characters/einstein/projectile_right.png`
+    - Curie/Turing (and non-Einstein fallback): `/assets/characters/{characterId}/projectile.png`
+- Preserved correct orientation behavior:
+  - Einstein bases are never flipped
+  - opponent Curie/Turing bases are horizontally flipped
+- Added large, grounded base placement on the arena floor with outside-edge cropping:
+  - player base cropped off left edge
+  - opponent base cropped off right edge
+  - base wrappers use preserved aspect ratio (`1700 / 1269`) and `object-contain`
+- Added compact mirrored HP bars near each base:
+  - label `Base`
+  - fill based on HP percentage
+  - numeric display (`{hp} / 100`)
+- Kept and upgraded base FX mapping on new base wrappers:
+  - hit: shake + warm red flash/glow
+  - heal: mint glow pulse
+- Added base-asset failure fallback:
+  - tracks failed base image paths
+  - falls back to existing glyph placeholder if base art fails to load
+
+### The Reasoning
+- Real base art needed to feel like anchored arena objects rather than UI placeholders.
+- Matching baseline and controlled edge cropping make the base read as large environment geometry tied to each side.
+- Mirrored HP bars preserve quick readability while reducing UI clutter from old standalone text blocks.
+
+### The Tech Debt
+- Base position offsets are tuned constants; a future responsive tuning pass may be needed for edge devices and unusual viewport heights.
+- Base max HP is displayed as `/100` in FE; if backend later provides dynamic max-base-health, the bar denominator should be sourced from state.
+
+## 2026-05-08 - Base Asset Path Correction + Layer/Presentation Fixes
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - corrected base asset resolver to use real base files:
+    - Einstein player: `/assets/characters/einstein/base_left.png`
+    - Einstein opponent: `/assets/characters/einstein/base_right.png`
+    - others: `/assets/characters/{characterId}/base.png`
+  - removed `projectile*` naming from base path logic
+- Tightened arena layer ordering:
+  - base wrappers moved to lowest layer (`z-0`)
+  - character sprites explicitly above base (`z-[6]`)
+  - projectile above sprites (`z-[12]`)
+  - base HP bars above base (`z-[9]`)
+- Preserved presentation rules:
+  - no box/background/border/rounded card when base image loads
+  - fallback placeholder only when base image fails
+  - same baseline alignment, aspect ratio `1700 / 1269`, and outer-edge cropping remain intact
+
+### The Reasoning
+- Base art was incorrectly mapped to projectile filenames; this blocked real base visuals.
+- Explicit z-index ordering removes ambiguity and ensures bases stay in the arena background while still allowing readable HP overlays.
+
+### The Tech Debt
+- Asset extension selection is still hardcoded to `.png`; if future character packs mix formats, a resolver map or manifest will be safer.
+
+## 2026-05-08 - Base Presentation Tuning (HP Above Base + Smaller Scale + Shared Ground Line)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved Base HP UI to sit directly above each base asset by anchoring it to each base wrapper
+  - reduced base render footprint for better proportion with current character scale:
+    - from `w-[clamp(280px,37vw,560px)]`
+    - to `w-[clamp(220px,31vw,430px)]`
+  - kept base aspect ratio unchanged (`1700 / 1269`) and existing asset sources
+  - aligned base and character to the same floor plane by anchoring both to `bottom-[16%]`
+  - preserved base background behavior:
+    - no box/panel when base image loads
+    - fallback placeholder still only on load failure
+  - preserved cropping, hit/heal base FX, and Einstein-specific base handling
+
+### The Reasoning
+- HP context reads more naturally when tied to and floating above each base instead of feeling detached.
+- Smaller base scale better matches the reduced character size and improves visual balance.
+- Shared bottom anchoring reinforces the same-ground illusion between base and character.
+
+### The Tech Debt
+- Ground and offset values are still tuned constants; we may need a per-breakpoint calibration pass for very short/mobile viewports.
+
+## 2026-05-08 - Base Repositioning Without Downscale (Cards Separation + Stable HP Layer)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - restored base render size (removed prior downscale):
+    - back to `w-[clamp(280px,37vw,560px)]`
+    - restored matching `sizes` hint (`280px/560px`)
+  - moved base and character pair upward together to preserve shared ground alignment while clearing hand cards:
+    - base wrappers and character wrappers now both anchored at `bottom-[22%]`
+  - detached HP UI from base crop/wrapper:
+    - moved player/opponent base HP bars into independent arena overlay layers
+    - HP bars remain stable/readable even with base edge cropping
+- Preserved existing behavior:
+  - base assets and aspect ratio unchanged
+  - base behind character
+  - no UI panel/box on successful base image
+  - crop behavior retained
+  - Einstein left/right handling retained
+  - hit/heal base FX retained
+
+### The Reasoning
+- User feedback indicated scale was acceptable; visual conflict was positional.
+- Raising the base+character ground line together keeps floor-plane coherence while protecting foreground card space.
+- Decoupling HP bars from base wrappers avoids clipping and keeps health info consistently visible.
+
+### The Tech Debt
+- Bottom and HP overlay offsets are still hand-tuned constants; we should revisit with viewport-specific tokens if additional responsive edge cases appear.
+
+## 2026-05-08 - Battle Arena Vertical Layout Reset
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - split the arena into a dedicated scene region and a separate bottom hand-card tray
+  - reduced base visual dominance and kept base assets as background scene props with preserved aspect ratio
+  - kept character and base bottoms on the same visual ground line while preventing overlap with the card tray
+  - moved base HP bars into stable top-left/top-right arena UI positions, detached from base art cropping
+  - compacted player/rival metadata into inline You/Rival, score pill, rounds pill, and address rows
+  - kept rival connection state in the top status chip row instead of inside arena metadata
+
+### The Reasoning
+- The previous composition tried to solve card collision with shared absolute offsets, which made bases, characters, HP bars, and hand cards compete for the same vertical space.
+- Separating scene and hand tray layout gives the cards a guaranteed bottom zone while letting the arena read as a stage again.
+- HP is gameplay UI, not part of the base asset, so it now sits in predictable overlay positions independent of base image crop and scale.
+
+### The Tech Debt
+- Base/character ground offsets remain tuned constants; a future responsive QA pass should validate very short mobile viewports and unusual aspect ratios.
+- Full npm run lint is still blocked by an existing react-hooks/set-state-in-effect issue in apps/web/src/components/lobby/OpponentFound.tsx; targeted ESLint for BattleScreen.tsx passes.
