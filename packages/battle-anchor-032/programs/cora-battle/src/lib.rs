@@ -68,6 +68,12 @@ pub mod cora_battle {
         instructions::apply_card_effect::handler(ctx, final_value, score_delta)
     }
 
+    /// Resolve a timer-expired round from current ER state.
+    /// Uses only public state: health, round damage, and existing match totals.
+    pub fn resolve_round_by_state(ctx: Context<ResolveRoundByState>) -> Result<()> {
+        instructions::resolve_round_by_state::handler(ctx)
+    }
+
     /// Resolve a single-player round timeout after the round deadline.
     /// Reconnects before this deadline are handled off-chain by the backend.
     pub fn timeout_player_for_round(
