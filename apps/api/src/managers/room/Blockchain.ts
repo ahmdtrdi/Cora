@@ -1,5 +1,5 @@
 import { serverPublicKey, signSettlementAuthorization, submitSettlementTransaction, getServerKeypair } from '../../utils/settlement';
-import { magicBlockService } from '../../services/magicblock';
+import { isMagicBlockConfigured, magicBlockService } from '../../services/magicblock';
 import { getWagerUsdValue } from '../../services/goldrush';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
@@ -29,7 +29,7 @@ export class Blockchain {
    * Creates an Ephemeral Rollup session if MagicBlock is configured.
    */
   public async createBattleSession(room: Room): Promise<void> {
-    if (!process.env.MAGICBLOCK_RPC_URL) return;
+    if (!isMagicBlockConfigured()) return;
     if (!room.playerA || !room.playerB) return;
 
     try {
@@ -43,6 +43,10 @@ export class Blockchain {
       });
       room.erSessionPda = sessionPda;
       console.log(`[MagicBlock] ER session created: ${sessionPda}`);
+      await magicBlockService.delegateBattleSession({
+        sessionPda,
+        serverKeypair: getServerKeypair(),
+      });
     } catch (err) {
       console.warn('[MagicBlock] Failed to create ER session, falling back to server-only:', err);
     }
