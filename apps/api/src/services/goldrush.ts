@@ -2,7 +2,21 @@ import { GoldRushClient } from '@covalenthq/client-sdk';
 
 const apiKey = process.env.GOLDRUSH_API_KEY || 'cqt_dummy';
 const client = new GoldRushClient(apiKey);
-const chainId = 'solana-devnet';
+// NOTE: Covalent only indexes solana-mainnet. Devnet balances won't appear,
+// but pricing data and API-key validation will work correctly.
+const chainId = 'solana-mainnet';
+
+// Symbol → mainnet contract address mapping
+const TOKEN_MINTS: Record<string, string> = {
+  SOL:  'So11111111111111111111111111111111111111112',
+  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+};
+
+/** Resolve a symbol ("SOL") or pass-through a mint address. */
+function resolveMint(tokenMintOrSymbol: string): string {
+  return TOKEN_MINTS[tokenMintOrSymbol.toUpperCase()] || tokenMintOrSymbol;
+}
 
 export interface WalletPlayability {
   playable: boolean;
@@ -85,15 +99,36 @@ export async function getWalletPlayability(
 
 /**
  * Fetch the USD price of a specific token mint.
+ *
+ * Workaround: Covalent's PricingService lowercases Solana base58 addresses,
+ * breaking lookups. Instead, we query a known high-balance wallet via
+ * BalanceService and read the `quote_rate` field for the target token.
  */
+// Reverse lookup: mint address → ticker symbol for fallback matching
+const MINT_TO_SYMBOL: Record<string, string> = Object.fromEntries(
+  Object.entries(TOKEN_MINTS).map(([symbol, addr]) => [addr, symbol]),
+);
+
+const PRICE_PROBE_WALLET = 'vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg'; // Solana Labs wallet
 export async function getTokenPriceUsd(tokenMint: string): Promise<number | null> {
+  const mint = resolveMint(tokenMint);
+  const symbol = MINT_TO_SYMBOL[mint] ?? tokenMint.toUpperCase();
   try {
-    const res = await client.PricingService.getTokenPrices(chainId as any, 'USD', tokenMint);
-    if (res.error || !res.data || res.data.length === 0) {
-      return null;
-    }
-    const priceData = res.data[0];
-    return priceData.items?.[0]?.price || null;
+    const res = await client.BalanceService.getTokenBalancesForWalletAddress(
+      chainId as any,
+      PRICE_PROBE_WALLET,
+      { quoteCurrency: 'USD' },
+    );
+    if (res.error || !res.data?.items) return null;
+
+    // Match by address (case-insensitive, SDK lowercases base58) or ticker symbol
+    const mintLower = mint.toLowerCase();
+    const token = res.data.items.find(
+      (item) =>
+        item.contract_address?.toLowerCase() === mintLower ||
+        item.contract_ticker_symbol?.toUpperCase() === symbol,
+    );
+    return token?.quote_rate ?? null;
   } catch (err: any) {
     console.error('[GoldRush] getTokenPriceUsd error:', err.message);
     return null;
