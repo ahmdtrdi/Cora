@@ -130,6 +130,8 @@ describe('Integration: Matchmaking', () => {
     expect(body1.roomId).toBeDefined();
     expect(body2.roomId).toBeDefined();
     expect(body1.roomId).toBe(body2.roomId);
+    expect(body1.role).toBe('playerA');
+    expect(body2.role).toBe('playerB');
   });
 
   test('POST /match without address returns 400', async () => {

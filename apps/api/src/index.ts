@@ -105,7 +105,13 @@ app.post('/match', async (c) => {
   }
 
   const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
-  return c.json({ roomId });
+  const room = roomManager.getRoom(roomId);
+  const role =
+    room?.playerA === address ? 'playerA' :
+    room?.playerB === address ? 'playerB' :
+    undefined;
+
+  return c.json({ roomId, role, roomType: room?.roomType });
 });
 
 // Private room creation — for Blinks / direct challenge invites
@@ -157,7 +163,7 @@ app.post('/match/private', async (c) => {
   const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 8080}`;
   const blinkUrl = `${baseUrl}/api/actions/challenge?roomId=${roomId}`;
 
-  return c.json({ roomId, blinkUrl });
+  return c.json({ roomId, blinkUrl, role: 'playerA', roomType: 'private' });
 });
 
 // Battle session fairness proof (ER session PDA + Solana Explorer link)
