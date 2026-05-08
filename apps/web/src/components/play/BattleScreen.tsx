@@ -25,12 +25,14 @@ const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
+const REACTION_DISPLAY_MS = 1900;
 const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
 const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
 };
+const CHARACTER_REACTION_EXPRESSIONS: CharacterExpression[] = ["happy", "confident", "hurt"];
 
 const CARD_TRANSFORMS = [
   "translate-y-4 -rotate-6",
@@ -93,11 +95,16 @@ type ProjectileState = {
   id: string;
   from: BattleSide;
   to: BattleSide;
-  kind: "attack" | "heal";
+  src: string | null;
 };
 
 type BaseFxState = "idle" | "hit" | "heal";
 type CharacterSpriteState = "stay" | "action";
+type CharacterExpression = "happy" | "confident" | "hurt";
+type CharacterReaction = {
+  id: string;
+  expression: CharacterExpression;
+};
 
 function getCharacterVisual(characterId?: string) {
   if (characterId === "turing") {
@@ -137,6 +144,22 @@ function getCharacterSpriteSrc(characterId?: string, state: CharacterSpriteState
   const normalizedId = characterId?.trim().toLowerCase();
   if (!normalizedId) return null;
   return `/assets/characters/${normalizedId}/${state}.png`;
+}
+
+function getCharacterExpressionSrc(characterId?: string, expression: CharacterExpression = "happy") {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  return `/assets/characters/${normalizedId}/exp/${expression}.png`;
+}
+
+function getCharacterProjectileSrc(characterId?: string) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  if (normalizedId === "turing") {
+    const variant = Math.random() < 0.5 ? 0 : 1;
+    return `/assets/characters/turing/projectile_${variant}.png`;
+  }
+  return `/assets/characters/${normalizedId}/projectile.png`;
 }
 
 export function BattleScreen() {
@@ -192,6 +215,8 @@ export function BattleScreen() {
   const [projectile, setProjectile] = useState<ProjectileState | null>(null);
   const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
   const [opponentBaseFx, setOpponentBaseFx] = useState<BaseFxState>("idle");
+  const [playerReaction, setPlayerReaction] = useState<CharacterReaction | null>(null);
+  const [opponentReaction, setOpponentReaction] = useState<CharacterReaction | null>(null);
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
@@ -200,6 +225,7 @@ export function BattleScreen() {
   const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
   const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
+  const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -209,6 +235,10 @@ export function BattleScreen() {
   const extraPointShownRef = useRef(false);
   const previousOpponentConnectedRef = useRef<boolean | null>(null);
   const gameNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playerReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const opponentReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousPlayerStreakRef = useRef(0);
+  const previousOpponentStreakRef = useRef(0);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
 
@@ -224,10 +254,44 @@ export function BattleScreen() {
     }, 2100);
   }, []);
 
+  const showReaction = useCallback(
+    (side: BattleSide, expression: CharacterExpression, durationMs = REACTION_DISPLAY_MS) => {
+      const id = `${side}:${expression}:${Date.now()}`;
+      if (side === "player") {
+        if (playerReactionTimerRef.current) {
+          clearTimeout(playerReactionTimerRef.current);
+          playerReactionTimerRef.current = null;
+        }
+        setPlayerReaction({ id, expression });
+        playerReactionTimerRef.current = setTimeout(() => {
+          setPlayerReaction((prev) => (prev?.id === id ? null : prev));
+          playerReactionTimerRef.current = null;
+        }, durationMs);
+        return;
+      }
+      if (opponentReactionTimerRef.current) {
+        clearTimeout(opponentReactionTimerRef.current);
+        opponentReactionTimerRef.current = null;
+      }
+      setOpponentReaction({ id, expression });
+      opponentReactionTimerRef.current = setTimeout(() => {
+        setOpponentReaction((prev) => (prev?.id === id ? null : prev));
+        opponentReactionTimerRef.current = null;
+      }, durationMs);
+    },
+    [],
+  );
+
   useEffect(() => {
     return () => {
       if (gameNoticeTimerRef.current) {
         clearTimeout(gameNoticeTimerRef.current);
+      }
+      if (playerReactionTimerRef.current) {
+        clearTimeout(playerReactionTimerRef.current);
+      }
+      if (opponentReactionTimerRef.current) {
+        clearTimeout(opponentReactionTimerRef.current);
       }
     };
   }, []);
@@ -275,6 +339,9 @@ export function BattleScreen() {
         at: lastPlayResult.at,
       },
     ]);
+    if (lastPlayResult.correct) {
+      showReaction("player", "happy");
+    }
     if (lastPlayResult.cardType === "heal" && lastPlayResult.heal > 0) {
       showGameNotice(`Healed: +${lastPlayResult.heal} HP`);
     } else if (lastPlayResult.cardType === "attack" && lastPlayResult.damage > 0) {
@@ -285,7 +352,7 @@ export function BattleScreen() {
     setActiveCardId(null);
     setAnswerLocked(false);
     pendingCardIdRef.current = null;
-  }, [lastPlayResult, showGameNotice]);
+  }, [lastPlayResult, showGameNotice, showReaction]);
 
   useEffect(() => {
     if (!lastDamageEvent) return;
@@ -303,14 +370,23 @@ export function BattleScreen() {
             ? "opponent"
             : "player";
     const actionKind = lastDamageEvent.type === "heal" ? "heal" : "attack";
+    const attackerCharacterId = attackerSide === "player" ? player?.characterId : opponent?.characterId;
+    const shouldSpawnProjectile = actionKind === "attack" && lastDamageEvent.damage > 0;
+    const projectileSrc = shouldSpawnProjectile ? getCharacterProjectileSrc(attackerCharacterId) : null;
 
     setCharacterActionSide(attackerSide);
-    setProjectile({
-      id: `${lastDamageEvent.timestamp}`,
-      from: attackerSide,
-      to: targetSide,
-      kind: actionKind,
-    });
+    const projectileSpawnTimer = setTimeout(() => {
+      if (shouldSpawnProjectile) {
+        setProjectile({
+          id: `${lastDamageEvent.timestamp}`,
+          from: attackerSide,
+          to: targetSide,
+          src: projectileSrc,
+        });
+      } else {
+        setProjectile(null);
+      }
+    }, 0);
 
     const actionResetTimer = setTimeout(() => {
       setCharacterActionSide(null);
@@ -327,13 +403,23 @@ export function BattleScreen() {
       setPlayerBaseFx("idle");
       setOpponentBaseFx("idle");
     }, 840);
+    const hurtReactionTimer =
+      actionKind === "attack" && lastDamageEvent.damage > 0
+        ? setTimeout(() => {
+            showReaction(targetSide, "hurt");
+          }, 420)
+        : null;
 
     return () => {
+      clearTimeout(projectileSpawnTimer);
       clearTimeout(actionResetTimer);
       clearTimeout(projectileHitTimer);
       clearTimeout(baseFxResetTimer);
+      if (hurtReactionTimer) {
+        clearTimeout(hurtReactionTimer);
+      }
     };
-  }, [lastDamageEvent, opponent?.address, player?.address]);
+  }, [lastDamageEvent, opponent?.address, player?.address, opponent?.characterId, player?.characterId, showReaction]);
 
   const isPlayable = status === "playing" && connectionState === "connected";
   const hasTerminalResult = Boolean(settlementResult) || Boolean(matchSummaryResult) || Boolean(matchInvalidated);
@@ -386,6 +472,8 @@ export function BattleScreen() {
   const opponentScore = opponent?.score ?? 0;
   const playerRoundsWon = player?.roundsWon ?? 0;
   const opponentRoundsWon = opponent?.roundsWon ?? 0;
+  const playerCurrentCorrectStreak = player?.currentCorrectStreak ?? 0;
+  const opponentCurrentCorrectStreak = opponent?.currentCorrectStreak ?? 0;
   const playerBaseHp = player?.baseHealth ?? 100;
   const opponentBaseHp = opponent?.baseHealth ?? 100;
 
@@ -516,8 +604,34 @@ export function BattleScreen() {
   const opponentSpriteState = resolveCharacterSpriteState(opponent?.characterState, characterActionSide === "opponent");
   const playerSpriteSrc = getCharacterSpriteSrc(playerCharacterId, playerSpriteState);
   const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
+  const playerReactionSrc = playerReaction
+    ? getCharacterExpressionSrc(playerCharacterId, playerReaction.expression)
+    : null;
+  const opponentReactionSrc = opponentReaction
+    ? getCharacterExpressionSrc(opponentCharacterId, opponentReaction.expression)
+    : null;
   const hasPlayerSprite = Boolean(playerSpriteSrc && !failedCharacterSprites[playerSpriteSrc]);
   const hasOpponentSprite = Boolean(opponentSpriteSrc && !failedCharacterSprites[opponentSpriteSrc]);
+  const hasPlayerReactionSprite = Boolean(playerReactionSrc && !failedCharacterSprites[playerReactionSrc]);
+  const hasOpponentReactionSprite = Boolean(opponentReactionSrc && !failedCharacterSprites[opponentReactionSrc]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    function preloadExpressions(characterId?: string) {
+      if (!characterId) return;
+      for (const expression of CHARACTER_REACTION_EXPRESSIONS) {
+        const src = getCharacterExpressionSrc(characterId, expression);
+        if (!src) continue;
+        const preloader = new window.Image();
+        preloader.src = src;
+      }
+    }
+
+    preloadExpressions(playerCharacterId);
+    preloadExpressions(opponentCharacterId);
+  }, [playerCharacterId, opponentCharacterId]);
+
   const challengeLink = useMemo(() => {
     const origin = typeof window === "undefined" ? null : window.location.origin;
     return createChallengeLink({
@@ -620,6 +734,22 @@ export function BattleScreen() {
     return () => clearTimeout(notifyTimer);
   }, [connectionState, opponent?.address, opponentIsConnected, showGameNotice]);
 
+  useEffect(() => {
+    const previous = previousPlayerStreakRef.current;
+    previousPlayerStreakRef.current = playerCurrentCorrectStreak;
+    if (playerCurrentCorrectStreak >= 3 && playerCurrentCorrectStreak !== previous) {
+      showReaction("player", "confident");
+    }
+  }, [playerCurrentCorrectStreak, showReaction]);
+
+  useEffect(() => {
+    const previous = previousOpponentStreakRef.current;
+    previousOpponentStreakRef.current = opponentCurrentCorrectStreak;
+    if (opponentCurrentCorrectStreak >= 3 && opponentCurrentCorrectStreak !== previous) {
+      showReaction("opponent", "confident");
+    }
+  }, [opponentCurrentCorrectStreak, showReaction]);
+
   const alerts: UiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
   if (lastSocketIssueAt && !showDisconnectedOverlay) {
@@ -693,6 +823,13 @@ export function BattleScreen() {
 
   function markCharacterSpriteFailed(src: string) {
     setFailedCharacterSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markProjectileSpriteFailed(src: string) {
+    setFailedProjectileSprites((prev) => {
       if (prev[src]) return prev;
       return { ...prev, [src]: true };
     });
@@ -1136,6 +1273,45 @@ export function BattleScreen() {
               animate={playerActionControls}
             >
               <div className="relative h-full w-full">
+                <AnimatePresence>
+                  {playerReaction && playerReactionSrc && hasPlayerReactionSprite && (
+                    <motion.div
+                      key={playerReaction.id}
+                      className="pointer-events-none absolute -left-[5.6rem] top-6 z-20 md:-left-[6.2rem]"
+                      initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                      animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
+                      exit={{ opacity: 0, y: -7, scale: 0.96 }}
+                      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div
+                        className="relative rounded-[22px] border p-1.5"
+                        style={{
+                          borderColor: "rgba(248,214,148,0.58)",
+                          background: "linear-gradient(150deg, rgba(255,249,235,0.98), rgba(246,228,195,0.98))",
+                          boxShadow: "0 12px 22px rgba(0,0,0,0.28)",
+                        }}
+                      >
+                        <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
+                          <Image
+                            src={playerReactionSrc}
+                            alt={`${playerCharacterId ?? "player"} ${playerReaction.expression} reaction`}
+                            fill
+                            sizes="(max-width: 768px) 80px, 88px"
+                            className="object-cover object-center"
+                            onError={() => markCharacterSpriteFailed(playerReactionSrc)}
+                          />
+                        </div>
+                        <span
+                          className="absolute -right-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-r border-b"
+                          style={{
+                            borderColor: "rgba(248,214,148,0.58)",
+                            background: "rgba(246,228,195,0.98)",
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {hasPlayerSprite && playerSpriteSrc ? (
                   <Image
                     src={playerSpriteSrc}
@@ -1162,6 +1338,45 @@ export function BattleScreen() {
               animate={opponentActionControls}
             >
               <div className="relative h-full w-full">
+                <AnimatePresence>
+                  {opponentReaction && opponentReactionSrc && hasOpponentReactionSprite && (
+                    <motion.div
+                      key={opponentReaction.id}
+                      className="pointer-events-none absolute -right-[5.6rem] top-6 z-20 md:-right-[6.2rem]"
+                      initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                      animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
+                      exit={{ opacity: 0, y: -7, scale: 0.96 }}
+                      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div
+                        className="relative rounded-[22px] border p-1.5"
+                        style={{
+                          borderColor: "rgba(248,214,148,0.58)",
+                          background: "linear-gradient(150deg, rgba(255,249,235,0.98), rgba(246,228,195,0.98))",
+                          boxShadow: "0 12px 22px rgba(0,0,0,0.28)",
+                        }}
+                      >
+                        <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
+                          <Image
+                            src={opponentReactionSrc}
+                            alt={`${opponentCharacterId ?? "opponent"} ${opponentReaction.expression} reaction`}
+                            fill
+                            sizes="(max-width: 768px) 80px, 88px"
+                            className="object-cover object-center"
+                            onError={() => markCharacterSpriteFailed(opponentReactionSrc)}
+                          />
+                        </div>
+                        <span
+                          className="absolute -left-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-l border-t"
+                          style={{
+                            borderColor: "rgba(248,214,148,0.58)",
+                            background: "rgba(246,228,195,0.98)",
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {hasOpponentSprite && opponentSpriteSrc ? (
                   <Image
                     src={opponentSpriteSrc}
@@ -1181,15 +1396,15 @@ export function BattleScreen() {
               </div>
             </motion.div>
 
-            {projectile && (
+                        {projectile && (
               <motion.div
                 key={projectile.id}
-                className="pointer-events-none absolute left-1/2 top-[42%] h-10 w-10 -translate-x-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute left-1/2 top-[42%] h-12 w-12 -translate-x-1/2 -translate-y-1/2"
                 initial={{
                   x: projectile.from === "player" ? -180 : 180,
                   y: projectile.from === "player" ? 40 : -40,
-                  opacity: 0.25,
-                  scale: 0.65,
+                  opacity: 0.22,
+                  scale: 0.72,
                 }}
                 animate={{
                   x: projectile.to === "player" ? -210 : 210,
@@ -1199,23 +1414,30 @@ export function BattleScreen() {
                 }}
                 transition={{ duration: 0.42, ease: [0.2, 1, 0.3, 1] }}
               >
-                <div
-                  className="grid h-full w-full place-items-center rounded-lg border"
-                  style={{
-                    borderColor: projectile.kind === "heal" ? "rgba(157,180,150,0.72)" : "rgba(248,214,148,0.7)",
-                    background:
-                      projectile.kind === "heal"
-                        ? "linear-gradient(145deg, rgba(39,93,52,0.9), rgba(21,52,30,0.95))"
-                        : "linear-gradient(145deg, rgba(122,69,41,0.9), rgba(77,42,24,0.95))",
-                    boxShadow:
-                      projectile.kind === "heal"
-                        ? "0 0 18px rgba(157,180,150,0.48)"
-                        : "0 0 18px rgba(248,214,148,0.44)",
-                  }}
-                >
-                  <span className="font-caprasimo text-lg text-[var(--tone-cream)]">
-                    {projectile.kind === "heal" ? "✚" : "✦"}
-                  </span>
+                <div className="relative h-full w-full">
+                  <div
+                    className="absolute inset-0 rounded-full blur-[7px]"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(248,214,148,0.62) 0%, rgba(248,214,148,0.28) 46%, rgba(248,214,148,0) 76%)",
+                    }}
+                  />
+                  {projectile.src && !failedProjectileSprites[projectile.src] ? (
+                    <Image
+                      src={projectile.src}
+                      alt="Projectile effect"
+                      fill
+                      sizes="48px"
+                      className="object-contain object-center drop-shadow-[0_0_8px_rgba(248,214,148,0.38)]"
+                      onError={() => markProjectileSpriteFailed(projectile.src!)}
+                    />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center">
+                      <span className="font-caprasimo text-lg text-[var(--tone-cream)] drop-shadow-[0_0_8px_rgba(248,214,148,0.5)]">
+                        {"\u2726"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -1650,3 +1872,4 @@ export function BattleScreen() {
     </main>
   );
 }
+

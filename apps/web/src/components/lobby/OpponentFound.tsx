@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -61,8 +62,13 @@ export function OpponentFound({
   const [showRoomStatus, setShowRoomStatus] = useState(false);
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
+  const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
+  const myHappyExpressionSrc = useMemo(
+    () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
+    [myScientist.id],
+  );
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
   const signed = signingState === "waiting";
@@ -496,9 +502,22 @@ export function OpponentFound({
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
               }}
             >
-              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                {myScientist.initial}
-              </span>
+              {!myExpressionUnavailable ? (
+                <div className="relative h-full w-full">
+                  <Image
+                    src={myHappyExpressionSrc}
+                    alt={`${myScientist.name} happy expression`}
+                    fill
+                    sizes="80px"
+                    className="object-cover object-center"
+                    onError={() => setMyExpressionUnavailable(true)}
+                  />
+                </div>
+              ) : (
+                <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                  {myScientist.initial}
+                </span>
+              )}
             </div>
 
             <div className="min-w-0">
