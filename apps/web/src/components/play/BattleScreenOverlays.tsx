@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
+import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Card, GameStatus } from "@shared/websocket";
 import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 
 type SettlementPayload = {
@@ -13,6 +14,16 @@ type SettlementPayload = {
 type ShareNotice = {
   text: string;
   tone: "success" | "error";
+} | null;
+
+type SettlementEmojiMood = {
+  player: "confident" | "hurt";
+  opponent: "confident" | "hurt";
+} | null;
+
+type SettlementExpressionSrc = {
+  player: string | null;
+  opponent: string | null;
 } | null;
 
 type BattleScreenOverlaysProps = {
@@ -27,17 +38,14 @@ type BattleScreenOverlaysProps = {
   pendingSurrenderAfterReconnect: boolean;
   canSurrenderByState: boolean;
   onConfirmSurrender: () => void;
-  activeCard: Card | null;
-  status: GameStatus;
   isMatchComplete: boolean;
-  displaySecondsLeft: number;
-  answerLocked: boolean;
-  onAnswer: (optionId: string) => void;
   surrenderModalOpen: boolean;
   canSurrenderMatch: boolean;
   onCloseSurrenderModal: () => void;
   settlementText: string;
   settlementSubtitle: string;
+  settlementEmojiMood: SettlementEmojiMood;
+  settlementExpressionSrc: SettlementExpressionSrc;
   settlementStatus: string;
   settlementStatusStyle: CSSProperties;
   winnerLineText: string | null;
@@ -77,17 +85,14 @@ export function BattleScreenOverlays({
   pendingSurrenderAfterReconnect,
   canSurrenderByState,
   onConfirmSurrender,
-  activeCard,
-  status,
   isMatchComplete,
-  displaySecondsLeft,
-  answerLocked,
-  onAnswer,
   surrenderModalOpen,
   canSurrenderMatch,
   onCloseSurrenderModal,
   settlementText,
   settlementSubtitle,
+  settlementEmojiMood,
+  settlementExpressionSrc,
   settlementStatus,
   settlementStatusStyle,
   winnerLineText,
@@ -114,6 +119,8 @@ export function BattleScreenOverlays({
   onShareChallengeToX,
   shareNotice,
 }: BattleScreenOverlaysProps) {
+  const [failedExpressionSprites, setFailedExpressionSprites] = useState<Record<string, true>>({});
+
   return (
     <>
       {showRoomGateModal && (
@@ -191,64 +198,6 @@ export function BattleScreenOverlays({
         </div>
       )}
 
-      {activeCard && status === "playing" && !isMatchComplete && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">
-          <div
-            className="relative w-full max-w-xl overflow-hidden rounded-[28px] p-4 md:p-5"
-            style={{
-              border: "2px solid rgba(248,214,148,0.45)",
-              background: "linear-gradient(150deg, #fff6e4 0%, #f3ddb9 100%)",
-              boxShadow: "0 24px 42px rgba(0,0,0,0.36)",
-            }}
-          >
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.38), transparent 42%), radial-gradient(circle at 85% 86%, rgba(111,58,40,0.08), transparent 45%)",
-              }}
-            />
-            <div className="mb-2 flex items-center justify-between">
-              <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
-              <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
-            </div>
-
-            <p className="font-gabarito text-lg font-semibold leading-relaxed text-[#1f2b24]">
-              {activeCard.question.text}
-            </p>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {activeCard.question.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  disabled={answerLocked}
-                  onClick={() => onAnswer(option.id)}
-                  className="relative overflow-hidden rounded-2xl px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
-                  style={{
-                    border: "2px solid rgba(111,58,40,0.3)",
-                    background: "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
-                    boxShadow: "0 8px 14px rgba(77,42,24,0.14)",
-                  }}
-                >
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                      background:
-                        "radial-gradient(circle at 18% 16%, rgba(255,255,255,0.34), transparent 38%), linear-gradient(180deg, rgba(255,255,255,0.1), rgba(111,58,40,0.03))",
-                    }}
-                  />
-                  <p className="font-gabarito text-xs font-bold uppercase tracking-wider text-[#6d8373]">
-                    {option.id}
-                  </p>
-                  <p className="mt-1 font-gabarito text-sm text-[#1f2b24]">{option.text}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {surrenderModalOpen && canSurrenderMatch && (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4">
           <div
@@ -309,6 +258,94 @@ export function BattleScreenOverlays({
               <div className="text-center">
                 <p className="font-caprasimo text-5xl leading-none text-[#1f2b24] md:text-6xl">{settlementText}</p>
                 <p className="mt-2 font-gabarito text-sm text-[#4f6759]">{settlementSubtitle}</p>
+                {settlementEmojiMood && (
+                  <div className="mt-3 flex w-full items-center justify-between gap-3 md:gap-4">
+                    <div className="relative">
+                      <div
+                        className="relative rounded-[20px] border px-3 py-2"
+                        style={{
+                          borderColor: "rgba(39,65,55,0.22)",
+                          background: "linear-gradient(150deg, rgba(255,251,244,0.98), rgba(244,229,200,0.98))",
+                          boxShadow: "0 8px 14px rgba(33,67,53,0.14)",
+                        }}
+                      >
+                        <div className="relative h-14 w-14 overflow-hidden rounded-[12px] border border-[rgba(39,65,55,0.2)] md:h-16 md:w-16">
+                          {settlementExpressionSrc?.player && !failedExpressionSprites[settlementExpressionSrc.player] ? (
+                            <Image
+                              src={settlementExpressionSrc.player}
+                              alt={`You ${settlementEmojiMood.player} expression`}
+                              fill
+                              sizes="(max-width: 768px) 56px, 64px"
+                              className="object-cover object-center"
+                              onError={() =>
+                                setFailedExpressionSprites((prev) => ({
+                                  ...prev,
+                                  [settlementExpressionSrc.player!]: true,
+                                }))
+                              }
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center">
+                              <span className="font-gabarito text-[10px] font-bold uppercase text-[#4f6759]">
+                                {settlementEmojiMood.player}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="mt-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[#4f6759]">You</p>
+                      </div>
+                      <span
+                        className="absolute -left-1 bottom-3 h-3 w-3 rotate-45 rounded-[2px] border-l border-b"
+                        style={{
+                          borderColor: "rgba(39,65,55,0.22)",
+                          background: "rgba(246,232,206,0.98)",
+                        }}
+                      />
+                    </div>
+                    <div className="relative">
+                      <div
+                        className="relative rounded-[20px] border px-3 py-2"
+                        style={{
+                          borderColor: "rgba(111,58,40,0.22)",
+                          background: "linear-gradient(150deg, rgba(255,251,244,0.98), rgba(244,229,200,0.98))",
+                          boxShadow: "0 8px 14px rgba(111,58,40,0.14)",
+                        }}
+                      >
+                        <div className="relative h-14 w-14 overflow-hidden rounded-[12px] border border-[rgba(111,58,40,0.2)] md:h-16 md:w-16">
+                          {settlementExpressionSrc?.opponent && !failedExpressionSprites[settlementExpressionSrc.opponent] ? (
+                            <Image
+                              src={settlementExpressionSrc.opponent}
+                              alt={`Your rival ${settlementEmojiMood.opponent} expression`}
+                              fill
+                              sizes="(max-width: 768px) 56px, 64px"
+                              className="object-cover object-center"
+                              onError={() =>
+                                setFailedExpressionSprites((prev) => ({
+                                  ...prev,
+                                  [settlementExpressionSrc.opponent!]: true,
+                                }))
+                              }
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center">
+                              <span className="font-gabarito text-[10px] font-bold uppercase text-[#6f3a28]">
+                                {settlementEmojiMood.opponent}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="mt-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[#6f3a28]">Your Rival</p>
+                      </div>
+                      <span
+                        className="absolute -right-1 bottom-3 h-3 w-3 rotate-45 rounded-[2px] border-r border-t"
+                        style={{
+                          borderColor: "rgba(111,58,40,0.22)",
+                          background: "rgba(246,232,206,0.98)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 flex justify-center">
                   <span
                     className="rounded-full px-3 py-1 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.14em]"

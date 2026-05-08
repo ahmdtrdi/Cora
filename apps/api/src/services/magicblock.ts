@@ -154,8 +154,7 @@ function loadCoraBattleIdl(): Idl {
   ];
 
   for (const candidate of candidateUrls) {
-    const path = candidate.pathname;
-    if (existsSync(path)) {
+    if (existsSync(candidate)) {
       return JSON.parse(readFileSync(candidate, 'utf8')) as Idl;
     }
   }
