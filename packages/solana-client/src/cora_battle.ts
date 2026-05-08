@@ -169,6 +169,103 @@ export type CoraBattle = {
       "args": []
     },
     {
+      "name": "commitBattleSession",
+      "docs": [
+        "Schedule a BattleSession state commit from ER back to Solana."
+      ],
+      "discriminator": [
+        63,
+        180,
+        117,
+        22,
+        4,
+        108,
+        97,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "battleSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "magicProgram",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magicContext",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "commitRegisteredCard",
+      "docs": [
+        "Schedule a RegisteredCard state commit from ER back to Solana."
+      ],
+      "discriminator": [
+        6,
+        161,
+        25,
+        234,
+        133,
+        174,
+        127,
+        77
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battleSession"
+        },
+        {
+          "name": "registeredCard",
+          "writable": true
+        },
+        {
+          "name": "magicProgram",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magicContext",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "createSession",
       "docs": [
         "Create a new battle session for two players.",
@@ -240,6 +337,361 @@ export type CoraBattle = {
             "array": [
               "u8",
               32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "delegateBattleSession",
+      "docs": [
+        "Delegate the BattleSession PDA from the Solana base layer to MagicBlock ER."
+      ],
+      "discriminator": [
+        246,
+        129,
+        186,
+        190,
+        203,
+        16,
+        146,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bufferBattleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battleSession"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                39,
+                72,
+                184,
+                233,
+                248,
+                135,
+                5,
+                202,
+                198,
+                87,
+                118,
+                52,
+                152,
+                206,
+                248,
+                128,
+                229,
+                220,
+                144,
+                70,
+                231,
+                66,
+                242,
+                194,
+                253,
+                167,
+                96,
+                80,
+                195,
+                46,
+                177,
+                187
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordBattleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battleSession"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataBattleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battleSession"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "battleSession",
+          "writable": true
+        },
+        {
+          "name": "ownerProgram",
+          "address": "3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "delegateRegisteredCard",
+      "docs": [
+        "Delegate one RegisteredCard PDA so replay state can be mutated in ER."
+      ],
+      "discriminator": [
+        128,
+        61,
+        132,
+        99,
+        66,
+        67,
+        175,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battleSession"
+        },
+        {
+          "name": "bufferRegisteredCard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registeredCard"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                39,
+                72,
+                184,
+                233,
+                248,
+                135,
+                5,
+                202,
+                198,
+                87,
+                118,
+                52,
+                152,
+                206,
+                248,
+                128,
+                229,
+                220,
+                144,
+                70,
+                231,
+                66,
+                242,
+                194,
+                253,
+                167,
+                96,
+                80,
+                195,
+                46,
+                177,
+                187
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegationRecordRegisteredCard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registeredCard"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "delegationMetadataRegisteredCard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registeredCard"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegationProgram"
+            }
+          }
+        },
+        {
+          "name": "registeredCard",
+          "writable": true
+        },
+        {
+          "name": "ownerProgram",
+          "address": "3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cardId",
+          "type": {
+            "array": [
+              "u8",
+              16
             ]
           }
         }
@@ -341,6 +793,43 @@ export type CoraBattle = {
       "args": []
     },
     {
+      "name": "processUndelegation",
+      "discriminator": [
+        196,
+        28,
+        41,
+        206,
+        48,
+        37,
+        51,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "baseAccount",
+          "writable": true
+        },
+        {
+          "name": "buffer"
+        },
+        {
+          "name": "payer",
+          "writable": true
+        },
+        {
+          "name": "systemProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "accountSeeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
+    },
+    {
       "name": "registerCard",
       "docs": [
         "Register a card (question mapping) for a battle session.",
@@ -410,6 +899,103 @@ export type CoraBattle = {
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "undelegateBattleSession",
+      "docs": [
+        "Commit and undelegate the BattleSession PDA when the battle has ended."
+      ],
+      "discriminator": [
+        15,
+        152,
+        195,
+        62,
+        218,
+        157,
+        220,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "battleSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "magicProgram",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magicContext",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "undelegateRegisteredCard",
+      "docs": [
+        "Commit and undelegate a RegisteredCard PDA when the battle has ended."
+      ],
+      "discriminator": [
+        102,
+        60,
+        153,
+        72,
+        76,
+        24,
+        24,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battleSession"
+        },
+        {
+          "name": "registeredCard",
+          "writable": true
+        },
+        {
+          "name": "magicProgram",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magicContext",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
