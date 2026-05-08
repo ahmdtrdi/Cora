@@ -34,7 +34,7 @@ import { AntiCheatAnalyzer } from './AntiCheatAnalyzer';
  */
 export class GameEngine {
   // ─── Configuration ────────────────────────────────────────────
-  static readonly MATCH_DURATION_MS = 300_000;          // 5 minutes
+  static readonly MATCH_DURATION_MS = 180_000;          // 180 seconds
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
   static readonly ROUNDS_TO_WIN = 2;
   static readonly BASE_DAMAGE = 50;

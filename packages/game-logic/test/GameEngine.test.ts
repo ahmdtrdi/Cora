@@ -58,7 +58,7 @@ describe('GameEngine', () => {
     
     const state1 = engine.getStateForPlayer('player1');
     expect(state1.hand.length).toBe(5);
-    expect(state1.timer.remainingMs).toBe(300_000);
+    expect(state1.timer.remainingMs).toBe(180_000);
   });
 
   test('playCard successful attack', () => {
