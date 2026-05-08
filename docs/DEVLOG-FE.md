@@ -2020,10 +2020,10 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Reasoning
 - The matchup section now reads as an intentional versus composition instead of two plain text blocks.
 - Square placeholders make the layout ready for future portrait/icon assets while preserving current scanning state.
-- Warm cards increase focal contrast and keep cohesion with CORA’s parchment/vintage style without looking like generic white dashboards.
+- Warm cards increase focal contrast and keep cohesion with CORAï¿½s parchment/vintage style without looking like generic white dashboards.
 
 ### The Tech Debt
-- Opponent card currently always renders unknown/scanning placeholder in this component’s current states; when a matched-opponent payload is wired here, we should feed portrait/name/base into the same left-icon/right-info horizontal template without changing structure.
+- Opponent card currently always renders unknown/scanning placeholder in this componentï¿½s current states; when a matched-opponent payload is wired here, we should feed portrait/name/base into the same left-icon/right-info horizontal template without changing structure.
 
 ### Guardrails Kept
 - Matchmaking progress logic and bar animation behavior were not changed.
@@ -2087,7 +2087,7 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Change
 - Refactored [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to match the newer matchmaking versus-screen style while preserving signing/socket flow.
 - Updated header/content hierarchy to player-facing match-confirmation copy:
-  - Eyebrow: `{arena.label} · $${wagerUsd} {arena.token}`
+  - Eyebrow: `{arena.label} ï¿½ $${wagerUsd} {arena.token}`
   - Title: `Rival Locked`
   - Subtitle: `Sign the deposit before the timer expires.`
 - Rebuilt versus row into warm horizontal matchup cards over dark arena shell:
@@ -2677,7 +2677,7 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
   - removed websocket-connection-state requirement from sign button enablement (wallet + role gate + signing state now control gating)
   - preserved `confirmDeposit` emission only after socket is `connected`
   - added Player B helper copy while locked: `Waiting for Player A to deposit first.`
-  - on `depositUnlocked` for Player B, reset visible countdown to fresh 30s and show unlock copy: `Player A deposited — your turn.`
+  - on `depositUnlocked` for Player B, reset visible countdown to fresh 30s and show unlock copy: `Player A deposited ï¿½ your turn.`
   - paused countdown/auto-timeout while Player B is locked pre-unlock
 - Opponent identity privacy in `OpponentFound`:
   - replaced rival portrait/name/base with mystery state (`?`, `Mystery Rival`, `Character hidden until battle`)
@@ -2998,7 +2998,7 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
   - opponent portrait remains unchanged as `?` (hidden identity behavior preserved)
 
 ### The Reasoning
-- The player’s own selected scientist can be shown with expressive art before battle starts, while opponent identity remains intentionally concealed.
+- The playerï¿½s own selected scientist can be shown with expressive art before battle starts, while opponent identity remains intentionally concealed.
 
 ### The Tech Debt
 - Expression asset resolution is component-local in `OpponentFound`; if more pre-battle surfaces need this behavior, a shared character portrait resolver helper would reduce duplication.
@@ -3022,7 +3022,7 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Reasoning
 - Projectile visuals should match the active attacker identity to improve combat readability and character personality.
-- Turing’s randomized binary projectile variants add variety while preserving deterministic gameplay logic.
+- Turingï¿½s randomized binary projectile variants add variety while preserving deterministic gameplay logic.
 - Heal should remain a non-projectile feedback channel, so visuals align with intended semantics.
 - A free-floating asset with soft glow feels integrated into battle motion and avoids UI-card framing artifacts.
 
@@ -3285,3 +3285,70 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Answer feedback colors are inline in the component; if we continue tuning battle UI states, these should move into shared color tokens.
+## 2026-05-08 - BattleScreen Refactor (View Extraction)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - kept socket state/effects/gameplay handlers in this file
+  - replaced large inline UI chunks with extracted component usage
+  - switched challenge-link derivation from `useMemo` to direct derivation (same behavior, cleaner lint outcome)
+- Added [apps/web/src/components/play/BattleScreenGateStates.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenGateStates.tsx):
+  - extracted "Match Context Missing" and "Wallet Required" screens
+- Added [apps/web/src/components/play/BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx):
+  - extracted alert stack and top notice banner
+- Added [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - extracted room/disconnect/question/surrender/result/share overlays
+
+### The Reasoning
+- `BattleScreen.tsx` had become too large to iterate on safely from FE side.
+- Separating presentation-heavy sections from gameplay/state logic reduces cognitive load and makes UI-only edits much faster.
+- Overlay extraction also makes modal flows easier to test and tweak independently.
+
+### The Tech Debt
+- The central battle arena section (header + character stage + card hand) is still large and can be extracted next into focused presentational components.
+- A few prop groups passed to overlay/status components are broad; introducing view-model objects by domain (room state, settlement state, share state) would further simplify contracts.
+
+## 2026-05-08 - BattleScreen Overlay Type Fix (challengeLink nullable)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - changed `challengeLink` prop type from `string` to `string | null` to match `createChallengeLink()` return type and `ChallengeShareCard` contract.
+
+### The Reasoning
+- `createChallengeLink` intentionally returns `null` when origin is unavailable.
+- Keeping overlay prop strict to `string` caused Next/TS build failure when passing nullable link.
+- Nullable typing aligns all layers without changing runtime behavior.
+
+### The Tech Debt
+- None introduced. Types are now consistent across link creator, overlay, and share card.
+
+## 2026-05-08 - BattleScreen Refactor Follow-up (Inline Overlay Re-consolidation)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed large inline overlay JSX block that had been reintroduced during conflict resolution
+  - restored usage of [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) as the single overlay render path
+  - removed an unused `playerAddressLabel` derived value
+
+### The Reasoning
+- Consolidating overlays back into the extracted component keeps `BattleScreen.tsx` focused on gameplay state/effects and avoids duplicated UI paths.
+- It also reduces merge-conflict surface area significantly for future FE iterations.
+
+### The Tech Debt
+- The core arena section (header + character stage + hand + inline answer tray) is still the largest remaining block and can be extracted next.
+
+## 2026-05-08 - BattleScreen Question UI De-duplication
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - removed the question modal overlay render path (`activeCard && status === "playing" && !isMatchComplete`)
+  - removed now-unused question modal props (`activeCard`, `status`, `displaySecondsLeft`, `answerLocked`, `onAnswer`)
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed those question-modal props from `<BattleScreenOverlays />` callsite
+
+### The Reasoning
+- The in-arena question panel is already present; the overlay modal created duplicate question UI and degraded UX.
+- Keeping only one question surface matches intended play flow and reduces visual noise.
+
+### The Tech Debt
+- None added. This removes duplicated rendering paths.
