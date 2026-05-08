@@ -10,6 +10,7 @@ import { createActionsRouter } from './routes/actions';
 import { startEventListener } from './utils/eventListener';
 import { getArenaHistory, getWalletHistory, getWalletPlayability } from './services/goldrush';
 import { supabase } from './services/supabase';
+import { fetchMatchQuestions } from './questions';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
@@ -93,19 +94,11 @@ app.get('/api/history/wallet/:address/playability', async (c) => {
 
 app.get('/api/questions', async (c) => {
   try {
-    // Call the new distributed RPC function
-    // Notice we don't need to pass a limit anymore because the SQL handles the 3-3-4 split natively
-    const { data: selected, error } = await supabase.rpc('get_distributed_questions');
-
-    if (error) {
-      console.error('Supabase RPC Error:', error);
-      throw error;
-    }
-
-    // Return the perfectly balanced, shuffled array of 10 questions
-    return c.json({ questions: selected });
+    // Rely on our single source of truth in questions.ts
+    const masterDeck = await fetchMatchQuestions();
+    return c.json({ questions: masterDeck });
   } catch (error) {
-    console.error('Failed to load questions from Supabase:', error);
+    console.error('Failed to load questions via API:', error);
     return c.json({ error: 'Failed to load questions' }, 500);
   }
 });
