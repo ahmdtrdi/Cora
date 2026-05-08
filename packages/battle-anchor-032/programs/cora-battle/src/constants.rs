@@ -19,6 +19,19 @@ pub const ROUND_DURATION_SECONDS: i64 = 180;
 /// Maximum damage a single card can deal (prevents one-shot exploits)
 pub const MAX_DAMAGE: u16 = 100;
 
+/// Public effect type for a backend-authorized attack card.
+pub const EFFECT_ATTACK: u8 = 1;
+/// Public effect type for a backend-authorized heal card.
+pub const EFFECT_HEAL: u8 = 2;
+/// Public effect type for a consume-only card with no HP mutation.
+pub const EFFECT_NONE: u8 = 3;
+
+/// Maximum final effect value the backend may authorize for ATTACK/HEAL cards.
+pub const MAX_EFFECT_VALUE: u16 = 100;
+
+/// Maximum gameplay-score delta the backend may apply from one card resolution.
+pub const MAX_SCORE_DELTA: u32 = 10_000;
+
 /// Minimum damage a single card can deal (prevents zero-damage griefing)
 pub const MIN_DAMAGE: u16 = 1;
 
@@ -26,7 +39,7 @@ pub const MIN_DAMAGE: u16 = 1;
 pub const SESSION_TIMEOUT: i64 = 900;
 
 /// Current state schema version for forward-compatible upgrades
-pub const CURRENT_VERSION: u8 = 2;
+pub const CURRENT_VERSION: u8 = 3;
 
 pub const END_REASON_NONE: u8 = 0;
 pub const END_REASON_NORMAL_WIN: u8 = 1;

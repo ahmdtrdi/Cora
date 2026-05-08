@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 
 /// The main battle session account, tracking all on-chain game state.
-/// Acts as a "blind HP calculator" — answer verification happens off-chain
-/// in the backend, only damage application is recorded on-chain.
+/// Acts as a backend-authorized battle state mirror. Answer verification and
+/// private effect math stay off-chain; ER only records final public effects.
 #[account]
 pub struct BattleSession {
     /// Schema version for forward-compatible upgrades
@@ -38,7 +38,7 @@ pub struct BattleSession {
     pub player_a_missed_rounds: u8,
     /// Rounds missed by player B due to timeout
     pub player_b_missed_rounds: u8,
-    /// Total damage events applied (audit trail)
+    /// Total resolved card plays applied to ER state (audit trail)
     pub total_plays: u16,
     /// Current battle status (state machine)
     pub status: BattleStatus,
@@ -143,7 +143,7 @@ pub enum BattleStatus {
     Cancelled,
 }
 
-/// A registered card representing one question's damage potential.
+/// A registered card representing one question's public ER effect envelope.
 /// The card_id uses dummy ephemeral IDs to prevent correlation with
 /// real question IDs in the database (privacy via Ephemeral Mapping).
 #[account]
@@ -152,7 +152,13 @@ pub struct RegisteredCard {
     pub session: Pubkey,
     /// Dummy card identifier for ephemeral mapping
     pub card_id: [u8; 16],
-    /// Damage this card deals when the backend confirms a correct answer
+    /// Player who is allowed to resolve this card in ER.
+    pub owner: Pubkey,
+    /// Public effect kind used for auditable ER state changes.
+    pub effect_type: u8,
+    /// Maximum final effect value the backend may authorize for this card.
+    pub max_value: u16,
+    /// Legacy damage-only attack value used by apply_damage compatibility flow.
     pub damage: u16,
     /// Replay protection — card can only be used once
     pub is_used: bool,
@@ -161,6 +167,7 @@ pub struct RegisteredCard {
 }
 
 impl RegisteredCard {
-    // 8 (disc) + 32 (session) + 16 (card_id) + 2 (damage) + 1 (is_used) + 1 (bump)
-    pub const LEN: usize = 8 + 32 + 16 + 2 + 1 + 1; // = 60
+    // 8 (disc) + 32 (session) + 16 (card_id) + 32 (owner) + 1 (effect_type)
+    // + 2 (max_value) + 2 (damage) + 1 (is_used) + 1 (bump)
+    pub const LEN: usize = 8 + 32 + 16 + 32 + 1 + 2 + 2 + 1 + 1; // = 95
 }

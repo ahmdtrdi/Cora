@@ -11,8 +11,13 @@ pub struct SessionCreatedEvent {
 
 #[event]
 pub struct CardRegisteredEvent {
+    pub session: Pubkey,
+    pub card: Pubkey,
     pub match_id: [u8; 32],
     pub card_id: [u8; 16],
+    pub owner: Pubkey,
+    pub effect_type: u8,
+    pub max_value: u16,
     pub damage: u16,
 }
 
@@ -32,6 +37,23 @@ pub struct DamageAppliedEvent {
     pub health_a: u16,
     pub health_b: u16,
     pub round: u8,
+}
+
+#[event]
+pub struct CardEffectAppliedEvent {
+    pub session: Pubkey,
+    pub card: Pubkey,
+    pub actor: Pubkey,
+    pub effect_type: u8,
+    pub final_value: u16,
+    pub score_delta: u32,
+    pub health_a: u16,
+    pub health_b: u16,
+    pub score_a: u16,
+    pub score_b: u16,
+    pub game_score_a: u32,
+    pub game_score_b: u32,
+    pub current_round: u8,
 }
 
 #[event]
