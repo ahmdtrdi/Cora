@@ -20,16 +20,24 @@ pub struct BattleSession {
     pub health_a: u16,
     /// Player B's current health points (reset each round)
     pub health_b: u16,
-    /// Player A's total correct answers across all rounds
+    /// Player A's round score in this best-of-3 battle
     pub score_a: u16,
-    /// Player B's total correct answers across all rounds
+    /// Player B's round score in this best-of-3 battle
     pub score_b: u16,
-    /// Current round number (1-indexed, max MAX_ROUNDS)
+    /// Current round number (1-indexed while active, 0 before activation)
     pub current_round: u8,
     /// Rounds won by player A
     pub rounds_won_a: u8,
     /// Rounds won by player B
     pub rounds_won_b: u8,
+    /// Unix timestamp when the current round started
+    pub round_started_at: i64,
+    /// Unix timestamp when the current round may be resolved by timeout
+    pub round_deadline: i64,
+    /// Rounds missed by player A due to timeout
+    pub player_a_missed_rounds: u8,
+    /// Rounds missed by player B due to timeout
+    pub player_b_missed_rounds: u8,
     /// Total damage events applied (audit trail)
     pub total_plays: u16,
     /// Current battle status (state machine)
@@ -44,15 +52,42 @@ pub struct BattleSession {
     pub created_at: i64,
     /// Unix timestamp when session finished (0 if not finished)
     pub finished_at: i64,
+    /// Terminal outcome reason. See END_REASON_* constants.
+    pub end_reason: u8,
 }
 
 impl BattleSession {
     // 8 (disc) + 1 (ver) + 32 (match_id) + 32 (authority) + 32 (player_a)
     // + 32 (player_b) + 2 (hp_a) + 2 (hp_b) + 2 (score_a) + 2 (score_b)
-    // + 1 (round) + 1 (won_a) + 1 (won_b) + 2 (plays) + 1 (status)
-    // + 32 (winner) + 32 (q_hash) + 1 (bump) + 8 (created) + 8 (finished)
-    pub const LEN: usize = 8 + 1 + 32 + 32 + 32 + 32 + 2 + 2 + 2 + 2
-        + 1 + 1 + 1 + 2 + 1 + 32 + 32 + 1 + 8 + 8; // = 232
+    // + 1 (round) + 1 (won_a) + 1 (won_b) + 8 (round_started)
+    // + 8 (round_deadline) + 1 (missed_a) + 1 (missed_b) + 2 (plays)
+    // + 1 (status) + 32 (winner) + 32 (q_hash) + 1 (bump)
+    // + 8 (created) + 8 (finished) + 1 (end_reason)
+    pub const LEN: usize = 8
+        + 1
+        + 32
+        + 32
+        + 32
+        + 32
+        + 2
+        + 2
+        + 2
+        + 2
+        + 1
+        + 1
+        + 1
+        + 8
+        + 8
+        + 1
+        + 1
+        + 2
+        + 1
+        + 32
+        + 32
+        + 1
+        + 8
+        + 8
+        + 1; // = 251
 }
 
 /// State machine for battle lifecycle.

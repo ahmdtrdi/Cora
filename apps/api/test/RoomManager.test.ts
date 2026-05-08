@@ -706,8 +706,8 @@ describe('RoomManager', () => {
       expect(payload.player.characterState).toBe('stay');
       expect(payload.player.score).toBe(0);
       expect(payload.hand).toEqual([]);
-      expect(payload.timer.totalDurationMs).toBe(300_000);
-      expect(payload.timer.remainingMs).toBe(300_000);
+      expect(payload.timer.totalDurationMs).toBe(180_000);
+      expect(payload.timer.remainingMs).toBe(180_000);
       expect(payload.timer.phase).toBe('normal');
       expect(payload.damageLog).toEqual([]);
     });
