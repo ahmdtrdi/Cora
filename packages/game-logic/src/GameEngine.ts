@@ -514,10 +514,10 @@ export class GameEngine {
   }
 
   /**
-   * Final checker: rounds won, then health left, then correct answers.
+   * Final checker: rounds won, then score, then health left.
    * If every category is equal, the match is a draw.
    */
-  private determineMatchOutcome(): { winnerAddress: string | null; reason: 'rounds_won' | 'health_left' | 'correct_answers' | 'draw' } {
+  private determineMatchOutcome(): { winnerAddress: string | null; reason: 'rounds_won' | 'score' | 'health_left' | 'draw' } {
     const [addrA, addrB] = this.playerAddresses;
     const a = this.players.get(addrA)!;
     const b = this.players.get(addrB)!;
@@ -525,11 +525,11 @@ export class GameEngine {
     if (a.roundsWon !== b.roundsWon) {
       return { winnerAddress: a.roundsWon > b.roundsWon ? addrA : addrB, reason: 'rounds_won' };
     }
+    if (a.score !== b.score) {
+      return { winnerAddress: a.score > b.score ? addrA : addrB, reason: 'score' };
+    }
     if (a.health !== b.health) {
       return { winnerAddress: a.health > b.health ? addrA : addrB, reason: 'health_left' };
-    }
-    if (a.correctAnswers !== b.correctAnswers) {
-      return { winnerAddress: a.correctAnswers > b.correctAnswers ? addrA : addrB, reason: 'correct_answers' };
     }
     return { winnerAddress: null, reason: 'draw' };
   }
