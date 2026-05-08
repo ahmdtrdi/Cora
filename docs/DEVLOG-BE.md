@@ -440,3 +440,28 @@
 ### The Tech Debt
 - [ ] **History Indexing:** We are currently stubbing `/api/history/*`. Post-hackathon, we will need a dedicated Anchor event indexer (or equivalent) to scrape proper history instead of relying on the generic Covalent tx endpoints.
 - [ ] **Public Matchmaking Wager Enrichment:** `wagerUsdValue` enrichment is currently only configured inside `createPrivateRoom`. The public queue `queueMatch` structure must also trigger the pricing oracle once a standard `tokenMint` fallback architecture is defined.
+
+## 2026-05-08 — Fix GoldRush: Chain Target & Pricing Workaround
+
+### The Change
+
+**`apps/api/src/services/goldrush.ts` (3 fixes):**
+1. **Chain target:** Changed `chainId` from `solana-devnet` to `solana-mainnet`. Covalent does not index Solana devnet — all API calls were returning `"Chain solana-devnet not supported."`.
+2. **Symbol → mint resolver:** Added `TOKEN_MINTS` map (SOL, BONK, USDC) and `resolveMint()` helper so callers can pass either a symbol or a full mint address.
+3. **Pricing workaround:** Replaced `PricingService.getTokenPrices()` with a `BalanceService.getTokenBalancesForWalletAddress()` probe against a known Solana Labs wallet. The SDK lowercases all addresses internally, corrupting Solana's case-sensitive base58 — breaking both the Pricing endpoint and the address-match logic in responses. The workaround reads the `quote_rate` field and matches by both case-insensitive address and ticker symbol fallback.
+
+**`apps/api/test-goldrush.ts` (new):**
+- Smoke-test script that calls `getTokenPriceUsd('SOL')` and `getWalletPlayability()` directly, runnable via `bun run test-goldrush.ts <wallet>`.
+
+### The Reasoning
+
+1. **Covalent has no devnet support.** This was the root cause of every GoldRush API call failing. Switching to `solana-mainnet` immediately fixed the BalanceService calls (`reliable: true`).
+2. **SDK lowercases base58.** Both `PricingService.getTokenPrices()` and the raw REST endpoint lowercase the address in the URL path, causing Covalent to return `"Contract address not found!"`. The BalanceService workaround avoids this by querying balances (which work) and reading the embedded `quote_rate`.
+3. **Native SOL mismatch.** Covalent returns native SOL under the system program address (`11111111111111111111111111111111`), not the wSOL mint. The ticker-symbol fallback (`contract_ticker_symbol === 'SOL'`) handles this transparently.
+
+### The Tech Debt
+
+- [ ] **SDK dependency is a liability.** The `@covalenthq/client-sdk` lowercases all Solana addresses, making it fundamentally broken for Solana. A future PR should replace it with direct REST `fetch` calls to preserve base58 casing and unlock the native Pricing endpoint for all tokens (SOL, BONK, USDC).
+- [ ] **Probe wallet dependency.** The pricing workaround only returns prices for tokens held by the probe wallet (`vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg`). BONK and USDC return `null` because that wallet doesn't hold them. Switching to direct REST will fix this.
+- [ ] **`test-goldrush.ts` is not in CI.** It's a manual smoke test. Should be moved to a proper test suite once testing infrastructure is set up.
+
