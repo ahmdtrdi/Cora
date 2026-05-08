@@ -1,5 +1,6 @@
 # Backend Development Log
 
+
 ## 2026-04-27 - Scaffold Bun + Hono API
 
 **The Change:**
@@ -504,3 +505,39 @@
 
 * **Over-Fetching:** We are now querying and transferring 60 full question objects (with all nested options and explanations) from Supabase to the Bun server on every match initialization. In reality, most matches will end before 15 cards are played, meaning 75% of the fetched data is wasted bandwidth.
 * **Server Memory Footprint:** Holding a 60-card deck in memory for every active `Room` instance increases the memory overhead per match. If concurrent active matches scale significantly, this could put pressure on the Node/Bun garbage collector.
+
+
+## 2026-05-08 - Backend Contract Deduplication Refactor
+
+**The Change:**
+- Added `apps/api/src/config/solana.ts` as the backend source of truth for the CORA escrow program ID, Anchor instruction discriminators, and manual `MatchState` byte offsets.
+- Added `apps/api/src/config/tokens.ts` as the source of truth for devnet/mainnet token mint maps and token symbol resolution.
+- Refactored Blink transaction building, Solana settlement, event listening, private match creation, and GoldRush pricing to use the shared config modules instead of duplicating constants.
+- Split final game outcome from settlement authorization: `matchResult` now carries only the gameplay result, while `settlementAuthorization` carries the signed settlement payload.
+- Tightened WebSocket/message typing by changing `WsMessage` payloads from `any` to `unknown`, adding payload readers in `RoomManager`, and replacing Bun-specific room socket typing with a minimal `RoomSocket` interface compatible with Hono's `WSContext`.
+- Removed the dead commented `/api/questions` implementation and unused imports from the backend source.
+
+**The Reasoning:**
+- The previous backend had several quiet sources of drift: token mint maps existed in three places, the program ID and instruction/layout details existed in multiple Web3 modules, and `matchResult` represented two different event contracts.
+- The new config files keep cluster-specific token differences explicit, especially the devnet/mainnet USDC split needed by Blink transactions versus GoldRush pricing.
+- Separating `settlementAuthorization` from `matchResult` prevents clients from receiving two semantically different "final result" payloads under the same event name.
+- The minimal socket interface keeps room management independent from Bun internals while still supporting both native Bun sockets and Hono WebSocket contexts.
+
+**The Tech Debt:**
+- `bun test` now runs outside the sandbox, but `RoomManager.test.ts` still has 7 failures around message ordering and synchronous assumptions for async `initializeEngine()`; source typecheck and backend source lint pass.
+- MagicBlock remains stubbed and still has TODO comments around actual ER instruction submission.
+- `tsconfig.tsbuildinfo` is modified by local typecheck runs because the API tsconfig uses `composite`; consider excluding it from source control or using a no-buildinfo verification command.
+
+## 2026-05-08 - WebSocket Settlement Event Split
+
+**The Change:**
+- Updated `apps/web/src/hooks/useMatchSocket.ts` to listen for the backend's new `settlementAuthorization` WebSocket event.
+- Kept a backward-compatible fallback for older `matchResult` settlement payloads while treating the current `matchResult` event as the gameplay summary.
+- Updated `packages/shared-types/src/websocket.ts` so `ClientToServerEvents` matches the object payloads the frontend already sends for `playCard` and `confirmDeposit`.
+
+**The Reasoning:**
+- The backend now separates the game result from the signed settlement authorization to avoid two incompatible payloads sharing the `matchResult` event name.
+- The battle UI already had separate state for match summary and settlement details, so the frontend only needed the socket hook to route the new event into the existing `settlementResult` state.
+- Aligning the shared client-to-server event types removes another small contract drift between FE and BE.
+
+
