@@ -62,6 +62,68 @@ export type CoraBattle = {
       "args": []
     },
     {
+      "name": "applyCardEffect",
+      "docs": [
+        "Apply a backend-authorized final card effect to ER battle state.",
+        "The backend remains the source of truth for answer validation and",
+        "private multiplier computation; ER only stores the final public effect."
+      ],
+      "discriminator": [
+        183,
+        143,
+        101,
+        151,
+        167,
+        55,
+        194,
+        21
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "battleSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "registeredCard",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "finalValue",
+          "type": "u16"
+        },
+        {
+          "name": "scoreDelta",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "applyDamage",
       "docs": [
         "Apply damage to the opponent of the attacker.",
@@ -886,7 +948,7 @@ export type CoraBattle = {
       "name": "registerCard",
       "docs": [
         "Register a card (question mapping) for a battle session.",
-        "Authority-only. Only allowed in WaitingCards status."
+        "Legacy damage-only path. New effect-aware flows should use register_card_v2."
       ],
       "discriminator": [
         33,
@@ -952,6 +1014,133 @@ export type CoraBattle = {
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "registerCardV2",
+      "docs": [
+        "Register an effect-aware card for ER resolution.",
+        "Authority-only. Only allowed in WaitingCards status."
+      ],
+      "discriminator": [
+        210,
+        169,
+        134,
+        131,
+        120,
+        191,
+        221,
+        138
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "battleSession"
+        },
+        {
+          "name": "registeredCard",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battleSession"
+              },
+              {
+                "kind": "arg",
+                "path": "cardId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cardId",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "type": "pubkey"
+        },
+        {
+          "name": "effectType",
+          "type": "u8"
+        },
+        {
+          "name": "maxValue",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "resolveRoundByState",
+      "docs": [
+        "Resolve a timer-expired round from current ER state.",
+        "Uses only public state: health, round damage, and existing match totals."
+      ],
+      "discriminator": [
+        68,
+        216,
+        6,
+        37,
+        4,
+        246,
+        43,
+        183
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battleSession",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "battleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "timeoutPlayerForRound",
@@ -1147,6 +1336,19 @@ export type CoraBattle = {
       ]
     },
     {
+      "name": "cardEffectAppliedEvent",
+      "discriminator": [
+        247,
+        16,
+        82,
+        16,
+        174,
+        134,
+        108,
+        63
+      ]
+    },
+    {
       "name": "cardRegisteredEvent",
       "discriminator": [
         0,
@@ -1196,6 +1398,19 @@ export type CoraBattle = {
         107,
         81,
         122
+      ]
+    },
+    {
+      "name": "roundResolvedByStateEvent",
+      "discriminator": [
+        164,
+        35,
+        224,
+        170,
+        255,
+        193,
+        73,
+        70
       ]
     },
     {
@@ -1294,26 +1509,51 @@ export type CoraBattle = {
     },
     {
       "code": 6008,
+      "name": "invalidEffectType",
+      "msg": "Effect type is not valid for this card"
+    },
+    {
+      "code": 6009,
+      "name": "invalidEffectValue",
+      "msg": "Effect value is not valid for this card"
+    },
+    {
+      "code": 6010,
+      "name": "invalidScoreDelta",
+      "msg": "Gameplay score delta is out of allowed range"
+    },
+    {
+      "code": 6011,
+      "name": "invalidCardOwner",
+      "msg": "Registered card owner is not valid for this session"
+    },
+    {
+      "code": 6012,
+      "name": "invalidRoundState",
+      "msg": "Current round state is not valid for this instruction"
+    },
+    {
+      "code": 6013,
       "name": "invalidTarget",
       "msg": "Target must be a participant in this session"
     },
     {
-      "code": 6009,
+      "code": 6014,
       "name": "timeoutNotReached",
       "msg": "Session timeout has not been reached yet"
     },
     {
-      "code": 6010,
+      "code": 6015,
       "name": "invalidEndReason",
       "msg": "End reason is not valid for this instruction"
     },
     {
-      "code": 6011,
+      "code": 6016,
       "name": "sessionExpired",
       "msg": "Session has expired due to timeout"
     },
     {
-      "code": 6012,
+      "code": 6017,
       "name": "arithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
     }
@@ -1347,19 +1587,47 @@ export type CoraBattle = {
           },
           {
             "name": "scoreA",
+            "docs": [
+              "Canonical round wins for player A."
+            ],
             "type": "u16"
           },
           {
             "name": "scoreB",
+            "docs": [
+              "Canonical round wins for player B."
+            ],
             "type": "u16"
           },
           {
             "name": "roundsWonA",
+            "docs": [
+              "Legacy duplicate of score_a, kept for compatibility."
+            ],
             "type": "u8"
           },
           {
             "name": "roundsWonB",
+            "docs": [
+              "Legacy duplicate of score_b, kept for compatibility."
+            ],
             "type": "u8"
+          },
+          {
+            "name": "healthA",
+            "type": "u16"
+          },
+          {
+            "name": "healthB",
+            "type": "u16"
+          },
+          {
+            "name": "gameScoreA",
+            "type": "u32"
+          },
+          {
+            "name": "gameScoreB",
+            "type": "u32"
           }
         ]
       }
@@ -1368,8 +1636,8 @@ export type CoraBattle = {
       "name": "battleSession",
       "docs": [
         "The main battle session account, tracking all on-chain game state.",
-        "Acts as a \"blind HP calculator\" — answer verification happens off-chain",
-        "in the backend, only damage application is recorded on-chain."
+        "Acts as a backend-authorized battle state mirror. Answer verification and",
+        "private effect math stay off-chain; ER only records final public effects."
       ],
       "type": {
         "kind": "struct",
@@ -1432,14 +1700,14 @@ export type CoraBattle = {
           {
             "name": "scoreA",
             "docs": [
-              "Player A's round score in this best-of-3 battle"
+              "Canonical rounds won by player A for match winner evaluation."
             ],
             "type": "u16"
           },
           {
             "name": "scoreB",
             "docs": [
-              "Player B's round score in this best-of-3 battle"
+              "Canonical rounds won by player B for match winner evaluation."
             ],
             "type": "u16"
           },
@@ -1453,14 +1721,14 @@ export type CoraBattle = {
           {
             "name": "roundsWonA",
             "docs": [
-              "Rounds won by player A"
+              "Legacy duplicate of score_a, kept synchronized for backward compatibility."
             ],
             "type": "u8"
           },
           {
             "name": "roundsWonB",
             "docs": [
-              "Rounds won by player B"
+              "Legacy duplicate of score_b, kept synchronized for backward compatibility."
             ],
             "type": "u8"
           },
@@ -1495,7 +1763,7 @@ export type CoraBattle = {
           {
             "name": "totalPlays",
             "docs": [
-              "Total damage events applied (audit trail)"
+              "Total resolved card plays applied to ER state (audit trail)"
             ],
             "type": "u16"
           },
@@ -1520,7 +1788,7 @@ export type CoraBattle = {
           {
             "name": "questionHash",
             "docs": [
-              "SHA-256 hash of the question set used (fairness proof)"
+              "SHA-256 hash of the public question set commitment, not an answer hash."
             ],
             "type": {
               "array": [
@@ -1556,6 +1824,34 @@ export type CoraBattle = {
               "Terminal outcome reason. See END_REASON_* constants."
             ],
             "type": "u8"
+          },
+          {
+            "name": "gameScoreA",
+            "docs": [
+              "Cumulative gameplay score for player A, used for final tie-breaks."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "gameScoreB",
+            "docs": [
+              "Cumulative gameplay score for player B, used for final tie-breaks."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "roundDamageA",
+            "docs": [
+              "Attack damage contributed by player A during the current round."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "roundDamageB",
+            "docs": [
+              "Attack damage contributed by player B during the current round."
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -1587,10 +1883,78 @@ export type CoraBattle = {
       }
     },
     {
+      "name": "cardEffectAppliedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "card",
+            "type": "pubkey"
+          },
+          {
+            "name": "actor",
+            "type": "pubkey"
+          },
+          {
+            "name": "effectType",
+            "type": "u8"
+          },
+          {
+            "name": "finalValue",
+            "type": "u16"
+          },
+          {
+            "name": "scoreDelta",
+            "type": "u32"
+          },
+          {
+            "name": "healthA",
+            "type": "u16"
+          },
+          {
+            "name": "healthB",
+            "type": "u16"
+          },
+          {
+            "name": "scoreA",
+            "type": "u16"
+          },
+          {
+            "name": "scoreB",
+            "type": "u16"
+          },
+          {
+            "name": "gameScoreA",
+            "type": "u32"
+          },
+          {
+            "name": "gameScoreB",
+            "type": "u32"
+          },
+          {
+            "name": "currentRound",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "cardRegisteredEvent",
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "card",
+            "type": "pubkey"
+          },
           {
             "name": "matchId",
             "type": {
@@ -1608,6 +1972,18 @@ export type CoraBattle = {
                 16
               ]
             }
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "effectType",
+            "type": "u8"
+          },
+          {
+            "name": "maxValue",
+            "type": "u16"
           },
           {
             "name": "damage",
@@ -1656,7 +2032,7 @@ export type CoraBattle = {
     {
       "name": "registeredCard",
       "docs": [
-        "A registered card representing one question's damage potential.",
+        "A registered card representing one question's public ER effect envelope.",
         "The card_id uses dummy ephemeral IDs to prevent correlation with",
         "real question IDs in the database (privacy via Ephemeral Mapping)."
       ],
@@ -1683,9 +2059,30 @@ export type CoraBattle = {
             }
           },
           {
+            "name": "owner",
+            "docs": [
+              "Player who is allowed to resolve this card in ER."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "effectType",
+            "docs": [
+              "Public effect kind used for auditable ER state changes."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "maxValue",
+            "docs": [
+              "Maximum final effect value the backend may authorize for this card."
+            ],
+            "type": "u16"
+          },
+          {
             "name": "damage",
             "docs": [
-              "Damage this card deals when the backend confirms a correct answer"
+              "Legacy damage-only attack value used by apply_damage compatibility flow."
             ],
             "type": "u16"
           },
@@ -1773,6 +2170,74 @@ export type CoraBattle = {
       }
     },
     {
+      "name": "roundResolvedByStateEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "type": "u8"
+          },
+          {
+            "name": "resolver",
+            "type": "pubkey"
+          },
+          {
+            "name": "healthA",
+            "type": "u16"
+          },
+          {
+            "name": "healthB",
+            "type": "u16"
+          },
+          {
+            "name": "roundDamageA",
+            "type": "u32"
+          },
+          {
+            "name": "roundDamageB",
+            "type": "u32"
+          },
+          {
+            "name": "roundWinner",
+            "type": "pubkey"
+          },
+          {
+            "name": "scoreA",
+            "type": "u16"
+          },
+          {
+            "name": "scoreB",
+            "type": "u16"
+          },
+          {
+            "name": "gameScoreA",
+            "type": "u32"
+          },
+          {
+            "name": "gameScoreB",
+            "type": "u32"
+          },
+          {
+            "name": "nextRound",
+            "type": "u8"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "wasDraw",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
       "name": "roundTimedOutEvent",
       "type": {
         "kind": "struct",
@@ -1804,10 +2269,16 @@ export type CoraBattle = {
           },
           {
             "name": "scoreA",
+            "docs": [
+              "Canonical round wins for player A."
+            ],
             "type": "u16"
           },
           {
             "name": "scoreB",
+            "docs": [
+              "Canonical round wins for player B."
+            ],
             "type": "u16"
           }
         ]
