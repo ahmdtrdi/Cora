@@ -605,3 +605,82 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] No live Rust integration tests were re-enabled. Coverage for `resolve_round_by_state` currently lives in the disabled test plan only.
 - [ ] `RoundEndedEvent` still reports legacy `rounds_won_*` fields instead of canonical `score_*`. This remains safe because the counters stay synchronized, but the event vocabulary is still mixed.
 - [ ] The backend room flow still needs to decide when to call `resolve_round_by_state()` versus `timeout_player_for_round()` based on real disconnect state at deadline.
+
+---
+
+## Entry 19 — 2026-05-08: MagicBlock Service Adapter Wired to Latest `cora-battle` ER Surface
+
+### The Change
+
+**Backend service adapter (1 file):**
+- `apps/api/src/services/magicblock.ts` — Replaced the placeholder service with an Anchor-backed adapter that loads the checked-in `cora_battle` IDL and exposes wrappers for the latest ER instruction surface:
+  - `createSession`
+  - `registerCard` (legacy)
+  - `registerCardV2`
+  - `activateSession`
+  - `delegateBattleSession`
+  - `delegateRegisteredCard`
+  - `applyDamage` (legacy)
+  - `applyCardEffect`
+  - `timeoutPlayerForRound`
+  - `resolveRoundByState`
+  - `cancelSession`
+  - `commitBattleSession`
+  - `commitRegisteredCard`
+  - `undelegateBattleSession`
+  - `undelegateRegisteredCard`
+  - `getSessionState`
+
+**Adapter details:**
+- Added explicit RPC lane separation:
+  - base layer via `SOLANA_RPC_URL`
+  - MagicBlock ER/router via `MAGICBLOCK_ROUTER_RPC_URL` (with `MAGICBLOCK_RPC_URL` as legacy fallback env)
+- Added exported local constant mirrors for:
+  - `EFFECT_ATTACK`, `EFFECT_HEAL`, `EFFECT_NONE`
+  - `END_REASON_*` values through `END_REASON_DRAW_NO_CONTEST`
+- Added PDA helpers for:
+  - BattleSession from `roomId` or `matchId`
+  - RegisteredCard from `sessionPda + cardId`
+- Expanded `BattleSessionState` decoding to include:
+  - `sessionPda`, `authority`, `playerA`, `playerB`
+  - canonical round wins via `scoreA/scoreB`
+  - gameplay score via `gameScoreA/gameScoreB`
+  - current-round offensive contribution via `roundDamageA/roundDamageB`
+  - `currentRound`, `roundStartedAt`, `roundDeadline`
+  - `winner`, `endReason`, `finishedAt`, `totalPlays`
+- Fixed the manual BattleSession byte offsets so `roundStartedAt`, `roundDeadline`, `status`, `winner`, `finishedAt`, `gameScore_*`, and `roundDamage_*` line up with the current on-chain layout.
+- Added wrapper logging for every instruction with `roomId`, instruction name, `sessionPda`, optional `cardPda`, transaction signature, and error output.
+- Kept `createBattleSession()` as a compatibility alias so the existing room bootstrap path does not break while BE wiring catches up.
+
+### The Reasoning
+
+1. **The adapter needed to match the real ER surface before Engine wiring.** BE cannot safely integrate `registerCardV2`, `applyCardEffect`, or `resolveRoundByState` later if the service layer still speaks the old damage-only stub language.
+
+2. **Base and router lanes need to stay distinct.** Session and card setup belong on the base layer; delegated gameplay mutation and lifecycle commits belong on the MagicBlock router lane. Keeping that separation in one place reduces accidental RPC mix-ups later.
+
+3. **`getSessionState()` needed a schema correction, not just new fields.** The previous manual decoder was missing the inserted fields before `round_deadline`, which meant downstream reads could drift as the ER account evolved. This step re-aligned the decoder to the current `BattleSession` layout.
+
+4. **Legacy wrappers remain deliberately visible.** `registerCard()` and `applyDamage()` are still exported, but now clearly documented as compatibility paths only. New BE room flow should use `registerCardV2()` and `applyCardEffect()`.
+
+5. **Engine.ts was intentionally left alone.** This task stops at the adapter boundary. BE still owns the eventual decision of when to call `applyCardEffect`, `timeoutPlayerForRound`, `resolveRoundByState`, or `cancelSession` in the live room loop.
+
+### Verification
+
+- [x] `cd packages/battle-anchor-032 && avm use 0.32.1 && anchor build` passes.
+- [x] Adapter now loads the latest `cora_battle` IDL and exposes wrappers for the latest ER instructions.
+- [x] No lifecycle `v2` methods were introduced; lifecycle wrappers still target `BattleSession` / `RegisteredCard`.
+- [x] `Engine.ts` was not modified.
+- [x] Escrow code was not modified.
+
+**TypeScript check:**
+- [ ] `./node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit` is still blocked by unrelated API-service issues:
+  - `apps/api/src/services/goldrush.ts` cannot resolve `@covalenthq/client-sdk`
+  - `apps/api/src/services/supabase.ts` cannot resolve `@supabase/supabase-js`
+  - `goldrush.ts` also has pre-existing implicit `any` parameter errors
+- [x] The project-wide TypeScript check did not surface additional `magicblock.ts` errors before stopping on those unrelated blockers.
+
+### The Tech Debt
+
+- [ ] BE still needs to wire the new room flow to `registerCardV2()` and `applyCardEffect()`; this task only made the adapter ready.
+- [ ] BE must choose `timeoutPlayerForRound()` vs `resolveRoundByState()` vs `cancelSession()` based on actual disconnect/server-state facts at deadline.
+- [ ] Settlement should eventually consume terminal ER state directly once the room flow is fully hooked up, instead of treating ER verification as an optional late check.
