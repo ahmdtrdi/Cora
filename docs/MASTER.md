@@ -126,7 +126,7 @@ By targeting CPNS first, we capture a hyper-motivated local market (7M users/yea
 |-----|--------|
 | Generalized protocol / open infrastructure | Not needed for MVP core loop. V2 roadmap. |
 | Elo matchmaking | Overkill for demo. FIFO queue works. |
-| Session Keys / Ephemeral Rollups (MagicBlock) | Quiz game only needs 2 on-chain txns total. No problem to solve. |
+| Session Keys / Ephemeral Rollups (MagicBlock) | Out of scope for the original MVP, but implemented as the V2 MagicBlock track for verifiable real-time battle state. See `docs-archive/BLUEPRINT_V2_GOLDRUSH_MAGICBLOCK.md`. |
 | Production AI anti-cheat | Slated for Q3 roadmap. Jupyter notebook PoC handles MVP validation. |
 | On-chain fairness proof hash | Mock "fairness badge" in UI is sufficient. |
 | Mainnet deployment | Devnet only. Full audits required before mainnet launch. |
@@ -191,7 +191,8 @@ Cora/
 - `apps/web`: User-facing app for lobby, battle, result flow, and wallet connection.
 - `apps/api`: Matchmaking, WebSocket gameplay transport, and app APIs.
 - `apps/settlement-oracle`: Service that authorizes match settlement signatures for on-chain verification.
-- `packages/solana-program`: Anchor/Rust escrow program and on-chain instruction logic.
+- `packages/solana-program`: Anchor/Rust escrow root for wager deposit and settlement.
+- `packages/battle-anchor-032`: Separate Anchor `0.32.1` root for MagicBlock `cora-battle` ER logic.
 - `packages/solana-client`: TypeScript client helpers for program interaction and transaction construction.
 - `packages/game-logic`: Shared scoring rules, question flow, and deterministic match logic.
 - `packages/shared-types`: Shared schemas and types used across apps and packages.
@@ -208,5 +209,5 @@ Cora/
 - Frontend Lead primarily owns `apps/web` and collaborates on `packages/ui`.
 - Backend & Networking Lead primarily owns `apps/api` and `apps/settlement-oracle`.
 - Data & Game Logic Engineer primarily owns `packages/game-logic`, `data/questions`, and `notebooks`.
-- Web3 & Smart Contract Lead primarily owns `packages/solana-program` and `packages/solana-client`.
+- Web3 & Smart Contract Lead primarily owns `packages/solana-program`, `packages/battle-anchor-032`, and `packages/solana-client`.
 - Cross-team interfaces should be stabilized in `packages/shared-types`.
