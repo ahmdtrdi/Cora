@@ -3207,3 +3207,81 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Metadata markup remains duplicated between player and rival rows; if this HUD keeps changing, a small metadata-row helper could reduce drift.
+
+## 2026-05-08 - Battle Question Panel Above Hand
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed the full-screen active-card question overlay
+  - rendered the active question as a compact panel directly above the hand cards in the bottom tray
+  - kept the existing active card, countdown, answer lock, and `onAnswer` behavior unchanged
+  - preserved the active selected card visual while other hand cards remain disabled during answering
+
+### The Reasoning
+- The question belongs to the hand-card interaction and should not block the arena scene.
+- Placing it above the cards keeps the player focused on the current choice while preserving visibility of bases, characters, projectiles, and reactions.
+
+### The Tech Debt
+- The inline question panel is compact and clamps long question text; if future prompts become much longer, we may need a dedicated expanded/read-more state that still avoids blocking the arena.
+
+## 2026-05-08 - Battle Question Panel Layering
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - changed the active question panel from an in-flow hand-tray element to an absolute overlay layer above the cards
+  - preserved the same countdown, answer buttons, active-card state, and answer-locking behavior
+  - kept a compact hand prompt in the tray so the hand row height stays stable while answering
+
+### The Reasoning
+- The previous inline question panel avoided blocking the arena, but it still pushed the arena scene upward because it participated in layout.
+- Anchoring the panel above the cards as a layer keeps the top HUD and arena composition stable while preserving proximity to the card interaction.
+
+### The Tech Debt
+- The question overlay uses a tuned `bottom: calc(100% + 0.35rem)` anchor; if card tray height changes substantially, this offset may need a small adjustment.
+
+## 2026-05-08 - Battle Question Overlay On Card Layer
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved the active question panel from above the card tray to the same bottom layer as the cards
+  - anchored the panel over the hand row so it covers the cards while answering instead of floating above them
+  - preserved the existing question, timer, and answer behavior
+
+### The Reasoning
+- The intended interaction is that selecting a card transforms the hand layer into the answer surface, not that the question becomes a separate layer above the hand.
+- Keeping the panel on the card layer avoids pushing arena layout and keeps the interaction spatially tied to the chosen card.
+
+### The Tech Debt
+- The overlay currently covers the hand row as a single panel; if we want a more literal card-transform animation later, the selected card could expand into this panel using shared layout motion.
+
+## 2026-05-08 - Battle Answer Feedback Persistence
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added selected-answer feedback state for the active question panel
+  - kept the question panel visible briefly after play result resolution so it does not disappear before attack/heal feedback finishes
+  - colors only the selected option: green when the chosen answer is correct, brown/red when the chosen answer is incorrect
+  - preserved non-disclosure behavior by not marking or revealing the correct answer when the selected answer is wrong
+  - kept active card/question data in a local snapshot so the panel can persist even if hand state updates during resolution
+
+### The Reasoning
+- The result feedback should bridge the UI choice and the resulting combat action; clearing the panel immediately made the interaction feel abrupt.
+- Showing feedback only on the selected option confirms the player's choice outcome without exposing the correct answer.
+
+### The Tech Debt
+- The feedback duration is a tuned constant (`ANSWER_FEEDBACK_DISPLAY_MS = 1200`); if backend animation timings change, this should be aligned with a more explicit combat-resolution signal.
+
+## 2026-05-08 - Darker Correct Answer Green
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - darkened the selected-correct answer highlight to a deeper existing arena green gradient
+  - adjusted selected-correct label and text color for contrast on the darker fill
+  - left incorrect and neutral answer styling unchanged
+
+### The Reasoning
+- The previous correct-answer highlight was too light and felt disconnected from the arena palette.
+- A deeper green keeps the success signal clear while matching existing in-game green tones.
+
+### The Tech Debt
+- Answer feedback colors are inline in the component; if we continue tuning battle UI states, these should move into shared color tokens.

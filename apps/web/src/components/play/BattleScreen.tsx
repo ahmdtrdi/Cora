@@ -20,6 +20,7 @@ type MatchOutcome = {
 };
 
 const ANSWER_TIME_SEC = 10;
+const ANSWER_FEEDBACK_DISPLAY_MS = 1200;
 const EMPTY_HAND: Card[] = [];
 const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
@@ -101,6 +102,7 @@ type ProjectileState = {
 type BaseFxState = "idle" | "hit" | "heal";
 type CharacterSpriteState = "stay" | "action";
 type CharacterExpression = "happy" | "confident" | "hurt";
+type AnswerFeedback = "correct" | "wrong";
 type CharacterReaction = {
   id: string;
   expression: CharacterExpression;
@@ -219,8 +221,11 @@ export function BattleScreen() {
   } = useMatchSocket({ roomId, address });
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [activeQuestionCard, setActiveQuestionCard] = useState<Card | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [answerFeedback, setAnswerFeedback] = useState<AnswerFeedback | null>(null);
   const [gameNotice, setGameNotice] = useState<{ id: string; message: string; tone: "action" | "phase" } | null>(null);
   const [characterActionSide, setCharacterActionSide] = useState<BattleSide | null>(null);
   const [projectile, setProjectile] = useState<ProjectileState | null>(null);
@@ -247,6 +252,7 @@ export function BattleScreen() {
   const extraPointShownRef = useRef(false);
   const previousOpponentConnectedRef = useRef<boolean | null>(null);
   const gameNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const answerFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opponentReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousPlayerStreakRef = useRef(0);
@@ -301,6 +307,9 @@ export function BattleScreen() {
       if (gameNoticeTimerRef.current) {
         clearTimeout(gameNoticeTimerRef.current);
       }
+      if (answerFeedbackTimerRef.current) {
+        clearTimeout(answerFeedbackTimerRef.current);
+      }
       if (playerReactionTimerRef.current) {
         clearTimeout(playerReactionTimerRef.current);
       }
@@ -316,8 +325,8 @@ export function BattleScreen() {
   const player = gameState?.player;
   const opponent = gameState?.opponent;
   const activeCard = useMemo(
-    () => hand.find((card) => card.id === activeCardId) ?? null,
-    [hand, activeCardId],
+    () => (activeCardId ? activeQuestionCard ?? hand.find((card) => card.id === activeCardId) ?? null : null),
+    [activeQuestionCard, hand, activeCardId],
   );
 
   useEffect(() => {
@@ -334,8 +343,15 @@ export function BattleScreen() {
       },
     ]);
     showGameNotice("No damage this turn.");
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+      answerFeedbackTimerRef.current = null;
+    }
     setActiveCardId(null);
+    setActiveQuestionCard(null);
     setAnswerLocked(false);
+    setSelectedOptionId(null);
+    setAnswerFeedback(null);
     pendingCardIdRef.current = null;
   }, [lastCardExpired, showGameNotice]);
 
@@ -363,9 +379,19 @@ export function BattleScreen() {
     } else {
       showGameNotice("No damage this turn.");
     }
-    setActiveCardId(null);
-    setAnswerLocked(false);
-    pendingCardIdRef.current = null;
+    setAnswerFeedback(lastPlayResult.correct ? "correct" : "wrong");
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+    }
+    answerFeedbackTimerRef.current = setTimeout(() => {
+      setActiveCardId(null);
+      setActiveQuestionCard(null);
+      setAnswerLocked(false);
+      setSelectedOptionId(null);
+      setAnswerFeedback(null);
+      pendingCardIdRef.current = null;
+      answerFeedbackTimerRef.current = null;
+    }, ANSWER_FEEDBACK_DISPLAY_MS);
   }, [lastPlayResult, showGameNotice, showReaction]);
 
   useEffect(() => {
@@ -446,15 +472,23 @@ export function BattleScreen() {
 
   function onOpenCard(card: Card) {
     if (!isPlayable || activeCardId || isMatchComplete) return;
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+      answerFeedbackTimerRef.current = null;
+    }
     setActiveCardId(card.id);
+    setActiveQuestionCard(card);
     setSecondsLeft(ANSWER_TIME_SEC);
     setAnswerLocked(false);
+    setSelectedOptionId(null);
+    setAnswerFeedback(null);
     pendingCardIdRef.current = card.id;
     openCard(card.id);
   }
 
   function onAnswer(optionId: string) {
     if (!activeCard || answerLocked || !isPlayable) return;
+    setSelectedOptionId(optionId);
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
     playCard(activeCard.id, optionId);
@@ -1608,8 +1642,91 @@ export function BattleScreen() {
           </div>
 
           <div className="relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
+              <AnimatePresence>
+                {activeCard && status === "playing" && !isMatchComplete && (
+                  <motion.div
+                    key={activeCard.id}
+                    initial={{ opacity: 0, y: 10, x: "-50%", scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+                    exit={{ opacity: 0, y: 6, x: "-50%", scale: 0.98 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
+                    style={{
+                      border: "1px solid rgba(248,214,148,0.36)",
+                      background: "linear-gradient(150deg, rgba(255,246,228,0.96), rgba(243,221,185,0.96))",
+                      boxShadow: "0 14px 26px rgba(0,0,0,0.28)",
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-gabarito text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#6d8373]">
+                          Question
+                        </p>
+                        <p className="mt-0.5 line-clamp-2 font-gabarito text-sm font-semibold leading-snug text-[#1f2b24] md:text-base">
+                          {activeCard.question.text}
+                        </p>
+                      </div>
+                      <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displaySecondsLeft}</p>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
+                      {activeCard.question.options.map((option) => {
+                        const isSelected = selectedOptionId === option.id;
+                        const selectedCorrect = isSelected && answerFeedback === "correct";
+                        const selectedWrong = isSelected && answerFeedback === "wrong";
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            disabled={answerLocked}
+                            onClick={() => onAnswer(option.id)}
+                            className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
+                            style={{
+                              border: selectedCorrect
+                                ? "1px solid rgba(76,120,82,0.58)"
+                                : selectedWrong
+                                  ? "1px solid rgba(140,70,48,0.62)"
+                                  : isSelected
+                                    ? "1px solid rgba(186,105,49,0.5)"
+                                    : "1px solid rgba(111,58,40,0.24)",
+                              background: selectedCorrect
+                                ? "linear-gradient(160deg, rgba(86,133,93,0.98), rgba(53,93,63,0.98))"
+                                : selectedWrong
+                                  ? "linear-gradient(160deg, rgba(233,201,184,0.98), rgba(188,116,83,0.96))"
+                                  : isSelected
+                                    ? "linear-gradient(160deg, rgba(248,225,181,0.98), rgba(231,190,128,0.96))"
+                                    : "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
+                              boxShadow: isSelected
+                                ? "0 0 0 2px rgba(248,214,148,0.18), 0 8px 14px rgba(77,42,24,0.16)"
+                                : "0 6px 10px rgba(77,42,24,0.12)",
+                              opacity: answerLocked && !isSelected ? 0.72 : 1,
+                            }}
+                          >
+                            <span
+                              className="font-gabarito text-[10px] font-black uppercase tracking-wider"
+                              style={{ color: selectedWrong ? "#6f3a28" : selectedCorrect ? "rgba(240,249,238,0.96)" : "#6d8373" }}
+                            >
+                              {option.id}
+                            </span>
+                            <span
+                              className="ml-2 font-gabarito text-xs font-semibold md:text-sm"
+                              style={{ color: selectedWrong ? "#3f2419" : selectedCorrect ? "rgba(249,253,248,0.96)" : "#1f2b24" }}
+                            >
+                              {option.text}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <p className="mb-1 text-center font-gabarito text-xs text-[rgba(244,240,230,0.86)]">
-                {isPlayable ? "Pick a card from your hand." : "Waiting for server state..."}
+                {activeCard && status === "playing" && !isMatchComplete
+                  ? "Choose an answer."
+                  : isPlayable
+                    ? "Pick a card from your hand."
+                    : "Waiting for server state..."}
               </p>
 
               <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
@@ -1632,7 +1749,7 @@ export function BattleScreen() {
                         background: cardDisabled
                           ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
                           : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
-                        opacity: cardDisabled ? 0.68 : 1,
+                        opacity: active ? 1 : cardDisabled ? 0.68 : 1,
                         boxShadow: active
                           ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
                           : "0 12px 22px rgba(0,0,0,0.3)",
@@ -1749,64 +1866,6 @@ export function BattleScreen() {
               >
                 Surrender
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeCard && status === "playing" && !isMatchComplete && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">
-          <div
-            className="relative w-full max-w-xl overflow-hidden rounded-[28px] p-4 md:p-5"
-            style={{
-              border: "2px solid rgba(248,214,148,0.45)",
-              background: "linear-gradient(150deg, #fff6e4 0%, #f3ddb9 100%)",
-              boxShadow: "0 24px 42px rgba(0,0,0,0.36)",
-            }}
-          >
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.38), transparent 42%), radial-gradient(circle at 85% 86%, rgba(111,58,40,0.08), transparent 45%)",
-              }}
-            />
-            <div className="mb-2 flex items-center justify-between">
-              <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
-              <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
-            </div>
-
-            <p className="font-gabarito text-lg font-semibold leading-relaxed text-[#1f2b24]">
-              {activeCard.question.text}
-            </p>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {activeCard.question.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  disabled={answerLocked}
-                  onClick={() => onAnswer(option.id)}
-                  className="relative overflow-hidden rounded-2xl px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
-                  style={{
-                    border: "2px solid rgba(111,58,40,0.3)",
-                    background: "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
-                    boxShadow: "0 8px 14px rgba(77,42,24,0.14)",
-                  }}
-                >
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                      background:
-                        "radial-gradient(circle at 18% 16%, rgba(255,255,255,0.34), transparent 38%), linear-gradient(180deg, rgba(255,255,255,0.1), rgba(111,58,40,0.03))",
-                    }}
-                  />
-                  <p className="font-gabarito text-xs font-bold uppercase tracking-wider text-[#6d8373]">
-                    {option.id}
-                  </p>
-                  <p className="mt-1 font-gabarito text-sm text-[#1f2b24]">{option.text}</p>
-                </button>
-              ))}
             </div>
           </div>
         </div>
