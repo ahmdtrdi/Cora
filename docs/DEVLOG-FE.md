@@ -3163,3 +3163,47 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Base/character ground offsets remain tuned constants; a future responsive QA pass should validate very short mobile viewports and unusual aspect ratios.
 - Full npm run lint is still blocked by an existing react-hooks/set-state-in-effect issue in apps/web/src/components/lobby/OpponentFound.tsx; targeted ESLint for BattleScreen.tsx passes.
+
+## 2026-05-08 - Battle Screen Single-Viewport Fit
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - changed the battle page shell from padded min-height to fixed 100svh height with hidden overflow
+  - tightened top status chips, section padding, arena gaps, and player metadata spacing
+  - made the arena scene flex within available height instead of enforcing large fixed minimum heights
+  - reduced base, character, and hand-card clamp sizes so the full battle composition fits without page scroll
+
+### The Reasoning
+- The prior split between scene and hand tray fixed overlap, but fixed min-heights plus page padding made the total composition taller than the viewport.
+- Treating the battle screen as a bounded viewport layout keeps the room header, arena, characters, bases, HP bars, and hand cards visible as one screen.
+
+### The Tech Debt
+- This is tuned for the current battle UI density; very short landscape/mobile viewports may still need a dedicated compact breakpoint if the top status row wraps heavily.
+
+## 2026-05-08 - Battle Arena Edge-to-Edge Scene
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed horizontal padding from the arena frame itself
+  - kept horizontal padding only on the compact player metadata row and hand-card tray
+  - let the scene layer, including cropped base art, run edge-to-edge inside the arena border
+
+### The Reasoning
+- The base crop was visually separated from the arena border because the absolute scene was positioned inside the section padding box.
+- Moving padding to UI rows preserves readable HUD spacing while allowing background scene props to crop against the actual arena frame.
+
+### The Tech Debt
+- Edge-to-edge scene art now depends more on base crop offsets; future character packs with different base silhouettes may need per-character positioning tokens.
+
+## 2026-05-08 - Battle Rival Metadata Mirror Order
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - changed the right-aligned rival metadata order from `Rival · Score · Rounds` to `Score · Rounds · Rival`
+  - left player metadata order unchanged as `You · Score · Rounds`
+
+### The Reasoning
+- The rival block is right-aligned, so placing the name at the outer edge makes the mirrored HUD read more naturally.
+
+### The Tech Debt
+- Metadata markup remains duplicated between player and rival rows; if this HUD keeps changing, a small metadata-row helper could reduce drift.
