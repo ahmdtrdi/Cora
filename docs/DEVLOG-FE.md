@@ -2987,3 +2987,18 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Reaction bubble markup exists twice (player/opponent variants); this can be extracted into a small shared render helper/component if more variants are added.
 - Position offsets are tuned constants; a future responsive pass could derive offsets from measured sprite bounds for tighter device consistency.
+
+## 2026-05-08 - Opponent Found Player Expression (Happy)
+
+### The Change
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - player-selected character portrait in the "Opponent Found" panel now renders:
+    - `/assets/characters/{myScientist.id}/exp/happy.png`
+  - added `next/image` rendering for the player portrait with graceful fallback to existing initial glyph if asset fails
+  - opponent portrait remains unchanged as `?` (hidden identity behavior preserved)
+
+### The Reasoning
+- The player’s own selected scientist can be shown with expressive art before battle starts, while opponent identity remains intentionally concealed.
+
+### The Tech Debt
+- Expression asset resolution is component-local in `OpponentFound`; if more pre-battle surfaces need this behavior, a shared character portrait resolver helper would reduce duplication.
