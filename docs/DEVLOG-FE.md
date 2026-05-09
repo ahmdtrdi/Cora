@@ -3701,3 +3701,134 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The arena images are loaded synchronously during render and fade in natively. If more arenas are added, dynamic preload strategies might be necessary.
+
+## 2026-05-09 - Settlement Overlay Polish (Compact Stats, Emote Focus, Payout Copy)
+
+### The Change
+- Updated [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to rebalance the finished/settlement modal layout:
+- Replaced large stat boxes with a compact chip-based summary row (`Rounds`, `Correct`, `Timeout`, `Wrong`) to reduce vertical footprint.
+- Enlarged the settlement emote portraits substantially and centered them as the visual focal point while keeping `YOU` and `YOUR RIVAL` labels.
+- Added outcome-aware payout/result copy block near the title, with stronger highlight styling for winning outcomes.
+- Made title/subtitle spacing resilient for short and long settlement titles using clamped title sizing, max-width constraints, and balanced wrapping.
+- Added a new derived display prop in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx): `settlementOutcomeKind`, then passed it into `BattleScreenOverlays`.
+
+### The Reasoning
+- The previous grid-based stat cards dominated the modal height and competed with the emotional result moment; compact chips keep the data visible but secondary.
+- Emote expressions are the strongest emotional signal at battle end, so increasing their size and visual weight improves clarity and delight.
+- Payout relevance is highest on wins/surrenders; adding explicit, state-aware copy improves comprehension without touching settlement logic.
+- Using an explicit derived outcome prop avoids brittle string parsing on `settlementText`, so variant titles (including long cancellation/invalidated states) can change safely.
+- Payout text is deliberately conservative: it references available token/wager context and avoids inventing an exact payout amount.
+
+### The Tech Debt
+- `settlementOutcomeKind` currently lives as a local derived string in `BattleScreen.tsx`. If other screens need the same semantics, consider introducing a shared `deriveSettlementOutcomeKind(...)` helper to prevent drift.
+- `wagerUsd` parsing assumes a numeric-like string (as currently supplied). If upstream formatting changes, a dedicated formatter utility would make this safer and reusable.
+
+## 2026-05-09 - End-Game Defeated Base Transition Before Settlement Overlay
+
+### The Change
+- Updated [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add a local visual-only end-game transition phase before the settlement modal appears.
+- Introduced short transition states:
+- `showSettlementOverlay` to gate settlement popup visibility without changing real match completion logic.
+- `endgameDefeatedSide` (`player` | `opponent` | `null`) to target only the losing/surrendering side.
+- `endgameBaseFadeActive` to trigger quick loser-base fade/dissolve timing.
+- Added a keyed end-game sequence (with timer cleanup) that:
+- identifies defeated side from `settlementOutcomeKind`,
+- triggers hit/hurt beat,
+- starts base fade on that side only,
+- then reveals settlement overlay after ~1080ms.
+- Draw/cancelled/invalidated/pending paths skip base fade and use a short neutral delay.
+- Forced defeated-side `hurt` reaction display while transition runs so it remains visible until the popup appears.
+- Updated base rendering to fade/sink only the defeated base (no full-screen fade, no winner base fade).
+- Updated [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to accept `showSettlementOverlay` and render the settlement popup/share modal only when the transition gate opens.
+
+### The Reasoning
+- The match-complete state should stay truthful immediately for gameplay/network logic, while the visual transition should be presentation-only.
+- Isolating the defeated-side animation avoids unintended global fade behavior and preserves battle readability.
+- A short, punchy timing window (~1.08s) delivers impact without making result flow feel sluggish.
+- Explicit timer cleanup prevents stale animation state when remounting/resetting or when rapid state changes occur.
+
+### The Tech Debt
+- End-game timing constants are local in `BattleScreen.tsx`; if additional cinematic beats are added later, this should move into a dedicated transition config/helper for consistency.
+- The defeated-base dissolve uses lightweight opacity/transform transitions; if art-direction asks for richer FX, consider a reusable shader/particle layer component.
+
+## 2026-05-09 - Settlement Overlay Follow-up Polish (Consolidated)
+
+### The Change
+- Consolidated several small follow-up tweaks in [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+- Moved `Show Settlement Details` below `Blink Share` and `Back To Lobby`, centered.
+- Kept details panel behavior but relocated it under the new toggle position.
+- Removed subtitle rendering (including `Victory secured.` style line).
+- Removed the white framed stats wrapper while keeping compact stat chips.
+- Updated win payout copy to use net formula `wagerUsd * 2 * 0.975`.
+- Finalized direct payout copy format: `You win the $X wager in SOL/BONK.`
+- Switched settlement CTAs to shared button system (`btn-game` variants).
+- Reduced CTA width/footprint and changed layout to centered compact row.
+- Applied green visual treatment to `Back To Lobby`.
+
+### The Reasoning
+- These were iterative UI micro-adjustments to improve hierarchy, reduce modal clutter, and align settlement CTAs/copy with the rest of the app.
+- Consolidating the notes keeps the devlog readable while preserving intent and final-state decisions.
+
+### The Tech Debt
+- `settlementSubtitle` remains in the prop contract but is no longer rendered.
+- Win payout formula and green `Back To Lobby` styling are currently UI-local. If reused, extract shared helper/class.
+
+## 2026-05-09 - FE-Only Destroyed Base End-Game Effect
+
+### The Change
+- Enhanced end-of-match visual sequencing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) with a frontend-only destroyed-base beat before settlement popup reveal.
+- Added short phased end-game visual states and timings for:
+- impact flash,
+- crack reveal,
+- smoke/debris particle reveal,
+- loser-base fade/sink progression,
+- popup reveal gating via existing `showSettlementOverlay`.
+- Reused existing base shake pathway (`playerBaseFx` / `opponentBaseFx` with `hit`) for the punchy shake stage.
+- Added defeated-base-only overlays (no new image assets):
+- red radial impact flash,
+- crack/damage line overlays,
+- animated smoke/debris particle puffs,
+- ground dust haze,
+- stronger or softer fade/sink based on standard defeat vs surrender outcome.
+- Kept forced `hurt` expression behavior until settlement popup appears.
+- Preserved neutral behavior for draw/cancelled/invalidated (no destroyed-base effect, short neutral delay only).
+
+### The Reasoning
+- This gives a clear final impact moment for the losing side while keeping all authoritative match/settlement logic unchanged.
+- Effects are scoped to the defeated base container only, ensuring the winning base and full-screen scene remain stable.
+- Soft-mode handling for surrender outcomes keeps visual tone appropriate while still signaling defeat.
+
+### The Tech Debt
+- Destroyed overlays (crack line geometry and particle tuning) are handcrafted inline in `BattleScreen.tsx`; if reused later, they should be extracted into a dedicated reusable effect component.
+- End-game visual timing constants are currently local and manually coordinated; if more cinematic variants are added, centralizing timing profiles would reduce drift.
+
+## 2026-05-09 - Longer Destroyed-Base Beat + Winner Confident End Emote
+
+### The Change
+- Updated end-game timing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to make the destroyed-base sequence feel more rewarding before settlement popup appears.
+- Increased total end-game transition duration from `1080ms` to `1320ms`.
+- Delayed fade and smoke beat slightly to better pace impact -> crack -> debris -> sink.
+- Added forced winner `confident` end-state reaction during the same pre-popup window, mirroring the forced loser `hurt` behavior.
+- Winner/loser forced reactions now both hold until settlement popup is shown for clear-loser outcomes.
+
+### The Reasoning
+- The previous timing felt too quick for the visual achievement moment after a win.
+- Showing both emotional states (`confident` winner and `hurt` loser) creates clearer end-match readability and stronger payoff.
+
+### The Tech Debt
+- End-game timing remains hardcoded constants in `BattleScreen.tsx`; if more variants are requested, timing profiles should be centralized.
+
+## 2026-05-09 - Extend Destroyed-Base End Sequence to 2.5s (Active FX)
+
+### The Change
+- Updated end-match timing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to a `2500ms` total transition.
+- Retimed effect phases so added duration is filled by active visuals:
+- impact/crack/smoke reveal delays pushed later,
+- loser-base fade/sink transition extended,
+- smoke/debris particle motion curves significantly extended with multi-stage opacity/position keyframes.
+
+### The Reasoning
+- Matches request for a longer accomplishment beat without dead air, by extending visual activity rather than just delaying popup timing.
+
+### The Tech Debt
+- End-game phase timing is still tuned by local constants and inline keyframes; a dedicated transition profile object would simplify future balancing.
