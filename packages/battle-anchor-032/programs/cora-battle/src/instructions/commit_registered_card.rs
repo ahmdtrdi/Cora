@@ -38,11 +38,11 @@ pub struct CommitRegisteredCard<'info> {
         constraint = battle_session.authority == payer.key()
             @ BattleError::UnauthorizedAuthority,
     )]
-    pub battle_session: Account<'info, BattleSession>,
+    pub battle_session: Box<Account<'info, BattleSession>>,
     #[account(
         mut,
         constraint = registered_card.session == battle_session.key()
             @ BattleError::UnregisteredCard,
     )]
-    pub registered_card: Account<'info, RegisteredCard>,
+    pub registered_card: Box<Account<'info, RegisteredCard>>,
 }

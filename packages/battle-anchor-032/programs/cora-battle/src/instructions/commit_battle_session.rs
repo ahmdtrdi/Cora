@@ -42,5 +42,5 @@ pub struct CommitBattleSession<'info> {
         seeds = [BATTLE_SEED, battle_session.match_id.as_ref()],
         bump = battle_session.bump,
     )]
-    pub battle_session: Account<'info, BattleSession>,
+    pub battle_session: Box<Account<'info, BattleSession>>,
 }

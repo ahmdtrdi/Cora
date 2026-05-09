@@ -44,6 +44,14 @@ pub fn handler(
     session.game_score_b = 0;
     session.round_damage_a = 0;
     session.round_damage_b = 0;
+    session.total_slots_a = 0;
+    session.total_slots_b = 0;
+    session.cards_used_a = 0;
+    session.cards_used_b = 0;
+    session.manifest_committed_a = false;
+    session.manifest_committed_b = false;
+    session.card_manifest_a = [0; INLINE_MANIFEST_LEN];
+    session.card_manifest_b = [0; INLINE_MANIFEST_LEN];
 
     emit!(SessionCreatedEvent {
         match_id,
@@ -71,6 +79,6 @@ pub struct CreateSession<'info> {
         seeds = [BATTLE_SEED, match_id.as_ref()],
         bump,
     )]
-    pub battle_session: Account<'info, BattleSession>,
+    pub battle_session: Box<Account<'info, BattleSession>>,
     pub system_program: Program<'info, System>,
 }
