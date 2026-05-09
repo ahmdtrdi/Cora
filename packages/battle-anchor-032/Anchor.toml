@@ -1,6 +1,6 @@
 [toolchain]
 anchor_version = "0.32.1"
-package_manager = "yarn"
+package_manager = "npm"
 
 [features]
 resolution = true
@@ -17,4 +17,4 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "cargo test"
+test = "npm run test:local"
