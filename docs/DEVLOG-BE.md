@@ -541,3 +541,56 @@
 - Aligning the shared client-to-server event types removes another small contract drift between FE and BE.
 
 
+## 2026-05-09 - MagicBlock ER Authority: Room State & Backend Setup Pipeline (Points 1 & 2)
+
+### The Change
+
+**`apps/api/src/managers/room/types.ts` (3 new types, 4 new Room fields):**
+- Added `ErRegisteredCard` interface tracking per-card ER state: `cardPda`, `owner`, `effectType`, `maxValue`, `isDelegated`, `isConsumed`.
+- Added `ErLifecycleStatus` type — a 9-state FSM (`none` → `creating` → `registering` → `activating` → `delegating` → `active` → `committing` → `finished` | `failed`) so the backend can branch on exactly where the ER setup is.
+- Added `ErProofMeta` interface for the `/proof` API endpoint: stores session PDA, setup tx signatures, terminal tx signatures, and end reason.
+- Extended `Room` with `erEnabled`, `erLifecycleStatus`, `erCardRegistry: Map<string, ErRegisteredCard>`, and `erProofMeta`.
+
+**`apps/api/src/managers/room/Store.ts` (ER defaults):**
+- `erEnabled` defaults from `isMagicBlockConfigured()` at room creation — all room code branches on `room.erEnabled` instead of re-checking the env every time.
+- Other ER fields default to `'none'`, empty `Map`, and `null`.
+
+**`apps/api/src/utils/questionHash.ts` (NEW):**
+- `deriveQuestionHash()` — SHA-256 of sorted question IDs, producing the deterministic 32-byte hash needed by `createSession`. Replaces the zeroed `new Uint8Array(32)` placeholder.
+
+**`packages/game-logic/src/QuestionDealer.ts` (question accessor):**
+- Stores `allQuestions` at construction time (before pools are consumed by dealing).
+- Added `getQuestions()` accessor returning the original full set.
+
+**`packages/game-logic/src/GameEngine.ts` (question accessor):**
+- Added `getQuestions()` delegating to `QuestionDealer.getQuestions()` so `Blockchain.createBattleSession()` can derive the question hash.
+
+**`apps/api/src/managers/room/Blockchain.ts` (full ER setup pipeline):**
+- Refactored `createBattleSession()` from a 2-step stub (createSession + delegate) into a **5-phase pipeline**:
+  1. `createSession` with real `questionHash` (base RPC)
+  2. `registerCardV2` × 10 — initial visible hand (5 cards × 2 players) with deterministic card keys `<playerIndex>-<slotIndex>` (base RPC)
+  3. `activateSession` (base RPC)
+  4. `delegateBattleSession` (router RPC)
+  5. `delegateRegisteredCard` × 10 (router RPC)
+- Card key encoding: `"0-00"` through `"1-04"` — always ≤5 bytes UTF-8, well within the 16-byte on-chain limit.
+- On any phase failure, `erEnabled` flips to `false`, `erLifecycleStatus = 'failed'`, match continues engine-only.
+- All tx signatures are collected in `setupTxs` and stored in `room.erProofMeta`.
+
+**`apps/api/src/routes/match.ts` (enhanced /proof endpoint):**
+- `GET /api/match/:roomId/proof` now returns `erEnabled`, `status` (lifecycle phase), `setupTxSignatures`, `terminalTxSignatures`, and `endReason` alongside the existing `erSessionPda` and `explorerUrl`.
+
+### The Reasoning
+
+1. **`erEnabled` at creation time:** Previously, every ER-aware code path had to call `isMagicBlockConfigured()`. Caching the result on the room at creation time means all subsequent branching is a simple boolean check — cleaner, faster, and prevents inconsistency if env vars are modified mid-flight.
+2. **Fine-grained lifecycle FSM:** The 9-state `ErLifecycleStatus` lets us log exactly which phase failed, retry from the correct point if needed (future), and gives the `/proof` endpoint meaningful status for the frontend fairness badge.
+3. **Deterministic card keys:** Engine card IDs are long UUIDs (`card-<questionId>-<timestamp>-<random>`) that exceed the 16-byte on-chain limit. The `<playerIndex>-<slotIndex>` encoding is short, deterministic, and unique per session — ideal for PDA derivation.
+4. **Question hash from IDs only:** SHA-256 of sorted question IDs is sufficient to prove the question set is deterministic and unchanged. Including full text would be wasteful and leak question content on-chain.
+5. **Lazy registration:** Only the initial 10 visible hand cards are registered. Replacement cards (after a play consumes one) will be registered lazily in Point 4's `handlePlayCard` refactor — this keeps room start latency reasonable.
+
+### The Tech Debt
+
+- [ ] **Replacement card registration:** Point 4 (not yet implemented) must register and delegate new cards before they become playable when a hand slot is refilled.
+- [ ] **ER terminal flow:** Points 4–5 (commit/undelegate/read final state/settle from ER) are not yet wired.
+- [ ] **Surrender rejection:** ER rooms should reject surrender at the websocket layer — to be implemented in Point 4.
+- [ ] **Pre-existing test failures:** The same 7 `RoomManager.test.ts` failures around message ordering and async `initializeEngine()` persist — they predate this change and are documented in the 2026-05-08 Backend Contract Deduplication entry.
+- [ ] **`allQuestions` memory:** `QuestionDealer` now stores a copy of all valid questions for the match lifetime. This is ~60 question objects per match — negligible, but worth noting.

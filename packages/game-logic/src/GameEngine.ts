@@ -402,6 +402,13 @@ export class GameEngine {
   }
 
   /**
+   * Get the full list of valid questions for this match (for question hash derivation).
+   */
+  getQuestions(): SchemaQuestion[] {
+    return this.dealer.getQuestions();
+  }
+
+  /**
    * Get all player addresses.
    */
   getPlayerAddresses(): [string, string] {

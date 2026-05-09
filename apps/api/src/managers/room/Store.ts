@@ -1,4 +1,5 @@
 import { deriveMatchId } from '@shared/escrow';
+import { isMagicBlockConfigured } from '../../services/magicblock';
 import { Room } from './types';
 
 export class Store {
@@ -26,6 +27,10 @@ export class Store {
       depositTimeouts: new Map(),
       erSessionPda: null,
       wagerUsdValue: null,
+      erEnabled: isMagicBlockConfigured(),
+      erLifecycleStatus: 'none',
+      erCardRegistry: new Map(),
+      erProofMeta: null,
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;

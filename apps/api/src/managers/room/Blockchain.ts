@@ -1,6 +1,13 @@
 import { serverPublicKey, signSettlementAuthorization, submitRefundTransaction, submitSettlementTransaction, getServerKeypair } from '../../utils/settlement';
-import { isMagicBlockConfigured, magicBlockService } from '../../services/magicblock';
+import {
+  isMagicBlockConfigured,
+  magicBlockService,
+  deriveRegisteredCardPda,
+  EFFECT_ATTACK,
+  EFFECT_HEAL,
+} from '../../services/magicblock';
 import { getWagerUsdValue } from '../../services/goldrush';
+import { deriveQuestionHash } from '../../utils/questionHash';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
 import type { WsMessage } from '@shared/websocket';
@@ -26,29 +33,131 @@ export class Blockchain {
   }
 
   /**
-   * Creates an Ephemeral Rollup session if MagicBlock is configured.
+   * Full ER setup pipeline for MagicBlock-enabled rooms.
+   *
+   * Flow: createSession → registerCardV2 (visible hand × 2 players)
+   *     → activateSession → delegateBattleSession
+   *     → delegateRegisteredCard (each card)
+   *     → persist registry on room
+   *
+   * On any error, erEnabled is flipped to false and the match continues engine-only.
    */
   public async createBattleSession(room: Room): Promise<void> {
-    if (!isMagicBlockConfigured()) return;
+    if (!room.erEnabled) {
+      console.log(`[MagicBlock] ER disabled for room ${room.id} — running engine-only`);
+      return;
+    }
     if (!room.playerA || !room.playerB) return;
+    if (!room.engine) return;
+
+    const keypair = getServerKeypair();
+    const setupTxs: string[] = [];
 
     try {
-      const questionHash = new Uint8Array(32); // TODO: hash actual questions when ER is fully wired
-      const { sessionPda } = await magicBlockService.createBattleSession({
-        matchId: room.matchIdBytes,
+      // ── Phase 1: Create Session ──────────────────────────────────
+      room.erLifecycleStatus = 'creating';
+      const questionHash = deriveQuestionHash(room.engine.getQuestions());
+
+      const { sessionPda, signature: createSig } = await magicBlockService.createSession({
+        roomId: room.id,
         playerA: room.playerA,
         playerB: room.playerB,
         questionHash,
-        serverKeypair: getServerKeypair(),
+        serverKeypair: keypair,
       });
       room.erSessionPda = sessionPda;
-      console.log(`[MagicBlock] ER session created: ${sessionPda}`);
-      await magicBlockService.delegateBattleSession({
+      setupTxs.push(createSig);
+      console.log(`[MagicBlock] Phase 1/5 done — session created: ${sessionPda}`);
+
+      // ── Phase 2: Register visible hand cards ─────────────────────
+      room.erLifecycleStatus = 'registering';
+      const players: [string, string] = [room.playerA, room.playerB];
+
+      for (let pIdx = 0; pIdx < players.length; pIdx++) {
+        const playerAddr = players[pIdx];
+        const playerState = room.engine.getStateForPlayer(playerAddr);
+        const hand = playerState.hand; // Card[] (visible, up to HAND_SIZE)
+
+        for (let sIdx = 0; sIdx < hand.length; sIdx++) {
+          const card = hand[sIdx];
+          // Deterministic card key: <playerIndex>-<slotIndex> (e.g. "0-00", "1-04")
+          const cardKey = `${pIdx}-${String(sIdx).padStart(2, '0')}`;
+          const effectType = card.type === 'attack' ? EFFECT_ATTACK : EFFECT_HEAL;
+          const maxValue = card.type === 'attack' ? 50 : 10; // BASE_DAMAGE / BASE_HEAL
+
+          const cardPda = deriveRegisteredCardPda(sessionPda, cardKey);
+          const regSig = await magicBlockService.registerCardV2({
+            roomId: room.id,
+            sessionPda,
+            serverKeypair: keypair,
+            owner: playerAddr,
+            cardId: cardKey,
+            effectType,
+            maxValue,
+          });
+          setupTxs.push(regSig);
+
+          // Persist in room registry
+          room.erCardRegistry.set(`${playerAddr}:${card.id}`, {
+            cardPda: cardPda.toBase58(),
+            owner: playerAddr,
+            effectType,
+            maxValue,
+            isDelegated: false,
+            isConsumed: false,
+          });
+        }
+      }
+      console.log(`[MagicBlock] Phase 2/5 done — ${room.erCardRegistry.size} cards registered`);
+
+      // ── Phase 3: Activate session ────────────────────────────────
+      room.erLifecycleStatus = 'activating';
+      const activateSig = await magicBlockService.activateSession({
+        roomId: room.id,
         sessionPda,
-        serverKeypair: getServerKeypair(),
+        serverKeypair: keypair,
       });
+      setupTxs.push(activateSig);
+      console.log(`[MagicBlock] Phase 3/5 done — session activated`);
+
+      // ── Phase 4: Delegate session PDA ────────────────────────────
+      room.erLifecycleStatus = 'delegating';
+      const delegateSessionSig = await magicBlockService.delegateBattleSession({
+        roomId: room.id,
+        sessionPda,
+        serverKeypair: keypair,
+      });
+      setupTxs.push(delegateSessionSig);
+      console.log(`[MagicBlock] Phase 4/5 done — session delegated`);
+
+      // ── Phase 5: Delegate each registered card PDA ───────────────
+      for (const [_regKey, regCard] of room.erCardRegistry) {
+        const delegateCardSig = await magicBlockService.delegateRegisteredCard({
+          roomId: room.id,
+          sessionPda,
+          cardPda: regCard.cardPda,
+          serverKeypair: keypair,
+        });
+        setupTxs.push(delegateCardSig);
+        regCard.isDelegated = true;
+      }
+      console.log(`[MagicBlock] Phase 5/5 done — all cards delegated`);
+
+      // ── Done ─────────────────────────────────────────────────────
+      room.erLifecycleStatus = 'active';
+      room.erProofMeta = {
+        sessionPda,
+        setupTxSignatures: setupTxs,
+        terminalTxSignatures: [],
+        endReason: null,
+      };
+
+      console.log(`[MagicBlock] ER setup complete for room ${room.id}. Session: ${sessionPda}. Cards: ${room.erCardRegistry.size}. Txs: ${setupTxs.length}`);
+
     } catch (err) {
-      console.warn('[MagicBlock] Failed to create ER session, falling back to server-only:', err);
+      console.warn(`[MagicBlock] ER setup failed for room ${room.id}, falling back to engine-only:`, err);
+      room.erEnabled = false;
+      room.erLifecycleStatus = 'failed';
     }
   }
 
