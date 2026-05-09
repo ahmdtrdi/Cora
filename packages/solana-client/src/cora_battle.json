@@ -220,6 +220,70 @@
       ]
     },
     {
+      "name": "apply_effect",
+      "docs": [
+        "Apply a committed inline manifest slot to ER battle state."
+      ],
+      "discriminator": [
+        104,
+        156,
+        1,
+        245,
+        232,
+        226,
+        23,
+        200
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "slot",
+          "type": "u8"
+        },
+        {
+          "name": "actor_is_a",
+          "type": "bool"
+        },
+        {
+          "name": "final_value",
+          "type": "u16"
+        },
+        {
+          "name": "score_delta",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "cancel_session",
       "docs": [
         "Cancel an unresolved session with an explicit ER outcome reason."
@@ -1182,6 +1246,118 @@
       "args": []
     },
     {
+      "name": "set_card_manifest",
+      "docs": [
+        "Commit the immutable inline manifest for one player before activation."
+      ],
+      "discriminator": [
+        83,
+        230,
+        211,
+        159,
+        26,
+        197,
+        227,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "is_player_a",
+          "type": "bool"
+        },
+        {
+          "name": "total_slots",
+          "type": "u8"
+        },
+        {
+          "name": "manifest",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "surrender_match",
+      "docs": [
+        "Finish the match immediately when one player surrenders."
+      ],
+      "discriminator": [
+        88,
+        192,
+        115,
+        167,
+        225,
+        234,
+        64,
+        124
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "battle_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  116,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session.match_id",
+                "account": "BattleSession"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "surrendering_player",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "timeout_player_for_round",
       "docs": [
         "Resolve a single-player round timeout after the round deadline.",
@@ -1414,6 +1590,45 @@
       ]
     },
     {
+      "name": "EffectAppliedEvent",
+      "discriminator": [
+        31,
+        240,
+        31,
+        214,
+        244,
+        176,
+        6,
+        217
+      ]
+    },
+    {
+      "name": "ManifestCommittedEvent",
+      "discriminator": [
+        132,
+        141,
+        166,
+        237,
+        92,
+        105,
+        3,
+        201
+      ]
+    },
+    {
+      "name": "MatchSurrenderedEvent",
+      "discriminator": [
+        6,
+        76,
+        143,
+        219,
+        7,
+        214,
+        63,
+        110
+      ]
+    },
+    {
       "name": "RoundAdvancedEvent",
       "discriminator": [
         68,
@@ -1600,6 +1815,31 @@
       "code": 6018,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
+    },
+    {
+      "code": 6019,
+      "name": "ManifestNotCommitted",
+      "msg": "Card manifest has not been committed yet"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidManifest",
+      "msg": "Card manifest data is invalid"
+    },
+    {
+      "code": 6021,
+      "name": "SlotOutOfBounds",
+      "msg": "Card slot index is out of bounds"
+    },
+    {
+      "code": 6022,
+      "name": "ScoreDeltaExceedsMultiplier",
+      "msg": "Score delta exceeds multiplier-based maximum"
+    },
+    {
+      "code": 6023,
+      "name": "InvalidSurrenderPlayer",
+      "msg": "Surrendering player is invalid"
     }
   ],
   "types": [
@@ -1896,6 +2136,72 @@
               "Attack damage contributed by player B during the current round."
             ],
             "type": "u32"
+          },
+          {
+            "name": "total_slots_a",
+            "docs": [
+              "Total inline manifest slots committed for player A."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "total_slots_b",
+            "docs": [
+              "Total inline manifest slots committed for player B."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "cards_used_a",
+            "docs": [
+              "Replay bitmask for player A card slots."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "cards_used_b",
+            "docs": [
+              "Replay bitmask for player B card slots."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "manifest_committed_a",
+            "docs": [
+              "Whether player A's manifest has been committed."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "manifest_committed_b",
+            "docs": [
+              "Whether player B's manifest has been committed."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "card_manifest_a",
+            "docs": [
+              "Packed inline manifest for player A."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                384
+              ]
+            }
+          },
+          {
+            "name": "card_manifest_b",
+            "docs": [
+              "Packed inline manifest for player B."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                384
+              ]
+            }
           }
         ]
       }
@@ -2069,6 +2375,147 @@
           {
             "name": "round",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EffectAppliedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "actor",
+            "type": "pubkey"
+          },
+          {
+            "name": "actor_is_a",
+            "type": "bool"
+          },
+          {
+            "name": "slot",
+            "type": "u8"
+          },
+          {
+            "name": "effect_type",
+            "type": "u8"
+          },
+          {
+            "name": "max_value",
+            "type": "u16"
+          },
+          {
+            "name": "final_value",
+            "type": "u16"
+          },
+          {
+            "name": "score_delta",
+            "type": "u32"
+          },
+          {
+            "name": "health_a",
+            "type": "u16"
+          },
+          {
+            "name": "health_b",
+            "type": "u16"
+          },
+          {
+            "name": "score_a",
+            "type": "u16"
+          },
+          {
+            "name": "score_b",
+            "type": "u16"
+          },
+          {
+            "name": "game_score_a",
+            "type": "u32"
+          },
+          {
+            "name": "game_score_b",
+            "type": "u32"
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ManifestCommittedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "is_player_a",
+            "type": "bool"
+          },
+          {
+            "name": "total_slots",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchSurrenderedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "surrendering_player",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "current_round",
+            "type": "u8"
+          },
+          {
+            "name": "score_a",
+            "type": "u16"
+          },
+          {
+            "name": "score_b",
+            "type": "u16"
+          },
+          {
+            "name": "game_score_a",
+            "type": "u32"
+          },
+          {
+            "name": "game_score_b",
+            "type": "u32"
+          },
+          {
+            "name": "finished_at",
+            "type": "i64"
           }
         ]
       }
