@@ -3953,3 +3953,47 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - `OpponentFound.tsx` now depends on the socket hook exposing a cancellation action. If room-leave semantics ever get renamed or split between soft leave and hard cancel flows, this screen should consume a more explicitly named API to avoid ambiguity.
+
+## 2026-05-09 - BattleScreen Disconnected Overlay Recovery UX
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to preserve `canSurrenderByState` across transient disconnect renders by tracking the last committed match phase and resetting that latch once the match completes.
+- Added `isDeviceOffline` derivation in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and passed it into [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx).
+- Updated the disconnected overlay in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so offline users no longer fire `onReconnect`; they now see a `No Internet Connection` CTA, mobile devices can jump to `app-settings:`, desktop users get a reconnect hint, and all users get a subtle `Abandon match and return to lobby` escape hatch.
+- Verified the two touched files with `npx eslint src/components/play/BattleScreen.tsx src/components/play/BattleScreenOverlays.tsx`.
+
+### The Reasoning
+- Disconnecting was temporarily nulling `gameState`, which made the UI think the match had fallen back to `waiting` and incorrectly hid surrender even when the room had already been committed.
+- Distinguishing true device-offline state from a recoverable socket disconnect avoids presenting a `Rejoin Room` action that is guaranteed to fail silently.
+- The disconnected overlay stays on `/play` because the live match still belongs there; the missing piece was a safe exit path, not a route change.
+
+### The Tech Debt
+- The committed-state latch intentionally uses a narrowly scoped lint exception because the requested ref-backed persistence pattern conflicts with the local React refs rule; if this pattern spreads, we should extract a shared render-safe helper or revisit the lint policy.
+- `app-settings:` is a best-effort mobile shortcut and may vary by platform/browser shell, so broader native deep-link handling may be needed later if mobile reconnection support expands.
+
+## 2026-05-09 - MLBB-Style Active Match Banner Flow for Disconnections
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add an `isRejoining` UI state, wrap reconnect attempts with a loading state, and persist a live-match snapshot to `localStorage` when the disconnected overlay's `Return to Lobby` link is used.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the disconnected overlay now:
+- shows `Rejoining Room...` while reconnect is in flight,
+- disables the reconnect button during that state,
+- replaces the old offline-disconnected surrender action with a non-interactive `Connect to Surrender` button,
+- routes the muted `Return to Lobby` link through the active-room preservation handler,
+- keeps settlement and room-gate lobby exits on the normal clear-state path.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to normalize active-room snapshots, surface a top-of-lobby active-match banner for live `playing` rooms, and add an in-lobby surrender flow:
+- `Rejoin Match` pushes back to `/play` with the stored room/arena/token/wager info and clears the key,
+- `Surrender Match` opens a confirmation modal, mounts a one-shot socket bridge, waits up to 10 seconds for connection, then sends `surrender()` without routing to `/play`,
+- success/failure toasts are shown and the stored live-room key is cleared at the end of that flow.
+- Verified the three touched UI files with `npx eslint src/components/play/BattleScreen.tsx src/components/play/BattleScreenOverlays.tsx src/components/lobby/LobbyScreen.tsx`.
+
+### The Reasoning
+- The disconnected overlay should no longer pretend it can finish surrender locally while offline; the MLBB/PUBG pattern is to let the lobby own "you still have a live match" recovery.
+- Persisting the active room on manual lobby exit gives the user a real escape hatch from `/play` while still preserving a clear way back into the match.
+- The lobby now distinguishes between pre-battle room recovery (`depositing` / found-room flows) and true live-match recovery (`playing`), so we keep existing deposit recovery behavior while giving active matches a dedicated banner treatment.
+- The one-shot surrender bridge reuses the existing socket hook contract instead of inventing a second low-level WebSocket path, which keeps the change UI-scoped and avoids touching hook internals.
+
+### The Tech Debt
+- The active-match banner currently lives inside `LobbyScreen.tsx`; if this pattern expands to other routes, it should move into a shared recovery/banner component.
+- Lobby-side surrender submission still has no explicit server acknowledgement event to wait on, so `Surrender submitted` currently means "socket connected and surrender message sent" rather than confirmed backend acceptance.
+- The persisted snapshot schema now carries compatibility fields (`walletAddress` plus `address`, `token` plus `arenaToken`) to bridge older lobby recovery paths and the new battle-return path. If the format settles, we should consolidate it into one shared typed helper/module.

@@ -44,9 +44,10 @@ type BattleScreenOverlaysProps = {
   onReconnect: () => void;
   cleanLobbyHref: string;
   onReturnToLobby: () => void;
+  onDisconnectedReturnToLobby: () => void;
   showDisconnectedOverlay: boolean;
-  pendingSurrenderAfterReconnect: boolean;
-  canSurrenderByState: boolean;
+  isDeviceOffline: boolean;
+  isRejoining: boolean;
   onConfirmSurrender: () => void;
   isMatchComplete: boolean;
   showSettlementOverlay: boolean;
@@ -93,9 +94,10 @@ export function BattleScreenOverlays({
   onReconnect,
   cleanLobbyHref,
   onReturnToLobby,
+  onDisconnectedReturnToLobby,
   showDisconnectedOverlay,
-  pendingSurrenderAfterReconnect,
-  canSurrenderByState,
+  isDeviceOffline,
+  isRejoining,
   onConfirmSurrender,
   isMatchComplete,
   showSettlementOverlay,
@@ -176,6 +178,13 @@ export function BattleScreenOverlays({
   const isWinPayoutHighlight = settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender";
 
   const shouldShowResultOverlay = isMatchComplete && showSettlementOverlay;
+  const isMobileDevice =
+    typeof navigator !== "undefined" && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function onOpenDeviceConnectionSettings() {
+    if (!isDeviceOffline || !isMobileDevice || typeof window === "undefined") return;
+    window.location.href = "app-settings:";
+  }
 
   return (
     <>
@@ -219,37 +228,55 @@ export function BattleScreenOverlays({
           >
             <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">You were disconnected</p>
             <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-              Your match is still active. Rejoin to continue, or surrender to end the match.
+              Your match is still active. Rejoin now, or return to the lobby and manage it from the active match banner.
             </p>
-            {pendingSurrenderAfterReconnect && (
-              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
-                Rejoining room to submit surrender...
-              </p>
-            )}
-            {!canSurrenderByState && (
-              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
-                Surrender is only available after the match is committed.
-              </p>
-            )}
             <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {isDeviceOffline ? (
+                <button
+                  type="button"
+                  onClick={onOpenDeviceConnectionSettings}
+                  disabled={!isMobileDevice}
+                  className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.26)",
+                    color: "rgba(244,240,230,0.84)",
+                    background: "rgba(19,32,26,0.72)",
+                  }}
+                >
+                  No Internet Connection
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onReconnect}
+                  disabled={isRejoining}
+                  className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+                >
+                  {isRejoining ? "Rejoining Room..." : "Rejoin Room"}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onReconnect}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Rejoin Room
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmSurrender}
-                disabled={!canSurrenderByState || pendingSurrenderAfterReconnect}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:opacity-50"
+                disabled
+                className="frame-cut frame-cut-sm cursor-not-allowed px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide opacity-50"
                 style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
               >
-                Surrender
+                Connect to Surrender
               </button>
             </div>
+            {isDeviceOffline && !isMobileDevice && (
+              <p className="mt-2 text-center font-gabarito text-xs text-[rgba(244,240,230,0.62)]">
+                Check your connection, then tap Rejoin.
+              </p>
+            )}
+            <Link
+              href={cleanLobbyHref}
+              onClick={onDisconnectedReturnToLobby}
+              className="mt-2 block text-center font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[rgba(244,240,230,0.54)] underline decoration-dotted underline-offset-2 hover:text-[rgba(244,240,230,0.84)]"
+            >
+              Return to Lobby
+            </Link>
           </div>
         </div>
       )}

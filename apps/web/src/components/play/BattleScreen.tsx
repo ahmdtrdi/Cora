@@ -250,6 +250,7 @@ export function BattleScreen() {
   const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
   const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
   const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
+  const [isRejoining, setIsRejoining] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
   const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
   const [failedBaseSprites, setFailedBaseSprites] = useState<Record<string, true>>({});
@@ -278,6 +279,7 @@ export function BattleScreen() {
   const previousRoundsWonRef = useRef<{ player: number; opponent: number } | null>(null);
   const endgameTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const lastEndgameResultKeyRef = useRef<string | null>(null);
+  const lastKnownCommittedRef = useRef(false);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
   const playerBaseControls = useAnimationControls();
@@ -508,9 +510,28 @@ export function BattleScreen() {
   const isRoomCancelled = Boolean(lastRoomCancelled);
   const isMatchComplete = hasTerminalResult || isRoomCancelled || status === "finished";
   const isCommittedState = status === "playing" || status === "settling";
-  const canSurrenderByState = !isMatchComplete && isCommittedState;
+  // eslint-disable-next-line react-hooks/refs -- preserve surrender eligibility across transient disconnect renders
+  const canSurrenderByState = !isMatchComplete && (isCommittedState || lastKnownCommittedRef.current);
   const canCancelMatch = connectionState === "connected" && !isMatchComplete && (status === "waiting" || status === "depositing");
   const canSurrenderMatch = connectionState === "connected" && canSurrenderByState;
+  const isDeviceOffline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    const timerId = setTimeout(() => {
+      setIsRejoining(false);
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [connectionState]);
+
+  useEffect(() => {
+    if (isCommittedState) {
+      lastKnownCommittedRef.current = true;
+    }
+    if (isMatchComplete) {
+      lastKnownCommittedRef.current = false;
+    }
+  }, [isCommittedState, isMatchComplete]);
 
   function onOpenCard(card: Card) {
     if (!isPlayable || activeCardId || isMatchComplete) return;
@@ -556,6 +577,11 @@ export function BattleScreen() {
     setPendingSurrenderAfterReconnect(true);
     reconnect();
     setSurrenderModalOpen(false);
+  }
+
+  function onReconnectToRoom() {
+    setIsRejoining(true);
+    reconnect();
   }
 
   const playerScore = player?.score ?? 0;
@@ -899,6 +925,25 @@ export function BattleScreen() {
     refAddress: address,
   });
   const cleanLobbyHref = "/lobby";
+
+  function onReturnToLobbyWithActiveRoom() {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      ACTIVE_ROOM_STORAGE_KEY,
+      JSON.stringify({
+        roomId,
+        arenaId,
+        arenaToken,
+        token: arenaToken,
+        wagerUsd,
+        address,
+        walletAddress: address,
+        status: "playing",
+        canSurrenderByState,
+      }),
+    );
+  }
+
   useEffect(() => {
     if (playerSpriteState !== "action") {
       playerActionControls.start({
@@ -2147,12 +2192,13 @@ export function BattleScreen() {
         roomGateTitle={roomGateTitle}
         roomGateMessage={roomGateMessage}
         hasSocketIssue={hasSocketIssue}
-        onReconnect={reconnect}
+        onReconnect={onReconnectToRoom}
         cleanLobbyHref={cleanLobbyHref}
         onReturnToLobby={clearLobbyReturnState}
+        onDisconnectedReturnToLobby={onReturnToLobbyWithActiveRoom}
         showDisconnectedOverlay={showDisconnectedOverlay}
-        pendingSurrenderAfterReconnect={pendingSurrenderAfterReconnect}
-        canSurrenderByState={canSurrenderByState}
+        isDeviceOffline={isDeviceOffline}
+        isRejoining={isRejoining}
         onConfirmSurrender={onConfirmSurrender}
         isMatchComplete={isMatchComplete}
         showSettlementOverlay={showSettlementOverlay}
