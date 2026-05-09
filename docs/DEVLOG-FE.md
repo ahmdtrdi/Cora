@@ -3701,3 +3701,24 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The arena images are loaded synchronously during render and fade in natively. If more arenas are added, dynamic preload strategies might be necessary.
+
+## 2026-05-09 - Settlement Overlay Polish (Compact Stats, Emote Focus, Payout Copy)
+
+### The Change
+- Updated [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to rebalance the finished/settlement modal layout:
+- Replaced large stat boxes with a compact chip-based summary row (`Rounds`, `Correct`, `Timeout`, `Wrong`) to reduce vertical footprint.
+- Enlarged the settlement emote portraits substantially and centered them as the visual focal point while keeping `YOU` and `YOUR RIVAL` labels.
+- Added outcome-aware payout/result copy block near the title, with stronger highlight styling for winning outcomes.
+- Made title/subtitle spacing resilient for short and long settlement titles using clamped title sizing, max-width constraints, and balanced wrapping.
+- Added a new derived display prop in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx): `settlementOutcomeKind`, then passed it into `BattleScreenOverlays`.
+
+### The Reasoning
+- The previous grid-based stat cards dominated the modal height and competed with the emotional result moment; compact chips keep the data visible but secondary.
+- Emote expressions are the strongest emotional signal at battle end, so increasing their size and visual weight improves clarity and delight.
+- Payout relevance is highest on wins/surrenders; adding explicit, state-aware copy improves comprehension without touching settlement logic.
+- Using an explicit derived outcome prop avoids brittle string parsing on `settlementText`, so variant titles (including long cancellation/invalidated states) can change safely.
+- Payout text is deliberately conservative: it references available token/wager context and avoids inventing an exact payout amount.
+
+### The Tech Debt
+- `settlementOutcomeKind` currently lives as a local derived string in `BattleScreen.tsx`. If other screens need the same semantics, consider introducing a shared `deriveSettlementOutcomeKind(...)` helper to prevent drift.
+- `wagerUsd` parsing assumes a numeric-like string (as currently supplied). If upstream formatting changes, a dedicated formatter utility would make this safer and reusable.

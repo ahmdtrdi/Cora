@@ -580,6 +580,21 @@ export function BattleScreen() {
                 : "Rival took this round."
               : "Match results are being finalized."
   const settlementStatus = isRoomCancelled ? "Cancelled" : matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
+  const settlementOutcomeKind = isRoomCancelled
+    ? "cancelled"
+    : matchInvalidated
+      ? "invalidated"
+      : didCurrentPlayerSurrender
+        ? "player_surrender"
+        : didOpponentSurrender
+          ? "opponent_surrender"
+          : isDraw
+            ? "draw"
+            : winnerAddress
+              ? winnerAddress === address
+                ? "win"
+                : "lose"
+              : "pending";
   const settlementStatusStyle = isRoomCancelled
     ? { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" }
     : matchInvalidated
@@ -1784,6 +1799,7 @@ export function BattleScreen() {
         onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
         settlementText={settlementText}
         settlementSubtitle={settlementSubtitle}
+        settlementOutcomeKind={settlementOutcomeKind}
         settlementEmojiMood={settlementEmojiMood}
         settlementExpressionSrc={settlementExpressionSrc}
         settlementStatus={settlementStatus}
