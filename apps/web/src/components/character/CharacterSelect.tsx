@@ -17,6 +17,7 @@ export type CharacterSelectProps = {
   characters: CharacterOption[];
   selectedCharacterId?: string;
   showHeading?: boolean;
+  showLabels?: boolean;
   selectionState?: CharacterSelectionState;
   autoAssignedCharacterId?: string;
   neutralDefaultCharacterId?: string;
@@ -77,6 +78,7 @@ export function CharacterSelect({
   characters,
   selectedCharacterId,
   showHeading = true,
+  showLabels = true,
   selectionState = "idle",
   autoAssignedCharacterId,
   neutralDefaultCharacterId,
@@ -124,29 +126,31 @@ export function CharacterSelect({
         </div>
       )}
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-[rgba(111,58,40,0.35)] bg-[rgba(253,248,233,0.92)] px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.12em] text-[#6f3a28]">
-            Roster
-          </span>
-          <span className="rounded-full border border-[rgba(39,65,55,0.25)] bg-[rgba(241,248,240,0.92)] px-3 py-1 font-gabarito text-xs text-[#2f4a3d]">
-            {statusLine}
-          </span>
+      {showLabels && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[rgba(111,58,40,0.35)] bg-[rgba(253,248,233,0.92)] px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.12em] text-[#6f3a28]">
+              Roster
+            </span>
+            <span className="rounded-full border border-[rgba(39,65,55,0.25)] bg-[rgba(241,248,240,0.92)] px-3 py-1 font-gabarito text-xs text-[#2f4a3d]">
+              {statusLine}
+            </span>
+          </div>
+          {showDevModeToggle && (
+            <button
+              type="button"
+              onClick={() => setDevMode((value) => !value)}
+              className={`rounded-full border px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.1em] transition-colors ${
+                devMode
+                  ? "border-[rgba(248,214,148,0.7)] bg-[rgba(39,65,55,0.88)] text-[#f8d694]"
+                  : "border-[rgba(111,58,40,0.32)] bg-[rgba(253,248,233,0.86)] text-[#6f3a28]"
+              }`}
+            >
+              Dev Mode: {devMode ? "On" : "Off"}
+            </button>
+          )}
         </div>
-        {showDevModeToggle && (
-          <button
-            type="button"
-            onClick={() => setDevMode((value) => !value)}
-            className={`rounded-full border px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.1em] transition-colors ${
-              devMode
-                ? "border-[rgba(248,214,148,0.7)] bg-[rgba(39,65,55,0.88)] text-[#f8d694]"
-                : "border-[rgba(111,58,40,0.32)] bg-[rgba(253,248,233,0.86)] text-[#6f3a28]"
-            }`}
-          >
-            Dev Mode: {devMode ? "On" : "Off"}
-          </button>
-        )}
-      </div>
+      )}
 
       {devMode && (
         <div
@@ -248,6 +252,7 @@ export function CharacterSelect({
             selected={selectedCharacterId === character.id}
             autoAssigned={autoAssignedCharacterId === character.id}
             showNeutralDefault={canShowDefaultHint && neutralDefaultCharacterId === character.id}
+            previewExpression="happy"
             disabled={disabled}
             locked={locked}
             index={index}

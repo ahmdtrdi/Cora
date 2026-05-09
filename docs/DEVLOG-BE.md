@@ -1,5 +1,6 @@
 # Backend Development Log
 
+
 ## 2026-04-27 - Scaffold Bun + Hono API
 
 **The Change:**
@@ -384,3 +385,159 @@
 
 - [ ] The backend operator wallet is currently paying the 0.002 SOL fee to create the treasury ATA if it doesn't exist. We should ensure the treasury ATAs are pre-funded in production.
 - [ ] `init-config.ts` was run manually. This needs to be part of the production deployment scripts.
+
+---
+
+## 2026-05-05 - Blueprint V2: MagicBlock Ephemeral Rollup Backend Integration
+
+### The Change
+
+**New file:**
+- `apps/api/src/services/magicblock.ts` — `MagicBlockService` class with 3 methods:
+  - `createBattleSession()`: derives BattleSession PDA from `[b"battle", matchId]`, logs creation. Stub for actual `create_session` instruction + ER delegation (depends on `cora-battle` program deployment).
+  - `registerCard()`: stub for `register_cards` instruction submission to ER.
+  - `getSessionState()`: reads BattleSession account from ER RPC, parses the Anchor account binary layout (discriminator + 140 bytes) to extract `healthA`, `healthB`, `scoreA`, `scoreB`, `status`, and `winner`.
+
+**Modified files:**
+- `apps/api/package.json` — Added `@magicblock-labs/bolt-sdk` (v0.2.4) and `@magicblock-labs/ephemeral-rollups-sdk` (v0.13.0).
+- `apps/api/.env` — Appended `MAGICBLOCK_RPC_URL`, `MAGICBLOCK_WS_URL`, `CORA_BATTLE_PROGRAM_ID` (all commented out by default).
+- `apps/api/src/managers/RoomManager.ts` — 4 touch-points:
+  1. Added `import { magicBlockService }` and re-exported `getServerKeypair` from settlement.
+  2. Added `erSessionPda: string | null` to `Room` interface.
+  3. Added `erSessionPda: null` to both `createRoom()` and `createPrivateRoom()`.
+  4. `initializeEngine()` → made `async`, added ER session creation block gated by `process.env.MAGICBLOCK_RPC_URL`. Wrapped in try/catch — failure falls back silently to GameEngine-only.
+  5. `broadcastMatchResult()` → made `async`, added ER winner verification before signing settlement. If ER reports a different winner, ER is source of truth.
+- `apps/api/src/index.ts` — Added `GET /api/match/:roomId/proof` endpoint returning `{ erSessionPda, explorerUrl }` for fairness proof.
+
+### The Reasoning
+
+1. **Parallel Architecture:** The GameEngine remains the active game loop. ER runs alongside as a verifiable, on-chain mirror of game state. This design means zero regression risk — if ER is down or unconfigured, the system behaves exactly like V1.
+2. **Opt-In Activation:** All MagicBlock env vars are commented out in `.env`. The backend only attempts ER interactions when `MAGICBLOCK_RPC_URL` is set. This allows the Web3 lead to deploy the `cora-battle` program independently and flip the switch without any further backend changes.
+3. **ER as Source of Truth:** In `broadcastMatchResult`, when both GameEngine and ER report a winner, ER takes precedence. This establishes the on-chain game state as authoritative — critical for the "provably fair" narrative.
+4. **Fairness Proof Endpoint:** The `/api/match/:roomId/proof` endpoint gives the frontend everything it needs to link to the Solana Explorer, enabling the "✅ Verified on-chain" badge.
+
+### The Tech Debt
+
+- [ ] **Stub instructions:** `createBattleSession` and `registerCard` are stubs — they derive PDAs but don't submit actual Anchor instructions. These need to be wired once the Web3 lead deploys `cora-battle` and provides the program ID.
+- [ ] **Question hash:** `initializeEngine` passes a zeroed `questionHash` to `createBattleSession`. Should hash the actual question set for fairness proof.
+- [ ] **Card registration:** Cards are not registered on ER during gameplay. The `registerCard` flow needs to be called for each card in the player's hand during `initializeEngine`.
+- [ ] **`initializeEngine` is now async:** Callers (`handleDeposit`, `joinRoom`) call it without `await`. This is intentional (fire-and-forget for ER, engine starts synchronously), but unhandled rejections from the ER path should be monitored.
+- [ ] **Manual BattleSession parsing:** `getSessionState` uses hardcoded byte offsets. If the Rust struct changes, parsing breaks silently (same pattern as `settlement.ts`).
+
+## 2026-05-07 - GoldRush (Covalent) Integration & Wager USD Enrichment
+
+### The Change
+- **New Service:** Created `apps/api/src/services/goldrush.ts` initialized with `@covalenthq/client-sdk` pointing to `solana-devnet`. 
+- **Playability & Pricing:** Implemented `getWalletPlayability`, `getTokenPriceUsd`, and `getWagerUsdValue` directly querying on-chain token balances and spot prices using Covalent's Balance and Pricing services.
+- **Mocked History:** Implemented `getArenaHistory` and `getWalletHistory` to return safe, perfectly-typed mock `MatchHistoryItem[]` arrays instead of attempting to map raw Covalent transactions, protecting MVP scope.
+- **API Routes:** Exposed the frontend data pipelines in `apps/api/src/index.ts` under `/api/history/arena/:arenaId`, `/api/history/wallet/:address`, and `/api/history/wallet/:address/playability`.
+- **USD Broadcast:** Expanded `Room` and `GameState` types in `@shared/websocket` with a `wagerUsdValue` property. Upgraded `RoomManager` to perform non-blocking asynchronous USD enrichment inside `createPrivateRoom` and seamlessly push it out via `broadcastGameState`.
+
+### The Reasoning
+- **Data Protection:** The Covalent transaction APIs output very generic data (transfers, system calls). Rather than wrestling with filtering and parsing arbitrary logic to construct a `MatchHistoryItem`, falling back to mocked history ensures a safe and flawless frontend rendering experience for the MVP.
+- **Non-Blocking Oracles:** Injecting USD prices at room creation asynchronously ensures `broadcastGameState` is not blocked, meaning real-time WebSocket speeds remain entirely uncompromised.
+- **Seamless UI Ready:** Integrating the expected history endpoints using the exact frontend TypeScript contracts means zero downstream refactoring for the frontend team.
+
+### The Tech Debt
+- [ ] **History Indexing:** We are currently stubbing `/api/history/*`. Post-hackathon, we will need a dedicated Anchor event indexer (or equivalent) to scrape proper history instead of relying on the generic Covalent tx endpoints.
+- [ ] **Public Matchmaking Wager Enrichment:** `wagerUsdValue` enrichment is currently only configured inside `createPrivateRoom`. The public queue `queueMatch` structure must also trigger the pricing oracle once a standard `tokenMint` fallback architecture is defined.
+
+## 2026-05-08 — Fix GoldRush: Chain Target & Pricing Workaround
+
+### The Change
+
+**`apps/api/src/services/goldrush.ts` (3 fixes):**
+1. **Chain target:** Changed `chainId` from `solana-devnet` to `solana-mainnet`. Covalent does not index Solana devnet — all API calls were returning `"Chain solana-devnet not supported."`.
+2. **Symbol → mint resolver:** Added `TOKEN_MINTS` map (SOL, BONK, USDC) and `resolveMint()` helper so callers can pass either a symbol or a full mint address.
+3. **Pricing workaround:** Replaced `PricingService.getTokenPrices()` with a `BalanceService.getTokenBalancesForWalletAddress()` probe against a known Solana Labs wallet. The SDK lowercases all addresses internally, corrupting Solana's case-sensitive base58 — breaking both the Pricing endpoint and the address-match logic in responses. The workaround reads the `quote_rate` field and matches by both case-insensitive address and ticker symbol fallback.
+
+**`apps/api/test-goldrush.ts` (new):**
+- Smoke-test script that calls `getTokenPriceUsd('SOL')` and `getWalletPlayability()` directly, runnable via `bun run test-goldrush.ts <wallet>`.
+
+### The Reasoning
+
+1. **Covalent has no devnet support.** This was the root cause of every GoldRush API call failing. Switching to `solana-mainnet` immediately fixed the BalanceService calls (`reliable: true`).
+2. **SDK lowercases base58.** Both `PricingService.getTokenPrices()` and the raw REST endpoint lowercase the address in the URL path, causing Covalent to return `"Contract address not found!"`. The BalanceService workaround avoids this by querying balances (which work) and reading the embedded `quote_rate`.
+3. **Native SOL mismatch.** Covalent returns native SOL under the system program address (`11111111111111111111111111111111`), not the wSOL mint. The ticker-symbol fallback (`contract_ticker_symbol === 'SOL'`) handles this transparently.
+
+### The Tech Debt
+
+- [ ] **SDK dependency is a liability.** The `@covalenthq/client-sdk` lowercases all Solana addresses, making it fundamentally broken for Solana. A future PR should replace it with direct REST `fetch` calls to preserve base58 casing and unlock the native Pricing endpoint for all tokens (SOL, BONK, USDC).
+- [ ] **Probe wallet dependency.** The pricing workaround only returns prices for tokens held by the probe wallet (`vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg`). BONK and USDC return `null` because that wallet doesn't hold them. Switching to direct REST will fix this.
+- [ ] **`test-goldrush.ts` is not in CI.** It's a manual smoke test. Should be moved to a proper test suite once testing infrastructure is set up.
+
+
+## 2026-05-08 - Dynamic Supabase Match Questions
+
+**The Change:**
+- Added Supabase client to `apps/api/src/questions.ts`.
+- Implemented `fetchMatchQuestions()` executing the Supabase RPC `get_distributed_questions`.
+- Added mapping logic for `question_text` (snake_case from Postgres) to `questionText` (camelCase) to pass strict `@shared/question` validation.
+- Updated `apps/api/src/managers/room/Engine.ts` to asynchronously fetch a unique chunk of questions (`await fetchMatchQuestions()`) on match initialization.
+- Built a high-availability fallback mechanism to serve questions from `data/questions/pool.json` automatically if the database call fails, errors, or returns 0 records.
+- Generated DB seed and test scripts inside `apps/api/scratch/` for streamlined local development.
+
+**The Reasoning:**
+- **Dynamic Scaling:** Previously, loading a single `pool.json` at server boot meant all matches shared the same static question pool unless the server was restarted. Pulling per-match via Supabase allows for dynamic question balancing, limitless pool scaling, and eliminates stale questions.
+- **Zero Downtime Fallback:** As a live multiplayer game, losing the DB connection shouldn't crash active or starting matches. The local JSON fallback ensures the game server is highly resilient.
+- **Strict Data Contracts:** Explicitly mapping the payload to camelCase prevented catastrophic validation failures downstream in the unified `GameEngine`.
+
+**The Tech Debt:**
+- **Network Overhead:** We are now making an external database call *every* time a match starts. If matchmaking volume spikes significantly, this could become a bottleneck.
+- **Cache Invalidation:** We might need to implement a Redis or local memory cache with a TTL (Time-To-Live) later to reduce DB load while maintaining question freshness.
+
+## 2026-05-08 - Bag Shuffle Algorithm & Question Provider Refactor (SSOT)
+
+**The Change:**
+
+* Replaced the Postgres RPC `get_distributed_questions` with a "Fat Fetch" `get_match_deck` function that pulls exactly 60 distinct questions (20 Math, 20 Logical, 20 Sequence).
+* Implemented the "Bag Shuffle" algorithm inside `apps/api/src/questions.ts`. It groups the 60 questions into mini-batches of 3 (containing 1 of each category), shuffles them internally, and constructs the final master deck.
+* Refactored the `GET /api/questions` route in `apps/api/src/index.ts` to strip out duplicated database logic and point directly to `fetchMatchQuestions()`.
+* Established `questions.ts` as the definitive Single Source of Truth (SSOT) for all question fetching, formatting, and shuffling across both REST and WebSocket channels.
+
+**The Reasoning:**
+
+* **Preventing Deck Exhaustion:** A fast-paced 5-minute match with 10-second card timeouts can easily burn through the previous 10-card limit. Supplying a 60-card master deck mathematically guarantees a player will never run out of questions, preventing engine crashes or undefined states.
+* **Guaranteed Hand Diversity:** Pure SQL `ORDER BY RANDOM()` causes "clumping" (e.g., drawing 4 Math cards in a row). The Bag Shuffle system dictates the distribution sequence. Because it feeds the deck in micro-shuffled batches of `[Math, Logical, Sequence]`, it is impossible for a player drawing a 5-card hand to hold more than 2 cards of the exact same category.
+* **Architectural Cleanliness:** Removing the duplicate database query from `index.ts` prevents drift. If we change the question schema or shuffle logic later, we only update `questions.ts` and it automatically propagates to both the API and the GameEngine.
+
+**The Tech Debt:**
+
+* **Over-Fetching:** We are now querying and transferring 60 full question objects (with all nested options and explanations) from Supabase to the Bun server on every match initialization. In reality, most matches will end before 15 cards are played, meaning 75% of the fetched data is wasted bandwidth.
+* **Server Memory Footprint:** Holding a 60-card deck in memory for every active `Room` instance increases the memory overhead per match. If concurrent active matches scale significantly, this could put pressure on the Node/Bun garbage collector.
+
+
+## 2026-05-08 - Backend Contract Deduplication Refactor
+
+**The Change:**
+- Added `apps/api/src/config/solana.ts` as the backend source of truth for the CORA escrow program ID, Anchor instruction discriminators, and manual `MatchState` byte offsets.
+- Added `apps/api/src/config/tokens.ts` as the source of truth for devnet/mainnet token mint maps and token symbol resolution.
+- Refactored Blink transaction building, Solana settlement, event listening, private match creation, and GoldRush pricing to use the shared config modules instead of duplicating constants.
+- Split final game outcome from settlement authorization: `matchResult` now carries only the gameplay result, while `settlementAuthorization` carries the signed settlement payload.
+- Tightened WebSocket/message typing by changing `WsMessage` payloads from `any` to `unknown`, adding payload readers in `RoomManager`, and replacing Bun-specific room socket typing with a minimal `RoomSocket` interface compatible with Hono's `WSContext`.
+- Removed the dead commented `/api/questions` implementation and unused imports from the backend source.
+
+**The Reasoning:**
+- The previous backend had several quiet sources of drift: token mint maps existed in three places, the program ID and instruction/layout details existed in multiple Web3 modules, and `matchResult` represented two different event contracts.
+- The new config files keep cluster-specific token differences explicit, especially the devnet/mainnet USDC split needed by Blink transactions versus GoldRush pricing.
+- Separating `settlementAuthorization` from `matchResult` prevents clients from receiving two semantically different "final result" payloads under the same event name.
+- The minimal socket interface keeps room management independent from Bun internals while still supporting both native Bun sockets and Hono WebSocket contexts.
+
+**The Tech Debt:**
+- `bun test` now runs outside the sandbox, but `RoomManager.test.ts` still has 7 failures around message ordering and synchronous assumptions for async `initializeEngine()`; source typecheck and backend source lint pass.
+- MagicBlock remains stubbed and still has TODO comments around actual ER instruction submission.
+- `tsconfig.tsbuildinfo` is modified by local typecheck runs because the API tsconfig uses `composite`; consider excluding it from source control or using a no-buildinfo verification command.
+
+## 2026-05-08 - WebSocket Settlement Event Split
+
+**The Change:**
+- Updated `apps/web/src/hooks/useMatchSocket.ts` to listen for the backend's new `settlementAuthorization` WebSocket event.
+- Kept a backward-compatible fallback for older `matchResult` settlement payloads while treating the current `matchResult` event as the gameplay summary.
+- Updated `packages/shared-types/src/websocket.ts` so `ClientToServerEvents` matches the object payloads the frontend already sends for `playCard` and `confirmDeposit`.
+
+**The Reasoning:**
+- The backend now separates the game result from the signed settlement authorization to avoid two incompatible payloads sharing the `matchResult` event name.
+- The battle UI already had separate state for match summary and settlement details, so the frontend only needed the socket hook to route the new event into the existing `settlementResult` state.
+- Aligning the shared client-to-server event types removes another small contract drift between FE and BE.
+
+

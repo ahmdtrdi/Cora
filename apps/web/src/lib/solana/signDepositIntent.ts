@@ -64,9 +64,12 @@ function mapWalletError(error: unknown): DepositIntentError {
 
   if (
     lowered.includes("blockhash") ||
+    lowered.includes("block height exceeded") ||
+    lowered.includes("transaction expired") ||
+    lowered.includes("signature has expired") ||
     lowered.includes("rpc")
   ) {
-    return new DepositIntentError("rpc_error", "Transaction failed to confirm on Solana.");
+    return new DepositIntentError("rpc_error", "Transaction expired before confirmation. Close any stale wallet prompt and retry.");
   }
 
   if (lowered.includes("failed on-chain")) {
@@ -148,6 +151,13 @@ export async function signDepositIntent({
 
   try {
     const apiBase = resolveApiBaseUrl();
+    console.info("[signDepositIntent] Requesting backend deposit transaction", {
+      roomId,
+      token,
+      wagerUsd,
+      apiBase,
+      account: wallet.publicKey.toBase58(),
+    });
     const res = await fetch(`${apiBase}/api/actions/challenge?roomId=${roomId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,10 +170,17 @@ export async function signDepositIntent({
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
+      console.error("[signDepositIntent] Backend transaction build failed", {
+        status: res.status,
+        errorData,
+      });
       throw new Error(errorData.message || "Failed to fetch deposit transaction");
     }
 
     const { transaction: base64Tx } = await res.json();
+    console.info("[signDepositIntent] Backend transaction received", {
+      hasTransaction: Boolean(base64Tx),
+    });
     const txBuffer = Buffer.from(base64Tx, "base64");
     const transaction = Transaction.from(txBuffer);
 
@@ -172,6 +189,10 @@ export async function signDepositIntent({
     transaction.recentBlockhash = latest.blockhash;
     transaction.feePayer = wallet.publicKey;
 
+    console.info("[signDepositIntent] About to call wallet.sendTransaction", {
+      feePayer: wallet.publicKey.toBase58(),
+      blockhash: latest.blockhash,
+    });
     const signature = await wallet.sendTransaction(transaction, connection, {
       preflightCommitment: "confirmed",
       maxRetries: 2,

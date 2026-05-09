@@ -2020,10 +2020,10 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Reasoning
 - The matchup section now reads as an intentional versus composition instead of two plain text blocks.
 - Square placeholders make the layout ready for future portrait/icon assets while preserving current scanning state.
-- Warm cards increase focal contrast and keep cohesion with CORA�s parchment/vintage style without looking like generic white dashboards.
+- Warm cards increase focal contrast and keep cohesion with CORA�s parchment/vintage style without looking like generic white dashboards.
 
 ### The Tech Debt
-- Opponent card currently always renders unknown/scanning placeholder in this component�s current states; when a matched-opponent payload is wired here, we should feed portrait/name/base into the same left-icon/right-info horizontal template without changing structure.
+- Opponent card currently always renders unknown/scanning placeholder in this component�s current states; when a matched-opponent payload is wired here, we should feed portrait/name/base into the same left-icon/right-info horizontal template without changing structure.
 
 ### Guardrails Kept
 - Matchmaking progress logic and bar animation behavior were not changed.
@@ -2087,7 +2087,7 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Change
 - Refactored [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to match the newer matchmaking versus-screen style while preserving signing/socket flow.
 - Updated header/content hierarchy to player-facing match-confirmation copy:
-  - Eyebrow: `{arena.label} � $${wagerUsd} {arena.token}`
+  - Eyebrow: `{arena.label} � $${wagerUsd} {arena.token}`
   - Title: `Rival Locked`
   - Subtitle: `Sign the deposit before the timer expires.`
 - Rebuilt versus row into warm horizontal matchup cards over dark arena shell:
@@ -2354,3 +2354,1481 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Balance values remain dependent on backend playability normalization; until BE endpoint is live/reliable, chip may show `Inspecting...` / `Unavailable` / `--` fallback states.
+
+## 2026-05-06 - Play Screen Character Sprite Wiring (stay/action)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to render character art assets from `public/assets/characters/{scientistId}/{state}.png` directly inside the existing 4:5 portrait slots.
+- Added sprite state resolution for /play portraits:
+  - maps backend/shared CharacterState to sprite state (stay or action)
+  - preserves local action pulse behavior by forcing action during damage animation windows.
+- Switched portrait rendering from initials-only placeholders to next/image with fallback:
+  - if sprite exists, render image
+  - if sprite missing or fails to load, fallback to previous initial-letter placeholder so gameplay UI does not break.
+- Kept all gameplay logic untouched (socket contract, damage logic, cards, settlement, history).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- FE needed to consume designer-delivered scientist assets in /play without changing backend contracts.
+- Using shared-type-compatible states (stay, action) keeps naming and runtime behavior aligned across FE/BE.
+- Graceful fallback avoids runtime breakage while asset delivery is still in progress.
+
+### The Tech Debt
+- Current repository assets include turing and curie states, but einstein sprite files are not present yet; Einstein currently renders fallback initials until those files are added.
+- We currently support the shipped states (stay, action) only. If future character states (angry, happy) get dedicated art, we should extend the mapping and asset set.
+
+## 2026-05-07 - Landing Features Uses Basic Scientist Pose Assets
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to render scientist portrait art from `public/assets/characters/{scientistId}/basic.png` inside the existing 4:5 portrait panel.
+- Added `next/image` rendering for the basic pose with `fill + object-cover` so the new art consistently fits the current card ratio.
+- Preserved a safe fallback: if a basic image is missing or fails to load, the previous placeholder portrait (emoji + silhouette) still renders.
+- Kept existing overlays, badges, and HP strip layered above the image so current visual hierarchy remains intact.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The designer shipped basic poses and these are the best source for static landing cards, while action/stay assets remain gameplay-focused in `/play`.
+- Reusing the current 4:5 frame avoids layout churn and keeps card composition stable across all scientists.
+- Fallback behavior ensures the roster section does not regress when an asset is delayed or renamed.
+
+### The Tech Debt
+- `basic.png` naming/path is currently convention-based. If art versioning grows, we should centralize scientist asset metadata in one shared map instead of deriving paths inline.
+- Overlay intensity is slightly stronger with real art than placeholder mode; we may want a quick polish pass once final color grading for all portraits is locked.
+
+## 2026-05-07 - Landing Features Portrait Cleanup (Unobstructed Character Art)
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to remove portrait-overlay elements that were covering character art.
+- Removed in-portrait center overlays:
+  - base emoji marker
+  - base label text
+- Removed in-portrait bottom HP bar strip.
+- Reduced portrait color-wash opacity when real art is present so the character remains clearly visible.
+- Moved base context to the card body (`Base: ...`) so information is retained without overlapping the illustration.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The new basic pose assets are now the primary visual focus of each roster card.
+- Overlay UI on top of portraits created readability and composition conflicts (especially around face and lower body).
+- Keeping metadata in the body preserves information hierarchy while respecting the artwork.
+
+### The Tech Debt
+- If we later need dynamic HP visualization on landing cards, it should be rendered outside portrait bounds (for example as a compact row in card body) rather than layered on the image.
+
+## 2026-05-07 - Features Expand Stats Aligned to Shared Character Definitions
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to drive expanded `View Stats` content from [packages/shared-types/src/characterStats.ts](/d:/projects/Cora/packages/shared-types/src/characterStats.ts) instead of hardcoded landing profile stat bars.
+- Added shared-data integration in landing features:
+  - imports `CHARACTER_DEFS` and `QuestionCategory`
+  - maps canonical specialty category labels (`sequence`, `logical`, `math`) for display
+- Refined click-expand (mobile + desktop drawer) stats UI to show gameplay-accurate combat intel:
+  - Specialty category
+  - Specialty bonus percent
+  - Base correct power (`1.0x`)
+  - Specialty power (`1.5x`)
+  - Specialty + extra point max (`3.0x`)
+- Updated progress bar math to normalize multiplier values against max stack (`3.0x`) so visual bars are consistent and comparable.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- `characterStats.ts` is the canonical gameplay source for character specialties and multipliers; landing expand stats should reflect those same mechanics.
+- This removes drift between marketing/landing representation and actual match behavior.
+- The refined drawer now communicates meaningful, game-accurate stats when users click `View Stats`.
+
+### The Tech Debt
+- Landing profile `stats` fields in `content.ts` are still present for narrative profile metadata, but no longer drive expandable combat bars. If not needed elsewhere, we can deprecate or repurpose them in a cleanup pass.
+
+## 2026-05-07 - Features Outer Card Narration and Pills Aligned to Shared Stats
+
+### The Change
+- Updated [apps/web/src/components/landing/Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to make outer (collapsed) card narration and top pills derive from [packages/shared-types/src/characterStats.ts](/d:/projects/Cora/packages/shared-types/src/characterStats.ts).
+- Replaced static/marketing pill values with stat-driven pills:
+  - left pill now reflects specialty role derived from category (`Mathematician`, `Logician`, `Pattern Runner`)
+  - right pill now shows canonical specialty bonus (`+50% Bonus` from multiplier)
+- Replaced outer short narration with stat-aligned summary text generated from specialty category + multiplier (for consistency with gameplay rules).
+- Removed the previous static rarity label dependency from this card layer.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The user asked for outer card narration/pills to match character stats; shared character definitions are the authoritative source.
+- This keeps first-glance roster information aligned with actual gameplay mechanics rather than thematic-only labels.
+
+### The Tech Debt
+- Role and narration strings are currently generated with simple conditional helpers in `Features.tsx`. If this language is reused across pages, it should be centralized into a shared presentational mapping utility.
+
+## 2026-05-07 - Dedicated /history Route + Informational GoldRush UX Scope
+
+### The Change
+- Added a dedicated history route at [apps/web/src/app/history/page.tsx](/d:/projects/Cora/apps/web/src/app/history/page.tsx) and new view component [apps/web/src/components/history/HistoryView.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryView.tsx).
+- Implemented `HistoryView` as a non-blocking, informational page that reads query params (`scope`, `arena`, `token`, optional `address`) and fetches data via existing FE adapters:
+  - `getArenaHistory`
+  - `getWalletHistory`
+- Updated [apps/web/src/components/history/HistoryButton.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryButton.tsx) to support both click-handler mode and link mode (`href`) so existing screens can route directly to `/history`.
+- Rewired character-select history access to route mode:
+  - [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) now links to `/history?...` and removes local drawer-fetch state.
+- Reduced non-arena wallet inspect surface:
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx): removed inline wallet inspect modal/buttons and local history drawer state; uses `/history` route entry.
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx): removed wallet inspect modal/buttons and local history drawer state; `View History` now links to `/history?...`.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The user requested a dedicated `/history` view and clarified GoldRush should remain informational-only.
+- Routing to a full page avoids repeating fetch + modal logic in multiple phases and keeps gameplay screens focused.
+- Removing wallet-inspect actions from opponent/battle phases aligns UX to the intended scope: balance readiness is relevant in arena selection, not throughout the full match flow.
+
+### The Tech Debt
+- History data quality still depends on backend stub coverage for `/api/history/*`; UI reflects availability but does not yet annotate mock-vs-indexed provenance explicitly per item.
+- `HistoryView` currently uses lightweight in-component query/state handling; if filtering/sorting grows, we should promote this into shared hooks for easier reuse and cache behavior consistency.
+
+## 2026-05-07 - History UI & Header Placement Consolidation
+
+### The Change
+- Finalized the history experience as a player-facing records surface across:
+  - [apps/web/src/components/history/HistoryView.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryView.tsx)
+  - [apps/web/src/components/history/HistoryDrawer.tsx](/d:/projects/Cora/apps/web/src/components/history/HistoryDrawer.tsx)
+  - [apps/web/src/components/history/WalletInspectPanel.tsx](/d:/projects/Cora/apps/web/src/components/history/WalletInspectPanel.tsx)
+- Consolidated history UX updates in one pass:
+  - removed internal-facing disclaimer copy
+  - switched to player-facing records language
+  - refined result-first receipt hierarchy (result/status/opponent/wager/signature)
+  - improved chip consistency and visual emphasis
+  - added subtle transition polish for history state/content changes
+- Finalized history entry-point placement in [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - moved history access from character-select to arena setup
+  - grouped header as left wallet, middle wager+balance, right history
+  - aligned balance/history visuals with the existing header pill language
+- Removed history action from character-select phase in [apps/web/src/components/lobby/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- History should feel like part of the game product, not backend diagnostics.
+- Arena setup is the highest-context moment for history lookup (token decision + balance + prior records).
+- Consolidating these small iterations into one coherent pass improves handoff readability.
+
+### The Tech Debt
+- History visuals and motion timing remain component-local; if reused across additional pages, we should extract shared tokens/primitives for chips, receipts, and transition timing.
+- Header chip styling in `LobbySetup` remains local composition; future header variants may benefit from a shared layout primitive.
+
+
+
+
+## 2026-05-07 - Battle Character Asset Presentation Polish (Facing, Action Pop, Frame Removal)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) character presentation layer only:
+  - **Opponent facing direction:** mirrored opponent sprite horizontally (`scaleX`) so opponent visually faces left; player remains facing right.
+  - **Action micro-animation:** added lightweight pop/bounce when sprite enters `action` state using Framer Motion animation controls (`scale` + `y` sequence).
+  - **Frame removal:** removed visible rectangular portrait frame/background treatment around both characters (no border/background/overlay frame), while preserving existing absolute positioning and scene layout.
+  - adjusted sprite fit to `object-contain` for cleaner direct-in-scene character rendering.
+- No changes to gameplay logic, socket flow, projectile logic, base logic, or scoring.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Opponent mirroring improves combat readability by making characters face each other.
+- A short action pop increases perceived responsiveness for attack/heal events without adding heavy effects.
+- Removing portrait frames aligns character assets with a more in-scene presentation and reduces UI-box feel.
+
+### The Tech Debt
+- Action micro-animation timing is currently local in `BattleScreen.tsx`; if we add more character-state motion across screens, we should centralize motion timing tokens/utilities.
+
+## 2026-05-07 - Battle Result Modal Restyle (Player-First + Collapsible Settlement Details)
+
+### The Change
+- Restyled the match-complete modal in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to match the dark arena + warm card direction with:
+  - stronger dark backdrop overlay
+  - premium parchment card treatment
+  - large centered Caprasimo result title (`You Win` / `You Lose` / `Match Invalidated`)
+  - Gabarito subtitle copy (`Victory secured.`, `Rival took this round.`, `Match invalidated.`)
+- Reduced default visible content to player-facing summary only:
+  - settlement status chip (`Settled`, `Pending`, `Invalidated`)
+  - rounds score (`Your Rounds`, `Opponent Rounds`)
+  - compact outcome stats (`Correct`, `Timeout`, `Wrong`)
+  - optional shortened winner line when context is useful
+- Removed technical settlement/debug content from the default surface (match id, full authority block, server pubkey/signature, backend explanation).
+- Added a local UI toggle in the same component:
+  - `Show Settlement Details` / `Hide Settlement Details`
+  - when expanded, reveals match id, server pubkey, settlement signature, and backend settlement text/waiting status.
+- Reordered result actions to improve hierarchy:
+  - primary style: `Blink Share`, `Back To Lobby`
+  - secondary style: `View History`
+- Cleaned dead code by removing now-unused outcome color/label helper functions after removing default turn-history rendering from this modal.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The previous modal mixed game UX and settlement internals, which made the result moment feel like an operations panel.
+- This refactor keeps the end-of-match state celebratory and readable by default, while still preserving access to technical data on demand.
+- Keeping all data wiring intact but changing only layout/copy/toggle behavior satisfies the requirement to avoid logic and routing regressions.
+
+### The Tech Debt
+- Modal visual tokens (overlay/card/button/chip styles) are still component-local in `BattleScreen.tsx`; if result surfaces expand to other screens, we should extract shared style primitives.
+- The details panel currently uses plain text blocks; if settlement diagnostics become a recurring UX need, a shared key-value diagnostics component would improve consistency.
+
+## 2026-05-07 - OpponentFound History Entry-Point Removal
+
+### The Change
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to remove history entry points from the opponent-found phase only.
+- Removed `HistoryButton` import and removed `historyHref` constant (unused after UI removal).
+- Removed top-row history button while keeping:
+  - playability chip
+  - `Show Room Status` / `Hide Room Status` toggle
+- Removed bottom `Open Full History` link block.
+- Kept all match-flow behavior unchanged: deposit signing, socket reconnection, status rail, timeout/cancel flow, and routing to battle.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Opponent-found should stay focused on immediate match flow (rival locked -> sign deposit -> enter battle).
+- History access is now treated as app-level navigation rather than a repeated action in every match phase.
+
+### The Tech Debt
+- If product later needs contextual history during deposit phases, we should reintroduce it through a centralized phase-navigation policy instead of per-screen ad hoc links.
+
+## 2026-05-07 - Battle Hand + Question Popup Rounded Placeholder Polish
+
+### The Change
+- Updated only visual styling in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for:
+  - bottom battle hand cards
+  - active question popup shell
+  - answer option buttons
+- Battle hand cards:
+  - replaced sharp `frame-cut` card appearance with rounded placeholder cards
+  - preserved existing fan layout/transforms, click behavior, disabled behavior, and active card highlighting
+  - removed visible `card.type` / `locked` text from card face
+  - kept a simple center `?` mark and added subtle placeholder texture layers
+  - tuned disabled/locked cards to look intentionally inactive rather than broken
+- Active question popup:
+  - replaced old sharp modal shell with a rounded warm panel
+  - kept dark overlay and all question/timer/answer logic unchanged
+- Answer option buttons:
+  - replaced sharp panels with rounded chunky button cards in the same warm style direction
+  - kept existing `onAnswer`, disabled, and lock behavior unchanged
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- These elements were still visually anchored to the older sharp-frame style and felt out of place against the newer rounded battle UI.
+- This pass introduces temporary rounded placeholders that are easier to swap later when final designer card assets land.
+
+### The Tech Debt
+- Card/popup placeholder textures and color treatments are currently inline style values in `BattleScreen.tsx`; these should become shared tokens/primitives if reused across more battle surfaces.
+- Final art integration will likely replace most placeholder layers, so a follow-up cleanup pass should remove any temporary decorative styling that becomes redundant.
+
+## 2026-05-08 - Battle Room Gate Banners Converted To Blocking Overlay Modal
+
+### The Change
+- Updated room gate presentation in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) from inline banners to a centered blocking overlay modal.
+- Removed inline rendering above the arena for:
+  - `isRoomStateLoading`
+  - `shouldShowPlayStateGate`
+- Added a unified fixed overlay gate (`showRoomGateModal`) with dark low-opacity backdrop and centered panel so the arena stays in place.
+- Modal copy now follows requested wording:
+  - syncing: `Syncing Room State` + `Rejoining battle room after refresh. Waiting for server snapshot.`
+  - non-playing: `Waiting For Battle` (when status is `waiting`) or `Room Locked` + `Current room status: ${getStatusLabel(status)}.`
+- Preserved gate actions:
+  - `Retry Room` (only when socket has issue)
+  - `Return And Requeue`
+- Kept socket/gameplay logic and state checks unchanged (presentation-only refactor).
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Inline gate banners were affecting document flow and pushing the battle arena down, which made the screen feel broken.
+- A fixed overlay preserves scene layout while still blocking interaction and communicating room state clearly.
+
+### The Tech Debt
+- This gate modal styling is local to `BattleScreen.tsx`; if similar blocking gates are needed elsewhere, we should extract a shared modal-gate primitive.
+- There is still a separate `Unable to enter battle room` inline banner path; if we want full consistency, that path can be unified into the same overlay pattern in a follow-up pass.
+
+## 2026-05-08 - OpponentFound Deposit Action Hierarchy Polish
+
+### The Change
+- Polished deposit action presentation for `OpponentFound` flow using:
+  - [apps/web/src/components/deposit/DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx)
+  - [apps/web/src/components/deposit/DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx)
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+- Centered secondary action group in `DepositStatusCard` so `retrySlot` + `cancelSlot` are always centered together, and `Cancel Match` stays centered when alone.
+- Reduced secondary action visual weight in `OpponentFound` by shrinking `Retry Connection` and `Cancel Match` padding/size (`px-3 py-1.5 text-[10px] shadow-sm`).
+- Updated `DepositPanel` primary action button to the shared chunky primary game button family (`btn-game btn-game-primary`) with larger dominant CTA sizing and muted disabled styling in the same family.
+- Kept all behavior intact: signing, retry, cancel, deposit status logic, and slot wiring unchanged.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- The previous secondary actions looked too prominent and defaulted left alignment, which weakened the action hierarchy.
+- Centering secondary actions and reducing their scale creates a clear primary-first flow while preserving utility access.
+- Using the shared primary button family aligns deposit CTA visuals with established game CTAs like queue entry.
+
+### The Tech Debt
+- Slot-provided action sizing is still caller-controlled; if more screens reuse this pattern, we should standardize secondary-action size tokens at the deposit component level.
+- Deposit CTA variant choices are now class-driven but still local to `DepositPanel`; a future button-variant utility could reduce repeated CTA class decisions across flows.
+
+## 2026-05-08 - Matchmaking Deposit UX Role Gating + Mystery Rival + Play Character Source Lock
+
+### The Change
+- Updated matchmaking handoff and deposit UX flow across:
+  - [apps/web/src/lib/matchmaking/queueMatch.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/queueMatch.ts)
+  - [apps/web/src/components/lobby/LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx)
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+  - [apps/web/src/lib/solana/signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts)
+  - [apps/web/src/hooks/useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts)
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx)
+- `/match` role propagation:
+  - extended `queueMatch` response typing to include optional `role` (`playerA`/`playerB`)
+  - stored role in `LobbyScreen` (`matchedRole`) and passed it into `OpponentFound` as `matchRole`
+- Player B deposit lock + unlock behavior in `OpponentFound`:
+  - disabled sign action for Player B until `depositUnlocked` is received
+  - removed websocket-connection-state requirement from sign button enablement (wallet + role gate + signing state now control gating)
+  - preserved `confirmDeposit` emission only after socket is `connected`
+  - added Player B helper copy while locked: `Waiting for Player A to deposit first.`
+  - on `depositUnlocked` for Player B, reset visible countdown to fresh 30s and show unlock copy: `Player A deposited � your turn.`
+  - paused countdown/auto-timeout while Player B is locked pre-unlock
+- Opponent identity privacy in `OpponentFound`:
+  - replaced rival portrait/name/base with mystery state (`?`, `Mystery Rival`, `Character hidden until battle`)
+  - kept opponent wallet/address visible
+- `/play` character source hardening:
+  - `BattleScreen` now sources player character from server `gameState.player.characterId` only (no FE query fallback)
+  - `BattleScreen` websocket join no longer sends `characterId`
+  - `useMatchSocket` now only appends `characterId` query when explicitly provided (removed default `einstein` fallback)
+- Added lightweight debug logs to distinguish failure stage:
+  - deposit click gating context in `OpponentFound`
+  - backend transaction fetch start/failure/receipt in `signDepositIntent`
+  - pre-`wallet.sendTransaction` log in `signDepositIntent`
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Role-aware deposit gating is needed so Player B cannot sign before backend unlock and receives clear, deterministic UX state transitions.
+- Decoupling sign-button enablement from transient socket reconnects avoids false-negative UX blocks while still preserving server confirmation sequencing.
+- Hiding rival character in deposit phase prevents premature identity reveal and aligns reveal timing with battle entry.
+- Removing FE character fallback in `/play` avoids stale local character assumptions after reconnect and makes server state authoritative.
+
+### The Tech Debt
+- Role fallback currently combines `/match` response with websocket `matchFound` payload; if backend role source-of-truth changes, this should be centralized in one shared match-session model.
+- Deposit unlock UX messaging is component-local; if reused in other phases, we should extract a small role/deposit-state presentation helper.
+- Logging is intentionally lightweight and ad hoc; if we formalize telemetry, these should be routed through a structured frontend observability layer.
+
+## 2026-05-08 - Gameplay/Deposit UX Follow-Up Polish (Role Lock, Card Type Fallback, Result Transition)
+
+### The Change
+- Applied focused frontend polish across:
+  - [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx)
+  - [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx)
+- OpponentFound deposit UX follow-up:
+  - preserved role-based Player B lock behavior and non-draining pre-unlock state
+  - updated Player B unlock copy to: `Player A deposited. Your turn to sign.`
+  - updated debug click log payload to include requested fields: `role`, `depositUnlockedAt`, `playerBLocked`, `countdownSeconds`, `canAttemptSign`
+  - retained reconnect-tolerant signing gate (signing not blocked solely by transient websocket reconnect)
+- Opponent identity copy polish:
+  - replaced `Mystery Rival` with `Your Rival`
+  - replaced subcopy with neutral: `Character revealed when battle starts.`
+  - kept `?` portrait placeholder and wallet/address visibility
+- Temporary card type visibility fallback during play:
+  - added simple readable hand-card label chips showing `Attack` or `Heal` on each playable card in battle hand
+  - kept existing card layout/interaction intact
+- Match result popup transition polish:
+  - wrapped result overlay in `AnimatePresence`
+  - added smooth fade for backdrop and subtle y/scale entrance/exit animation for result card using Framer Motion
+  - no changes to settlement/routing/share logic
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- This pass fixes remaining UX rough edges without touching backend, queue, or settlement systems.
+- Temporary card type text restores tactical readability until final art treatment lands.
+- Motion polish removes abrupt result popup appearance while keeping match flow responsive.
+
+### The Tech Debt
+- Player-role reliability remains dependent on role propagation source; if `/match` role availability changes across environments, role-origin handling should be centralized into one explicit match-session contract.
+- Temporary card type chips are intentionally stopgap UI and should be replaced once final card art/type indicators are delivered.
+- Result modal motion values are local constants; if more overlays adopt similar behavior, motion tokens should be shared.
+
+## 2026-05-08 - Gameplay Feedback Notification Pass + Deposit Waiting State Polish
+
+### The Change
+- Updated gameplay feedback presentation in [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - Removed inline post-action feedback text above hand cards.
+  - Added a compact, upper-middle, non-blocking game notification system (`pointer-events-none`) with subtle motion.
+  - Routed post-action feedback into notifications:
+    - attack result (`Attack landed: -X HP` when available)
+    - heal result (`Healed: +X HP` when available)
+    - no-damage states (`No damage this turn.`)
+  - Routed Extra Point phase change into the same upper-middle notification style (`Extra Point - every move matters.`).
+  - Kept existing projectile/base-hit animations and interaction flow unchanged.
+- Removed `View History` action from the win/lose result popup in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) only.
+- Polished deposit waiting states in [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - Player A countdown now stops after signing (`signingState === waiting`) and shows clear waiting copy (`Deposit signed. Waiting for Player B.`).
+  - Player B remains locked/passive pre-unlock (`Waiting for Player A to deposit first.`) with no draining countdown.
+  - Player B unlock copy remains explicit (`Player A deposited. Your turn to sign.`).
+  - Countdown visibility now uses explicit derived state (`shouldShowCountdown`) rather than always showing after mount.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- Inline action text near hand cards was competing with play controls and looked disconnected from the game feedback style.
+- A single upper-middle, non-blocking notification lane improves readability for both action outcomes and phase changes without obstructing card play.
+- Deposit-phase copy and countdown visibility now better communicate who is waiting on whom, reducing confusion during Player A/Player B sequencing.
+
+### The Tech Debt
+- Notification copy/timing is still local to `BattleScreen`; if other gameplay screens need similar UX, this should become a shared game-notification primitive.
+- Deposit waiting-state messaging logic is still component-local in `OpponentFound`; if additional deposit phases/screens are added, message derivation should be centralized.
+
+## 2026-05-08 - Match Lifecycle UX Polish (/play Presence, Cancel/Surrender Semantics, Result States)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed remaining `/play` requeue assumptions (`resumeQueue` URL construction and `Return And Requeue` actions)
+  - replaced old `/play` recovery navigation with clean `/lobby` return paths only
+  - upgraded current-player recovery copy/action to:
+    - title/copy: `You were disconnected` + `Your match is still active. Rejoin to continue.`
+    - action: `Rejoin Room` (same-room socket reconnect)
+  - integrated backend lifecycle events into play UX:
+    - consumes `lastRoomCancelled` and maps reason-specific user copy:
+      - `player_cancelled` -> `Match cancelled`
+      - `deposit_timeout` -> `Deposit timed out`
+      - `disconnect` -> `Match cancelled before battle start`
+    - consumes presence state (`presenceUpdate` and `player/opponent.isConnected`) for non-blocking opponent status:
+      - transient notices: `Opponent disconnected` / `Opponent reconnected`
+      - persistent opponent chip: `Connected` / `Away`
+  - added cancel vs surrender action semantics on `/play`:
+    - pre-commit (`waiting`/`depositing`): `Cancel Match` (sends `cancelMatch`)
+    - committed/active (`playing`/`settling`): `Surrender`
+  - replaced prompt-style surrender with explicit confirmation modal:
+    - title: `Surrender match?`
+    - body: `Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby.`
+    - actions: `Keep Playing` and `Surrender`
+  - expanded result presentation to support non-winner assumptions safely:
+    - `You Win` / `You Lose`
+    - `Draw`
+    - `You Surrendered`
+    - `Opponent Surrendered`
+    - cancellation result text via `roomCancelled` reasons
+  - preserved existing animation/result structure and gameplay card flow.
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - added friendly `roomCancelled` reason mapping messages before lobby return
+  - removed immediate post-click forced timeout on cancel; now waits for backend cancellation signal path
+  - updated stale `Returning to queue` language to `Returning to lobby` for deposit-failure context.
+- Validation: `npm.cmd run lint --workspace apps/web` passes.
+
+### The Reasoning
+- `/play` should no longer imply auto-requeue behavior in wagered and recoverable match states.
+- Presence-aware UX prevents confusion when an opponent disconnects while a connected player remains in an active room.
+- Explicit cancel-vs-surrender wording aligns player intent with lifecycle phase and backend semantics.
+- Result rendering must tolerate `winnerAddress: null` and lifecycle-terminal outcomes beyond simple win/lose.
+
+### The Tech Debt
+- Presence UX still depends on event timing between `presenceUpdate` and `gameStateUpdate`; if backend emits richer phase-aware presence metadata, the FE can further simplify conditions.
+- Cancellation is now clearly rendered, but lobby-level post-cancel handoff remains distributed across component-local timers and callbacks.
+- `/lobby` still retains legacy `resumeQueue` handling for compatibility; now that `/play` stopped emitting it, a future cleanup pass can remove that branch if no other flows depend on it.
+## 2026-05-08 - Disconnect Overlay UX (Manual Rejoin + Optional Surrender)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) reconnect UX for current-player disconnect during active/recoverable match:
+  - added a full-screen blocking overlay in the same frame-cut visual style as existing battle overlays
+  - title/body copy now:
+    - `You were disconnected`
+    - `Your match is still active. Rejoin to continue, or surrender to end the match.`
+  - removed inline disconnect-state frame usage for this flow
+  - suppressed top-right disconnect/reconnecting socket alerts while the full-screen disconnect overlay is active
+  - removed auto-rejoin behavior from this disconnect UX path; reconnect is now user-triggered only
+  - added explicit dual CTA behavior:
+    - `Rejoin Room` -> calls `reconnect()` for same-room recovery
+    - `Surrender` -> uses existing surrender intent flow, including reconnect-then-submit handling when disconnected
+  - no countdown timer, no auto-dismiss, no auto-win/forfeit countdown added in FE
+- Validation: `npm run lint` in `apps/web` passes.
+
+### The Reasoning
+- In a recoverable wagered match, disconnect should be explicit and player-controlled, not hidden in toasts or auto-retry side effects.
+- A blocking overlay with clear actions reduces ambiguity about whether the room is still active and what the player can do next.
+- Reusing existing surrender semantics keeps settlement ownership on backend lifecycle events rather than FE assumptions.
+
+### The Tech Debt
+- Reconnect/surrender intent orchestration is still component-local state in `BattleScreen`; if additional play surfaces share this behavior, it should be extracted into a dedicated match-recovery controller hook.
+- Socket alert suppression is context-specific (`showDisconnectedOverlay`) and may need consolidation if other modal-priority states are introduced.
+
+## 2026-05-08 - Character Expressions (Happy Preview + Battle Reaction Bubbles)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - added expression portrait support for selection UI using `/assets/characters/{characterId}/exp/happy.png`
+  - renders `happy` expression for selected or previewed cards (hover/focus preview)
+  - keeps existing fallback initial rendering when expression asset is unavailable
+- Updated [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx):
+  - explicitly passes `previewExpression="happy"` into `CharacterCard`
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added battle reaction bubble UI near each character (left for player, right for rival)
+  - bubble content is expression image assets from `/assets/characters/{characterId}/exp/{expression}.png`
+  - added temporary reaction state with override behavior and auto-hide timers
+  - wired reactions to existing match events/state only:
+    - `happy` on local correct answer via `lastPlayResult.correct`
+    - `hurt` on damaged target via `lastDamageEvent` attack damage
+    - `confident` when `currentCorrectStreak >= 3` for player/opponent
+  - intentionally uses `currentCorrectStreak` (not `longestCorrectStreak`) for FE reaction logic
+
+### The Reasoning
+- Expression assets are 1:1 and separate from combat pose assets (`stay/action/basic` 4:5), so expression rendering is isolated to `/exp` and mapped per use-case.
+- Character selection now previews the intended expression style without changing gameplay sprites.
+- Battle reactions are event-driven, brief, and non-blocking to preserve gameplay readability while providing emotional feedback.
+- `currentCorrectStreak` represents live, player-facing momentum and is the correct source for confidence reactions.
+
+### The Tech Debt
+- Reaction trigger logic lives in `BattleScreen`; if additional battle surfaces need the same behavior, this should be extracted into a shared reaction hook/controller.
+- Rival `happy` currently depends on available FE event context and can be expanded later if backend emits an explicit per-player correctness stream to both clients.
+- Expression fallback behavior is per-component; a shared character-asset resolver utility could reduce duplication across lobby/play surfaces.
+
+## 2026-05-08 - Character Select Expression State (Idle Default, Happy on Selected)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - removed hover/focus-driven expression switching
+  - expression rendering is now strictly selection-state based:
+    - unselected card -> `/assets/characters/{characterId}/exp/idle.png`
+    - selected card -> `/assets/characters/{characterId}/exp/happy.png`
+  - preserved fallback initial rendering when expression asset is unavailable
+- Kept [apps/web/src/components/character/CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) selected-expression contract (`previewExpression="happy"`) unchanged.
+
+### The Reasoning
+- Selection intent should be explicit and stable; hover-based swaps can feel noisy and imply a state change that has not actually happened.
+- `idle` as default and `happy` as selected gives a clean, readable visual cue for locked-in user intent.
+
+### The Tech Debt
+- Expression state mapping for select cards is still component-local; if multiple screens require the same selected/unselected expression policy, this should move into a shared character-expression helper.
+
+## 2026-05-08 - Character Card Selection Bounce (Select <-> Deselect)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - added a subtle bounce animation when selection state changes in either direction:
+    - `not selected -> selected`
+    - `selected -> not selected`
+  - implemented via `framer-motion` animation controls with short keyframe-based `y/scale` motion
+  - preserved existing hover lift and visual selection styling
+  - switched expression error handling to a per-asset failure map to avoid effect-driven state resets and keep lint clean
+
+### The Reasoning
+- A small bounce gives immediate feedback that selection state actually changed, without introducing distracting motion.
+- Animation controls provide explicit state-transition motion while keeping mount and hover behavior stable.
+- Per-asset failure tracking keeps idle/happy expression swapping resilient when one asset is missing.
+
+### The Tech Debt
+- Selection bounce timing/curve is currently hardcoded in the card component; if we add similar transitions elsewhere, we should centralize motion tokens.
+
+## 2026-05-08 - Card Hover Softening + Portrait-Only Selection Bounce
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - softened card hover lift to be less aggressive
+  - moved select/deselect bounce animation from the full card container to the portrait block only
+  - portrait now performs a subtle `y/scale` bounce on both transitions:
+    - unselected -> selected
+    - selected -> unselected
+  - card keeps stable selection offset while avoiding large full-card motion
+
+### The Reasoning
+- Full-card bounce plus strong hover made interaction feel overly jumpy.
+- Limiting bounce to the image area preserves responsiveness while keeping the overall layout calm.
+
+### The Tech Debt
+- Motion values are currently inline in `CharacterCard`; if we continue tuning interaction feel across components, shared motion tokens would reduce drift.
+
+## 2026-05-08 - Character Card Cleanup (Remove Focused Badge + Dot/Line Marker)
+
+### The Change
+- Updated [apps/web/src/components/character/CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx):
+  - removed the `Focused` label badge from selected portraits
+  - removed the bottom dot/line indicator strip inside the portrait frame
+  - preserved all selection, expression, and animation behavior otherwise
+
+### The Reasoning
+- These extra markers added visual noise and duplicated selection signals already conveyed by border/background/status treatments.
+- Cleaner portrait framing improves readability of expression art.
+
+### The Tech Debt
+- Selection state is currently communicated by multiple visual channels; a future design pass could codify a minimal, shared state-token set for all character cards.
+
+## 2026-05-08 - Battle Emote Reposition + Size Increase
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved player reaction emote to the right side of the player identity block (`You / Score / Address`)
+  - moved rival reaction emote to the left side of the rival identity block (`Rival / Connected / Address / Score`)
+  - removed old mid-arena absolute emote anchors
+  - significantly increased emote bubble size from small overlays to large header-side bubbles (`96px` mobile, `112px` desktop)
+  - preserved existing reaction timing, animation, and event triggers
+
+### The Reasoning
+- Emotes now sit exactly with the identity metadata the user reads first, which improves clarity and avoids visual competition with center combat sprites.
+- Larger size improves readability of 1:1 expression art.
+
+### The Tech Debt
+- Player/rival emote bubble markup is duplicated in the header row; this can be extracted into a shared reaction bubble component if we keep iterating on style/behavior.
+
+## 2026-05-08 - Battle Reaction Polish (Preload + Speech Bubble + Arena Attachment + Softer Timing)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added expression asset preloading for both active characters using a lightweight helper (`new window.Image()`), covering:
+    - `happy`
+    - `confident`
+    - `hurt`
+  - preloading runs when `playerCharacterId`/`opponentCharacterId` are available and does not block gameplay
+  - increased default reaction display duration from `1200ms` to `1900ms`
+  - replaced reaction visual from portrait-card look to a compact speech-bubble style:
+    - warm cream bubble surface
+    - stronger border/shadow
+    - visible directional tail toward character
+  - moved reaction bubbles from the header/name row back into the arena, anchored near each character sprite:
+    - player bubble on character side-left
+    - opponent bubble on character side-right
+  - softened reaction motion to feel less abrupt:
+    - pop-in with small bounce
+    - gentler fade-out
+  - kept all existing trigger logic unchanged (`happy`, `hurt`, `confident`) and no socket/gameplay behavior changes
+
+### The Reasoning
+- Preloading eliminates first-show image lag and makes reactions feel immediate.
+- Speech-bubble styling communicates "reaction" better than square card framing.
+- Arena-anchored placement reconnects the expression to the character action context.
+- Slightly longer lifetime and softer transitions improve readability without clutter.
+
+### The Tech Debt
+- Reaction bubble markup exists twice (player/opponent variants); this can be extracted into a small shared render helper/component if more variants are added.
+- Position offsets are tuned constants; a future responsive pass could derive offsets from measured sprite bounds for tighter device consistency.
+
+## 2026-05-08 - Opponent Found Player Expression (Happy)
+
+### The Change
+- Updated [apps/web/src/components/lobby/OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx):
+  - player-selected character portrait in the "Opponent Found" panel now renders:
+    - `/assets/characters/{myScientist.id}/exp/happy.png`
+  - added `next/image` rendering for the player portrait with graceful fallback to existing initial glyph if asset fails
+  - opponent portrait remains unchanged as `?` (hidden identity behavior preserved)
+
+### The Reasoning
+- The player�s own selected scientist can be shown with expressive art before battle starts, while opponent identity remains intentionally concealed.
+
+### The Tech Debt
+- Expression asset resolution is component-local in `OpponentFound`; if more pre-battle surfaces need this behavior, a shared character portrait resolver helper would reduce duplication.
+
+## 2026-05-08 - Battle Projectile Asset Wiring (Attacker-Based, Turing Variants, Heal Skip)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - replaced placeholder projectile visual with character projectile assets
+  - added projectile source resolver:
+    - Einstein/Curie/others: `/assets/characters/{characterId}/projectile.png`
+    - Turing: random per spawn between:
+      - `/assets/characters/turing/projectile_0.png`
+      - `/assets/characters/turing/projectile_1.png`
+  - projectile asset is now selected from the attacker character (`playerCharacterId` or `opponentCharacterId` based on event side)
+  - heal events no longer spawn projectile visuals
+    - heal base FX and heal-related reaction behavior remain intact
+  - removed framed projectile container/box styling
+  - added subtle warm/gold radial glow behind projectile for dark-scene readability
+  - added projectile asset failure tracking (`failedProjectileSprites`) and fallback rendering (glow + glyph) when image load fails
+
+### The Reasoning
+- Projectile visuals should match the active attacker identity to improve combat readability and character personality.
+- Turing�s randomized binary projectile variants add variety while preserving deterministic gameplay logic.
+- Heal should remain a non-projectile feedback channel, so visuals align with intended semantics.
+- A free-floating asset with soft glow feels integrated into battle motion and avoids UI-card framing artifacts.
+
+### The Tech Debt
+- Projectile glow and motion constants are inline; if we introduce more VFX types, these should move to shared visual tokens/helpers.
+- Projectile asset preloading is not yet centralized; if first-hit latency appears on slower devices, a shared preload pass can be added for projectile paths similar to expression preloading.
+
+## 2026-05-08 - Real Base Asset Integration in Battle Arena
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to replace square base placeholders with real base art:
+  - player base now resolves from player character ID
+  - opponent base now resolves from opponent character ID
+  - base source rules:
+    - Einstein player: `/assets/characters/einstein/projectile_left.png`
+    - Einstein opponent: `/assets/characters/einstein/projectile_right.png`
+    - Curie/Turing (and non-Einstein fallback): `/assets/characters/{characterId}/projectile.png`
+- Preserved correct orientation behavior:
+  - Einstein bases are never flipped
+  - opponent Curie/Turing bases are horizontally flipped
+- Added large, grounded base placement on the arena floor with outside-edge cropping:
+  - player base cropped off left edge
+  - opponent base cropped off right edge
+  - base wrappers use preserved aspect ratio (`1700 / 1269`) and `object-contain`
+- Added compact mirrored HP bars near each base:
+  - label `Base`
+  - fill based on HP percentage
+  - numeric display (`{hp} / 100`)
+- Kept and upgraded base FX mapping on new base wrappers:
+  - hit: shake + warm red flash/glow
+  - heal: mint glow pulse
+- Added base-asset failure fallback:
+  - tracks failed base image paths
+  - falls back to existing glyph placeholder if base art fails to load
+
+### The Reasoning
+- Real base art needed to feel like anchored arena objects rather than UI placeholders.
+- Matching baseline and controlled edge cropping make the base read as large environment geometry tied to each side.
+- Mirrored HP bars preserve quick readability while reducing UI clutter from old standalone text blocks.
+
+### The Tech Debt
+- Base position offsets are tuned constants; a future responsive tuning pass may be needed for edge devices and unusual viewport heights.
+- Base max HP is displayed as `/100` in FE; if backend later provides dynamic max-base-health, the bar denominator should be sourced from state.
+
+## 2026-05-08 - Base Asset Path Correction + Layer/Presentation Fixes
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - corrected base asset resolver to use real base files:
+    - Einstein player: `/assets/characters/einstein/base_left.png`
+    - Einstein opponent: `/assets/characters/einstein/base_right.png`
+    - others: `/assets/characters/{characterId}/base.png`
+  - removed `projectile*` naming from base path logic
+- Tightened arena layer ordering:
+  - base wrappers moved to lowest layer (`z-0`)
+  - character sprites explicitly above base (`z-[6]`)
+  - projectile above sprites (`z-[12]`)
+  - base HP bars above base (`z-[9]`)
+- Preserved presentation rules:
+  - no box/background/border/rounded card when base image loads
+  - fallback placeholder only when base image fails
+  - same baseline alignment, aspect ratio `1700 / 1269`, and outer-edge cropping remain intact
+
+### The Reasoning
+- Base art was incorrectly mapped to projectile filenames; this blocked real base visuals.
+- Explicit z-index ordering removes ambiguity and ensures bases stay in the arena background while still allowing readable HP overlays.
+
+### The Tech Debt
+- Asset extension selection is still hardcoded to `.png`; if future character packs mix formats, a resolver map or manifest will be safer.
+
+## 2026-05-08 - Base Presentation Tuning (HP Above Base + Smaller Scale + Shared Ground Line)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved Base HP UI to sit directly above each base asset by anchoring it to each base wrapper
+  - reduced base render footprint for better proportion with current character scale:
+    - from `w-[clamp(280px,37vw,560px)]`
+    - to `w-[clamp(220px,31vw,430px)]`
+  - kept base aspect ratio unchanged (`1700 / 1269`) and existing asset sources
+  - aligned base and character to the same floor plane by anchoring both to `bottom-[16%]`
+  - preserved base background behavior:
+    - no box/panel when base image loads
+    - fallback placeholder still only on load failure
+  - preserved cropping, hit/heal base FX, and Einstein-specific base handling
+
+### The Reasoning
+- HP context reads more naturally when tied to and floating above each base instead of feeling detached.
+- Smaller base scale better matches the reduced character size and improves visual balance.
+- Shared bottom anchoring reinforces the same-ground illusion between base and character.
+
+### The Tech Debt
+- Ground and offset values are still tuned constants; we may need a per-breakpoint calibration pass for very short/mobile viewports.
+
+## 2026-05-08 - Base Repositioning Without Downscale (Cards Separation + Stable HP Layer)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - restored base render size (removed prior downscale):
+    - back to `w-[clamp(280px,37vw,560px)]`
+    - restored matching `sizes` hint (`280px/560px`)
+  - moved base and character pair upward together to preserve shared ground alignment while clearing hand cards:
+    - base wrappers and character wrappers now both anchored at `bottom-[22%]`
+  - detached HP UI from base crop/wrapper:
+    - moved player/opponent base HP bars into independent arena overlay layers
+    - HP bars remain stable/readable even with base edge cropping
+- Preserved existing behavior:
+  - base assets and aspect ratio unchanged
+  - base behind character
+  - no UI panel/box on successful base image
+  - crop behavior retained
+  - Einstein left/right handling retained
+  - hit/heal base FX retained
+
+### The Reasoning
+- User feedback indicated scale was acceptable; visual conflict was positional.
+- Raising the base+character ground line together keeps floor-plane coherence while protecting foreground card space.
+- Decoupling HP bars from base wrappers avoids clipping and keeps health info consistently visible.
+
+### The Tech Debt
+- Bottom and HP overlay offsets are still hand-tuned constants; we should revisit with viewport-specific tokens if additional responsive edge cases appear.
+
+## 2026-05-08 - Battle Arena Vertical Layout Reset
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - split the arena into a dedicated scene region and a separate bottom hand-card tray
+  - reduced base visual dominance and kept base assets as background scene props with preserved aspect ratio
+  - kept character and base bottoms on the same visual ground line while preventing overlap with the card tray
+  - moved base HP bars into stable top-left/top-right arena UI positions, detached from base art cropping
+  - compacted player/rival metadata into inline You/Rival, score pill, rounds pill, and address rows
+  - kept rival connection state in the top status chip row instead of inside arena metadata
+
+### The Reasoning
+- The previous composition tried to solve card collision with shared absolute offsets, which made bases, characters, HP bars, and hand cards compete for the same vertical space.
+- Separating scene and hand tray layout gives the cards a guaranteed bottom zone while letting the arena read as a stage again.
+- HP is gameplay UI, not part of the base asset, so it now sits in predictable overlay positions independent of base image crop and scale.
+
+### The Tech Debt
+- Base/character ground offsets remain tuned constants; a future responsive QA pass should validate very short mobile viewports and unusual aspect ratios.
+- Full npm run lint is still blocked by an existing react-hooks/set-state-in-effect issue in apps/web/src/components/lobby/OpponentFound.tsx; targeted ESLint for BattleScreen.tsx passes.
+
+## 2026-05-08 - Battle Screen Single-Viewport Fit
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - changed the battle page shell from padded min-height to fixed 100svh height with hidden overflow
+  - tightened top status chips, section padding, arena gaps, and player metadata spacing
+  - made the arena scene flex within available height instead of enforcing large fixed minimum heights
+  - reduced base, character, and hand-card clamp sizes so the full battle composition fits without page scroll
+
+### The Reasoning
+- The prior split between scene and hand tray fixed overlap, but fixed min-heights plus page padding made the total composition taller than the viewport.
+- Treating the battle screen as a bounded viewport layout keeps the room header, arena, characters, bases, HP bars, and hand cards visible as one screen.
+
+### The Tech Debt
+- This is tuned for the current battle UI density; very short landscape/mobile viewports may still need a dedicated compact breakpoint if the top status row wraps heavily.
+
+## 2026-05-08 - Battle Arena Edge-to-Edge Scene
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed horizontal padding from the arena frame itself
+  - kept horizontal padding only on the compact player metadata row and hand-card tray
+  - let the scene layer, including cropped base art, run edge-to-edge inside the arena border
+
+### The Reasoning
+- The base crop was visually separated from the arena border because the absolute scene was positioned inside the section padding box.
+- Moving padding to UI rows preserves readable HUD spacing while allowing background scene props to crop against the actual arena frame.
+
+### The Tech Debt
+- Edge-to-edge scene art now depends more on base crop offsets; future character packs with different base silhouettes may need per-character positioning tokens.
+
+## 2026-05-08 - Battle Rival Metadata Mirror Order
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - changed the right-aligned rival metadata order from `Rival · Score · Rounds` to `Score · Rounds · Rival`
+  - left player metadata order unchanged as `You · Score · Rounds`
+
+### The Reasoning
+- The rival block is right-aligned, so placing the name at the outer edge makes the mirrored HUD read more naturally.
+
+### The Tech Debt
+- Metadata markup remains duplicated between player and rival rows; if this HUD keeps changing, a small metadata-row helper could reduce drift.
+
+## 2026-05-08 - Battle Question Panel Above Hand
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed the full-screen active-card question overlay
+  - rendered the active question as a compact panel directly above the hand cards in the bottom tray
+  - kept the existing active card, countdown, answer lock, and `onAnswer` behavior unchanged
+  - preserved the active selected card visual while other hand cards remain disabled during answering
+
+### The Reasoning
+- The question belongs to the hand-card interaction and should not block the arena scene.
+- Placing it above the cards keeps the player focused on the current choice while preserving visibility of bases, characters, projectiles, and reactions.
+
+### The Tech Debt
+- The inline question panel is compact and clamps long question text; if future prompts become much longer, we may need a dedicated expanded/read-more state that still avoids blocking the arena.
+
+## 2026-05-08 - Battle Question Panel Layering
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - changed the active question panel from an in-flow hand-tray element to an absolute overlay layer above the cards
+  - preserved the same countdown, answer buttons, active-card state, and answer-locking behavior
+  - kept a compact hand prompt in the tray so the hand row height stays stable while answering
+
+### The Reasoning
+- The previous inline question panel avoided blocking the arena, but it still pushed the arena scene upward because it participated in layout.
+- Anchoring the panel above the cards as a layer keeps the top HUD and arena composition stable while preserving proximity to the card interaction.
+
+### The Tech Debt
+- The question overlay uses a tuned `bottom: calc(100% + 0.35rem)` anchor; if card tray height changes substantially, this offset may need a small adjustment.
+
+## 2026-05-08 - Battle Question Overlay On Card Layer
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved the active question panel from above the card tray to the same bottom layer as the cards
+  - anchored the panel over the hand row so it covers the cards while answering instead of floating above them
+  - preserved the existing question, timer, and answer behavior
+
+### The Reasoning
+- The intended interaction is that selecting a card transforms the hand layer into the answer surface, not that the question becomes a separate layer above the hand.
+- Keeping the panel on the card layer avoids pushing arena layout and keeps the interaction spatially tied to the chosen card.
+
+### The Tech Debt
+- The overlay currently covers the hand row as a single panel; if we want a more literal card-transform animation later, the selected card could expand into this panel using shared layout motion.
+
+## 2026-05-08 - Battle Answer Feedback Persistence
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added selected-answer feedback state for the active question panel
+  - kept the question panel visible briefly after play result resolution so it does not disappear before attack/heal feedback finishes
+  - colors only the selected option: green when the chosen answer is correct, brown/red when the chosen answer is incorrect
+  - preserved non-disclosure behavior by not marking or revealing the correct answer when the selected answer is wrong
+  - kept active card/question data in a local snapshot so the panel can persist even if hand state updates during resolution
+
+### The Reasoning
+- The result feedback should bridge the UI choice and the resulting combat action; clearing the panel immediately made the interaction feel abrupt.
+- Showing feedback only on the selected option confirms the player's choice outcome without exposing the correct answer.
+
+### The Tech Debt
+- The feedback duration is a tuned constant (`ANSWER_FEEDBACK_DISPLAY_MS = 1200`); if backend animation timings change, this should be aligned with a more explicit combat-resolution signal.
+
+## 2026-05-08 - Darker Correct Answer Green
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - darkened the selected-correct answer highlight to a deeper existing arena green gradient
+  - adjusted selected-correct label and text color for contrast on the darker fill
+  - left incorrect and neutral answer styling unchanged
+
+### The Reasoning
+- The previous correct-answer highlight was too light and felt disconnected from the arena palette.
+- A deeper green keeps the success signal clear while matching existing in-game green tones.
+
+### The Tech Debt
+- Answer feedback colors are inline in the component; if we continue tuning battle UI states, these should move into shared color tokens.
+## 2026-05-08 - BattleScreen Refactor (View Extraction)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - kept socket state/effects/gameplay handlers in this file
+  - replaced large inline UI chunks with extracted component usage
+  - switched challenge-link derivation from `useMemo` to direct derivation (same behavior, cleaner lint outcome)
+- Added [apps/web/src/components/play/BattleScreenGateStates.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenGateStates.tsx):
+  - extracted "Match Context Missing" and "Wallet Required" screens
+- Added [apps/web/src/components/play/BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx):
+  - extracted alert stack and top notice banner
+- Added [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - extracted room/disconnect/question/surrender/result/share overlays
+
+### The Reasoning
+- `BattleScreen.tsx` had become too large to iterate on safely from FE side.
+- Separating presentation-heavy sections from gameplay/state logic reduces cognitive load and makes UI-only edits much faster.
+- Overlay extraction also makes modal flows easier to test and tweak independently.
+
+### The Tech Debt
+- The central battle arena section (header + character stage + card hand) is still large and can be extracted next into focused presentational components.
+- A few prop groups passed to overlay/status components are broad; introducing view-model objects by domain (room state, settlement state, share state) would further simplify contracts.
+
+## 2026-05-08 - BattleScreen Overlay Type Fix (challengeLink nullable)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - changed `challengeLink` prop type from `string` to `string | null` to match `createChallengeLink()` return type and `ChallengeShareCard` contract.
+
+### The Reasoning
+- `createChallengeLink` intentionally returns `null` when origin is unavailable.
+- Keeping overlay prop strict to `string` caused Next/TS build failure when passing nullable link.
+- Nullable typing aligns all layers without changing runtime behavior.
+
+### The Tech Debt
+- None introduced. Types are now consistent across link creator, overlay, and share card.
+
+## 2026-05-08 - BattleScreen Refactor Follow-up (Inline Overlay Re-consolidation)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed large inline overlay JSX block that had been reintroduced during conflict resolution
+  - restored usage of [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) as the single overlay render path
+  - removed an unused `playerAddressLabel` derived value
+
+### The Reasoning
+- Consolidating overlays back into the extracted component keeps `BattleScreen.tsx` focused on gameplay state/effects and avoids duplicated UI paths.
+- It also reduces merge-conflict surface area significantly for future FE iterations.
+
+### The Tech Debt
+- The core arena section (header + character stage + hand + inline answer tray) is still the largest remaining block and can be extracted next.
+
+## 2026-05-08 - BattleScreen Question UI De-duplication
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - removed the question modal overlay render path (`activeCard && status === "playing" && !isMatchComplete`)
+  - removed now-unused question modal props (`activeCard`, `status`, `displaySecondsLeft`, `answerLocked`, `onAnswer`)
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - removed those question-modal props from `<BattleScreenOverlays />` callsite
+
+### The Reasoning
+- The in-arena question panel is already present; the overlay modal created duplicate question UI and degraded UX.
+- Keeping only one question surface matches intended play flow and reduces visual noise.
+
+### The Tech Debt
+- None added. This removes duplicated rendering paths.
+
+## 2026-05-08 - Battle Notice Reposition + Emphasis Upgrade
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved transient battle notifications (`gameNotice`) into the main battle arena layout, directly below the top score/VS divider line
+  - replaced the previous minimal top overlay look with a stronger in-arena event banner that includes:
+    - tone-based label (`Battle Update` for phase events, `Combat Update` for combat events)
+    - clearer contrast, border, and shadow treatment per tone
+    - preserved enter/exit motion timing and existing notice lifecycle behavior
+- Updated [apps/web/src/components/play/BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx):
+  - removed `gameNotice` rendering from the fixed status layer
+  - kept socket/system alert stack behavior unchanged
+  - removed no-longer-needed notice prop/types tied to that layer
+
+### The Reasoning
+- The user feedback was that notifications felt underwhelming and visually detached by appearing as a fixed line-level banner.
+- Placing the notice under the battle header keeps it in the player focus zone and ties feedback to the duel stage.
+- Separating concerns (alerts in status layer, battle event notices in arena layout) makes future UI tuning safer and clearer.
+
+### The Tech Debt
+- Notice colors and copy labels are still inline in `BattleScreen.tsx`; if notification variants expand, we should extract a small shared token map/helper.
+- Timing (`2100ms`) is still a fixed constant and may need harmonization with future combat animation durations.
+
+## 2026-05-09 - Battle Notice Vertical Nudge (Higher, Still Centered)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved the in-arena notification banner higher by adjusting its absolute anchor from `top-2` to `top-[-2rem]`
+  - kept horizontal centering and existing below-divider placement behavior
+
+### The Reasoning
+- The banner looked too low relative to the battle stage; this tweak lifts it closer to the base/combat visual level while preserving the same centered emphasis.
+
+### The Tech Debt
+- Vertical placement still depends on tuned offsets combined with scene container padding (`pt-[4.25rem]`); if we continue iterating this area, a dedicated banner anchor container would reduce offset coupling.
+
+## 2026-05-09 - Round Change Winner Notification (Logic-Only)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added round progression tracking ref (`previousRoundsWonRef`) for player and rival round wins
+  - added a new effect that listens to `playerRoundsWon` / `opponentRoundsWon` changes
+  - triggers existing battle notice pipeline on round win changes:
+    - `Round winner: You`
+    - `Round winner: Your rival`
+- Kept presentation/layout untouched (no UI structure/style changes).
+
+### The Reasoning
+- Round outcomes are already represented by `roundsWon` counters, so this is the safest source-of-truth to detect when a round result is finalized.
+- Reusing `showGameNotice` preserves current notification timing/animation behavior with minimal risk.
+
+### The Tech Debt
+- If backend later introduces explicit per-round winner events, this derived approach should be switched to event-driven notices to avoid any edge cases around reconnect snapshots.
+
+## 2026-05-09 - Longer Round-Winner Notification Duration
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - extended `showGameNotice` to accept optional `durationMs` (default remains `2100ms`)
+  - kept all existing callers unchanged by relying on the default duration
+  - set round-winner notices to a longer display time:
+    - `Round winner: You` -> `3200ms`
+    - `Round winner: Your rival` -> `3200ms`
+
+### The Reasoning
+- Round-result context is more important than transient hit/heal feedback, so it should remain visible a bit longer for readability.
+- Using an optional duration parameter avoids UI changes and preserves current behavior for other notice types.
+
+### The Tech Debt
+- Notice durations are still hardcoded at call sites; if we keep tuning cadence, we should centralize durations in named constants.
+
+## 2026-05-09 - Settlement Overlay Winner/Loser Emoji Bubbles
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added `settlementEmojiMood` derivation from existing match outcome states
+  - maps winner/loser mood for relevant outcomes:
+    - `You Win` / `Opponent Surrendered`: player `confident`, rival `hurt`
+    - `You Lose` / `You Surrendered`: player `hurt`, rival `confident`
+  - passes `settlementEmojiMood` into the overlays component
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - added `settlementEmojiMood` prop typing and handling
+  - inserted a new row under settlement title/subtitle:
+    - `[You bubble emoji] [Your Rival bubble emoji]`
+  - used chat-bubble-like cards with small directional tails
+  - emoji mapping:
+    - confident -> `??`
+    - hurt -> `??`
+
+### The Reasoning
+- The user wanted clearer emotional feedback tied to result outcomes without restructuring the rest of the settlement panel.
+- Deriving mood in `BattleScreen` keeps business/outcome logic centralized and keeps overlays mostly presentational.
+
+### The Tech Debt
+- Emoji mapping and bubble styling are currently inline in the overlay component; if more expression variants are added, these should move to a shared presentational helper.
+
+## 2026-05-09 - Settlement Overlay Uses Character Expression Assets (Left/Right Anchored)
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - added `settlementExpressionSrc` derived from selected character IDs and winner/loser mood (`confident` / `hurt`)
+  - passed `settlementExpressionSrc` into `BattleScreenOverlays`
+- Updated [apps/web/src/components/play/BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+  - replaced text emoji output with actual character expression images (`next/image`) inside the existing chat-bubble shapes
+  - added per-image fallback handling (`failedExpressionSprites`) if an expression sprite is missing
+  - changed result-expression row alignment from centered pair to full-width anchored layout:
+    - `You` bubble sticks to left
+    - `Your Rival` bubble sticks to right
+
+### The Reasoning
+- User requested real expression assets from selected characters rather than generic emoji symbols.
+- Keeping mood derivation in `BattleScreen` ensures result logic remains centralized while overlays stay presentational.
+- Left/right anchoring preserves side identity and reads closer to battle perspective.
+
+### The Tech Debt
+- Expression failure fallback currently shows mood text labels; if any character packs ship incomplete `exp/` sets, we may want dedicated fallback portraits.
+
+## 2026-05-09 - Fix TS Declaration Order for Settlement Expression Sources
+
+### The Change
+- Updated [apps/web/src/components/play/BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx):
+  - moved `settlementExpressionSrc` derivation to below `playerCharacterId` and `opponentCharacterId` declarations
+  - resolved block-scoped variable usage-before-declaration errors for both character IDs
+
+### The Reasoning
+- `settlementExpressionSrc` depends on character IDs; deriving it before those constants caused TypeScript compile errors.
+- Reordering keeps behavior identical while restoring valid declaration flow.
+
+### The Tech Debt
+- None introduced.
+
+## 2026-05-09 - Lobby Restore Fetch Hardening + Unselected Arena Null Image
+
+### The Change
+- Updated [apps/web/src/lib/matchmaking/queueMatch.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/queueMatch.ts):
+  - wrapped `getActiveMatchForAddress` fetch in a network-failure guard
+  - when fetch fails for non-abort reasons, it now returns `{ inRoom: false }` instead of throwing
+- Updated [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - defaulted arena preview background to `/assets/arena/null.png` when no arena is selected
+  - always renders the arena image layer so unselected state shows the null image explicitly
+- Ran lint verification for edited files:
+  - `npm run lint -- src/components/lobby/LobbySetup.tsx src/lib/matchmaking/queueMatch.ts`
+
+### The Reasoning
+- Active room restore is best-effort and should not surface noisy fetch exceptions when API is temporarily unreachable.
+- Returning `inRoom: false` for network misses preserves flow consistency: no active room means lobby stays in normal setup/select state.
+- The UI already contains a null arena asset, so using it as the default unselected background keeps visual state explicit and avoids empty background ambiguity.
+
+### The Tech Debt
+- `getActiveMatchForAddress` now treats network errors as "not in room"; if strict connectivity diagnostics are needed later, we should add structured telemetry separate from user-facing flow control.
+
+## 2026-05-09 - Lobby Arena Background Crossfade Stabilization
+
+### The Change
+- Updated [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - added deterministic arena-image preloading for `null`, `SOL`, and `BONK` backgrounds
+  - replaced direct one-layer background swap behavior with a two-layer crossfade model:
+    - base layer uses `displayedArenaImageUrl`
+    - incoming layer fades in only after the new image is confirmed loaded/decoded
+  - committed next background only after fade duration, reducing visible snap/jank
+  - adjusted implementation to satisfy `react-hooks/set-state-in-effect` by deriving incoming URL from render state and only mutating load-state from async image callbacks
+- Verified with lint:
+  - `npm run lint -- src/components/lobby/LobbySetup.tsx`
+
+### The Reasoning
+- Occasional `SOL <-> BONK` rough transitions were caused by late image decode/cache misses while CSS `backgroundImage` URL changed immediately.
+- Decoupling "selected image" from "displayed image" lets us wait for the next asset to be ready and then fade it in reliably.
+- Keeping updates async-callback driven avoids extra synchronous render loops and aligns with current React lint guidance.
+
+### The Tech Debt
+- Crossfade timing is currently hardcoded (`320ms`); if we tune animation cadence globally, this duration should move into shared motion constants.
+
+## 2026-05-09 - Arena Dynamic Subtitle Update
+
+### The Change
+- Updated the subtitle text below "Choose Your Arena" in `apps/web/src/components/lobby/LobbySetup.tsx` to dynamically show the selected arena token (e.g. `Selected: SOL Arena`).
+- Maintained the instructional fallback text when no arena is selected.
+
+### The Reasoning
+- To provide clearer user feedback on which arena is currently selected, in alignment with user requests.
+- Kept the change minimal and isolated without altering the broader lobby flow or background behavior.
+
+### The Tech Debt
+- None added.
+
+## 2026-05-09 - Align Wallet Connecting UI and Blink Share Button
+
+### The Change
+- Grouped the wallet connecting UI and Blink Share button inside a single bottom row flex container using `justify-between` in `apps/web/src/components/lobby/LobbySetup.tsx`.
+- Removed their separate margin-top values and added a shared `mt-4` to prevent vertical stacking and vertical scrollbars.
+
+### The Reasoning
+- To resolve a layout issue where the wallet UI and Blink Share button were misaligned vertically, causing page overflow and scrolling when the wallet prompt appeared.
+- By placing them in a shared flex row, they act as a paired bottom action bar, preserving existing styling while fixing the layout bounds.
+
+### The Tech Debt
+- None added.
+
+## 2026-05-09 - Polish Arena Selection Icons
+
+### The Change
+- Replaced the hardcoded text-based characters (`\u25ce` and `\u{1F436}`) in the `LobbySetup.tsx` arena card with clean, standard SVG icons using a new internal `ArenaIcon` component.
+- The SOL arena now displays a clean geometric Solana logo SVG, and the BONK arena uses a matching styled dog-paw SVG.
+- Both icons dynamically map to the appropriate card color states depending on whether they are active or inactive.
+
+### The Reasoning
+- Addressed visual inconsistency where SOL was unreadable as a faint text character and BONK appeared as a heavily-styled emoji sticker.
+- Ensures both tokens share the same visual language, bounding box, and fill behavior, conforming to the intended premium game UI style.
+
+### The Tech Debt
+- The `ArenaIcon` component lives locally in `LobbySetup.tsx`. If these SVGs are needed elsewhere, they should be extracted to a shared icon set within `packages/ui` or `components/ui`.
+
+## 2026-05-09 - Arena Selection Card Color Polish
+
+### The Change
+- Updated the active selection state background for the SOL arena card in `LobbySetup.tsx` to use a light green gradient (`linear-gradient(180deg, #eef6ec 0%, #d2e2cd 100%)`).
+- Kept the BONK arena card's active background as the warm yellow gradient (`linear-gradient(180deg, #fff1cf 0%, #f8d694 100%)`).
+
+### The Reasoning
+- Addressed user feedback requesting a light green fill for the selected SOL button instead of yellow, ensuring better alignment with SOL's designated sage-green color palette (`#9db496`) while preserving BONK's yellow identity.
+
+### The Tech Debt
+- The gradients are still defined inline in the `style` prop of the button. Eventually, these specific token-mapped gradients should be added directly to the `ARENAS` data structure in `LobbyScreen.tsx` for cleaner component code.
+
+## 2026-05-09 - Polish Scientist Selection Screen Layout
+
+### The Change
+- Added a `showLabels` prop (default `true`) to `apps/web/src/components/character/CharacterSelect.tsx` to allow hiding the "Roster", status line, and "Dev Mode" toggle row.
+- Updated `apps/web/src/components/lobby/CharacterSelect.tsx` to pass `showLabels={false}`, removing the redundant UI elements from the lobby phase.
+- Removed the Back button from the `preHeadingSlot` of the `RoomPhaseShell`.
+- Reintroduced the Back button as a secondary game button (`btn-game-secondary`) positioned right-aligned directly above the character selection grid.
+
+### The Reasoning
+- Addressed visual clutter in the lobby by hiding unnecessary character select labels (like dev mode and roster).
+- Repositioned the Back button to better match the visual hierarchy of the lobby flow, placing it directly above the action area rather than floating above the main screen header.
+
+### The Tech Debt
+- Added an additional prop `showLabels` to the already dense `CharacterSelectProps` in the shared component. As more context-specific visibility toggles are added, it may be worth refactoring this component into a compound component pattern.
+
+## 2026-05-09 - Align Scientist Selection Header with Back Button
+
+### The Change
+- Added a `hideTitleBlock` prop to `RoomPhaseShell` and `RoomPhaseHeader` to conditionally hide the left-aligned title block while preserving the status slots.
+- Re-implemented the header text (`Setup`, `Choose Your Scientist`, `Choose the mind that will defend your base in the arena.`) manually inside the `CharacterSelect.tsx` screen, placing it in the same flex row as the Back button directly above the scientist cards.
+
+### The Reasoning
+- Addressed user feedback stating that the screen header floated too high above the card selection area.
+- Grouping the header and the Back button into a single visual band provides better vertical alignment and brings the context closer to the user's focus (the character grid).
+
+### The Tech Debt
+- Re-implementing the header block manually bypasses the automatic text handling from `ROOM_PHASE_LABELS`. If this layout pattern becomes standard, `RoomPhaseShell` should be updated to support rendering the header block inline with the children instead of relying on `hideTitleBlock`.
+
+## 2026-05-09 - Rebalance Scientist Selection Header
+
+### The Change
+- Removed the `statusSlot` from the `RoomPhaseShell` configuration in `apps/web/src/components/lobby/CharacterSelect.tsx`.
+- Moved the status chips (arena label, wager, and wallet address) into the custom header row, rendering them directly above the Back button.
+
+### The Reasoning
+- Addressed visual imbalance where the top-right status chips floated too high above the custom header block.
+- Moving the status chips into the custom header block ensures the entire top area reads as a single, cohesive band, anchoring the UI directly above the scientist card grid.
+
+### The Tech Debt
+- Moving the `statusSlot` contents entirely into the children removes the last piece of content from the `RoomPhaseHeader` for this phase. In the future, this lobby screen may warrant its own bespoke shell layout rather than forcing `RoomPhaseShell` to render completely empty headers.
+
+## 2026-05-09 - Polish Scientist Selection Vertical Spacing
+
+### The Change
+- Increased the internal vertical spacing of the header block inside `CharacterSelect.tsx` (e.g. `mt-3`, `leading-relaxed`).
+- Increased the gap between the header block and the scientist cards to `mb-8 md:mb-10`.
+- Moved the `Enter Queue` button out of the `RoomPhaseShell`'s `footerSlot` and placed it directly after the `CharacterSelectPanel` in the main children area with `mt-6 md:mt-8`.
+
+### The Reasoning
+- Addressed visual compression at the top of the screen by providing the header elements more breathing room before the card grid begins.
+- Moving the `Enter Queue` button out of `footerSlot` prevents it from being pinned to the absolute bottom of the `100svh` viewport. This anchors the button visually to the card selection section and eliminates the awkward empty gap that was previously separating them.
+
+### The Tech Debt
+- None added. The layout relies on flexbox flow as intended, allowing the empty space to collect safely below the content instead of awkwardly separating the UI.
+
+## 2026-05-09 - Restructure Scientist Selection Header Layout
+
+### The Change
+- Extracted the status pills (`SOL Arena`, wager, wallet) out of the main header row into their own independent utility row at the very top of `CharacterSelect.tsx`.
+- Reconfigured the main header row to contain only the text block on the left and the Back button on the right.
+- Changed the vertical alignment of the main header row to `items-center`, anchoring the Back button vertically to the title text rather than allowing it to be pushed downward.
+
+### The Reasoning
+- Addressed layout feedback where the Back button was visually misaligned, feeling closer to the scientist cards than to the header itself.
+- Separating the purely informational status pills from the navigation/header row establishes a clearer visual hierarchy and prevents awkward flexbox stacking on the right side.
+
+### The Tech Debt
+- None. This is a standard structural refinement utilizing existing Tailwind utilities.
+
+## 2026-05-09 - Adjust Scientist Selection Pill Padding
+
+### The Change
+- Restored the use of `statusSlot` in `RoomPhaseShell` within `CharacterSelect.tsx` for rendering the arena/wager/wallet pills.
+- Removed the inline pill row that was nested directly inside the custom header container (`children`).
+
+### The Reasoning
+- Addressed user feedback regarding excessive top padding above the pill row. 
+- By moving the pills back into `statusSlot`, they are rendered inside `RoomPhaseHeader`, perfectly matching the CSS container spacing (`pt-5 md:pt-6`) of the prior `LobbySetup` screen. This ensures a 1:1 visual continuity for the top-right utility elements across both phases.
+
+### The Tech Debt
+- None. This reverts a previous structural hack and utilizes the native shell slots properly.
+
+## 2026-05-09 - Remove Fake Stats from Character Cards
+
+### The Change
+- Completely removed the mock `stats` arrays (e.g., `Logic 92`, `Computation 88`) from `LobbyScreen.tsx` and `app/dev/room-states/page.tsx` character data.
+- Removed the `CharacterStat` type and the `stats` field from the `CharacterOption` interface in `characterTypes.ts`.
+- Removed the rendering block in `CharacterCard.tsx` that mapped over and displayed the fake numeric stat chips.
+- Renamed Albert Einstein's base to `The Relativity Room` and Marie Curie's base to `The Radium Reactor` to align better with their actual gameplay specialties (`math` and `logical`, respectively) and avoid misleading players with physics/chemistry imagery.
+
+### The Reasoning
+- Addressed a misleading discrepancy where the display-facing flavor stats on the character cards did not align with the actual gameplay specialty categories (`sequence`, `logical`, `math`) defined in `packages/shared-types/src/characterStats.ts`.
+- Instead of inventing new fake numbers for the real categories, the fake numeric chips were removed entirely to keep the UI clean and strictly aligned with the single source of truth. The real specialty and multiplier (e.g., `Logical Specialist`, `x1.5`) are still displayed dynamically by `CharacterCard.tsx`.
+
+### The Tech Debt
+- Removed technical debt by eliminating the need to maintain mock `stats` arrays. The character cards now rely purely on the actual backend `CHARACTER_DEFS` mapping to display specialty and multiplier info.
+
+## 2026-05-09 - Matchmaking Expression Imagery & Bug Fix
+
+### The Change
+- Fixed an iterable crash in `LobbyScreen.tsx` where `.stats` was still being destructured from the `characterOptions` memo, even though the field was removed.
+- Added the selected character's `idle.png` expression image to the "You" and "Opponent" portrait slots in `MatchmakingWaiting.tsx`.
+- Included an image loading fallback mechanism in `MatchmakingWaiting.tsx` that reverts to the character's initial if the expression image fails to load.
+
+### The Reasoning
+- Addressed an oversight from the fake stats removal where a spread operation on the undefined `stats` array caused a client-side crash.
+- Replaced the text-based initials in the matchmaking waiting screen with the character's full 2D idle expressions, matching the aesthetic fidelity established in the character selection cards.
+
+### The Tech Debt
+- None. This aligns the matchmaking waiting UI with the asset loading patterns used elsewhere in the application.
+
+## 2026-05-09 - Arena Background in BattleScreen
+
+### The Change
+- Added dynamic arena background rendering to `BattleScreen.tsx`.
+- Mapped `arenaId` param to specific image assets (SOL or BONK).
+- Included fallback behavior for missing or failed images using the existing green/radial background.
+- Layered dark overlays for UI readability.
+
+### The Reasoning
+- Extends the lobby arena choice visually into the battle phase while keeping gameplay UI legible and undisturbed.
+
+### The Tech Debt
+- The arena images are loaded synchronously during render and fade in natively. If more arenas are added, dynamic preload strategies might be necessary.
+
+## 2026-05-09 - Settlement Overlay Polish (Compact Stats, Emote Focus, Payout Copy)
+
+### The Change
+- Updated [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to rebalance the finished/settlement modal layout:
+- Replaced large stat boxes with a compact chip-based summary row (`Rounds`, `Correct`, `Timeout`, `Wrong`) to reduce vertical footprint.
+- Enlarged the settlement emote portraits substantially and centered them as the visual focal point while keeping `YOU` and `YOUR RIVAL` labels.
+- Added outcome-aware payout/result copy block near the title, with stronger highlight styling for winning outcomes.
+- Made title/subtitle spacing resilient for short and long settlement titles using clamped title sizing, max-width constraints, and balanced wrapping.
+- Added a new derived display prop in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx): `settlementOutcomeKind`, then passed it into `BattleScreenOverlays`.
+
+### The Reasoning
+- The previous grid-based stat cards dominated the modal height and competed with the emotional result moment; compact chips keep the data visible but secondary.
+- Emote expressions are the strongest emotional signal at battle end, so increasing their size and visual weight improves clarity and delight.
+- Payout relevance is highest on wins/surrenders; adding explicit, state-aware copy improves comprehension without touching settlement logic.
+- Using an explicit derived outcome prop avoids brittle string parsing on `settlementText`, so variant titles (including long cancellation/invalidated states) can change safely.
+- Payout text is deliberately conservative: it references available token/wager context and avoids inventing an exact payout amount.
+
+### The Tech Debt
+- `settlementOutcomeKind` currently lives as a local derived string in `BattleScreen.tsx`. If other screens need the same semantics, consider introducing a shared `deriveSettlementOutcomeKind(...)` helper to prevent drift.
+- `wagerUsd` parsing assumes a numeric-like string (as currently supplied). If upstream formatting changes, a dedicated formatter utility would make this safer and reusable.
+
+## 2026-05-09 - End-Game Defeated Base Transition Before Settlement Overlay
+
+### The Change
+- Updated [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add a local visual-only end-game transition phase before the settlement modal appears.
+- Introduced short transition states:
+- `showSettlementOverlay` to gate settlement popup visibility without changing real match completion logic.
+- `endgameDefeatedSide` (`player` | `opponent` | `null`) to target only the losing/surrendering side.
+- `endgameBaseFadeActive` to trigger quick loser-base fade/dissolve timing.
+- Added a keyed end-game sequence (with timer cleanup) that:
+- identifies defeated side from `settlementOutcomeKind`,
+- triggers hit/hurt beat,
+- starts base fade on that side only,
+- then reveals settlement overlay after ~1080ms.
+- Draw/cancelled/invalidated/pending paths skip base fade and use a short neutral delay.
+- Forced defeated-side `hurt` reaction display while transition runs so it remains visible until the popup appears.
+- Updated base rendering to fade/sink only the defeated base (no full-screen fade, no winner base fade).
+- Updated [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to accept `showSettlementOverlay` and render the settlement popup/share modal only when the transition gate opens.
+
+### The Reasoning
+- The match-complete state should stay truthful immediately for gameplay/network logic, while the visual transition should be presentation-only.
+- Isolating the defeated-side animation avoids unintended global fade behavior and preserves battle readability.
+- A short, punchy timing window (~1.08s) delivers impact without making result flow feel sluggish.
+- Explicit timer cleanup prevents stale animation state when remounting/resetting or when rapid state changes occur.
+
+### The Tech Debt
+- End-game timing constants are local in `BattleScreen.tsx`; if additional cinematic beats are added later, this should move into a dedicated transition config/helper for consistency.
+- The defeated-base dissolve uses lightweight opacity/transform transitions; if art-direction asks for richer FX, consider a reusable shader/particle layer component.
+
+## 2026-05-09 - Settlement Overlay Follow-up Polish (Consolidated)
+
+### The Change
+- Consolidated several small follow-up tweaks in [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+- Moved `Show Settlement Details` below `Blink Share` and `Back To Lobby`, centered.
+- Kept details panel behavior but relocated it under the new toggle position.
+- Removed subtitle rendering (including `Victory secured.` style line).
+- Removed the white framed stats wrapper while keeping compact stat chips.
+- Updated win payout copy to use net formula `wagerUsd * 2 * 0.975`.
+- Finalized direct payout copy format: `You win the $X wager in SOL/BONK.`
+- Switched settlement CTAs to shared button system (`btn-game` variants).
+- Reduced CTA width/footprint and changed layout to centered compact row.
+- Applied green visual treatment to `Back To Lobby`.
+
+### The Reasoning
+- These were iterative UI micro-adjustments to improve hierarchy, reduce modal clutter, and align settlement CTAs/copy with the rest of the app.
+- Consolidating the notes keeps the devlog readable while preserving intent and final-state decisions.
+
+### The Tech Debt
+- `settlementSubtitle` remains in the prop contract but is no longer rendered.
+- Win payout formula and green `Back To Lobby` styling are currently UI-local. If reused, extract shared helper/class.
+
+## 2026-05-09 - FE-Only Destroyed Base End-Game Effect
+
+### The Change
+- Enhanced end-of-match visual sequencing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) with a frontend-only destroyed-base beat before settlement popup reveal.
+- Added short phased end-game visual states and timings for:
+- impact flash,
+- crack reveal,
+- smoke/debris particle reveal,
+- loser-base fade/sink progression,
+- popup reveal gating via existing `showSettlementOverlay`.
+- Reused existing base shake pathway (`playerBaseFx` / `opponentBaseFx` with `hit`) for the punchy shake stage.
+- Added defeated-base-only overlays (no new image assets):
+- red radial impact flash,
+- crack/damage line overlays,
+- animated smoke/debris particle puffs,
+- ground dust haze,
+- stronger or softer fade/sink based on standard defeat vs surrender outcome.
+- Kept forced `hurt` expression behavior until settlement popup appears.
+- Preserved neutral behavior for draw/cancelled/invalidated (no destroyed-base effect, short neutral delay only).
+
+### The Reasoning
+- This gives a clear final impact moment for the losing side while keeping all authoritative match/settlement logic unchanged.
+- Effects are scoped to the defeated base container only, ensuring the winning base and full-screen scene remain stable.
+- Soft-mode handling for surrender outcomes keeps visual tone appropriate while still signaling defeat.
+
+### The Tech Debt
+- Destroyed overlays (crack line geometry and particle tuning) are handcrafted inline in `BattleScreen.tsx`; if reused later, they should be extracted into a dedicated reusable effect component.
+- End-game visual timing constants are currently local and manually coordinated; if more cinematic variants are added, centralizing timing profiles would reduce drift.
+
+## 2026-05-09 - Longer Destroyed-Base Beat + Winner Confident End Emote
+
+### The Change
+- Updated end-game timing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to make the destroyed-base sequence feel more rewarding before settlement popup appears.
+- Increased total end-game transition duration from `1080ms` to `1320ms`.
+- Delayed fade and smoke beat slightly to better pace impact -> crack -> debris -> sink.
+- Added forced winner `confident` end-state reaction during the same pre-popup window, mirroring the forced loser `hurt` behavior.
+- Winner/loser forced reactions now both hold until settlement popup is shown for clear-loser outcomes.
+
+### The Reasoning
+- The previous timing felt too quick for the visual achievement moment after a win.
+- Showing both emotional states (`confident` winner and `hurt` loser) creates clearer end-match readability and stronger payoff.
+
+### The Tech Debt
+- End-game timing remains hardcoded constants in `BattleScreen.tsx`; if more variants are requested, timing profiles should be centralized.
+
+## 2026-05-09 - Extend Destroyed-Base End Sequence to 2.5s (Active FX)
+
+### The Change
+- Updated end-match timing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to a `2500ms` total transition.
+- Retimed effect phases so added duration is filled by active visuals:
+- impact/crack/smoke reveal delays pushed later,
+- loser-base fade/sink transition extended,
+- smoke/debris particle motion curves significantly extended with multi-stage opacity/position keyframes.
+
+### The Reasoning
+- Matches request for a longer accomplishment beat without dead air, by extending visual activity rather than just delaying popup timing.
+
+### The Tech Debt
+- End-game phase timing is still tuned by local constants and inline keyframes; a dedicated transition profile object would simplify future balancing.

@@ -128,6 +128,28 @@ describe('RoomManager', () => {
 
       expect(roomId2).toBe(roomId3);
     });
+
+    test('re-queue destroys abandoned deposit room before matching again', async () => {
+      const playerAQueue = manager.queueMatch('playerA');
+      const roomId = await manager.queueMatch('playerB');
+      await playerAQueue;
+
+      const mockB = createMockWs();
+      manager.joinRoom(roomId, 'playerB', mockB.ws);
+
+      const room = manager.getRoom(roomId)!;
+      expect(room.status).toBe('depositing');
+
+      const nextPlayerPromise = manager.queueMatch('playerC');
+      const requeuedRoomId = await manager.queueMatch('playerA');
+      const playerCRoomId = await nextPlayerPromise;
+
+      expect(manager.getRoom(roomId)).toBeUndefined();
+      expect(requeuedRoomId).toBe(playerCRoomId);
+
+      const cancelledMsg = mockB.messages.find((m: any) => m.type === 'roomCancelled');
+      expect(cancelledMsg).toBeDefined();
+    });
   });
 
   // ─── Join Room ───────────────────────────────────────────────
@@ -183,8 +205,7 @@ describe('RoomManager', () => {
       expect(mock3.ws.close).toHaveBeenCalledWith(1008, 'Room is full');
     });
 
-    test('player reconnect clears disconnect timeout', () => {
-      // disconnectTimeout is only armed during 'playing' status
+    test('player reconnect restores presence without ending the room', () => {
       manager.createRoom('room-reconnect');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -208,7 +229,7 @@ describe('RoomManager', () => {
 
       const client = room.clients.get('playerA')!;
       expect(client.ws).toBeNull();
-      expect(client.disconnectTimeout).not.toBeNull();
+      expect(room.status).toBe('playing');
 
       // Reconnect
       const mock1b = createMockWs();
@@ -216,7 +237,35 @@ describe('RoomManager', () => {
 
       const clientAfter = room.clients.get('playerA')!;
       expect(clientAfter.ws).toBe(mock1b.ws);
-      expect(clientAfter.disconnectTimeout).toBeNull();
+    });
+
+    test('stale socket close after reconnect is ignored', () => {
+      manager.createRoom('room-stale-close');
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+
+      manager.joinRoom('room-stale-close', 'playerA', mock1.ws);
+      manager.joinRoom('room-stale-close', 'playerB', mock2.ws);
+
+      const room = manager.getRoom('room-stale-close')!;
+      room.playerA = 'playerA';
+      room.playerB = 'playerB';
+
+      manager.handleMessage('room-stale-close', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sigA' } });
+      manager.handleMessage('room-stale-close', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sigB' } });
+
+      expect(room.status).toBe('playing');
+
+      const replacement = createMockWs();
+      manager.joinRoom('room-stale-close', 'playerA', replacement.ws);
+
+      const clientAfterReconnect = room.clients.get('playerA')!;
+      expect(clientAfterReconnect.ws).toBe(replacement.ws);
+
+      manager.leaveRoom('room-stale-close', 'playerA', mock1.ws);
+
+      const clientAfterStaleClose = room.clients.get('playerA')!;
+      expect(clientAfterStaleClose.ws).toBe(replacement.ws);
     });
 
     test('joining non-existent room does nothing', () => {
@@ -230,8 +279,7 @@ describe('RoomManager', () => {
   // ─── Leave Room ──────────────────────────────────────────────
 
   describe('leaveRoom', () => {
-    test('sets ws to null and starts disconnect timeout during playing', () => {
-      // disconnectTimeout is only armed during 'playing' status
+    test('sets ws to null and keeps funded playing room open', () => {
       manager.createRoom('room-leave');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -253,7 +301,29 @@ describe('RoomManager', () => {
 
       const client = room.clients.get('playerA')!;
       expect(client.ws).toBeNull();
-      expect(client.disconnectTimeout).not.toBeNull();
+      expect(room.status).toBe('playing');
+    });
+
+    test('disconnect during depositing cancels the room immediately and does not requeue the opponent', async () => {
+      const playerAQueue = manager.queueMatch('playerA');
+      const roomId = await manager.queueMatch('playerB');
+      await playerAQueue;
+
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+      manager.joinRoom(roomId, 'playerA', mock1.ws);
+      manager.joinRoom(roomId, 'playerB', mock2.ws);
+
+      const room = manager.getRoom(roomId)!;
+      expect(room.status).toBe('depositing');
+
+      manager.leaveRoom(roomId, 'playerB');
+
+      expect(manager.getRoom(roomId)).toBeUndefined();
+      expect((manager.queue as any).queue).toHaveLength(0);
+
+      const failureMsg = mock1.messages.find((m: any) => m.type === 'opponentFailedDeposit');
+      expect(failureMsg).toBeDefined();
     });
 
     test('leaving non-existent room does nothing', () => {
@@ -265,6 +335,28 @@ describe('RoomManager', () => {
   // ─── Deposit Handling ────────────────────────────────────────
 
   describe('handleMessage - confirmDeposit', () => {
+    test('deposit-phase cancellation does not requeue the innocent player', async () => {
+      const playerAQueue = manager.queueMatch('playerA');
+      const roomId = await manager.queueMatch('playerB');
+      await playerAQueue;
+
+      const mock1 = createMockWs();
+      const mock2 = createMockWs();
+      manager.joinRoom(roomId, 'playerA', mock1.ws);
+      manager.joinRoom(roomId, 'playerB', mock2.ws);
+
+      const room = manager.getRoom(roomId)!;
+      expect(room.status).toBe('depositing');
+
+      manager.lifecycle.cancelRoom(roomId, 'playerA');
+
+      expect(manager.getRoom(roomId)).toBeUndefined();
+      expect((manager.queue as any).queue).toHaveLength(0);
+
+      const failureMsg = mock1.messages.find((m: any) => m.type === 'opponentFailedDeposit');
+      expect(failureMsg).toBeDefined();
+    });
+
     test('single deposit does not start game', () => {
       manager.createRoom('room-dep');
       const mock1 = createMockWs();
@@ -614,8 +706,8 @@ describe('RoomManager', () => {
       expect(payload.player.characterState).toBe('stay');
       expect(payload.player.score).toBe(0);
       expect(payload.hand).toEqual([]);
-      expect(payload.timer.totalDurationMs).toBe(300_000);
-      expect(payload.timer.remainingMs).toBe(300_000);
+      expect(payload.timer.totalDurationMs).toBe(180_000);
+      expect(payload.timer.remainingMs).toBe(180_000);
       expect(payload.timer.phase).toBe('normal');
       expect(payload.damageLog).toEqual([]);
     });

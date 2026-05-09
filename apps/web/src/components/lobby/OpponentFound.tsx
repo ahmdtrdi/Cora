@@ -1,29 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
-import { HistoryButton } from "@/components/history/HistoryButton";
-import { HistoryDrawer } from "@/components/history/HistoryDrawer";
-import { WalletInspectButton } from "@/components/history/WalletInspectButton";
-import { WalletInspectPanel } from "@/components/history/WalletInspectPanel";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
-import { getArenaHistory } from "@/lib/history/historyApi";
-import type { MatchHistoryItem } from "@/lib/history/historyTypes";
 import { RoomStatusRail } from "@/components/room/RoomStatusRail";
 import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
-  scientists: Scientist[];
   myWallet: string;
   roomId: string;
+  matchRole?: "playerA" | "playerB" | null;
   arena: Arena;
   wagerUsd: string;
   onTimeout: () => void;
@@ -32,6 +27,7 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
+const PHANTOM_SIGNING_WARNING_MS = 20_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -40,11 +36,17 @@ function shortWallet(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function getRoomCancelledMessage(reason?: "player_cancelled" | "deposit_timeout" | "disconnect") {
+  if (reason === "deposit_timeout") return "Deposit timed out. Returning to lobby.";
+  if (reason === "disconnect") return "Match cancelled before battle start. Returning to lobby.";
+  return "Match cancelled. Returning to lobby.";
+}
+
 export function OpponentFound({
   myScientist,
-  scientists,
   myWallet,
   roomId,
+  matchRole,
   arena,
   wagerUsd,
   onTimeout,
@@ -58,13 +60,15 @@ export function OpponentFound({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyItems, setHistoryItems] = useState<MatchHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
-  const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
+  const [isCancellingMatch, setIsCancellingMatch] = useState(false);
+  const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
+  const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
+  const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
+  const myHappyExpressionSrc = useMemo(
+    () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
+    [myScientist.id],
+  );
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
   const signed = signingState === "waiting";
@@ -75,8 +79,10 @@ export function OpponentFound({
     lastSocketError,
     depositUnlockedAt,
     opponentFailedDepositAt,
+    lastRoomCancelled,
     lastMatchFound,
     confirmDeposit,
+    cancelMatch,
     reconnect,
   } = useMatchSocket({
     roomId,
@@ -85,15 +91,22 @@ export function OpponentFound({
   });
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
+  const socketRole =
+    lastMatchFound?.roomId === roomId && (lastMatchFound.role === "playerA" || lastMatchFound.role === "playerB")
+      ? lastMatchFound.role
+      : null;
+  const effectiveRole = matchRole ?? socketRole;
+  const isPlayerBWaitingUnlock =
+    effectiveRole === "playerB" && !depositUnlockedAt && !signedDepositSignature && signingState !== "signing";
+  const isPlayerAWaitingForPlayerB =
+    effectiveRole === "playerA" && signingState === "waiting" && Boolean(signedDepositSignature);
+  const shouldShowCountdown = !isPlayerBWaitingUnlock && signingState !== "waiting";
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
-    connectionState === "connected" &&
     signingState !== "signing" &&
     signingState !== "waiting" &&
+    !isPlayerBWaitingUnlock &&
     !signed;
-
-  const opponentScientist =
-    scientists.find((scientist) => scientist.id === gameState?.opponent?.characterId) ?? null;
   const reassignedRoomId =
     lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
   const {
@@ -105,6 +118,10 @@ export function OpponentFound({
     token: arena.token,
     enabled: Boolean(wallet.publicKey),
   });
+  const roomCancelledNotice = useMemo(
+    () => (lastRoomCancelled ? getRoomCancelledMessage(lastRoomCancelled.reason) : null),
+    [lastRoomCancelled],
+  );
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -122,6 +139,8 @@ export function OpponentFound({
       router.push(`/play?${params.toString()}`);
       return;
     }
+
+    if (isPlayerBWaitingUnlock || signingState === "waiting") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -144,14 +163,20 @@ export function OpponentFound({
     myScientist.id,
     signedDepositSignature,
     gameState?.status,
+    isPlayerBWaitingUnlock,
   ]);
 
   useEffect(() => {
-    if (!opponentFailedDepositAt) return;
+    if (!lastRoomCancelled) return;
     const timerId = setTimeout(() => {
       onTimeout();
-    }, 1200);
+    }, 1800);
     return () => clearTimeout(timerId);
+  }, [lastRoomCancelled, onTimeout]);
+
+  useEffect(() => {
+    if (!opponentFailedDepositAt) return;
+    onTimeout();
   }, [opponentFailedDepositAt, onTimeout]);
 
   useEffect(() => {
@@ -163,11 +188,44 @@ export function OpponentFound({
     depositIntentConfirmedRef.current = true;
   }, [confirmDeposit, connectionState, signedDepositSignature]);
 
+  useEffect(() => {
+    if (effectiveRole !== "playerB") return;
+    if (!depositUnlockedAt) return;
+    if (lastHandledDepositUnlockAtRef.current === depositUnlockedAt) return;
+    lastHandledDepositUnlockAtRef.current = depositUnlockedAt;
+    setSecondsLeft(AGREEMENT_TIMEOUT_SECONDS);
+  }, [depositUnlockedAt, effectiveRole]);
+
+  useEffect(() => {
+    if (signingState !== "signing") {
+      setWalletApprovalTakingLong(false);
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      setWalletApprovalTakingLong(true);
+    }, PHANTOM_SIGNING_WARNING_MS);
+
+    return () => clearTimeout(timerId);
+  }, [signingState]);
+
   async function onSignDeposit() {
+    console.info("[OpponentFound] Deposit click", {
+      roomId,
+      role: effectiveRole ?? "unknown",
+      connectionState,
+      hasWallet: Boolean(wallet.publicKey),
+      canAttemptSign,
+      playerBLocked: isPlayerBWaitingUnlock,
+      depositUnlockedAt,
+      countdownSeconds: secondsLeft,
+      signingState,
+    });
     if (!canAttemptSign) return;
 
     setErrorText(null);
     setErrorVisible(false);
+    setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
     try {
@@ -186,11 +244,23 @@ export function OpponentFound({
       setSignedDepositSignature(signature);
       setSigningState("waiting");
     } catch (error) {
+      console.error("[OpponentFound] Deposit signing failed", {
+        roomId,
+        role: effectiveRole ?? "unknown",
+        connectionState,
+        error,
+      });
       const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
       setSigningState("error");
       setErrorText(message);
       setErrorVisible(true);
     }
+  }
+
+  function onCancelMatch() {
+    if (isCancellingMatch) return;
+    setIsCancellingMatch(true);
+    cancelMatch();
   }
 
   useEffect(() => {
@@ -203,43 +273,24 @@ export function OpponentFound({
     return () => clearTimeout(timerId);
   }, [errorVisible]);
 
-  useEffect(() => {
-    if (!historyOpen) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setHistoryLoading(true);
-      setHistoryError(null);
-    });
-
-    getArenaHistory(arena.id)
-      .then((items) => {
-        if (cancelled) return;
-        setHistoryItems(items);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "History unavailable. Try again later.";
-        setHistoryError(message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setHistoryLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [historyOpen, arena.id]);
-
   function getDepositHint() {
     if (reassignedRoomId) {
       return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
     }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
+    if (isPlayerBWaitingUnlock) return "Waiting for Player A to deposit first.";
+    if (isPlayerAWaitingForPlayerB) return "Deposit signed. Waiting for Player B.";
+    if (effectiveRole === "playerB" && depositUnlockedAt && signingState === "idle") {
+      return "Player A deposited. Your turn to sign.";
+    }
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
-    if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to queue.";
+    if (isCancellingMatch) return "Cancelling match...";
+    if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
+    if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
+    if (walletApprovalTakingLong) {
+      return "Phantom approval has been open for a while. Close the old prompt if needed, then retry for a fresh transaction.";
+    }
     if (signingState === "signing") return "Confirm this transaction in Phantom.";
     if (signingState === "waiting") {
       if (depositUnlockedAt) return "Deposit signed. Waiting for opponent confirmation.";
@@ -260,6 +311,8 @@ export function OpponentFound({
   }
 
   function getPrimaryButtonLabel() {
+    if (isPlayerBWaitingUnlock) return "Waiting For Player A...";
+    if (isPlayerAWaitingForPlayerB) return "Waiting For Player B...";
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
@@ -288,6 +341,52 @@ export function OpponentFound({
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
+      {/* Opponent failed to deposit popup */}
+      {opponentFailedDepositAt && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid #c0392b",
+              background: "linear-gradient(145deg, #2c1810 0%, #3d1f14 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[#e74c3c]">
+              Match Cancelled
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+              Your opponent did not sign the deposit in time. Returning to character select...
+            </p>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.15)]">
+              <div
+                className="h-full"
+                style={{
+                  width: "100%",
+                  background: "#e74c3c",
+                  animationName: "alertDrain",
+                  animationDuration: "3500ms",
+                  animationTimingFunction: "linear",
+                  animationFillMode: "forwards",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      {roomCancelledNotice && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(186,105,49,0.86)",
+              background: "linear-gradient(145deg, #2c1810 0%, #3d2315 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[#f8d694]">Match cancelled</p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">{roomCancelledNotice}</p>
+          </div>
+        </div>
+      )}
       {errorVisible && errorText && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
@@ -333,6 +432,24 @@ export function OpponentFound({
           </div>
         </div>
       )}
+      {walletApprovalTakingLong && signingState === "signing" && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid var(--tone-clay)",
+              background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
+            }}
+          >
+            <p className="font-caprasimo text-base text-[var(--tone-bark)]">
+              Phantom Taking Too Long
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[var(--warm-text)]">
+              If the wallet popup has been sitting open, the transaction can expire. Close the old prompt and retry to get a fresh deposit transaction.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 flex w-full items-center justify-between gap-2">
         <span
@@ -346,7 +463,6 @@ export function OpponentFound({
           {playabilityLabel}
         </span>
         <div className="flex items-center gap-2">
-          <HistoryButton onClick={() => setHistoryOpen(true)} />
           <button
             type="button"
             onClick={() => setShowRoomStatus((value) => !value)}
@@ -386,9 +502,22 @@ export function OpponentFound({
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
               }}
             >
-              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                {myScientist.initial}
-              </span>
+              {!myExpressionUnavailable ? (
+                <div className="relative h-full w-full">
+                  <Image
+                    src={myHappyExpressionSrc}
+                    alt={`${myScientist.name} happy expression`}
+                    fill
+                    sizes="80px"
+                    className="object-cover object-center"
+                    onError={() => setMyExpressionUnavailable(true)}
+                  />
+                </div>
+              ) : (
+                <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                  {myScientist.initial}
+                </span>
+              )}
             </div>
 
             <div className="min-w-0">
@@ -397,18 +526,7 @@ export function OpponentFound({
               </span>
               <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <p className="font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
-                {walletAddress && (
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Your Wallet");
-                      setInspectTargetAddress(walletAddress);
-                    }}
-                  />
-                )}
-              </div>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
             </div>
           </div>
         </div>
@@ -433,12 +551,12 @@ export function OpponentFound({
               className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
-                background: opponentScientist?.portraitBg ?? "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
+                background: "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
               }}
             >
               <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                {opponentScientist?.initial ?? "R"}
+                ?
               </span>
             </div>
             <div className="min-w-0">
@@ -446,25 +564,14 @@ export function OpponentFound({
                 Rival
               </span>
               <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
-                {opponentScientist?.name ?? "Rival Synced"}
+                Your Rival
               </p>
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
-                {opponentScientist?.base ?? "Opponent identity confirmed"}
+                Character revealed when battle starts.
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                <p className="font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                  {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
-                </p>
-                {opponentAddress && (
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Rival Wallet");
-                      setInspectTargetAddress(opponentAddress);
-                    }}
-                  />
-                )}
-              </div>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
+                {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+              </p>
             </div>
           </div>
         </div>
@@ -482,7 +589,7 @@ export function OpponentFound({
           wagerUsd={wagerUsd}
           status={getDepositStatus()}
           helperText={getDepositHint()}
-          countdownSeconds={secondsLeft}
+          countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
           signature={signedDepositSignature}
           canPrimaryAction={canAttemptSign}
           primaryActionLabel={getPrimaryButtonLabel()}
@@ -499,7 +606,7 @@ export function OpponentFound({
               <button
                 type="button"
                 onClick={reconnect}
-                className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+                className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
               >
                 Retry Connection
               </button>
@@ -508,10 +615,11 @@ export function OpponentFound({
           cancelSlot={
             <button
               type="button"
-              onClick={onTimeout}
-              className="btn-game btn-game-secondary px-4 py-2 text-[10px]"
+              onClick={onCancelMatch}
+              disabled={isCancellingMatch}
+              className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
             >
-              Cancel Match
+              {isCancellingMatch ? "Cancelling..." : "Cancel Match"}
             </button>
           }
           extraSlot={
@@ -558,26 +666,6 @@ export function OpponentFound({
             ]}
           />
         </div>
-      )}
-
-      <HistoryDrawer
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        title={`${arena.token} Match History`}
-        items={historyItems}
-        loading={historyLoading}
-        error={historyError}
-      />
-
-      {inspectTargetAddress && (
-        <WalletInspectPanel
-          open={Boolean(inspectTargetAddress)}
-          onClose={() => setInspectTargetAddress(null)}
-          address={inspectTargetAddress}
-          arenaId={arena.id}
-          token={arena.token}
-          title={inspectTargetTitle}
-        />
       )}
     </div>
   );

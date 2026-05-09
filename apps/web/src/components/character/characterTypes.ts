@@ -1,13 +1,9 @@
-export type CharacterStat = {
-  label: string;
-  value: number;
-};
+
 
 export type CharacterOption = {
   id: string;
   name: string;
   base: string;
-  stats: CharacterStat[];
   accentColor: string;
   portraitBg: string;
   initial: string;

@@ -58,7 +58,7 @@ describe('GameEngine', () => {
     
     const state1 = engine.getStateForPlayer('player1');
     expect(state1.hand.length).toBe(5);
-    expect(state1.timer.remainingMs).toBe(300_000);
+    expect(state1.timer.remainingMs).toBe(180_000);
   });
 
   test('playCard successful attack', () => {
@@ -78,12 +78,12 @@ describe('GameEngine', () => {
     
     const result = engine.playCard('player1', attackCard.id, correctOptionId);
     
-    const expectedDamage = GameEngine.BASE_DAMAGE * getSpecialtyMultiplier('turing', attackCard.question.category);
+    const expectedDamage = GameEngine.BASE_DAMAGE * getSpecialtyMultiplier('einstein', engineCard.question.category);
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
-    expect(result.damage).toBe(50);
-    expect(engine.getHealth()['player2']).toBe(50);
-    expect(engine.getScores()['player1']).toBe(50);
+    expect(result.damage).toBe(expectedDamage);
+    expect(engine.getHealth()['player2']).toBe(100 - expectedDamage);
+    expect(engine.getScores()['player1']).toBe(expectedDamage);
     
     // Check cooldown
     const earlyResult = engine.playCard('player1', state.hand[1].id, 'A');
@@ -108,7 +108,7 @@ describe('GameEngine', () => {
     
     const result = engine.playCard('player1', healCard.id, healCard.correctOptionId);
     
-    const expectedHeal = GameEngine.BASE_HEAL * getSpecialtyMultiplier('turing', healCard.question.category);
+    const expectedHeal = GameEngine.BASE_HEAL * getSpecialtyMultiplier('einstein', healCard.question.category);
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
     expect(result.heal).toBe(expectedHeal);
@@ -135,6 +135,32 @@ describe('GameEngine', () => {
     expect(result.heal).toBe(0);
     expect(engine.getHealth()['player2']).toBe(100);
     expect(engine.getHealth()['player1']).toBe(100);
+  });
+
+  test('getStateForPlayer returns live current correct streak and resets on wrong answers', () => {
+    const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
+    engine.start();
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+
+    const firstCard = internalPlayer1.hand[0];
+    setSystemTime(new Date(Date.now() + 600));
+    engine.playCard('player1', firstCard.id, firstCard.correctOptionId);
+    expect(engine.getStateForPlayer('player1').player.currentCorrectStreak).toBe(1);
+
+    const secondCard = internalPlayer1.hand[0];
+    setSystemTime(new Date(Date.now() + 1200));
+    engine.playCard('player1', secondCard.id, secondCard.correctOptionId);
+    expect(engine.getStateForPlayer('player1').player.currentCorrectStreak).toBe(2);
+
+    const thirdCard = internalPlayer1.hand[0];
+    const wrongOption = thirdCard.question.options.find((o: any) => o.id !== thirdCard.correctOptionId);
+    setSystemTime(new Date(Date.now() + 1800));
+    engine.playCard('player1', thirdCard.id, wrongOption.id);
+
+    const state = engine.getStateForPlayer('player1');
+    expect(state.player.currentCorrectStreak).toBe(0);
+    expect(state.player.correctAnswers).toBe(2);
   });
 
   test('win condition - hp zero', () => {
@@ -174,7 +200,7 @@ describe('GameEngine', () => {
     expect(postGameResult.success).toBe(false);
   });
 
-  test('win condition - time_up determines winner by HP then score', () => {
+  test('win condition - time_up determines winner by score before health', () => {
     const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
@@ -183,13 +209,23 @@ describe('GameEngine', () => {
       gameOverData = data;
     });
 
-    // Give player1 one round win so the next win ends the match
+    // Force the final round state so determineMatchOutcome() is used directly.
     const internalPlayer1 = (engine as any).players.get('player1');
     internalPlayer1.roundsWon = 1;
+    internalPlayer1.correctAnswers = 0;
 
-    // Damage player2 so player1 has higher HP
+    // Player1 has higher score, but lower health than player2.
+    // Final winner should still be player1 because score now beats health.
+    internalPlayer1.score = 120;
+    internalPlayer1.health = 40;
+
     const internalPlayer2 = (engine as any).players.get('player2');
-    internalPlayer2.health = 50;
+    internalPlayer2.roundsWon = 1;
+    internalPlayer2.correctAnswers = 0;
+    internalPlayer2.score = 80;
+    internalPlayer2.health = 40;
+
+    (engine as any).currentRound = 3;
 
     // Simulate time running out by ticking through the entire match
     const tickFn = (engine as any).tick.bind(engine);
@@ -202,10 +238,10 @@ describe('GameEngine', () => {
     expect(engine.isFinished()).toBe(true);
     expect(gameOverData).not.toBeNull();
     expect(gameOverData.reason).toBe('time_up');
-    expect(gameOverData.winnerAddress).toBe('player1'); // Higher HP wins
+    expect(gameOverData.winnerAddress).toBe('player1');
   });
 
-  test('win condition - time_up tie-break by score', () => {
+  test('win condition - time_up tie-break by health when rounds and score are equal', () => {
     const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
@@ -214,11 +250,17 @@ describe('GameEngine', () => {
       gameOverData = data;
     });
 
-    // Give player2 one round win so the next win ends the match
+    // Give player2 one round win so the next round result ends the match
     const internalPlayer2 = (engine as any).players.get('player2');
     internalPlayer2.roundsWon = 1;
-    // Same HP, but player2 has higher score
-    internalPlayer2.score = 30;
+
+    const internalPlayer1 = (engine as any).players.get('player1');
+
+    // Same rounds and score, so health should decide.
+    internalPlayer1.score = 100;
+    internalPlayer1.health = 45;
+    internalPlayer2.score = 100;
+    internalPlayer2.health = 70;
 
     // Simulate time running out
     const tickFn = (engine as any).tick.bind(engine);
@@ -230,7 +272,7 @@ describe('GameEngine', () => {
 
     expect(engine.isFinished()).toBe(true);
     expect(gameOverData.reason).toBe('time_up');
-    expect(gameOverData.winnerAddress).toBe('player2'); // Higher score wins tie
+    expect(gameOverData.winnerAddress).toBe('player2');
   });
 
   test('extra-point phase activates at 60s remaining with x2 multiplier', () => {
@@ -262,13 +304,13 @@ describe('GameEngine', () => {
     setSystemTime(new Date(Date.now() + 600));
     const result = engine.playCard('player1', attackCard.id, attackCard.correctOptionId);
 
-    const expectedMult = 2 * getSpecialtyMultiplier('turing', attackCard.question.category);
+    const expectedMult = 2 * getSpecialtyMultiplier('einstein', attackCard.question.category);
     const expectedDamage = GameEngine.BASE_DAMAGE * expectedMult;
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
-    expect(result.multiplier).toBe(2);
-    expect(result.damage).toBe(100); // 50 base × 2
-    expect(engine.getHealth()['player2']).toBe(100); // 100 damage triggers roundOver and resets health to 100
+    expect(result.multiplier).toBe(expectedMult);
+    expect(result.damage).toBe(expectedDamage);
+    expect(engine.getHealth()['player2']).toBe(Math.max(0, 100 - expectedDamage));
   });
 
   test('extra-point phase x2 heal', () => {
@@ -287,7 +329,7 @@ describe('GameEngine', () => {
     setSystemTime(new Date(Date.now() + 600));
     const result = engine.playCard('player1', healCard.id, healCard.correctOptionId);
 
-    const expectedMult = 2 * getSpecialtyMultiplier('turing', healCard.question.category);
+    const expectedMult = 2 * getSpecialtyMultiplier('einstein', healCard.question.category);
     const expectedHeal = GameEngine.BASE_HEAL * expectedMult;
     expect(result.success).toBe(true);
     expect(result.correct).toBe(true);
@@ -296,7 +338,7 @@ describe('GameEngine', () => {
     expect(engine.getHealth()['player1']).toBe(70 + expectedHeal);
   });
 
-  test('forfeit via stop() emits gameOver with forfeit reason', () => {
+  test('surrender via stop() emits gameOver with surrender reason', () => {
     const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
@@ -305,23 +347,24 @@ describe('GameEngine', () => {
       gameOverData = data;
     });
 
-    engine.stop('player2'); // player2 forfeits
+    engine.stop('player2');
 
     expect(engine.isFinished()).toBe(true);
     expect(engine.isActive()).toBe(false);
     expect(gameOverData).not.toBeNull();
     expect(gameOverData.winnerAddress).toBe('player1');
-    expect(gameOverData.reason).toBe('forfeit');
+    expect(gameOverData.reason).toBe('surrender');
+    expect(gameOverData.surrenderedAddress).toBe('player2');
   });
 
-  test('stop() without forfeit address just stops (no gameOver)', () => {
+  test('stop() without surrender address just stops (no gameOver)', () => {
     const engine = new GameEngine([{ address: 'player1', characterId: 'einstein' }, { address: 'player2', characterId: 'alan_turing' }], mockQuestions);
     engine.start();
 
     let gameOverFired = false;
     engine.on('gameOver', () => { gameOverFired = true; });
 
-    engine.stop(); // No forfeit address
+    engine.stop(); // No surrender address
 
     expect(engine.isFinished()).toBe(true);
     expect(gameOverFired).toBe(false);
@@ -415,11 +458,11 @@ describe('GameEngine', () => {
     setSystemTime(new Date(Date.now() + 600));
     engine.playCard('player1', card.id, card.correctOptionId);
 
-    const expectedDamage = GameEngine.BASE_DAMAGE * getSpecialtyMultiplier('turing', card.question.category);
+    const expectedDamage = GameEngine.BASE_DAMAGE * getSpecialtyMultiplier('einstein', card.question.category);
     const scores1 = engine.getScores();
     const health1 = engine.getHealth();
-    expect(scores1['player1']).toBe(50);
-    expect(health1['player2']).toBe(50);
+    expect(scores1['player1']).toBe(expectedDamage);
+    expect(health1['player2']).toBe(100 - expectedDamage);
     // Player 1 health unchanged
     expect(health1['player1']).toBe(100);
   });

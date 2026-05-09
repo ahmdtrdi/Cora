@@ -1,3 +1,5 @@
+import type { Question as SchemaQuestion, Option as SchemaOption } from './question';
+
 export type CharacterState = 'stay' | 'action' | 'angry' | 'happy';
 export type CardType = 'heal' | 'attack';
 export type GameStatus = 'waiting' | 'depositing' | 'playing' | 'settling' | 'finished';
@@ -9,7 +11,11 @@ export interface PlayerState {
   characterState: CharacterState;
   score: number;
   roundsWon: number;
+  correctAnswers: number;
+  currentCorrectStreak: number;
   characterId: string;
+  isConnected: boolean;
+  lastSeenAt?: number;
 }
 
 export interface TimerState {
@@ -33,14 +39,14 @@ export interface DamageEvent {
 }
 
 export interface Question {
-  id: string;
-  text: string;
+  id: SchemaQuestion['id'];
+  text: SchemaQuestion['questionText'];
   options: QuestionOption[];
 }
 
 export interface QuestionOption {
-  id: string;
-  text: string;
+  id: SchemaOption['id'];
+  text: SchemaOption['text'];
 }
 
 export interface Card {
@@ -64,6 +70,8 @@ export interface GameState {
   tokenMint: string;  
   /** Wager amount */
   wagerAmount: string;
+  /** Wager USD value */
+  wagerUsdValue?: string;
   /** Public or private match */
   roomType: 'public' | 'private';
 }
@@ -104,8 +112,10 @@ export interface RoundOverData {
 // Messages sent from Client -> Server
 export type ClientToServerEvents = {
   openCard: (data: { cardId: string }) => void;
-  playCard: (cardId: string, selectedOptionId: string) => void;
-  confirmDeposit: (signature: string) => void;
+  playCard: (data: { cardId: string; selectedOptionId: string }) => void;
+  confirmDeposit: (data: { signature: string }) => void;
+  cancelMatch: () => void;
+  surrender: () => void;
 };
 
 // Settlement result payload sent after match ends
@@ -122,10 +132,12 @@ export interface MatchResultPayload {
 // Messages sent from Server -> Client
 export type ServerToClientEvents = {
   opponentFailedDeposit: (data: {}) => void;
+  roomCancelled: (data: { cancelledBy?: string | null; reason: 'player_cancelled' | 'deposit_timeout' | 'disconnect' }) => void;
   matchFound: (data: { roomId: string; role: 'playerA' | 'playerB'; opponentAddress: string }) => void;
   depositUnlocked: (data: { roomId: string }) => void;
   gameStateUpdate: (state: GameState) => void;
-  matchResult: (result: MatchResultPayload | MatchResult) => void;
+  settlementAuthorization: (result: MatchResultPayload) => void;
+  matchResult: (result: MatchResult) => void;
   matchInvalidated: (result: MatchResult) => void; // New event for anti-cheat rejections
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
@@ -135,18 +147,26 @@ export type ServerToClientEvents = {
   cardCountdown: (data: CardCountdownData) => void;
   cardExpired: (data: CardExpiredData) => void;
   scoreUpdate: (data: ScoreUpdateData) => void;
+  presenceUpdate: (data: PresenceUpdateData) => void;
 };
 
 export interface MatchResult {
-  winnerAddress: string;
-  reason: 'hp_zero' | 'time_up' | 'forfeit' | 'anti_cheat';
+  winnerAddress: string | null;
+  reason: 'hp_zero' | 'time_up' | 'surrender' | 'anti_cheat' | 'draw' | 'server_error';
   finalScores: Record<string, number>;
   finalHealth: Record<string, number>;
+  finalRoundsWon?: Record<string, number>;
+  finalCorrectAnswers?: Record<string, number>;
+  surrenderedAddress?: string;
   antiCheatWarning?: boolean; // True if the match was suspicious but still settled
 }
 
+export interface PresenceUpdateData {
+  players: Record<string, { isConnected: boolean; lastSeenAt?: number }>;
+}
+
 // Serialization format for native WebSocket (since we aren't using Socket.io)
-export interface WsMessage<T = any> {
+export interface WsMessage<T = unknown> {
   type: string;
   payload: T;
 }

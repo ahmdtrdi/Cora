@@ -11,6 +11,7 @@ type RoomPhaseHeaderProps = {
   statusSlot?: ReactNode;
   rightPanelSlot?: ReactNode;
   preHeadingSlot?: ReactNode;
+  hideTitleBlock?: boolean;
 };
 
 export function RoomPhaseHeader({
@@ -20,13 +21,15 @@ export function RoomPhaseHeader({
   statusSlot,
   rightPanelSlot,
   preHeadingSlot,
+  hideTitleBlock,
 }: RoomPhaseHeaderProps) {
   const labels = ROOM_PHASE_LABELS[phase];
 
   return (
-    <header className="mb-4 grid grid-cols-1 gap-2.5 md:grid-cols-[1fr_auto] md:items-start">
-      <div>
-        {preHeadingSlot ? <div className="mb-3">{preHeadingSlot}</div> : null}
+    <header className="mb-4 flex flex-wrap items-start justify-between gap-2.5">
+      {!hideTitleBlock ? (
+        <div>
+          {preHeadingSlot ? <div className="mb-3">{preHeadingSlot}</div> : null}
         <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[#f8d694]">
           {labels.eyebrow}
         </p>
@@ -36,7 +39,8 @@ export function RoomPhaseHeader({
         <p className="mt-2 max-w-2xl font-gabarito text-[13px] text-[rgba(244,240,230,0.9)]">
           {subtitle ?? labels.subtitle}
         </p>
-      </div>
+        </div>
+      ) : <div />}
 
       {(statusSlot || rightPanelSlot) && (
         <div className="flex flex-col items-start gap-2 md:items-end">

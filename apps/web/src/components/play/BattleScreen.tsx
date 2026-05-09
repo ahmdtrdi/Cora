@@ -1,21 +1,18 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
-import type { Card, GameStatus } from "@shared/websocket";
+import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
-import { HistoryDrawer } from "@/components/history/HistoryDrawer";
-import { WalletInspectButton } from "@/components/history/WalletInspectButton";
-import { WalletInspectPanel } from "@/components/history/WalletInspectPanel";
-import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
+import { BattleScreenOverlays } from "./BattleScreenOverlays";
+import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
-import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
-import { getWalletHistory } from "@/lib/history/historyApi";
-import type { MatchHistoryItem } from "@/lib/history/historyTypes";
 
 type MatchOutcome = {
   cardId: string;
@@ -24,30 +21,54 @@ type MatchOutcome = {
 };
 
 const ANSWER_TIME_SEC = 10;
+const ANSWER_FEEDBACK_DISPLAY_MS = 1200;
 const EMPTY_HAND: Card[] = [];
 const CARD_PLACEHOLDER_COUNT = 5;
 const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
+const REACTION_DISPLAY_MS = 1900;
+const ENDGAME_TRANSITION_TOTAL_MS = 2500;
+const ENDGAME_BASE_FADE_DELAY_MS = 480;
+const ENDGAME_NEUTRAL_DELAY_MS = 180;
+const ENDGAME_IMPACT_FLASH_MS = 340;
+const ENDGAME_CRACK_REVEAL_DELAY_MS = 200;
+const ENDGAME_SMOKE_REVEAL_DELAY_MS = 360;
+const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
+const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
 };
+const ARENA_IMAGE_BY_ID: Record<string, string> = {
+  sol: "/assets/arena/sol.png",
+  bonk: "/assets/arena/bonk.png",
+};
+const CHARACTER_REACTION_EXPRESSIONS: CharacterExpression[] = ["happy", "confident", "hurt"];
 
 const CARD_TRANSFORMS = [
-  "translate-y-4 -rotate-6",
-  "translate-y-1 -rotate-3",
+  "translate-y-2 -rotate-6",
+  "translate-y-0 -rotate-3",
   "-translate-y-1 rotate-0",
-  "translate-y-1 rotate-3",
-  "translate-y-4 rotate-6",
+  "translate-y-0 rotate-3",
+  "translate-y-2 rotate-6",
 ] as const;
 
 function getCardTransform(index: number) {
   if (index < CARD_TRANSFORMS.length) {
     return CARD_TRANSFORMS[index];
   }
-  return index % 2 === 0 ? "translate-y-3 -rotate-2" : "translate-y-3 rotate-2";
+  return index % 2 === 0 ? "translate-y-2 -rotate-2" : "translate-y-2 rotate-2";
 }
+
+const DESTROYED_SMOKE_PARTICLES = [
+  { key: "p0", x: "12%", y: "74%", scale: 0.7, driftX: -20, driftY: -14, delay: 0.0 },
+  { key: "p1", x: "26%", y: "64%", scale: 0.9, driftX: -12, driftY: -26, delay: 0.05 },
+  { key: "p2", x: "42%", y: "72%", scale: 1, driftX: 2, driftY: -22, delay: 0.02 },
+  { key: "p3", x: "58%", y: "66%", scale: 0.85, driftX: 14, driftY: -20, delay: 0.08 },
+  { key: "p4", x: "72%", y: "76%", scale: 0.95, driftX: 18, driftY: -12, delay: 0.03 },
+  { key: "p5", x: "84%", y: "68%", scale: 0.78, driftX: 24, driftY: -24, delay: 0.06 },
+] as const;
 
 function getStatusLabel(status: GameStatus) {
   if (status === "waiting") return "Waiting Opponent";
@@ -55,18 +76,6 @@ function getStatusLabel(status: GameStatus) {
   if (status === "playing") return "Playing";
   if (status === "settling") return "Settling";
   return "Finished";
-}
-
-function getOutcomeColor(outcome: MatchOutcome["outcome"]) {
-  if (outcome === "correct") return "#d8ead4";
-  if (outcome === "timeout") return "#efe8d5";
-  return "#f2ddd4";
-}
-
-function getOutcomeLabel(outcome: MatchOutcome["outcome"]) {
-  if (outcome === "correct") return "Correct";
-  if (outcome === "timeout") return "Timeout";
-  return "Wrong";
 }
 
 function shortenAddress(address?: string) {
@@ -77,7 +86,7 @@ function shortenAddress(address?: string) {
 
 function formatMatchClock(remainingMs?: number) {
   if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
-    return "05:00";
+    return "03:00";
   }
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -85,15 +94,11 @@ function formatMatchClock(remainingMs?: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-type UiAlert = {
-  id: string;
-  title: string;
-  message: string;
-  tone: "error" | "warning";
-  autoDismissMs: number;
-  actionLabel?: string;
-  onAction?: () => void;
-};
+function clearLobbyReturnState() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+  window.sessionStorage.removeItem(LOBBY_DRAFT_STORAGE_KEY);
+}
 
 type BattleSide = "player" | "opponent";
 
@@ -101,10 +106,17 @@ type ProjectileState = {
   id: string;
   from: BattleSide;
   to: BattleSide;
-  kind: "attack" | "heal";
+  src: string | null;
 };
 
 type BaseFxState = "idle" | "hit" | "heal";
+type CharacterSpriteState = "stay" | "action";
+type CharacterExpression = "happy" | "confident" | "hurt";
+type AnswerFeedback = "correct" | "wrong";
+type CharacterReaction = {
+  id: string;
+  expression: CharacterExpression;
+};
 
 function getCharacterVisual(characterId?: string) {
   if (characterId === "turing") {
@@ -135,6 +147,44 @@ function getCharacterVisual(characterId?: string) {
   };
 }
 
+function resolveCharacterSpriteState(characterState?: CharacterState, isActioning = false): CharacterSpriteState {
+  if (isActioning || characterState === "action") return "action";
+  return "stay";
+}
+
+function getCharacterSpriteSrc(characterId?: string, state: CharacterSpriteState = "stay") {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  return `/assets/characters/${normalizedId}/${state}.png`;
+}
+
+function getCharacterExpressionSrc(characterId?: string, expression: CharacterExpression = "happy") {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  return `/assets/characters/${normalizedId}/exp/${expression}.png`;
+}
+
+function getCharacterProjectileSrc(characterId?: string) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  if (normalizedId === "turing") {
+    const variant = Math.random() < 0.5 ? 0 : 1;
+    return `/assets/characters/turing/projectile_${variant}.png`;
+  }
+  return `/assets/characters/${normalizedId}/projectile.png`;
+}
+
+function getCharacterBaseSrc(characterId: string | undefined, side: BattleSide) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (!normalizedId) return null;
+  if (normalizedId === "einstein") {
+    return side === "player"
+      ? "/assets/characters/einstein/base_left.png"
+      : "/assets/characters/einstein/base_right.png";
+  }
+  return `/assets/characters/${normalizedId}/base.png`;
+}
+
 export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
@@ -146,7 +196,6 @@ export function BattleScreen() {
   const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
   const preSignedDepositSig = searchParams.get("depositSig");
-  const scientistId = searchParams.get("scientist");
   const wallet = useWallet();
   const { publicKey } = wallet;
 
@@ -166,6 +215,8 @@ export function BattleScreen() {
     settlementResult,
     matchSummaryResult,
     matchInvalidated,
+    lastPresenceUpdate,
+    lastRoomCancelled,
     lastDamageEvent,
     lastPlayResult,
     lastCardCountdown,
@@ -174,28 +225,42 @@ export function BattleScreen() {
     openCard,
     playCard,
     confirmDeposit,
+    cancelMatch,
+    surrender,
     reconnect,
-  } = useMatchSocket({ roomId, address, characterId: scientistId ?? "einstein" });
+  } = useMatchSocket({ roomId, address });
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [activeQuestionCard, setActiveQuestionCard] = useState<Card | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
-  const [enemyEventText, setEnemyEventText] = useState<string | null>(null);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [answerFeedback, setAnswerFeedback] = useState<AnswerFeedback | null>(null);
+  const [gameNotice, setGameNotice] = useState<{ id: string; message: string; tone: "action" | "phase" } | null>(null);
   const [characterActionSide, setCharacterActionSide] = useState<BattleSide | null>(null);
   const [projectile, setProjectile] = useState<ProjectileState | null>(null);
   const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
   const [opponentBaseFx, setOpponentBaseFx] = useState<BaseFxState>("idle");
+  const [playerReaction, setPlayerReaction] = useState<CharacterReaction | null>(null);
+  const [opponentReaction, setOpponentReaction] = useState<CharacterReaction | null>(null);
   const [outcomes, setOutcomes] = useState<MatchOutcome[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [phaseToastVisible, setPhaseToastVisible] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyItems, setHistoryItems] = useState<MatchHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [inspectTargetAddress, setInspectTargetAddress] = useState<string | null>(null);
-  const [inspectTargetTitle, setInspectTargetTitle] = useState("Wallet Inspect");
+  const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
+  const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
+  const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
+  const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
+  const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
+  const [failedBaseSprites, setFailedBaseSprites] = useState<Record<string, true>>({});
+  const [failedArenaSprites, setFailedArenaSprites] = useState<Record<string, true>>({});
+  const [showSettlementOverlay, setShowSettlementOverlay] = useState(false);
+  const [endgameDefeatedSide, setEndgameDefeatedSide] = useState<BattleSide | null>(null);
+  const [endgameBaseFadeActive, setEndgameBaseFadeActive] = useState(false);
+  const [endgameAnimationActive, setEndgameAnimationActive] = useState(false);
+  const [endgameImpactFlashActive, setEndgameImpactFlashActive] = useState(false);
+  const [endgameCrackVisible, setEndgameCrackVisible] = useState(false);
+  const [endgameSmokeVisible, setEndgameSmokeVisible] = useState(false);
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -203,6 +268,98 @@ export function BattleScreen() {
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
   const extraPointShownRef = useRef(false);
+  const previousOpponentConnectedRef = useRef<boolean | null>(null);
+  const gameNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const answerFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playerReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const opponentReactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousPlayerStreakRef = useRef(0);
+  const previousOpponentStreakRef = useRef(0);
+  const previousRoundsWonRef = useRef<{ player: number; opponent: number } | null>(null);
+  const endgameTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const lastEndgameResultKeyRef = useRef<string | null>(null);
+  const playerActionControls = useAnimationControls();
+  const opponentActionControls = useAnimationControls();
+  const playerBaseControls = useAnimationControls();
+  const opponentBaseControls = useAnimationControls();
+
+  const clearEndgameTransitionTimers = useCallback(() => {
+    for (const timerId of endgameTimersRef.current) {
+      clearTimeout(timerId);
+    }
+    endgameTimersRef.current = [];
+  }, []);
+
+  const resetEndgameVisualState = useCallback(() => {
+    setShowSettlementOverlay(false);
+    setEndgameDefeatedSide(null);
+    setEndgameBaseFadeActive(false);
+    setEndgameAnimationActive(false);
+    setEndgameImpactFlashActive(false);
+    setEndgameCrackVisible(false);
+    setEndgameSmokeVisible(false);
+  }, []);
+
+  const showGameNotice = useCallback(
+    (message: string, tone: "action" | "phase" = "action", durationMs = 2100) => {
+    if (gameNoticeTimerRef.current) {
+      clearTimeout(gameNoticeTimerRef.current);
+      gameNoticeTimerRef.current = null;
+    }
+    setGameNotice({ id: `${Date.now()}`, message, tone });
+    gameNoticeTimerRef.current = setTimeout(() => {
+      setGameNotice(null);
+      gameNoticeTimerRef.current = null;
+    }, durationMs);
+  },
+    [],
+  );
+
+  const showReaction = useCallback(
+    (side: BattleSide, expression: CharacterExpression, durationMs = REACTION_DISPLAY_MS) => {
+      const id = `${side}:${expression}:${Date.now()}`;
+      if (side === "player") {
+        if (playerReactionTimerRef.current) {
+          clearTimeout(playerReactionTimerRef.current);
+          playerReactionTimerRef.current = null;
+        }
+        setPlayerReaction({ id, expression });
+        playerReactionTimerRef.current = setTimeout(() => {
+          setPlayerReaction((prev) => (prev?.id === id ? null : prev));
+          playerReactionTimerRef.current = null;
+        }, durationMs);
+        return;
+      }
+      if (opponentReactionTimerRef.current) {
+        clearTimeout(opponentReactionTimerRef.current);
+        opponentReactionTimerRef.current = null;
+      }
+      setOpponentReaction({ id, expression });
+      opponentReactionTimerRef.current = setTimeout(() => {
+        setOpponentReaction((prev) => (prev?.id === id ? null : prev));
+        opponentReactionTimerRef.current = null;
+      }, durationMs);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (gameNoticeTimerRef.current) {
+        clearTimeout(gameNoticeTimerRef.current);
+      }
+      if (answerFeedbackTimerRef.current) {
+        clearTimeout(answerFeedbackTimerRef.current);
+      }
+      if (playerReactionTimerRef.current) {
+        clearTimeout(playerReactionTimerRef.current);
+      }
+      if (opponentReactionTimerRef.current) {
+        clearTimeout(opponentReactionTimerRef.current);
+      }
+      clearEndgameTransitionTimers();
+    };
+  }, [clearEndgameTransitionTimers]);
 
   const hand = gameState?.hand ?? EMPTY_HAND;
   const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
@@ -210,8 +367,8 @@ export function BattleScreen() {
   const player = gameState?.player;
   const opponent = gameState?.opponent;
   const activeCard = useMemo(
-    () => hand.find((card) => card.id === activeCardId) ?? null,
-    [hand, activeCardId],
+    () => (activeCardId ? activeQuestionCard ?? hand.find((card) => card.id === activeCardId) ?? null : null),
+    [activeQuestionCard, hand, activeCardId],
   );
 
   useEffect(() => {
@@ -227,11 +384,18 @@ export function BattleScreen() {
         at: lastCardExpired.at,
       },
     ]);
-    setEnemyEventText("Time up. Card expired.");
+    showGameNotice("No damage this turn.");
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+      answerFeedbackTimerRef.current = null;
+    }
     setActiveCardId(null);
+    setActiveQuestionCard(null);
     setAnswerLocked(false);
+    setSelectedOptionId(null);
+    setAnswerFeedback(null);
     pendingCardIdRef.current = null;
-  }, [lastCardExpired]);
+  }, [lastCardExpired, showGameNotice]);
 
   useEffect(() => {
     if (!lastPlayResult) return;
@@ -247,11 +411,30 @@ export function BattleScreen() {
         at: lastPlayResult.at,
       },
     ]);
-    setEnemyEventText(lastPlayResult.correct ? "Nice hit!" : "No damage this turn.");
-    setActiveCardId(null);
-    setAnswerLocked(false);
-    pendingCardIdRef.current = null;
-  }, [lastPlayResult]);
+    if (lastPlayResult.correct) {
+      showReaction("player", "happy");
+    }
+    if (lastPlayResult.cardType === "heal" && lastPlayResult.heal > 0) {
+      showGameNotice(`Healed: +${lastPlayResult.heal} HP`);
+    } else if (lastPlayResult.cardType === "attack" && lastPlayResult.damage > 0) {
+      showGameNotice(`Attack landed: -${lastPlayResult.damage} HP`);
+    } else {
+      showGameNotice("No damage this turn.");
+    }
+    setAnswerFeedback(lastPlayResult.correct ? "correct" : "wrong");
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+    }
+    answerFeedbackTimerRef.current = setTimeout(() => {
+      setActiveCardId(null);
+      setActiveQuestionCard(null);
+      setAnswerLocked(false);
+      setSelectedOptionId(null);
+      setAnswerFeedback(null);
+      pendingCardIdRef.current = null;
+      answerFeedbackTimerRef.current = null;
+    }, ANSWER_FEEDBACK_DISPLAY_MS);
+  }, [lastPlayResult, showGameNotice, showReaction]);
 
   useEffect(() => {
     if (!lastDamageEvent) return;
@@ -269,23 +452,23 @@ export function BattleScreen() {
             ? "opponent"
             : "player";
     const actionKind = lastDamageEvent.type === "heal" ? "heal" : "attack";
+    const attackerCharacterId = attackerSide === "player" ? player?.characterId : opponent?.characterId;
+    const shouldSpawnProjectile = actionKind === "attack" && lastDamageEvent.damage > 0;
+    const projectileSrc = shouldSpawnProjectile ? getCharacterProjectileSrc(attackerCharacterId) : null;
 
     setCharacterActionSide(attackerSide);
-    setProjectile({
-      id: `${lastDamageEvent.timestamp}`,
-      from: attackerSide,
-      to: targetSide,
-      kind: actionKind,
-    });
-    setEnemyEventText(
-      attackerSide === "player"
-        ? actionKind === "heal"
-          ? "You healed your base!"
-          : "You attacked!"
-        : actionKind === "heal"
-          ? "Opponent healed!"
-          : "Opponent attacked!",
-    );
+    const projectileSpawnTimer = setTimeout(() => {
+      if (shouldSpawnProjectile) {
+        setProjectile({
+          id: `${lastDamageEvent.timestamp}`,
+          from: attackerSide,
+          to: targetSide,
+          src: projectileSrc,
+        });
+      } else {
+        setProjectile(null);
+      }
+    }, 0);
 
     const actionResetTimer = setTimeout(() => {
       setCharacterActionSide(null);
@@ -302,37 +485,85 @@ export function BattleScreen() {
       setPlayerBaseFx("idle");
       setOpponentBaseFx("idle");
     }, 840);
+    const hurtReactionTimer =
+      actionKind === "attack" && lastDamageEvent.damage > 0
+        ? setTimeout(() => {
+          showReaction(targetSide, "hurt");
+        }, 420)
+        : null;
 
     return () => {
+      clearTimeout(projectileSpawnTimer);
       clearTimeout(actionResetTimer);
       clearTimeout(projectileHitTimer);
       clearTimeout(baseFxResetTimer);
+      if (hurtReactionTimer) {
+        clearTimeout(hurtReactionTimer);
+      }
     };
-  }, [lastDamageEvent, opponent?.address, player?.address]);
+  }, [lastDamageEvent, opponent?.address, player?.address, opponent?.characterId, player?.characterId, showReaction]);
 
   const isPlayable = status === "playing" && connectionState === "connected";
-  const isMatchComplete = Boolean(settlementResult) || Boolean(matchInvalidated) || status === "finished";
+  const hasTerminalResult = Boolean(settlementResult) || Boolean(matchSummaryResult) || Boolean(matchInvalidated);
+  const isRoomCancelled = Boolean(lastRoomCancelled);
+  const isMatchComplete = hasTerminalResult || isRoomCancelled || status === "finished";
+  const isCommittedState = status === "playing" || status === "settling";
+  const canSurrenderByState = !isMatchComplete && isCommittedState;
+  const canCancelMatch = connectionState === "connected" && !isMatchComplete && (status === "waiting" || status === "depositing");
+  const canSurrenderMatch = connectionState === "connected" && canSurrenderByState;
 
   function onOpenCard(card: Card) {
     if (!isPlayable || activeCardId || isMatchComplete) return;
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+      answerFeedbackTimerRef.current = null;
+    }
     setActiveCardId(card.id);
+    setActiveQuestionCard(card);
     setSecondsLeft(ANSWER_TIME_SEC);
     setAnswerLocked(false);
+    setSelectedOptionId(null);
+    setAnswerFeedback(null);
     pendingCardIdRef.current = card.id;
     openCard(card.id);
   }
 
   function onAnswer(optionId: string) {
     if (!activeCard || answerLocked || !isPlayable) return;
+    setSelectedOptionId(optionId);
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
     playCard(activeCard.id, optionId);
+  }
+
+  function onCancelMatch() {
+    if (!canCancelMatch) return;
+    cancelMatch();
+  }
+
+  function onOpenSurrenderModal() {
+    if (!canSurrenderMatch) return;
+    setSurrenderModalOpen(true);
+  }
+
+  function onConfirmSurrender() {
+    if (!canSurrenderByState) return;
+    if (connectionState === "connected") {
+      surrender();
+      setSurrenderModalOpen(false);
+      return;
+    }
+    setPendingSurrenderAfterReconnect(true);
+    reconnect();
+    setSurrenderModalOpen(false);
   }
 
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
   const playerRoundsWon = player?.roundsWon ?? 0;
   const opponentRoundsWon = opponent?.roundsWon ?? 0;
+  const playerCurrentCorrectStreak = player?.currentCorrectStreak ?? 0;
+  const opponentCurrentCorrectStreak = opponent?.currentCorrectStreak ?? 0;
   const playerBaseHp = player?.baseHealth ?? 100;
   const opponentBaseHp = opponent?.baseHealth ?? 100;
 
@@ -342,13 +573,105 @@ export function BattleScreen() {
 
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
-  const settlementText = winnerAddress
-    ? winnerAddress === player?.address
-      ? "You Win"
-      : "You Lose"
+  const matchResultReason = matchSummaryResult?.reason ?? matchInvalidated?.reason ?? null;
+  const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
+  const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
+  const didOpponentSurrender =
+    matchResultReason === "surrender" && Boolean(surrenderedAddress) && surrenderedAddress !== address;
+  const isDraw = matchResultReason === "draw";
+  const roomCancelledTitle =
+    lastRoomCancelled?.reason === "deposit_timeout"
+      ? "Deposit timed out"
+      : lastRoomCancelled?.reason === "disconnect"
+        ? "Match cancelled before battle start"
+        : "Match cancelled";
+  const roomCancelledSubtitle =
+    lastRoomCancelled?.reason === "deposit_timeout"
+      ? "Deposit confirmation did not complete in time."
+      : lastRoomCancelled?.reason === "disconnect"
+        ? "A player disconnected before the battle was ready."
+        : "A player cancelled this room before battle start.";
+  const settlementText = isRoomCancelled
+    ? roomCancelledTitle
+    : didCurrentPlayerSurrender
+      ? "You Surrendered"
+      : didOpponentSurrender
+        ? "Opponent Surrendered"
+        : winnerAddress
+          ? winnerAddress === player?.address
+            ? "You Win"
+            : "You Lose"
+          : isDraw
+            ? "Draw"
+            : matchInvalidated
+              ? "Match Invalidated"
+              : "Match Finished";
+  const settlementSubtitle = isRoomCancelled
+    ? roomCancelledSubtitle
     : matchInvalidated
-      ? "Match Invalidated"
-      : "Match Finished";
+      ? "Match invalidated."
+      : didCurrentPlayerSurrender
+        ? "You forfeited this match. Settlement is being resolved."
+        : didOpponentSurrender
+          ? "Your rival surrendered. Settlement is being resolved."
+          : isDraw
+            ? "The match ended evenly. Settlement is being resolved."
+            : winnerAddress
+              ? winnerAddress === address
+                ? "Victory secured."
+                : "Rival took this round."
+              : "Match results are being finalized."
+  const settlementStatus = isRoomCancelled ? "Cancelled" : matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
+  const settlementOutcomeKind = isRoomCancelled
+    ? "cancelled"
+    : matchInvalidated
+      ? "invalidated"
+      : didCurrentPlayerSurrender
+        ? "player_surrender"
+        : didOpponentSurrender
+          ? "opponent_surrender"
+          : isDraw
+            ? "draw"
+            : winnerAddress
+              ? winnerAddress === address
+                ? "win"
+                : "lose"
+              : "pending";
+  const resultDefeatedSide =
+    settlementOutcomeKind === "lose" || settlementOutcomeKind === "player_surrender"
+      ? "player"
+      : settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
+        ? "opponent"
+        : null;
+  const isSurrenderOutcome =
+    settlementOutcomeKind === "player_surrender" || settlementOutcomeKind === "opponent_surrender";
+  const endgameResultKey = isMatchComplete
+    ? [
+      settlementOutcomeKind,
+      winnerAddress ?? "none",
+      matchResultReason ?? "none",
+      surrenderedAddress ?? "none",
+      settlementResult?.matchId ?? "none",
+      lastRoomCancelled?.at ?? "none",
+      isSurrenderOutcome ? "surrender" : "standard",
+    ].join("|")
+    : null;
+  const settlementStatusStyle = isRoomCancelled
+    ? { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" }
+    : matchInvalidated
+      ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
+      : settlementResult
+        ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
+        : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
+  const settlementEmojiMood =
+    isRoomCancelled || isDraw || matchInvalidated
+      ? null
+      : didCurrentPlayerSurrender || (winnerAddress && winnerAddress !== address)
+        ? { player: "hurt" as const, opponent: "confident" as const }
+        : didOpponentSurrender || (winnerAddress && winnerAddress === address)
+          ? { player: "confident" as const, opponent: "hurt" as const }
+          : null;
+  const showWinnerLine = Boolean(winnerAddress && !isRoomCancelled && !didCurrentPlayerSurrender && !didOpponentSurrender && (matchInvalidated || winnerAddress !== address));
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
@@ -367,38 +690,302 @@ export function BattleScreen() {
   const isSocketRecovering = connectionState === "connecting" || connectionState === "reconnecting";
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
   const isRoomStateLoading = !gameState && isSocketRecovering;
+  const isRoomUnavailable = !gameState && hasSocketIssue;
+  const presenceOpponentConnected =
+    opponent?.address && lastPresenceUpdate?.players
+      ? lastPresenceUpdate.players[opponent.address]?.isConnected
+      : undefined;
+  const opponentIsConnected = presenceOpponentConnected ?? opponent?.isConnected ?? true;
+  const showOpponentAwayStatus = connectionState === "connected" && !isMatchComplete && !opponentIsConnected;
   const socketCloseText = lastSocketCloseInfo
     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
     : null;
+  const showDisconnectedOverlay =
+    Boolean(lastSocketIssueAt) &&
+    connectionState !== "connected" &&
+    !isMatchComplete &&
+    !isRoomCancelled;
   const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
   const shouldShowPlayStateGate = !isPlayStateReady;
+  const showRoomGateModal = (isRoomStateLoading || shouldShowPlayStateGate) && !showOpponentAwayStatus && !showDisconnectedOverlay;
+  const roomGateTitle = isRoomStateLoading
+    ? "Syncing Room State"
+    : isRoomUnavailable
+      ? "You were disconnected"
+      : status === "waiting"
+        ? "Waiting For Battle"
+        : "Room Locked";
+  const roomGateMessage = isRoomStateLoading
+    ? "Rejoining battle room after refresh. Waiting for server snapshot."
+    : isRoomUnavailable
+      ? "Your match is still active. Rejoin to continue."
+      : `Current room status: ${getStatusLabel(status)}.`;
+  const statusLabel = getStatusLabel(status);
+  const phaseKey = gameState?.timer?.phase ?? currentPhase;
+  const phaseLabel = phaseKey === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal";
+  const winnerLineText =
+    showWinnerLine && winnerAddress
+      ? `Winner: ${shortenAddress(winnerAddress)}`
+      : null;
+  const settlementPayload = settlementResult
+    ? {
+      matchId: settlementResult.matchId,
+      serverPublicKey: settlementResult.serverPublicKey,
+      settlementSignature: settlementResult.settlementSignature,
+    }
+    : null;
   const opponentIdentityLabel = opponent?.address
     ? shortenAddress(opponent.address)
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const opponentMetaLabel = opponent?.address
-    ? `Score ${opponentScore} - Rounds ${opponentRoundsWon}`
-    : "Waiting for opponent metadata";
-  const playerVisual = getCharacterVisual(player?.characterId ?? scientistId ?? undefined);
-  const opponentVisual = getCharacterVisual(opponent?.characterId ?? undefined);
-  const challengeLink = useMemo(() => {
-    const origin = typeof window === "undefined" ? null : window.location.origin;
-    return createChallengeLink({
-      origin,
-      arenaId,
-      token: arenaToken,
-      wagerUsd,
-      refAddress: address,
-    });
-  }, [arenaId, arenaToken, wagerUsd, address]);
-  const resumeQueueHref = useMemo(() => {
-    const params = new URLSearchParams({ resumeQueue: "1", arena: arenaId });
-    if (scientistId) {
-      params.set("scientist", scientistId);
+  const playerCharacterId = player?.characterId ?? undefined;
+  const opponentCharacterId = opponent?.characterId ?? undefined;
+  const settlementExpressionSrc = settlementEmojiMood
+    ? {
+      player: getCharacterExpressionSrc(playerCharacterId, settlementEmojiMood.player),
+      opponent: getCharacterExpressionSrc(opponentCharacterId, settlementEmojiMood.opponent),
     }
-    return `/lobby?${params.toString()}`;
-  }, [arenaId, scientistId]);
+    : null;
+  const playerVisual = getCharacterVisual(playerCharacterId);
+  const opponentVisual = getCharacterVisual(opponentCharacterId);
+  const playerSpriteState = resolveCharacterSpriteState(player?.characterState, characterActionSide === "player");
+  const opponentSpriteState = resolveCharacterSpriteState(opponent?.characterState, characterActionSide === "opponent");
+  const playerSpriteSrc = getCharacterSpriteSrc(playerCharacterId, playerSpriteState);
+  const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
+  const playerBaseSrc = getCharacterBaseSrc(playerCharacterId, "player");
+  const opponentBaseSrc = getCharacterBaseSrc(opponentCharacterId, "opponent");
+  const forcedPlayerHurtReaction =
+    endgameDefeatedSide === "player" && !showSettlementOverlay
+      ? ({ id: "endgame-player-hurt", expression: "hurt" } as const)
+      : null;
+  const forcedOpponentHurtReaction =
+    endgameDefeatedSide === "opponent" && !showSettlementOverlay
+      ? ({ id: "endgame-opponent-hurt", expression: "hurt" } as const)
+      : null;
+  const forcedPlayerConfidentReaction =
+    endgameDefeatedSide === "opponent" && !showSettlementOverlay
+      ? ({ id: "endgame-player-confident", expression: "confident" } as const)
+      : null;
+  const forcedOpponentConfidentReaction =
+    endgameDefeatedSide === "player" && !showSettlementOverlay
+      ? ({ id: "endgame-opponent-confident", expression: "confident" } as const)
+      : null;
+  const displayPlayerReaction = forcedPlayerHurtReaction ?? forcedPlayerConfidentReaction ?? playerReaction;
+  const displayOpponentReaction = forcedOpponentHurtReaction ?? forcedOpponentConfidentReaction ?? opponentReaction;
+  const playerReactionSrc = displayPlayerReaction
+    ? getCharacterExpressionSrc(playerCharacterId, displayPlayerReaction.expression)
+    : null;
+  const opponentReactionSrc = displayOpponentReaction
+    ? getCharacterExpressionSrc(opponentCharacterId, displayOpponentReaction.expression)
+    : null;
+  const hasPlayerSprite = Boolean(playerSpriteSrc && !failedCharacterSprites[playerSpriteSrc]);
+  const hasOpponentSprite = Boolean(opponentSpriteSrc && !failedCharacterSprites[opponentSpriteSrc]);
+  const hasPlayerBaseSprite = Boolean(playerBaseSrc && !failedBaseSprites[playerBaseSrc]);
+  const hasOpponentBaseSprite = Boolean(opponentBaseSrc && !failedBaseSprites[opponentBaseSrc]);
+  const hasPlayerReactionSprite = Boolean(playerReactionSrc && !failedCharacterSprites[playerReactionSrc]);
+  const hasOpponentReactionSprite = Boolean(opponentReactionSrc && !failedCharacterSprites[opponentReactionSrc]);
+  const playerBaseHpPct = Math.max(0, Math.min(100, playerBaseHp));
+  const opponentBaseHpPct = Math.max(0, Math.min(100, opponentBaseHp));
+  const targetArenaImageUrl = ARENA_IMAGE_BY_ID[arenaId] ?? null;
+  const playerBaseDefeatActive = endgameDefeatedSide === "player";
+  const opponentBaseDefeatActive = endgameDefeatedSide === "opponent";
+  const defeatedBaseSoftMode = isSurrenderOutcome;
+  const playerDestroyedEffectActive = playerBaseDefeatActive && endgameAnimationActive;
+  const opponentDestroyedEffectActive = opponentBaseDefeatActive && endgameAnimationActive;
+
+  useEffect(() => {
+    const schedule = (callback: () => void, delayMs = 0) => {
+      const timerId = setTimeout(callback, delayMs);
+      endgameTimersRef.current.push(timerId);
+    };
+
+    if (!isMatchComplete || !endgameResultKey) {
+      clearEndgameTransitionTimers();
+      lastEndgameResultKeyRef.current = null;
+      schedule(() => {
+        resetEndgameVisualState();
+      });
+      return;
+    }
+
+    if (lastEndgameResultKeyRef.current === endgameResultKey) {
+      return;
+    }
+    lastEndgameResultKeyRef.current = endgameResultKey;
+    clearEndgameTransitionTimers();
+    schedule(() => {
+      setShowSettlementOverlay(false);
+      setEndgameDefeatedSide(resultDefeatedSide);
+      setEndgameBaseFadeActive(false);
+      setEndgameAnimationActive(Boolean(resultDefeatedSide));
+      setEndgameImpactFlashActive(false);
+      setEndgameCrackVisible(false);
+      setEndgameSmokeVisible(false);
+    });
+
+    if (!resultDefeatedSide) {
+      schedule(() => {
+        setShowSettlementOverlay(true);
+      }, ENDGAME_NEUTRAL_DELAY_MS);
+      return;
+    }
+
+    schedule(() => {
+      setEndgameImpactFlashActive(true);
+      if (resultDefeatedSide === "player") {
+        setPlayerBaseFx("hit");
+        showReaction("player", "hurt", ENDGAME_TRANSITION_TOTAL_MS + 320);
+      } else {
+        setOpponentBaseFx("hit");
+        showReaction("opponent", "hurt", ENDGAME_TRANSITION_TOTAL_MS + 320);
+      }
+    });
+    schedule(() => {
+      setEndgameCrackVisible(true);
+    }, ENDGAME_CRACK_REVEAL_DELAY_MS);
+    schedule(() => {
+      setEndgameSmokeVisible(true);
+    }, ENDGAME_SMOKE_REVEAL_DELAY_MS);
+    schedule(() => {
+      setEndgameImpactFlashActive(false);
+    }, ENDGAME_IMPACT_FLASH_MS);
+
+    schedule(() => {
+      setEndgameBaseFadeActive(true);
+    }, ENDGAME_BASE_FADE_DELAY_MS);
+    schedule(() => {
+      setShowSettlementOverlay(true);
+      setEndgameAnimationActive(false);
+      setPlayerBaseFx("idle");
+      setOpponentBaseFx("idle");
+    }, ENDGAME_TRANSITION_TOTAL_MS);
+
+    return () => {
+      clearEndgameTransitionTimers();
+    };
+  }, [
+    clearEndgameTransitionTimers,
+    endgameResultKey,
+    isMatchComplete,
+    resetEndgameVisualState,
+    resultDefeatedSide,
+    showReaction,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    function preloadExpressions(characterId?: string) {
+      if (!characterId) return;
+      for (const expression of CHARACTER_REACTION_EXPRESSIONS) {
+        const src = getCharacterExpressionSrc(characterId, expression);
+        if (!src) continue;
+        const preloader = new window.Image();
+        preloader.src = src;
+      }
+    }
+
+    preloadExpressions(playerCharacterId);
+    preloadExpressions(opponentCharacterId);
+  }, [playerCharacterId, opponentCharacterId]);
+
+  const challengeOrigin = typeof window === "undefined" ? null : window.location.origin;
+  const challengeLink = createChallengeLink({
+    origin: challengeOrigin,
+    arenaId,
+    token: arenaToken,
+    wagerUsd,
+    refAddress: address,
+  });
+  const cleanLobbyHref = "/lobby";
+  useEffect(() => {
+    if (playerSpriteState !== "action") {
+      playerActionControls.start({
+        scale: 1,
+        y: 0,
+        transition: { duration: 0.12, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+
+    playerActionControls.start({
+      scale: [1, 1.05, 1],
+      y: [0, -5, 0],
+      transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [playerSpriteState, playerActionControls]);
+
+  useEffect(() => {
+    if (opponentSpriteState !== "action") {
+      opponentActionControls.start({
+        scale: 1,
+        y: 0,
+        transition: { duration: 0.12, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+
+    opponentActionControls.start({
+      scale: [1, 1.05, 1],
+      y: [0, -5, 0],
+      transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [opponentSpriteState, opponentActionControls]);
+
+  useEffect(() => {
+    if (playerBaseFx === "hit") {
+      playerBaseControls.start({
+        x: [0, -8, 7, -5, 3, 0],
+        y: [0, -1, 0],
+        scale: [1, 1.01, 1],
+        transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    if (playerBaseFx === "heal") {
+      playerBaseControls.start({
+        x: 0,
+        y: [0, -2, 0],
+        scale: [1, 1.04, 1],
+        transition: { duration: 0.36, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    playerBaseControls.start({
+      x: 0,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [playerBaseFx, playerBaseControls]);
+
+  useEffect(() => {
+    if (opponentBaseFx === "hit") {
+      opponentBaseControls.start({
+        x: [0, 8, -7, 5, -3, 0],
+        y: [0, -1, 0],
+        scale: [1, 1.01, 1],
+        transition: { duration: 0.34, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    if (opponentBaseFx === "heal") {
+      opponentBaseControls.start({
+        x: 0,
+        y: [0, -2, 0],
+        scale: [1, 1.04, 1],
+        transition: { duration: 0.36, ease: [0.22, 1, 0.36, 1] },
+      });
+      return;
+    }
+    opponentBaseControls.start({
+      x: 0,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
+    });
+  }, [opponentBaseFx, opponentBaseControls]);
 
   useEffect(() => {
     if (status !== "depositing" || connectionState !== "connected") return;
@@ -415,31 +1002,111 @@ export function BattleScreen() {
     if (extraPointShownRef.current) return;
 
     extraPointShownRef.current = true;
-    setPhaseToastVisible(true);
-    const timerId = setTimeout(() => {
-      setPhaseToastVisible(false);
-    }, 5000);
-    return () => clearTimeout(timerId);
-  }, [currentPhase, gameState?.timer?.phase]);
+    showGameNotice("Extra Point - every move matters.", "phase");
+  }, [currentPhase, gameState?.timer?.phase, showGameNotice]);
 
-  const alerts: UiAlert[] = [];
+  useEffect(() => {
+    if (!isMatchComplete && !isRoomCancelled) return;
+    clearLobbyReturnState();
+  }, [isMatchComplete, isRoomCancelled]);
+
+  useEffect(() => {
+    if (!pendingSurrenderAfterReconnect) return;
+    if (connectionState !== "connected") return;
+
+    const timerId = setTimeout(() => {
+      if (!canSurrenderByState) {
+        setPendingSurrenderAfterReconnect(false);
+        return;
+      }
+      surrender();
+      setPendingSurrenderAfterReconnect(false);
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [pendingSurrenderAfterReconnect, connectionState, canSurrenderByState, surrender]);
+
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    if (!opponent?.address) return;
+
+    const previous = previousOpponentConnectedRef.current;
+    previousOpponentConnectedRef.current = opponentIsConnected;
+    if (previous === null || previous === opponentIsConnected) return;
+
+    const notifyTimer = setTimeout(() => {
+      if (opponentIsConnected) {
+        showGameNotice("Opponent reconnected", "phase");
+      } else {
+        showGameNotice("Opponent disconnected", "phase");
+      }
+    }, 0);
+
+    return () => clearTimeout(notifyTimer);
+  }, [connectionState, opponent?.address, opponentIsConnected, showGameNotice]);
+
+  useEffect(() => {
+    const previous = previousPlayerStreakRef.current;
+    previousPlayerStreakRef.current = playerCurrentCorrectStreak;
+    if (playerCurrentCorrectStreak >= 3 && playerCurrentCorrectStreak !== previous) {
+      showReaction("player", "confident");
+    }
+  }, [playerCurrentCorrectStreak, showReaction]);
+
+  useEffect(() => {
+    const previous = previousOpponentStreakRef.current;
+    previousOpponentStreakRef.current = opponentCurrentCorrectStreak;
+    if (opponentCurrentCorrectStreak >= 3 && opponentCurrentCorrectStreak !== previous) {
+      showReaction("opponent", "confident");
+    }
+  }, [opponentCurrentCorrectStreak, showReaction]);
+
+  useEffect(() => {
+    const previous = previousRoundsWonRef.current;
+    if (!previous) {
+      previousRoundsWonRef.current = {
+        player: playerRoundsWon,
+        opponent: opponentRoundsWon,
+      };
+      return;
+    }
+
+    if (playerRoundsWon === previous.player && opponentRoundsWon === previous.opponent) {
+      return;
+    }
+
+    const playerRoundDelta = playerRoundsWon - previous.player;
+    const opponentRoundDelta = opponentRoundsWon - previous.opponent;
+
+    if (playerRoundDelta > 0 && opponentRoundDelta <= 0) {
+      showGameNotice("Round winner: You", "phase", 3200);
+    } else if (opponentRoundDelta > 0 && playerRoundDelta <= 0) {
+      showGameNotice("Round winner: Your rival", "phase", 3200);
+    }
+
+    previousRoundsWonRef.current = {
+      player: playerRoundsWon,
+      opponent: opponentRoundsWon,
+    };
+  }, [playerRoundsWon, opponentRoundsWon, showGameNotice]);
+
+  const alerts: BattleUiAlert[] = [];
   const socketMessage = socketCloseText ?? lastSocketError ?? "Socket disconnected from match server.";
-  if (lastSocketIssueAt) {
+  if (lastSocketIssueAt && !showDisconnectedOverlay) {
     alerts.push({
       id: `socket:${lastSocketIssueAt}`,
       title: "Server Connection Issue",
       message: socketMessage,
       tone: "error",
       autoDismissMs: SOCKET_ALERT_DISPLAY_MS,
-      actionLabel: hasSocketIssue ? "Retry" : undefined,
-      onAction: hasSocketIssue ? reconnect : undefined,
+      actionLabel: undefined,
+      onAction: undefined,
     });
   }
-  if (connectionState === "reconnecting") {
+  if (connectionState === "reconnecting" && !showDisconnectedOverlay) {
     alerts.push({
       id: "socket:reconnecting",
-      title: "Reconnecting",
-      message: "Restoring room connection. Keep this page open.",
+      title: "Rejoining room",
+      message: "Your match is still active. Rejoining battle room now.",
       tone: "warning",
       autoDismissMs: 0,
     });
@@ -450,7 +1117,16 @@ export function BattleScreen() {
     alerts.push({
       id: "deposit:missing_pre_signed_intent",
       title: "Deposit Sync Error",
-      message: "Missing pre-signed deposit intent. Return to lobby and re-queue.",
+      message: "Missing pre-signed deposit intent. Return to lobby and start from match setup.",
+      tone: "warning",
+      autoDismissMs: 0,
+    });
+  }
+  if (lastRoomCancelled) {
+    alerts.push({
+      id: `room:cancelled:${lastRoomCancelled.at}`,
+      title: roomCancelledTitle,
+      message: roomCancelledSubtitle,
       tone: "warning",
       autoDismissMs: 0,
     });
@@ -480,8 +1156,36 @@ export function BattleScreen() {
     };
   }, [autoDismissKeys, visibleAlerts]);
 
-  function dismissAlert(alert: UiAlert) {
-    setDismissedAlerts((prev) => ({ ...prev, [alert.id]: true }));
+  function dismissAlert(alertId: string) {
+    setDismissedAlerts((prev) => ({ ...prev, [alertId]: true }));
+  }
+
+  function markCharacterSpriteFailed(src: string) {
+    setFailedCharacterSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markProjectileSpriteFailed(src: string) {
+    setFailedProjectileSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markBaseSpriteFailed(src: string) {
+    setFailedBaseSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
+  function markArenaSpriteFailed(src: string) {
+    setFailedArenaSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
   }
 
   async function onCopyChallengeLink() {
@@ -576,443 +1280,674 @@ export function BattleScreen() {
     return () => clearTimeout(id);
   }, [shareNotice]);
 
-  useEffect(() => {
-    if (!historyOpen || !address) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setHistoryLoading(true);
-      setHistoryError(null);
-    });
-
-    getWalletHistory(address)
-      .then((items) => {
-        if (cancelled) return;
-        setHistoryItems(items);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "History unavailable. Try again later.";
-        setHistoryError(message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setHistoryLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [historyOpen, address]);
-
   if (playGuardError) {
-    return (
-      <main
-        className="grid min-h-[100svh] place-items-center px-4"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
-        }}
-      >
-        <div className="frame-cut w-full max-w-lg p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
-          <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Match Context Missing</p>
-          <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">{playGuardError}</p>
-          <div className="mt-4">
-            <Link
-              href="/lobby"
-              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-            >
-              Back To Lobby
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+    return <MatchContextMissingState errorMessage={playGuardError} />;
   }
 
   if (requiresWalletConnect) {
-    return (
-      <main
-        className="grid min-h-[100svh] place-items-center px-4"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
-        }}
-      >
-        <div className="frame-cut w-full max-w-md p-5 text-center" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.9)" }}>
-          <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Wallet Required</p>
-          <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.82)]">
-            Connect Phantom to enter battle and sign match deposit.
-          </p>
-          <div className="mt-4 flex flex-col items-center gap-3">
-            <HydratedWalletButton />
-            <Link
-              href="/lobby"
-              className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-            >
-              Back To Lobby
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+    return <WalletRequiredState />;
   }
 
   return (
     <main
-      className="min-h-[100svh] px-4 py-4 md:px-6"
+      className="h-[100svh] overflow-hidden px-3 py-2 md:px-5 md:py-3"
       style={{
         background:
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
-      <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
-        {phaseToastVisible && (
-          <div className="frame-cut px-3 py-2" style={{ border: "1px solid rgba(248,214,148,0.35)", background: "rgba(13,24,20,0.92)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Extra Point Activated
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Phase changed. Card effects are now x2.
-            </p>
-          </div>
-        )}
-        {visibleAlerts.map((alert) => (
-          <div
-            key={alert.id}
-            className="frame-cut px-3 py-2"
-            style={{
-              border:
-                alert.tone === "error"
-                  ? "1px solid rgba(186,105,49,0.42)"
-                  : "1px solid rgba(248,214,148,0.42)",
-              background:
-                alert.tone === "error"
-                  ? "rgba(43,24,16,0.94)"
-                  : "rgba(13,24,20,0.94)",
-            }}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p
-                className="font-gabarito text-xs font-bold uppercase tracking-wide"
-                style={{ color: alert.tone === "error" ? "#f8d694" : "#f8d694" }}
-              >
-                {alert.title}
-              </p>
-              <button
-                type="button"
-                onClick={() => dismissAlert(alert)}
-                className="font-gabarito text-xs font-bold leading-none text-[var(--tone-cream)] opacity-80"
-                aria-label="Close alert"
-              >
-                X
-              </button>
-            </div>
-            <p
-              className="mt-1 break-words font-gabarito text-xs"
-              style={{ color: "rgba(244,240,230,0.88)" }}
-            >
-              {alert.message}
-            </p>
-            {alert.id.startsWith("socket:") && socketUrl && (
-              <p className="mt-1 break-all font-gabarito text-[11px] text-[rgba(244,240,230,0.74)]">
-                {socketUrl}
-              </p>
-            )}
-            <div className="mt-2 flex gap-2">
-              {alert.actionLabel && alert.onAction && (
-                <button
-                  type="button"
-                  onClick={alert.onAction}
-                  className="frame-cut frame-cut-sm px-2 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(248,214,148,0.35)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-                >
-                  {alert.actionLabel}
-                </button>
-              )}
-            </div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(248,214,148,0.16)]">
-              <div
-                className="h-full"
-                style={{
-                  width: "100%",
-                  background:
-                    alert.tone === "error"
-                      ? "linear-gradient(90deg,#d9a85b,#ba6931)"
-                      : "linear-gradient(90deg,#d9a85b,#ba6931)",
-                  animationName: alert.autoDismissMs > 0 ? "alertDrain" : undefined,
-                  animationDuration: alert.autoDismissMs > 0 ? `${alert.autoDismissMs}ms` : undefined,
-                  animationTimingFunction: alert.autoDismissMs > 0 ? "linear" : undefined,
-                  animationFillMode: alert.autoDismissMs > 0 ? "forwards" : undefined,
-                }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
+      <BattleScreenStatusLayer
+        visibleAlerts={visibleAlerts}
+        socketUrl={socketUrl}
+        onDismissAlert={dismissAlert}
+      />
 
-      <div className="mx-auto flex min-h-[calc(100svh-2rem)] w-full max-w-7xl flex-col">
-        <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+        <header className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-1.5">
           <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
             Battle Room - {roomId}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {roundText}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {remainingMatchClock}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
-              {getStatusLabel(status)} - {connectionState}
+              {statusLabel} - {connectionState}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
+              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{
                 border: "1px solid rgba(39,65,55,0.2)",
                 background:
-                  (gameState?.timer?.phase ?? currentPhase) === "extra_point"
+                  phaseKey === "extra_point"
                     ? "rgba(53,93,63,0.92)"
                     : "rgba(19,32,26,0.86)",
                 color: "var(--tone-cream)",
               }}
             >
-              {(gameState?.timer?.phase ?? currentPhase) === "extra_point" ? "Phase: Extra Point x2" : "Phase: Normal"}
+              {phaseLabel}
             </span>
-            <Link
-              href={resumeQueueHref}
-              className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-xs font-bold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
+            <span
+              className="rounded-full px-2.5 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
+              style={{
+                border: "1px solid rgba(248,214,148,0.32)",
+                background: opponentIsConnected ? "rgba(39,65,55,0.52)" : "rgba(111,58,40,0.52)",
+                color: "var(--tone-cream)",
+              }}
             >
-              Exit
-            </Link>
+              Rival {opponentIsConnected ? "Connected" : "Away"}
+            </span>
+            {canCancelMatch && (
+              <button
+                type="button"
+                onClick={onCancelMatch}
+                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(19,32,26,0.9)", color: "var(--tone-cream)" }}
+              >
+                Cancel Match
+              </button>
+            )}
+            {canSurrenderMatch && (
+              <button
+                type="button"
+                onClick={onOpenSurrenderModal}
+                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
+              >
+                Surrender
+              </button>
+            )}
+            {(isMatchComplete || isRoomCancelled) && (
+              <Link
+                href={cleanLobbyHref}
+                onClick={clearLobbyReturnState}
+                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
+              >
+                Return To Lobby
+              </Link>
+            )}
           </div>
         </header>
 
-        {isRoomStateLoading && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.9)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Syncing room state
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Rejoining battle room after refresh. Waiting for server snapshot.
-            </p>
-          </div>
-        )}
-
-        {hasSocketIssue && !gameState && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(186,105,49,0.4)", background: "rgba(43,24,16,0.88)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#f8d694]">
-              Unable to enter battle room
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Connection to this match room failed. Retry socket or return to lobby queue without refreshing.
-            </p>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={reconnect}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Retry Room
-              </button>
-              <Link
-                href={resumeQueueHref}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Return And Requeue
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {shouldShowPlayStateGate && (
-          <div className="mb-3 frame-cut p-3" style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(13,24,20,0.9)" }}>
-            <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-cream)]">
-              Room not in playing state yet
-            </p>
-            <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.82)]">
-              Current room status: {getStatusLabel(status)}. Keep this page open or return to lobby and resume queue.
-            </p>
-            <div className="mt-2 flex gap-2">
-              {hasSocketIssue && (
-                <button
-                  type="button"
-                  onClick={reconnect}
-                  className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-                >
-                  Retry Room
-                </button>
-              )}
-              <Link
-                href={resumeQueueHref}
-                className="frame-cut frame-cut-sm px-3 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Return And Requeue
-              </Link>
-            </div>
-          </div>
-        )}
-
         <section
-          className="frame-cut relative flex flex-1 flex-col overflow-hidden px-4 py-5 md:px-6"
+          className="frame-cut relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2"
           style={{
             border: "1px solid rgba(248,214,148,0.28)",
             background:
               "radial-gradient(circle at 50% 18%, rgba(248,214,148,0.16), transparent 45%), linear-gradient(160deg, rgba(12,21,17,0.92), rgba(17,29,24,0.94))",
           }}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">You</p>
-              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">Score {playerScore} - Rounds {playerRoundsWon}</p>
+          <div
+            className="relative z-20 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-1.5 md:px-5"
+            style={{ borderBottom: "1px solid rgba(248,214,148,0.12)" }}
+          >
+            <div className="min-w-0">
+              <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+                <span className="font-bold text-[var(--tone-cream)]">You</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {playerScore}</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {playerRoundsWon}</span>
+              </p>
               {address && (
-                <div className="mt-1 flex items-center gap-2">
-                  <p className="font-mono text-[11px] text-[rgba(244,240,230,0.74)]">{shortenAddress(address)}</p>
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Your Wallet");
-                      setInspectTargetAddress(address);
-                    }}
-                  />
-                </div>
+                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{shortenAddress(address)}</p>
               )}
             </div>
-            <p className="font-caprasimo text-5xl text-[var(--tone-cream)] drop-shadow-[0_8px_18px_rgba(0,0,0,0.45)]">VS</p>
-            <div className="text-right">
-              <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Rival</p>
-              <div className="mt-1 flex items-center justify-end gap-2">
-                <p className="font-gabarito text-[11px] text-[rgba(244,240,230,0.78)]">{opponentIdentityLabel}</p>
-                {opponent?.address && (
-                  <WalletInspectButton
-                    label="Inspect"
-                    onClick={() => {
-                      setInspectTargetTitle("Rival Wallet");
-                      setInspectTargetAddress(opponent.address);
-                    }}
-                  />
-                )}
-              </div>
-              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.78)]">{opponentMetaLabel}</p>
+            <p className="font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
+            <div className="min-w-0 text-right">
+              <p className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {opponentScore}</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {opponentRoundsWon}</span>
+                <span className="opacity-40">{"\u00B7"}</span>
+                <span className="font-bold text-[var(--tone-cream)]">Rival</span>
+              </p>
+              <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{opponentIdentityLabel}</p>
             </div>
           </div>
 
-          <div className="relative mt-4 flex-1 min-h-[420px]">
-            <div className="absolute left-0 top-2 flex flex-col items-start gap-2">
-              <div
-                className="grid aspect-square w-24 place-items-center overflow-hidden rounded-xl border"
+          <div className="relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
+            {targetArenaImageUrl && !failedArenaSprites[targetArenaImageUrl] && (
+              <div className="pointer-events-none absolute inset-0 z-0">
+                <Image
+                  src={targetArenaImageUrl}
+                  alt={`${arenaId} arena background`}
+                  fill
+                  sizes="100vw"
+                  className="object-cover object-center opacity-60"
+                  onError={() => markArenaSpriteFailed(targetArenaImageUrl)}
+                />
+                <div className="absolute inset-0 bg-[rgba(12,21,17,0.4)] mix-blend-multiply" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_50%,rgba(12,21,17,0.8)_100%)]" />
+              </div>
+            )}
+            <AnimatePresence mode="wait">
+              {gameNotice && (
+                <motion.div
+                  key={gameNotice.id}
+                  initial={{ opacity: 0, y: -8, x: "-50%", scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+                  exit={{ opacity: 0, y: -4, x: "-50%", scale: 0.98 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  className="pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
+                  style={{
+                    border:
+                      gameNotice.tone === "phase"
+                        ? "1px solid rgba(248,214,148,0.46)"
+                        : "1px solid rgba(157,180,150,0.52)",
+                    background:
+                      gameNotice.tone === "phase"
+                        ? "linear-gradient(145deg, rgba(54,36,21,0.93), rgba(29,20,12,0.94))"
+                        : "linear-gradient(145deg, rgba(28,46,38,0.93), rgba(14,25,21,0.94))",
+                    boxShadow:
+                      gameNotice.tone === "phase"
+                        ? "0 12px 28px rgba(64,43,24,0.45)"
+                        : "0 12px 28px rgba(19,40,31,0.45)",
+                  }}
+                >
+                  <p
+                    className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
+                    style={{
+                      color:
+                        gameNotice.tone === "phase"
+                          ? "rgba(248,214,148,0.88)"
+                          : "rgba(173,209,164,0.86)",
+                    }}
+                  >
+                    {gameNotice.tone === "phase" ? "Battle Update" : "Combat Update"}
+                  </p>
+                  <p className="mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
+                    {gameNotice.message}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div
+              className="pointer-events-none absolute inset-x-[6%] bottom-[7%] z-0 h-[28%]"
+              style={{
+                background:
+                  "radial-gradient(ellipse at center, rgba(248,214,148,0.22) 0%, rgba(82,96,68,0.18) 42%, transparent 72%)",
+              }}
+            />
+            <div
+              className="pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
+              style={{
+                opacity:
+                  playerBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? 0.22
+                      : 0.05
+                    : 0.9,
+                transform:
+                  playerBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? "translateY(12px) scale(0.965)"
+                      : "translateY(18px) scale(0.94)"
+                    : "translateY(0) scale(1)",
+              }}
+            >
+              <motion.div
+                className="relative h-full w-full"
                 style={{
-                  borderColor: "rgba(248,214,148,0.36)",
-                  background:
+                  aspectRatio: "1700 / 1269",
+                  filter:
                     playerBaseFx === "hit"
-                      ? "linear-gradient(150deg, rgba(124,55,38,0.92), rgba(62,31,21,0.95))"
+                      ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
                       : playerBaseFx === "heal"
-                        ? "linear-gradient(150deg, rgba(39,93,52,0.92), rgba(24,58,34,0.95))"
-                        : "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
-                  boxShadow:
-                    playerBaseFx === "hit"
-                      ? "0 0 0 2px rgba(186,105,49,0.45), 0 10px 20px rgba(0,0,0,0.35)"
-                      : playerBaseFx === "heal"
-                        ? "0 0 0 2px rgba(157,180,150,0.52), 0 10px 20px rgba(0,0,0,0.35)"
-                        : "0 10px 20px rgba(0,0,0,0.35)",
+                        ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
+                        : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
                 }}
+                animate={playerBaseControls}
               >
-                <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{playerVisual.baseGlyph}</span>
-              </div>
-              <div>
-                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[rgba(244,240,230,0.72)]">Base HP</p>
-                <p className="font-caprasimo text-2xl text-[var(--tone-cream)]">{playerBaseHp}</p>
-              </div>
-            </div>
-
-            <div className="absolute right-0 top-2 flex flex-col items-end gap-2">
-              <div
-                className="grid aspect-square w-24 place-items-center overflow-hidden rounded-xl border"
-                style={{
-                  borderColor: "rgba(248,214,148,0.36)",
-                  background:
-                    opponentBaseFx === "hit"
-                      ? "linear-gradient(150deg, rgba(124,55,38,0.92), rgba(62,31,21,0.95))"
-                      : opponentBaseFx === "heal"
-                        ? "linear-gradient(150deg, rgba(39,93,52,0.92), rgba(24,58,34,0.95))"
-                        : "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
-                  boxShadow:
-                    opponentBaseFx === "hit"
-                      ? "0 0 0 2px rgba(186,105,49,0.45), 0 10px 20px rgba(0,0,0,0.35)"
-                      : opponentBaseFx === "heal"
-                        ? "0 0 0 2px rgba(157,180,150,0.52), 0 10px 20px rgba(0,0,0,0.35)"
-                        : "0 10px 20px rgba(0,0,0,0.35)",
-                }}
-              >
-                <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{opponentVisual.baseGlyph}</span>
-              </div>
-              <div className="text-right">
-                <p className="font-gabarito text-[11px] uppercase tracking-wider text-[rgba(244,240,230,0.72)]">Base HP</p>
-                <p className="font-caprasimo text-2xl text-[var(--tone-cream)]">{opponentBaseHp}</p>
-              </div>
+                {hasPlayerBaseSprite && playerBaseSrc ? (
+                  <Image
+                    src={playerBaseSrc}
+                    alt={`${playerCharacterId ?? "player"} base`}
+                    fill
+                    sizes="(max-width: 768px) 200px, 400px"
+                    className="object-contain object-left-bottom"
+                    onError={() => markBaseSpriteFailed(playerBaseSrc)}
+                  />
+                ) : (
+                  <div
+                    className="grid h-full w-full place-items-center rounded-2xl border"
+                    style={{
+                      borderColor: "rgba(248,214,148,0.36)",
+                      background: "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
+                      boxShadow: "0 10px 20px rgba(0,0,0,0.35)",
+                    }}
+                  >
+                    <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{playerVisual.baseGlyph}</span>
+                  </div>
+                )}
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-2xl"
+                  style={{
+                    background:
+                      playerDestroyedEffectActive && endgameImpactFlashActive
+                        ? defeatedBaseSoftMode
+                          ? "radial-gradient(circle at 54% 46%, rgba(203,95,72,0.4), rgba(203,95,72,0.04) 44%, rgba(203,95,72,0) 66%)"
+                          : "radial-gradient(circle at 54% 46%, rgba(224,73,56,0.62), rgba(224,73,56,0.12) 42%, rgba(224,73,56,0) 66%)"
+                        : playerBaseFx === "hit"
+                          ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
+                          : playerBaseFx === "heal"
+                            ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
+                            : "transparent",
+                    opacity: playerDestroyedEffectActive && endgameImpactFlashActive ? 1 : 0.9,
+                  }}
+                />
+                {playerDestroyedEffectActive && endgameCrackVisible && (
+                  <div className="pointer-events-none absolute inset-[6%] z-[2] overflow-hidden rounded-[14px]">
+                    <span
+                      className="absolute left-[34%] top-[10%] h-[78%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.88), rgba(85,24,16,0.78) 34%, rgba(20,8,7,0.85) 100%)",
+                        transform: "rotate(-16deg)",
+                        boxShadow: "0 0 10px rgba(227,88,70,0.24)",
+                      }}
+                    />
+                    <span
+                      className="absolute left-[54%] top-[16%] h-[66%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.84), rgba(102,27,19,0.72) 38%, rgba(20,8,7,0.84) 100%)",
+                        transform: "rotate(22deg)",
+                        boxShadow: "0 0 8px rgba(227,88,70,0.2)",
+                      }}
+                    />
+                    <span
+                      className="absolute left-[18%] top-[42%] h-[2px] w-[56%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.8), rgba(20,8,7,0.92))",
+                        transform: "rotate(-18deg)",
+                      }}
+                    />
+                    <span
+                      className="absolute right-[14%] top-[58%] h-[2px] w-[40%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.84), rgba(20,8,7,0.94))",
+                        transform: "rotate(24deg)",
+                      }}
+                    />
+                  </div>
+                )}
+                {playerDestroyedEffectActive && endgameSmokeVisible && (
+                  <div className="pointer-events-none absolute inset-0 z-[3]">
+                    {DESTROYED_SMOKE_PARTICLES.map((particle) => (
+                      <motion.span
+                        key={`player-${particle.key}`}
+                        className="absolute rounded-full"
+                        style={{
+                          left: particle.x,
+                          top: particle.y,
+                          width: `${Math.round(16 * particle.scale)}px`,
+                          height: `${Math.round(14 * particle.scale)}px`,
+                          background:
+                            "radial-gradient(circle at 45% 40%, rgba(170,178,170,0.82), rgba(76,84,78,0.4) 58%, rgba(20,20,20,0) 100%)",
+                          filter: "blur(0.2px)",
+                        }}
+                        initial={{ opacity: 0, scale: 0.6, x: 0, y: 0 }}
+                        animate={{
+                          opacity: [0, defeatedBaseSoftMode ? 0.34 : 0.5, defeatedBaseSoftMode ? 0.4 : 0.62, 0],
+                          scale: [0.58, 0.96, 1.14, 1.35],
+                          x: [0, particle.driftX * 0.45 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftX * (defeatedBaseSoftMode ? 0.72 : 1)],
+                          y: [0, particle.driftY * 0.36 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * 0.76 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * (defeatedBaseSoftMode ? 0.72 : 1)],
+                        }}
+                        transition={{
+                          duration: defeatedBaseSoftMode ? 1.85 : 2.05,
+                          ease: [0.2, 1, 0.35, 1],
+                          delay: particle.delay,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {playerDestroyedEffectActive && endgameSmokeVisible && (
+                  <div
+                    className="pointer-events-none absolute -bottom-1 left-[8%] h-[22%] w-[88%]"
+                    style={{
+                      background:
+                        "radial-gradient(ellipse at 50% 40%, rgba(83,89,81,0.36), rgba(83,89,81,0.12) 48%, rgba(83,89,81,0) 74%)",
+                    }}
+                  />
+                )}
+              </motion.div>
             </div>
 
             <div
-              className={`absolute left-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] overflow-hidden rounded-2xl border transition-all duration-300 ${
-                characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg] shadow-[0_0_28px_rgba(248,214,148,0.35)]" : ""
-              }`}
+              className="pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
-                borderColor: "rgba(248,214,148,0.42)",
-                background: playerVisual.portraitBg,
+                opacity:
+                  opponentBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? 0.22
+                      : 0.05
+                    : 0.9,
+                transform:
+                  opponentBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? "translateY(12px) scale(0.965)"
+                      : "translateY(18px) scale(0.94)"
+                    : "translateY(0) scale(1)",
               }}
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
-              <div className="relative grid h-full place-items-center">
-                <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
-                  {playerVisual.initial}
-                </span>
+              <motion.div
+                className="relative h-full w-full"
+                style={{
+                  aspectRatio: "1700 / 1269",
+                  filter:
+                    opponentBaseFx === "hit"
+                      ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
+                      : opponentBaseFx === "heal"
+                        ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
+                        : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+                }}
+                animate={opponentBaseControls}
+              >
+                {hasOpponentBaseSprite && opponentBaseSrc ? (
+                  <Image
+                    src={opponentBaseSrc}
+                    alt={`${opponentCharacterId ?? "opponent"} base`}
+                    fill
+                    sizes="(max-width: 768px) 200px, 400px"
+                    className={`object-contain object-right-bottom ${opponentCharacterId?.trim().toLowerCase() === "einstein" ? "" : "-scale-x-100"
+                      }`}
+                    onError={() => markBaseSpriteFailed(opponentBaseSrc)}
+                  />
+                ) : (
+                  <div
+                    className="grid h-full w-full place-items-center rounded-2xl border"
+                    style={{
+                      borderColor: "rgba(248,214,148,0.36)",
+                      background: "linear-gradient(150deg, rgba(37,63,51,0.9), rgba(18,33,27,0.94))",
+                      boxShadow: "0 10px 20px rgba(0,0,0,0.35)",
+                    }}
+                  >
+                    <span className="font-caprasimo text-3xl text-[rgba(248,214,148,0.88)]">{opponentVisual.baseGlyph}</span>
+                  </div>
+                )}
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-2xl"
+                  style={{
+                    background:
+                      opponentDestroyedEffectActive && endgameImpactFlashActive
+                        ? defeatedBaseSoftMode
+                          ? "radial-gradient(circle at 46% 46%, rgba(203,95,72,0.4), rgba(203,95,72,0.04) 44%, rgba(203,95,72,0) 66%)"
+                          : "radial-gradient(circle at 46% 46%, rgba(224,73,56,0.62), rgba(224,73,56,0.12) 42%, rgba(224,73,56,0) 66%)"
+                        : opponentBaseFx === "hit"
+                          ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
+                          : opponentBaseFx === "heal"
+                            ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
+                            : "transparent",
+                    opacity: opponentDestroyedEffectActive && endgameImpactFlashActive ? 1 : 0.9,
+                  }}
+                />
+                {opponentDestroyedEffectActive && endgameCrackVisible && (
+                  <div className="pointer-events-none absolute inset-[6%] z-[2] overflow-hidden rounded-[14px]">
+                    <span
+                      className="absolute right-[34%] top-[10%] h-[78%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.88), rgba(85,24,16,0.78) 34%, rgba(20,8,7,0.85) 100%)",
+                        transform: "rotate(16deg)",
+                        boxShadow: "0 0 10px rgba(227,88,70,0.24)",
+                      }}
+                    />
+                    <span
+                      className="absolute right-[54%] top-[16%] h-[66%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.84), rgba(102,27,19,0.72) 38%, rgba(20,8,7,0.84) 100%)",
+                        transform: "rotate(-22deg)",
+                        boxShadow: "0 0 8px rgba(227,88,70,0.2)",
+                      }}
+                    />
+                    <span
+                      className="absolute right-[18%] top-[42%] h-[2px] w-[56%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.8), rgba(20,8,7,0.92))",
+                        transform: "rotate(18deg)",
+                      }}
+                    />
+                    <span
+                      className="absolute left-[14%] top-[58%] h-[2px] w-[40%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.84), rgba(20,8,7,0.94))",
+                        transform: "rotate(-24deg)",
+                      }}
+                    />
+                  </div>
+                )}
+                {opponentDestroyedEffectActive && endgameSmokeVisible && (
+                  <div className="pointer-events-none absolute inset-0 z-[3]">
+                    {DESTROYED_SMOKE_PARTICLES.map((particle) => (
+                      <motion.span
+                        key={`opponent-${particle.key}`}
+                        className="absolute rounded-full"
+                        style={{
+                          left: particle.x,
+                          top: particle.y,
+                          width: `${Math.round(16 * particle.scale)}px`,
+                          height: `${Math.round(14 * particle.scale)}px`,
+                          background:
+                            "radial-gradient(circle at 45% 40%, rgba(170,178,170,0.82), rgba(76,84,78,0.4) 58%, rgba(20,20,20,0) 100%)",
+                          filter: "blur(0.2px)",
+                        }}
+                        initial={{ opacity: 0, scale: 0.6, x: 0, y: 0 }}
+                        animate={{
+                          opacity: [0, defeatedBaseSoftMode ? 0.34 : 0.5, defeatedBaseSoftMode ? 0.4 : 0.62, 0],
+                          scale: [0.58, 0.96, 1.14, 1.35],
+                          x: [0, particle.driftX * 0.45 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftX * (defeatedBaseSoftMode ? 0.72 : 1)],
+                          y: [0, particle.driftY * 0.36 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * 0.76 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * (defeatedBaseSoftMode ? 0.72 : 1)],
+                        }}
+                        transition={{
+                          duration: defeatedBaseSoftMode ? 1.85 : 2.05,
+                          ease: [0.2, 1, 0.35, 1],
+                          delay: particle.delay,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {opponentDestroyedEffectActive && endgameSmokeVisible && (
+                  <div
+                    className="pointer-events-none absolute -bottom-1 left-[8%] h-[22%] w-[88%]"
+                    style={{
+                      background:
+                        "radial-gradient(ellipse at 50% 40%, rgba(83,89,81,0.36), rgba(83,89,81,0.12) 48%, rgba(83,89,81,0) 74%)",
+                    }}
+                  />
+                )}
+              </motion.div>
+            </div>
+
+            <div className="absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${playerBaseHpPct}%`,
+                    background: "linear-gradient(90deg, #d9a85b, #ba6931)",
+                  }}
+                />
               </div>
             </div>
 
-            <div
-              className={`absolute right-[21%] top-[12%] aspect-[4/5] w-[clamp(130px,20vw,200px)] overflow-hidden rounded-2xl border transition-all duration-300 ${
-                characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg] shadow-[0_0_28px_rgba(248,214,148,0.35)]" : ""
-              }`}
-              style={{
-                borderColor: "rgba(248,214,148,0.42)",
-                background: opponentVisual.portraitBg,
-              }}
-            >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_24%,rgba(255,255,255,0.18),transparent_58%)]" />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,8,7,0.1)_0%,rgba(5,8,7,0.4)_100%)]" />
-              <div className="relative grid h-full place-items-center">
-                <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
-                  {opponentVisual.initial}
-                </span>
+            <div className="absolute right-3 top-3 z-20 w-[clamp(132px,17vw,190px)] text-right md:right-5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+                <div
+                  className="ml-auto h-full rounded-full"
+                  style={{
+                    width: `${opponentBaseHpPct}%`,
+                    background: "linear-gradient(270deg, #d9a85b, #ba6931)",
+                  }}
+                />
               </div>
             </div>
+
+            <motion.div
+              className={`absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
+                }`}
+              animate={playerActionControls}
+            >
+              <div className="relative h-full w-full">
+                <AnimatePresence>
+                  {displayPlayerReaction && playerReactionSrc && hasPlayerReactionSprite && (
+                    <motion.div
+                      key={displayPlayerReaction.id}
+                      className="pointer-events-none absolute -left-[5.6rem] top-6 z-20 md:-left-[6.2rem]"
+                      initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                      animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
+                      exit={{ opacity: 0, y: -7, scale: 0.96 }}
+                      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div
+                        className="relative rounded-[22px] border p-1.5"
+                        style={{
+                          borderColor: "rgba(248,214,148,0.58)",
+                          background: "linear-gradient(150deg, rgba(255,249,235,0.98), rgba(246,228,195,0.98))",
+                          boxShadow: "0 12px 22px rgba(0,0,0,0.28)",
+                        }}
+                      >
+                        <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
+                          <Image
+                            src={playerReactionSrc}
+                            alt={`${playerCharacterId ?? "player"} ${displayPlayerReaction.expression} reaction`}
+                            fill
+                            sizes="(max-width: 768px) 80px, 88px"
+                            className="object-cover object-center"
+                            onError={() => markCharacterSpriteFailed(playerReactionSrc)}
+                          />
+                        </div>
+                        <span
+                          className="absolute -right-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-r border-b"
+                          style={{
+                            borderColor: "rgba(248,214,148,0.58)",
+                            background: "rgba(246,228,195,0.98)",
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                {hasPlayerSprite && playerSpriteSrc ? (
+                  <Image
+                    src={playerSpriteSrc}
+                    alt={`${playerCharacterId ?? "player"} ${playerSpriteState} portrait`}
+                    fill
+                    sizes="(max-width: 768px) 130px, 200px"
+                    className="object-contain object-center"
+                    onError={() => markCharacterSpriteFailed(playerSpriteSrc)}
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
+                      {playerVisual.initial}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
+            <motion.div
+              className={`absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
+                }`}
+              animate={opponentActionControls}
+            >
+              <div className="relative h-full w-full">
+                <AnimatePresence>
+                  {displayOpponentReaction && opponentReactionSrc && hasOpponentReactionSprite && (
+                    <motion.div
+                      key={displayOpponentReaction.id}
+                      className="pointer-events-none absolute -right-[5.6rem] top-6 z-20 md:-right-[6.2rem]"
+                      initial={{ opacity: 0, y: 8, scale: 0.88 }}
+                      animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
+                      exit={{ opacity: 0, y: -7, scale: 0.96 }}
+                      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div
+                        className="relative rounded-[22px] border p-1.5"
+                        style={{
+                          borderColor: "rgba(248,214,148,0.58)",
+                          background: "linear-gradient(150deg, rgba(255,249,235,0.98), rgba(246,228,195,0.98))",
+                          boxShadow: "0 12px 22px rgba(0,0,0,0.28)",
+                        }}
+                      >
+                        <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
+                          <Image
+                            src={opponentReactionSrc}
+                            alt={`${opponentCharacterId ?? "opponent"} ${displayOpponentReaction.expression} reaction`}
+                            fill
+                            sizes="(max-width: 768px) 80px, 88px"
+                            className="object-cover object-center"
+                            onError={() => markCharacterSpriteFailed(opponentReactionSrc)}
+                          />
+                        </div>
+                        <span
+                          className="absolute -left-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-l border-t"
+                          style={{
+                            borderColor: "rgba(248,214,148,0.58)",
+                            background: "rgba(246,228,195,0.98)",
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                {hasOpponentSprite && opponentSpriteSrc ? (
+                  <Image
+                    src={opponentSpriteSrc}
+                    alt={`${opponentCharacterId ?? "opponent"} ${opponentSpriteState} portrait`}
+                    fill
+                    sizes="(max-width: 768px) 130px, 200px"
+                    className="object-contain object-center -scale-x-100"
+                    onError={() => markCharacterSpriteFailed(opponentSpriteSrc)}
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <span className="font-caprasimo text-7xl text-[rgba(255,244,221,0.9)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)]">
+                      {opponentVisual.initial}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
 
             {projectile && (
               <motion.div
                 key={projectile.id}
-                className="pointer-events-none absolute left-1/2 top-[42%] h-10 w-10 -translate-x-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute left-1/2 top-[42%] z-[12] h-12 w-12 -translate-x-1/2 -translate-y-1/2"
                 initial={{
                   x: projectile.from === "player" ? -180 : 180,
                   y: projectile.from === "player" ? 40 : -40,
-                  opacity: 0.25,
-                  scale: 0.65,
+                  opacity: 0.22,
+                  scale: 0.72,
                 }}
                 animate={{
                   x: projectile.to === "player" ? -210 : 210,
@@ -1022,272 +1957,239 @@ export function BattleScreen() {
                 }}
                 transition={{ duration: 0.42, ease: [0.2, 1, 0.3, 1] }}
               >
-                <div
-                  className="grid h-full w-full place-items-center rounded-lg border"
-                  style={{
-                    borderColor: projectile.kind === "heal" ? "rgba(157,180,150,0.72)" : "rgba(248,214,148,0.7)",
-                    background:
-                      projectile.kind === "heal"
-                        ? "linear-gradient(145deg, rgba(39,93,52,0.9), rgba(21,52,30,0.95))"
-                        : "linear-gradient(145deg, rgba(122,69,41,0.9), rgba(77,42,24,0.95))",
-                    boxShadow:
-                      projectile.kind === "heal"
-                        ? "0 0 18px rgba(157,180,150,0.48)"
-                        : "0 0 18px rgba(248,214,148,0.44)",
-                  }}
-                >
-                  <span className="font-caprasimo text-lg text-[var(--tone-cream)]">
-                    {projectile.kind === "heal" ? "✚" : "✦"}
-                  </span>
+                <div className="relative h-full w-full">
+                  <div
+                    className="absolute inset-0 rounded-full blur-[7px]"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(248,214,148,0.62) 0%, rgba(248,214,148,0.28) 46%, rgba(248,214,148,0) 76%)",
+                    }}
+                  />
+                  {projectile.src && !failedProjectileSprites[projectile.src] ? (
+                    <Image
+                      src={projectile.src}
+                      alt="Projectile effect"
+                      fill
+                      sizes="48px"
+                      className="object-contain object-center drop-shadow-[0_0_8px_rgba(248,214,148,0.38)]"
+                      onError={() => markProjectileSpriteFailed(projectile.src!)}
+                    />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center">
+                      <span className="font-caprasimo text-lg text-[var(--tone-cream)] drop-shadow-[0_0_8px_rgba(248,214,148,0.5)]">
+                        {"\u2726"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
 
-            <div className="absolute bottom-0 left-1/2 w-full max-w-4xl -translate-x-1/2">
-              <p className="mb-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-                {enemyEventText ?? (isPlayable ? "Pick a card from your hand." : "Waiting for server state...")}
-              </p>
+          </div>
 
-              <div className="flex items-end justify-center gap-2 md:gap-3">
-                {Array.from({ length: displaySlots }).map((_, index) => {
-                  const card = hand[index] ?? null;
-                  const active = card ? activeCardId === card.id : false;
-                  const transformClass = getCardTransform(index);
-                  return (
-                    <button
-                      key={card?.id ?? `placeholder-${index}`}
-                      type="button"
-                      onClick={() => {
-                        if (card) onOpenCard(card);
-                      }}
-                      disabled={!card || !isPlayable || Boolean(activeCardId) || isMatchComplete}
-                      className={`frame-cut relative w-[18vw] min-w-[70px] max-w-[140px] aspect-[5/7] px-2 py-2 text-left transition ${transformClass}`}
+          <div className="relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
+            <AnimatePresence>
+              {activeCard && status === "playing" && !isMatchComplete && (
+                <motion.div
+                  key={activeCard.id}
+                  initial={{ opacity: 0, y: 10, x: "-50%", scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
+                  exit={{ opacity: 0, y: 6, x: "-50%", scale: 0.98 }}
+                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.36)",
+                    background: "linear-gradient(150deg, rgba(255,246,228,0.96), rgba(243,221,185,0.96))",
+                    boxShadow: "0 14px 26px rgba(0,0,0,0.28)",
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-gabarito text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#6d8373]">
+                        Question
+                      </p>
+                      <p className="mt-0.5 line-clamp-2 font-gabarito text-sm font-semibold leading-snug text-[#1f2b24] md:text-base">
+                        {activeCard.question.text}
+                      </p>
+                    </div>
+                    <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displaySecondsLeft}</p>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
+                    {activeCard.question.options.map((option) => {
+                      const isSelected = selectedOptionId === option.id;
+                      const selectedCorrect = isSelected && answerFeedback === "correct";
+                      const selectedWrong = isSelected && answerFeedback === "wrong";
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          disabled={answerLocked}
+                          onClick={() => onAnswer(option.id)}
+                          className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
+                          style={{
+                            border: selectedCorrect
+                              ? "1px solid rgba(76,120,82,0.58)"
+                              : selectedWrong
+                                ? "1px solid rgba(140,70,48,0.62)"
+                                : isSelected
+                                  ? "1px solid rgba(186,105,49,0.5)"
+                                  : "1px solid rgba(111,58,40,0.24)",
+                            background: selectedCorrect
+                              ? "linear-gradient(160deg, rgba(86,133,93,0.98), rgba(53,93,63,0.98))"
+                              : selectedWrong
+                                ? "linear-gradient(160deg, rgba(233,201,184,0.98), rgba(188,116,83,0.96))"
+                                : isSelected
+                                  ? "linear-gradient(160deg, rgba(248,225,181,0.98), rgba(231,190,128,0.96))"
+                                  : "linear-gradient(160deg, rgba(255,250,239,0.96), rgba(243,224,191,0.96))",
+                            boxShadow: isSelected
+                              ? "0 0 0 2px rgba(248,214,148,0.18), 0 8px 14px rgba(77,42,24,0.16)"
+                              : "0 6px 10px rgba(77,42,24,0.12)",
+                            opacity: answerLocked && !isSelected ? 0.72 : 1,
+                          }}
+                        >
+                          <span
+                            className="font-gabarito text-[10px] font-black uppercase tracking-wider"
+                            style={{ color: selectedWrong ? "#6f3a28" : selectedCorrect ? "rgba(240,249,238,0.96)" : "#6d8373" }}
+                          >
+                            {option.id}
+                          </span>
+                          <span
+                            className="ml-2 font-gabarito text-xs font-semibold md:text-sm"
+                            style={{ color: selectedWrong ? "#3f2419" : selectedCorrect ? "rgba(249,253,248,0.96)" : "#1f2b24" }}
+                          >
+                            {option.text}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <p className="mb-1 text-center font-gabarito text-xs text-[rgba(244,240,230,0.86)]">
+              {activeCard && status === "playing" && !isMatchComplete
+                ? "Choose an answer."
+                : isPlayable
+                  ? "Pick a card from your hand."
+                  : "Waiting for server state..."}
+            </p>
+
+            <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
+              {Array.from({ length: displaySlots }).map((_, index) => {
+                const card = hand[index] ?? null;
+                const active = card ? activeCardId === card.id : false;
+                const transformClass = getCardTransform(index);
+                const cardDisabled = !card || !isPlayable || Boolean(activeCardId) || isMatchComplete;
+                return (
+                  <button
+                    key={card?.id ?? `placeholder-${index}`}
+                    type="button"
+                    onClick={() => {
+                      if (card) onOpenCard(card);
+                    }}
+                    disabled={cardDisabled}
+                    className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition ${transformClass}`}
+                    style={{
+                      border: active ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
+                      background: cardDisabled
+                        ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
+                        : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
+                      opacity: active ? 1 : cardDisabled ? 0.68 : 1,
+                      boxShadow: active
+                        ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
+                        : "0 12px 22px rgba(0,0,0,0.3)",
+                    }}
+                  >
+                    <div
+                      className="pointer-events-none absolute inset-[8%] rounded-2xl"
                       style={{
-                        border: active ? "1px solid rgba(248,214,148,0.88)" : "1px solid rgba(111,58,40,0.42)",
-                        background: "linear-gradient(160deg, #fff4dd 0%, #f1dfc1 100%)",
-                        opacity: !card || !isPlayable ? 0.62 : 1,
-                        boxShadow: "0 8px 16px rgba(0,0,0,0.28)",
+                        border: "1px solid rgba(111,58,40,0.24)",
+                        background:
+                          "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.38), transparent 44%), linear-gradient(150deg, rgba(255,245,226,0.64), rgba(241,217,181,0.68))",
                       }}
-                    >
-                      <span className="font-gabarito text-[10px] uppercase tracking-[0.16em] text-[#6d4f3a]">
-                        {card ? card.type : "locked"}
+                    />
+                    <div
+                      className="pointer-events-none absolute inset-0"
+                      style={{
+                        background:
+                          "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
+                      }}
+                    />
+                    {card && (
+                      <span
+                        className="absolute left-1/2 top-[18%] -translate-x-1/2 rounded-full px-2 py-0.5 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.12em]"
+                        style={{
+                          color: card.type === "heal" ? "#214335" : "#6f3a28",
+                          background: card.type === "heal" ? "rgba(216,234,212,0.82)" : "rgba(248,214,148,0.82)",
+                          border: "1px solid rgba(111,58,40,0.22)",
+                        }}
+                      >
+                        {card.type === "heal" ? "Heal" : "Attack"}
                       </span>
-                      <span className="absolute bottom-2 left-2 font-caprasimo text-3xl text-[#6f3a28]">?</span>
-                    </button>
-                  );
-                })}
-              </div>
+                    )}
+                    <span
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-caprasimo text-4xl"
+                      style={{ color: cardDisabled ? "rgba(111,58,40,0.48)" : "rgba(111,58,40,0.82)" }}
+                    >
+                      ?
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
       </div>
 
-      {activeCard && status === "playing" && !isMatchComplete && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-[rgba(7,12,10,0.65)] p-4">
-          <div className="frame-cut w-full max-w-xl p-4 md:p-5" style={{ border: "1px solid rgba(248,214,148,0.36)", background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)" }}>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="font-gabarito text-[11px] uppercase tracking-[0.18em] text-[#6d8373]">Question</p>
-              <p className="font-caprasimo text-4xl text-[#ba6931]">{displaySecondsLeft}</p>
-            </div>
-
-            <p className="font-gabarito text-lg font-semibold leading-relaxed text-[#1f2b24]">
-              {activeCard.question.text}
-            </p>
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {activeCard.question.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  disabled={answerLocked}
-                  onClick={() => onAnswer(option.id)}
-                  className="frame-cut px-3 py-3 text-left transition hover:-translate-y-0.5 disabled:opacity-65"
-                  style={{ border: "1px solid rgba(111,58,40,0.26)", background: "rgba(255,248,236,0.95)" }}
-                >
-                  <p className="font-gabarito text-xs font-bold uppercase tracking-wider text-[#6d8373]">
-                    {option.id}
-                  </p>
-                  <p className="mt-1 font-gabarito text-sm text-[#1f2b24]">{option.text}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isMatchComplete && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
-          <div className="frame-cut w-full max-w-xl p-5" style={{ border: "1px solid rgba(248,214,148,0.36)", background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)" }}>
-            <p className="font-caprasimo text-4xl text-[#1f2b24]">{settlementText}</p>
-            <p className="mt-1 font-gabarito text-sm text-[#4f6759]">Resolved turns: {outcomes.length}</p>
-            {winnerAddress && (
-              <div className="mt-1 flex items-center gap-2">
-                <p className="font-gabarito text-xs text-[#5e7768]">Winner: {shortenAddress(winnerAddress)}</p>
-                <WalletInspectButton
-                  label="Inspect"
-                  onClick={() => {
-                    setInspectTargetTitle("Winner Wallet");
-                    setInspectTargetAddress(winnerAddress);
-                  }}
-                />
-              </div>
-            )}
-            {settlementResult && (
-              <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
-                Match ID: {settlementResult.matchId}
-              </p>
-            )}
-            {matchInvalidated && (
-              <p className="mt-2 font-gabarito text-xs text-[#8a3f2b]">
-                Settlement halted by anti-cheat verification.
-              </p>
-            )}
-
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#edf4eb" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Correct</p>
-                <p className="font-caprasimo text-2xl text-[#274137]">{correctCount}</p>
-              </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f6eee0" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Timeout</p>
-                <p className="font-caprasimo text-2xl text-[#6f3a28]">{timeoutCount}</p>
-              </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "#f4e8e2" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Wrong</p>
-                <p className="font-caprasimo text-2xl text-[#7c4a36]">{wrongCount}</p>
-              </div>
-            </div>
-
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,248,236,0.95)" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Your Rounds</p>
-                <p className="font-caprasimo text-2xl text-[#274137]">{playerRoundsWon}</p>
-              </div>
-              <div className="frame-cut frame-cut-sm p-2" style={{ border: "1px solid rgba(39,65,55,0.18)", background: "rgba(255,248,236,0.95)" }}>
-                <p className="font-gabarito text-[10px] uppercase tracking-wider text-[#6d8373]">Opponent Rounds</p>
-                <p className="font-caprasimo text-2xl text-[#6f3a28]">{opponentRoundsWon}</p>
-              </div>
-            </div>
-
-            <div className="mt-4 max-h-40 space-y-2 overflow-auto">
-              {outcomes.map((item, index) => (
-                <div
-                  key={`${item.cardId}-${item.at}`}
-                  className="frame-cut frame-cut-sm flex items-center justify-between px-3 py-2"
-                  style={{ border: "1px solid rgba(39,65,55,0.16)", background: getOutcomeColor(item.outcome) }}
-                >
-                  <p className="font-gabarito text-xs text-[#274137]">Turn {index + 1}</p>
-                  <p className="font-gabarito text-xs font-semibold uppercase tracking-wide text-[#5e7768]">
-                    {getOutcomeLabel(item.outcome)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 frame-cut frame-cut-sm p-3" style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}>
-              <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[#274137]">
-                Settlement Authority
-              </p>
-              {settlementResult ? (
-                <>
-                  <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
-                    Result signed by backend oracle and submitted by backend settlement flow.
-                  </p>
-                  <p className="mt-2 break-all font-gabarito text-[11px] text-[#5e7768]">
-                    Server Pubkey: {settlementResult.serverPublicKey}
-                  </p>
-                  <p className="mt-1 break-all font-gabarito text-[11px] text-[#5e7768]">
-                    Settlement Signature: {settlementResult.settlementSignature}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 font-gabarito text-xs text-[#5e7768]">
-                  Waiting for server settlement payload...
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-              >
-                View History
-              </button>
-              <button
-                type="button"
-                onClick={() => setShareModalOpen(true)}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-              >
-                Blink Share
-              </button>
-            </div>
-
-            <div className="mt-5 flex gap-2">
-              <Link
-                href="/lobby"
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(39,65,55,0.22)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-              >
-                Back To Lobby
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {shareModalOpen && isMatchComplete && (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
-          <div className="relative w-full max-w-3xl">
-            <button
-              type="button"
-              onClick={() => setShareModalOpen(false)}
-              className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-            >
-              Close
-            </button>
-            <ChallengeShareCard
-              title="Challenge Me"
-              challengerName="You"
-              challengerAddress={address}
-              arenaLabel={arenaLabel}
-              token={arenaToken}
-              wagerUsd={wagerUsd}
-              challengeLink={challengeLink}
-              description={challengeDescription}
-              statusLabel={challengeStatusLabel}
-              onCopy={onCopyChallengeLink}
-              onSaveJpg={onSaveChallengeJpg}
-              onShareX={onShareChallengeToX}
-              notice={shareNotice}
-            />
-          </div>
-        </div>
-      )}
-
-      <HistoryDrawer
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        title="Match History"
-        items={historyItems}
-        loading={historyLoading}
-        error={historyError}
+      <BattleScreenOverlays
+        showRoomGateModal={showRoomGateModal}
+        roomGateTitle={roomGateTitle}
+        roomGateMessage={roomGateMessage}
+        hasSocketIssue={hasSocketIssue}
+        onReconnect={reconnect}
+        cleanLobbyHref={cleanLobbyHref}
+        onReturnToLobby={clearLobbyReturnState}
+        showDisconnectedOverlay={showDisconnectedOverlay}
+        pendingSurrenderAfterReconnect={pendingSurrenderAfterReconnect}
+        canSurrenderByState={canSurrenderByState}
+        onConfirmSurrender={onConfirmSurrender}
+        isMatchComplete={isMatchComplete}
+        showSettlementOverlay={showSettlementOverlay}
+        surrenderModalOpen={surrenderModalOpen}
+        canSurrenderMatch={canSurrenderMatch}
+        onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
+        settlementText={settlementText}
+        settlementSubtitle={settlementSubtitle}
+        settlementOutcomeKind={settlementOutcomeKind}
+        settlementEmojiMood={settlementEmojiMood}
+        settlementExpressionSrc={settlementExpressionSrc}
+        settlementStatus={settlementStatus}
+        settlementStatusStyle={settlementStatusStyle}
+        winnerLineText={winnerLineText}
+        playerRoundsWon={playerRoundsWon}
+        opponentRoundsWon={opponentRoundsWon}
+        correctCount={correctCount}
+        timeoutCount={timeoutCount}
+        wrongCount={wrongCount}
+        settlementDetailsOpen={settlementDetailsOpen}
+        onToggleSettlementDetails={() => setSettlementDetailsOpen((prev) => !prev)}
+        settlementPayload={settlementPayload}
+        onOpenShareModal={() => setShareModalOpen(true)}
+        shareModalOpen={shareModalOpen}
+        onCloseShareModal={() => setShareModalOpen(false)}
+        address={address}
+        arenaLabel={arenaLabel}
+        arenaToken={arenaToken}
+        wagerUsd={wagerUsd}
+        challengeLink={challengeLink}
+        challengeDescription={challengeDescription}
+        challengeStatusLabel={challengeStatusLabel}
+        onCopyChallengeLink={onCopyChallengeLink}
+        onSaveChallengeJpg={onSaveChallengeJpg}
+        onShareChallengeToX={onShareChallengeToX}
+        shareNotice={shareNotice}
       />
-
-      {inspectTargetAddress && (
-        <WalletInspectPanel
-          open={Boolean(inspectTargetAddress)}
-          onClose={() => setInspectTargetAddress(null)}
-          address={inspectTargetAddress}
-          arenaId={arenaId}
-          token={arenaToken}
-          title={inspectTargetTitle}
-        />
-      )}
     </main>
   );
 }

@@ -3,7 +3,6 @@ import {
   Connection,
   PublicKey,
   Transaction,
-  SystemProgram,
   SYSVAR_INSTRUCTIONS_PUBKEY,
   Ed25519Program,
   sendAndConfirmTransaction,
@@ -13,6 +12,12 @@ import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenA
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import { buildSettlementMessage, ESCROW_CONSTANTS } from '@shared/escrow';
+import {
+  anchorDiscriminator,
+  CORA_ESCROW_PROGRAM_ID,
+  ESCROW_INSTRUCTION_DISCRIMINATORS,
+  MATCH_STATE_LAYOUT,
+} from '../config/solana';
 
 /**
  * Loads the server keypair from the environment variable.
@@ -72,8 +77,6 @@ export function signSettlementAuthorization(
   return bs58.encode(signatureBytes);
 }
 
-const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
-
 // Singleton connection — reuse instead of creating per call (avoids connection churn)
 const rpcUrl = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
 const wsUrl = process.env.SOLANA_WS_URL;
@@ -87,7 +90,7 @@ console.log(`[Settlement] Using Solana RPC: ${rpcUrl}${hasExplicitRpc ? '' : ' (
 // ProgramConfig PDA — derived once, reused for every settle_match call
 const configPda = PublicKey.findProgramAddressSync(
   [Buffer.from(ESCROW_CONSTANTS.CONFIG_SEED)],
-  PROGRAM_ID
+  CORA_ESCROW_PROGRAM_ID
 )[0];
 
 /**
@@ -131,11 +134,11 @@ export async function submitSettlementTransaction(
 
   const matchStatePda = PublicKey.findProgramAddressSync(
     [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchId],
-    PROGRAM_ID
+    CORA_ESCROW_PROGRAM_ID
   )[0];
   const vaultPda = PublicKey.findProgramAddressSync(
     [Buffer.from(ESCROW_CONSTANTS.VAULT_SEED), matchId],
-    PROGRAM_ID
+    CORA_ESCROW_PROGRAM_ID
   )[0];
 
   const accountInfo = await withRetry(() => connection.getAccountInfo(matchStatePda));
@@ -147,9 +150,9 @@ export async function submitSettlementTransaction(
   // Parse MatchState manually to avoid heavy IDL dependency
   // Layout (v1): 8 (discriminator) + 1 (version) + 32 (match_id) + 32 (player_a) + 32 (player_b) + 32 (token_mint) + ...
   const matchStateData = accountInfo.data;
-  const playerA = new PublicKey(matchStateData.subarray(41, 73));
-  const playerB = new PublicKey(matchStateData.subarray(73, 105));
-  const tokenMint = new PublicKey(matchStateData.subarray(105, 137));
+  const playerA = new PublicKey(matchStateData.subarray(...MATCH_STATE_LAYOUT.playerA));
+  const playerB = new PublicKey(matchStateData.subarray(...MATCH_STATE_LAYOUT.playerB));
+  const tokenMint = new PublicKey(matchStateData.subarray(...MATCH_STATE_LAYOUT.tokenMint));
 
   const targetPubkey = new PublicKey(targetAddress);
   
@@ -172,10 +175,9 @@ export async function submitSettlementTransaction(
   });
 
   // Construct settle_match instruction data
-  // Discriminator: sha256("global:settle_match")[0..8] => [0x47, 0x7c, 0x75, 0x60, 0xbf, 0xd9, 0x74, 0x18]
   // Buffer size: 8 (discriminator) + 1 (action) + 32 (target) + 64 (signature) = 105 bytes
   const data = Buffer.alloc(105);
-  data.set([0x47, 0x7c, 0x75, 0x60, 0xbf, 0xd9, 0x74, 0x18], 0);
+  data.set(ESCROW_INSTRUCTION_DISCRIMINATORS.settleMatch, 0);
   data.writeUInt8(action, 8);
   data.set(targetPubkey.toBytes(), 9);
   data.set(signatureBytes, 41);
@@ -192,7 +194,7 @@ export async function submitSettlementTransaction(
   // 8: tokenProgram (read-only)
   // 9: instructionsSysvar (read-only)
   const settleMatchIx = new TransactionInstruction({
-    programId: PROGRAM_ID,
+    programId: CORA_ESCROW_PROGRAM_ID,
     data,
     keys: [
       { pubkey: serverKeypair.publicKey, isSigner: true, isWritable: true },
@@ -226,5 +228,63 @@ export async function submitSettlementTransaction(
   console.log(`[Settlement] Success! TxHash: ${txHash}`);
   console.log(`[Settlement] MatchState PDA and Vault closed on-chain. Rent reclaimed by caller.`);
   
+  return txHash;
+}
+
+/**
+ * Submits the refund transaction directly to the Solana blockchain.
+ *
+ * Used only for draw/server-error outcomes. The current on-chain refund
+ * instruction is timeout-gated, so this will fail until the deployed program
+ * allows immediate referee refunds for those outcomes.
+ */
+export async function submitRefundTransaction(matchId: Uint8Array): Promise<string> {
+  if (!hasExplicitRpc) {
+    console.log(`[Refund] Skipped - no SOLANA_RPC_URL configured. Set it in .env to enable on-chain refunds.`);
+    return 'SKIPPED_NO_RPC';
+  }
+
+  const matchStatePda = PublicKey.findProgramAddressSync(
+    [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchId],
+    CORA_ESCROW_PROGRAM_ID
+  )[0];
+  const vaultPda = PublicKey.findProgramAddressSync(
+    [Buffer.from(ESCROW_CONSTANTS.VAULT_SEED), matchId],
+    CORA_ESCROW_PROGRAM_ID
+  )[0];
+
+  const accountInfo = await withRetry(() => connection.getAccountInfo(matchStatePda));
+  if (!accountInfo) {
+    console.warn(`[Refund] MatchState PDA not found on-chain. It may already be settled/refunded. Skipping.`);
+    return 'SKIPPED_NO_ONCHAIN_MATCH';
+  }
+
+  const matchStateData = accountInfo.data;
+  const playerA = new PublicKey(matchStateData.subarray(...MATCH_STATE_LAYOUT.playerA));
+  const playerB = new PublicKey(matchStateData.subarray(...MATCH_STATE_LAYOUT.playerB));
+  const tokenMint = new PublicKey(matchStateData.subarray(...MATCH_STATE_LAYOUT.tokenMint));
+
+  const playerATa = getAssociatedTokenAddressSync(tokenMint, playerA, true);
+  const playerBTa = getAssociatedTokenAddressSync(tokenMint, playerB, true);
+
+  const refundIx = new TransactionInstruction({
+    programId: CORA_ESCROW_PROGRAM_ID,
+    data: anchorDiscriminator('refund'),
+    keys: [
+      { pubkey: serverKeypair.publicKey, isSigner: true, isWritable: true },
+      { pubkey: matchStatePda, isSigner: false, isWritable: true },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: playerATa, isSigner: false, isWritable: true },
+      { pubkey: playerBTa, isSigner: false, isWritable: true },
+      { pubkey: tokenMint, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+  });
+
+  const tx = new Transaction().add(refundIx);
+  console.log(`[Refund] Submitting refund for match: ${Buffer.from(matchId).toString('hex')}`);
+
+  const txHash = await withRetry(() => sendAndConfirmTransaction(connection, tx, [serverKeypair]));
+  console.log(`[Refund] Success! TxHash: ${txHash}`);
   return txHash;
 }

@@ -27,14 +27,14 @@ import { AntiCheatAnalyzer } from './AntiCheatAnalyzer';
  *  - Player health management (100 HP start)
  *  - Scoring: correct attack = 10 dmg (×2 extra), correct heal = 10 HP (×2 extra)
  *  - Card dealing from a shuffled question pool (hand of 5, auto-refill)
- *  - Win condition evaluation (HP zero, timer expiry, forfeit)
+ *  - Win condition evaluation (HP zero, timer expiry, surrender, draw)
  *
  * The engine is I/O-free. It emits events that the network layer (RoomManager)
  * listens to and broadcasts via WebSocket.
  */
 export class GameEngine {
   // ─── Configuration ────────────────────────────────────────────
-  static readonly MATCH_DURATION_MS = 300_000;          // 5 minutes
+  static readonly MATCH_DURATION_MS = 180_000;          // 180 seconds
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
   static readonly ROUNDS_TO_WIN = 2;
   static readonly BASE_DAMAGE = 50;
@@ -79,6 +79,8 @@ export class GameEngine {
         health: GameEngine.STARTING_HEALTH,
         score: 0,
         roundsWon: 0,
+        correctAnswers: 0,
+        currentCorrectStreak: 0,
         hand,
         characterState: 'stay',
         queueIndex: GameEngine.HAND_SIZE, // Next card to draw is at index 5
@@ -104,21 +106,26 @@ export class GameEngine {
   }
 
   /**
-   * Force-stop the match (forfeit / disconnect).
+   * Force-stop the match for an explicit surrender.
    */
-  stop(forfeitAddress?: string): void {
+  stop(surrenderedAddress?: string): void {
     if (this.finished) return;
     this.finished = true;
     this.clearTimer();
 
-    if (forfeitAddress) {
-      const winnerAddress = this.playerAddresses.find(a => a !== forfeitAddress)!;
+    if (surrenderedAddress) {
+      const winnerAddress = this.playerAddresses.find(a => a !== surrenderedAddress)!;
       this.emit('gameOver', {
         winnerAddress,
-        reason: 'forfeit',
+        reason: 'surrender',
+        surrenderedAddress,
         antiCheatVerdicts: this.antiCheat.getVerdicts()
       });
     }
+  }
+
+  surrender(playerAddress: string): void {
+    this.stop(playerAddress);
   }
 
   /**
@@ -181,6 +188,8 @@ export class GameEngine {
     let heal = 0;
 
     if (correct) {
+      player.correctAnswers += 1;
+      player.currentCorrectStreak += 1;
       if (card.type === 'attack') {
         damage = GameEngine.BASE_DAMAGE * multiplier;
         opponent.health = Math.max(0, opponent.health - damage);
@@ -196,6 +205,7 @@ export class GameEngine {
       }
     } else {
       // Wrong answer — no effect, but still consume the card
+      player.currentCorrectStreak = 0;
       player.characterState = 'stay';
     }
 
@@ -240,13 +250,14 @@ export class GameEngine {
 
       if (p1.roundsWon >= GameEngine.ROUNDS_TO_WIN || p2.roundsWon >= GameEngine.ROUNDS_TO_WIN) {
         gameOver = true;
-        winnerAddress = playerAddress;
+        const outcome = this.determineMatchOutcome();
+        winnerAddress = outcome.winnerAddress ?? undefined;
         this.finished = true;
         this.clearTimer();
         const verdicts = this.antiCheat.getVerdicts();
         this.emit('gameOver', {
-          winnerAddress: playerAddress,
-          reason: 'hp_zero',
+          winnerAddress: outcome.winnerAddress,
+          reason: outcome.reason === 'draw' ? 'draw' : 'hp_zero',
           antiCheatVerdicts: verdicts
         });
       } else {
@@ -310,7 +321,7 @@ export class GameEngine {
    * Build the GameState payload for a specific player.
    * Each player sees their own hand but not the opponent's.
    */
-  getStateForPlayer(address: string): GameState {
+  getStateForPlayer(address: string): Omit<GameState, 'tokenMint' | 'wagerAmount' | 'roomType'> {
     const player = this.players.get(address)!;
     const opponentAddress = this.playerAddresses.find(a => a !== address)!;
     const opponent = this.players.get(opponentAddress)!;
@@ -370,6 +381,17 @@ export class GameEngine {
       rounds[addr] = state.roundsWon;
     }
     return rounds;
+  }
+
+  /**
+   * Get correct answer counts for all players.
+   */
+  getCorrectAnswers(): Record<string, number> {
+    const correctAnswers: Record<string, number> = {};
+    for (const [addr, state] of this.players) {
+      correctAnswers[addr] = state.correctAnswers;
+    }
+    return correctAnswers;
   }
 
   /**
@@ -441,9 +463,9 @@ export class GameEngine {
       phase: this.phase,
     });
 
-    // Time's up — determine winner
+    // Time's up - determine this round, then finalize when best-of-3 is complete.
     if (this.remainingMs <= 0) {
-      const winner = this.determineWinnerByScore();
+      const winner = this.determineRoundWinner();
       if (winner) {
         const winnerPlayer = this.players.get(winner);
         if (winnerPlayer) winnerPlayer.roundsWon += 1;
@@ -452,12 +474,15 @@ export class GameEngine {
       const p1 = this.players.get(this.playerAddresses[0])!;
       const p2 = this.players.get(this.playerAddresses[1])!;
 
-      if (p1.roundsWon >= GameEngine.ROUNDS_TO_WIN || p2.roundsWon >= GameEngine.ROUNDS_TO_WIN) {
+      const maxRoundsReached = this.currentRound >= GameEngine.ROUNDS_TO_WIN * 2 - 1;
+
+      if (p1.roundsWon >= GameEngine.ROUNDS_TO_WIN || p2.roundsWon >= GameEngine.ROUNDS_TO_WIN || maxRoundsReached) {
+        const outcome = this.determineMatchOutcome();
         this.finished = true;
         this.clearTimer();
         this.emit('gameOver', {
-          winnerAddress: winner!,
-          reason: 'time_up',
+          winnerAddress: outcome.winnerAddress,
+          reason: outcome.reason === 'draw' ? 'draw' : 'time_up',
           antiCheatVerdicts: this.antiCheat.getVerdicts()
         });
       } else {
@@ -475,12 +500,9 @@ export class GameEngine {
   }
 
   /**
-   * When time expires, determine winner by:
-   * 1. Highest HP
-   * 2. Tie-break: highest score
-   * 3. Double tie: first player (arbitrary but deterministic)
+   * When a round expires, determine round winner by HP, then correct answers.
    */
-  private determineWinnerByScore(): string {
+  private determineRoundWinner(): string | null {
     const [addrA, addrB] = this.playerAddresses;
     const a = this.players.get(addrA)!;
     const b = this.players.get(addrB)!;
@@ -488,11 +510,31 @@ export class GameEngine {
     if (a.health !== b.health) {
       return a.health > b.health ? addrA : addrB;
     }
-    if (a.score !== b.score) {
-      return a.score > b.score ? addrA : addrB;
+    if (a.correctAnswers !== b.correctAnswers) {
+      return a.correctAnswers > b.correctAnswers ? addrA : addrB;
     }
-    // True tie — first player wins (deterministic)
-    return addrA;
+    return null;
+  }
+
+  /**
+   * Final checker: rounds won, then score, then health left.
+   * If every category is equal, the match is a draw.
+   */
+  private determineMatchOutcome(): { winnerAddress: string | null; reason: 'rounds_won' | 'score' | 'health_left' | 'draw' } {
+    const [addrA, addrB] = this.playerAddresses;
+    const a = this.players.get(addrA)!;
+    const b = this.players.get(addrB)!;
+
+    if (a.roundsWon !== b.roundsWon) {
+      return { winnerAddress: a.roundsWon > b.roundsWon ? addrA : addrB, reason: 'rounds_won' };
+    }
+    if (a.score !== b.score) {
+      return { winnerAddress: a.score > b.score ? addrA : addrB, reason: 'score' };
+    }
+    if (a.health !== b.health) {
+      return { winnerAddress: a.health > b.health ? addrA : addrB, reason: 'health_left' };
+    }
+    return { winnerAddress: null, reason: 'draw' };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────
@@ -507,7 +549,10 @@ export class GameEngine {
       characterState: player.characterState,
       score: player.score,
       roundsWon: player.roundsWon,
+      correctAnswers: player.correctAnswers,
+      currentCorrectStreak: player.currentCorrectStreak,
       characterId: player.characterId,
+      isConnected: true,
     };
   }
 

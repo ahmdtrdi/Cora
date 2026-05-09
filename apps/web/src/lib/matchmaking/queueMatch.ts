@@ -7,9 +7,31 @@ type QueueMatchParams = {
 
 type QueueMatchResponse = {
   roomId: string;
+  role?: "playerA" | "playerB";
   tokenMint?: string;
   wagerAmount?: string;
   roomType?: "public" | "private";
+  alreadyInRoom?: boolean;
+  status?: string;
+};
+
+type ActiveMatchResponse = {
+  inRoom: boolean;
+  roomId?: string;
+  role?: "playerA" | "playerB";
+  roomType?: "public" | "private";
+  status?: string;
+  playerA?: string | null;
+  playerB?: string | null;
+};
+
+type MatchPresenceResponse = {
+  inRoom: boolean;
+  queued: boolean;
+  roomId?: string;
+  role?: "playerA" | "playerB";
+  roomType?: "public" | "private";
+  status?: string;
 };
 
 function trimTrailingSlash(input: string) {
@@ -53,9 +75,12 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
 
   const payload = (await response.json().catch(() => null)) as {
     roomId?: string;
+    role?: "playerA" | "playerB";
     tokenMint?: string;
     wagerAmount?: string;
     roomType?: "public" | "private";
+    alreadyInRoom?: boolean;
+    status?: string;
     error?: string;
   } | null;
 
@@ -70,8 +95,51 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
 
   return {
     roomId,
+    role: payload?.role,
     tokenMint: payload?.tokenMint,
     wagerAmount: payload?.wagerAmount,
     roomType: payload?.roomType,
+    alreadyInRoom: payload?.alreadyInRoom,
+    status: payload?.status,
   };
+}
+
+export async function getActiveMatchForAddress(address: string, signal?: AbortSignal): Promise<ActiveMatchResponse> {
+  const apiBaseUrl = resolveApiBaseUrl();
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/match/active/${encodeURIComponent(address)}`, { signal });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+    return { inRoom: false };
+  }
+  const payload = (await response.json().catch(() => null)) as ActiveMatchResponse | { error?: string } | null;
+
+  if (!response.ok) {
+    throw new Error((payload as { error?: string } | null)?.error ?? `Active match lookup failed (${response.status}).`);
+  }
+
+  if (!payload || typeof (payload as ActiveMatchResponse).inRoom !== "boolean") {
+    throw new Error("Active match response missing inRoom.");
+  }
+
+  return payload as ActiveMatchResponse;
+}
+
+export async function getMatchPresenceForAddress(address: string, signal?: AbortSignal): Promise<MatchPresenceResponse> {
+  const apiBaseUrl = resolveApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/match/presence/${encodeURIComponent(address)}`, { signal });
+  const payload = (await response.json().catch(() => null)) as MatchPresenceResponse | { error?: string } | null;
+
+  if (!response.ok) {
+    throw new Error((payload as { error?: string } | null)?.error ?? `Match presence lookup failed (${response.status}).`);
+  }
+
+  if (!payload || typeof (payload as MatchPresenceResponse).inRoom !== "boolean" || typeof (payload as MatchPresenceResponse).queued !== "boolean") {
+    throw new Error("Match presence response missing queue state.");
+  }
+
+  return payload as MatchPresenceResponse;
 }

@@ -12,6 +12,7 @@ import type {
   ScoreUpdateData,
   RoundOverData,
   CardType,
+  PresenceUpdateData,
 } from '@shared/websocket';
 
 type ConnectionState = 'connecting' | 'reconnecting' | 'connected' | 'disconnected' | 'error';
@@ -33,6 +34,11 @@ interface MatchFoundPayload {
   roomId: string;
   role?: string;
   opponentAddress?: string;
+}
+
+interface RoomCancelledPayload {
+  cancelledBy?: string | null;
+  reason: 'player_cancelled' | 'deposit_timeout' | 'disconnect';
 }
 
 interface UseMatchSocketParams {
@@ -60,7 +66,7 @@ function isMatchSummaryPayload(value: unknown): value is MatchResult {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Record<string, unknown>;
   return (
-    typeof payload.winnerAddress === 'string' &&
+    (typeof payload.winnerAddress === 'string' || payload.winnerAddress === null) &&
     typeof payload.reason === 'string' &&
     typeof payload.finalScores === 'object' &&
     typeof payload.finalHealth === 'object'
@@ -83,15 +89,18 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
   const [lastCardExpired, setLastCardExpired] = useState<(CardExpiredData & { at: number }) | null>(null);
   const [lastScoreUpdate, setLastScoreUpdate] = useState<ScoreUpdateData | null>(null);
   const [lastRoundOver, setLastRoundOver] = useState<(RoundOverData & { at: number }) | null>(null);
+  const [lastPresenceUpdate, setLastPresenceUpdate] = useState<(PresenceUpdateData & { at: number }) | null>(null);
   const [currentPhase, setCurrentPhase] = useState<GamePhase>('normal');
   const [depositUnlockedAt, setDepositUnlockedAt] = useState<number | null>(null);
   const [opponentFailedDepositAt, setOpponentFailedDepositAt] = useState<number | null>(null);
+  const [lastRoomCancelled, setLastRoomCancelled] = useState<(RoomCancelledPayload & { at: number }) | null>(null);
   const [lastMatchFound, setLastMatchFound] = useState<(MatchFoundPayload & { at: number }) | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
+  const characterQuery = characterId ? `&characterId=${encodeURIComponent(characterId)}` : "";
   const socketUrl =
     roomId && address
-      ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}&characterId=${encodeURIComponent(characterId ?? "einstein")}`
+      ? `${wsBaseUrl}/match/${roomId}?address=${encodeURIComponent(address)}${characterQuery}`
       : null;
 
   useEffect(() => {
@@ -125,11 +134,17 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
             setGameState(message.payload as GameState);
             break;
 
-          case 'matchResult':
+          case 'settlementAuthorization':
             if (isSettlementPayload(message.payload)) {
               setSettlementResult(message.payload);
-            } else if (isMatchSummaryPayload(message.payload)) {
+            }
+            break;
+
+          case 'matchResult':
+            if (isMatchSummaryPayload(message.payload)) {
               setMatchSummaryResult(message.payload);
+            } else if (isSettlementPayload(message.payload)) {
+              setSettlementResult(message.payload);
             }
             break;
 
@@ -161,6 +176,13 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
           case 'opponentFailedDeposit':
             setOpponentFailedDepositAt(Date.now());
+            break;
+
+          case 'roomCancelled':
+            setLastRoomCancelled({
+              ...(message.payload as RoomCancelledPayload),
+              at: Date.now(),
+            });
             break;
 
           case 'matchFound':
@@ -198,6 +220,13 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
           case 'scoreUpdate':
             setLastScoreUpdate(message.payload as ScoreUpdateData);
+            break;
+
+          case 'presenceUpdate':
+            setLastPresenceUpdate({
+              ...(message.payload as PresenceUpdateData),
+              at: Date.now(),
+            });
             break;
 
           case 'roundOver':
@@ -271,6 +300,14 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     [sendMessage],
   );
 
+  const cancelMatch = useCallback(() => {
+    sendMessage('cancelMatch', {});
+  }, [sendMessage]);
+
+  const surrender = useCallback(() => {
+    sendMessage('surrender', {});
+  }, [sendMessage]);
+
   const reconnect = useCallback(() => {
     setConnectionState('reconnecting');
     setLastSocketError(null);
@@ -294,13 +331,17 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     lastCardExpired,
     lastScoreUpdate,
     lastRoundOver,
+    lastPresenceUpdate,
     currentPhase,
     depositUnlockedAt,
     opponentFailedDepositAt,
+    lastRoomCancelled,
     lastMatchFound,
     openCard,
     playCard,
     confirmDeposit,
+    cancelMatch,
+    surrender,
     reconnect,
   };
 }

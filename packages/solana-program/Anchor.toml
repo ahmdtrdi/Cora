@@ -7,11 +7,9 @@ skip-lint = false
 
 [programs.devnet]
 solana_program = "9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W"
-cora_battle = "CbBattle11111111111111111111111111111111111"
 
 [programs.localnet]
 solana_program = "9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W"
-cora_battle = "CbBattle11111111111111111111111111111111111"
 
 [provider]
 cluster = "localnet"

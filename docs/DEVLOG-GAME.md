@@ -3,14 +3,17 @@
 ## 1. Question Data & Schema
 
 **Implementation:**
-- Added TypeScript interfaces and validation logic for `Question` and `Option` structures in `packages/shared-types/src/question.ts`. 
+
+- Added TypeScript interfaces and validation logic for `Question` and `Option` structures in `packages/shared-types/src/question.ts`.
 - Defined a strict structure requiring exactly 4 options per question.
 
 **The Reasoning:**
+
 - A unified structure avoids runtime errors when parsing AI-generated questions or reading from `questions.json`.
 - Sharing the types via the `shared-types` package allows the backend, frontend, and testing scripts to stay perfectly synchronized.
 
 **Tech Debt:**
+
 - Currently using manual runtime validation. If schema complexity grows, we should migrate to Zod to automatically derive interfaces and handle validation.
 
 ---
@@ -21,6 +24,7 @@
 Built the core Game Engine as a pure, I/O-free TypeScript class in `packages/game-logic/`. It relies on event-emission (`timerSync`, `damageEvent`, etc.) rather than websockets directly, allowing the `RoomManager` to handle network broadcasting independently.
 
 **Engine Rules & Mechanics:**
+
 - **Match Duration:** 5 minutes (300,000 ms).
 - **Extra Point Phase:** The final 1 minute applies a 2x multiplier to all damage and healing.
 - **Base Damage/Heal:** 10 HP per correct answer. Heal caps at 100 HP.
@@ -29,6 +33,7 @@ Built the core Game Engine as a pure, I/O-free TypeScript class in `packages/gam
 - **Win Conditions:** Instant win if opponent hits 0 HP. If time runs out, the player with the highest HP wins (tie-breaker by score).
 
 **Tech Debt:**
+
 - Rate limit constants (e.g., 500ms cooldowns) and card type distributions are currently hardcoded. They should be extracted into configurable parameters for easier balancing.
 
 ---
@@ -37,16 +42,19 @@ Built the core Game Engine as a pure, I/O-free TypeScript class in `packages/gam
 
 **Implementation:**
 The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a completely fair trivia competition:
+
 - **Balanced Selection:** Questions are drawn using a round-robin category selection algorithm (Sequence → Logical → Math) rather than purely random shuffling.
 - **No Duplicates:** The dealer returns `null` when the question pool is exhausted, strictly guaranteeing no duplicate questions in a single match.
 - **Identical Shared Queue:** Upon match initialization, the `GameEngine` pre-generates a single shared queue of up to 100 cards. Both players start with an identical hand (cards 0-4). As they play, they draw the next card in the shared sequence based on their personal `queueIndex`.
 
 **The Reasoning:**
+
 - A completely random shuffle could occasionally deal hands heavily skewed toward a single category, punishing players based on luck.
 - An identical shared queue guarantees that the match is a true race of knowledge. Both players face the exact same questions in the exact same order.
 - Pre-generating the shared queue prevents desync issues and mismatched `correctOptionId` validations.
 
 **Tech Debt:**
+
 - The engine expects the `questions.json` pool to have enough questions to sustain a 5-minute match without running out (generating up to 100 cards). If players exhaust the 100-card queue, they will stop receiving cards. We must either expand the pool significantly or gracefully declare a draw if the pool runs dry.
 
 ---
@@ -54,11 +62,13 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 ## 4. Testing & Stabilization
 
 **Implementation:**
+
 - Implemented `packages/game-logic/mock-match.ts`, a 2-player terminal simulation to validate the engine's lifecycle headless.
 - Created `packages/game-logic/visual-test.ts` to visually verify that both players receive identical hands and identical card replenishments from the shared queue.
 - Expanded unit tests (`GameEngine.test.ts` and `QuestionDealer.test.ts`) using `bun:test` to cover win conditions, exhaustion limits, correct schema validation (4 options), and cooldowns.
 
 **The Reasoning:**
+
 - A pure, I/O-free engine makes deterministic testing possible and prevents hard-to-track race conditions.
 - Terminal simulations allow rapid iteration on the game loop without needing to spin up the web frontend or websocket server.
 
@@ -67,6 +77,7 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 ## 5. Anti-Cheat System
 
 **Implementation:**
+
 - Implemented `AntiCheatAnalyzer`, a stateless-per-action behavioral analysis engine that tracks player interaction patterns (answer speed, accuracy rate, consistency, input cadence, etc.).
 - Integrated it directly into the `GameEngine`, recording every `playCard` action without slowing down the game loop.
 - Emits an `AntiCheatVerdict` (`trusted`, `suspicious`, `rejected`) upon game completion.
@@ -74,11 +85,13 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 - Created `docs/ML-DATA-COLLECTION.md` detailing how raw `PlayerMatchStats` are collected for future Machine Learning model training.
 
 **The Reasoning:**
+
 - Real money wagers require a trustless environment. A 10-second timer isn't enough to stop specialized answer bots (OCR + LLM) or macro-assisted clicks.
 - The system must remain entirely server-side. Any client-side anti-cheat can be reverse-engineered and bypassed.
 - By emitting warnings on `suspicious` play but only blocking on `rejected`, we minimize false positives affecting legitimate players.
 
 **Tech Debt:**
+
 - We are currently using static, educated-guess thresholds for penalties (e.g., < 1500ms average response time is penalized). We need to review the logged data over the first few thousand matches to fine-tune these thresholds, eventually transitioning to an ML-based approach.
 
 ---
@@ -86,14 +99,16 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 ## 6. Bugfixes — Matchmaking & Round Timer (2026-05-01)
 
 **The Bugs:**
+
 1. **Matchmaking order-dependent failure:** When using port forwarding (public URL), the first player to enter the queue would silently drop out before the second player joined. Matches only worked if the friend entered first.
 2. **Round timer reset without round change:** When the 5-minute timer expired, the clock reset to 5:00 but the round number, health, and game state never updated on the frontend.
 
 **The Change:**
 
-*Files touched:* `packages/game-logic/src/GameEngine.ts`, `apps/api/src/managers/RoomManager.ts`
+_Files touched:_ `packages/game-logic/src/GameEngine.ts`, `apps/api/src/managers/RoomManager.ts`
 
 **Bug 1 (Matchmaking):**
+
 - Root cause: `POST /match` used HTTP long-polling — the server held the request open until a match was found. Port forwarding proxies killed idle HTTP connections, firing the request's `AbortSignal` and removing the player from the queue before their opponent joined.
 - Fix: Added three resilience layers to `queueMatch()`:
   1. **Room existence check:** If the player already has an active room (from a lost HTTP response), return it immediately.
@@ -102,12 +117,14 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 - Also cleaned up pre-existing dead imports (`MatchFoundData`, `CharacterState`, `Card`).
 
 **Bug 2 (Round Timer):**
-- Root cause: `resetRound()` reset the timer, health, and round number internally but never emitted a `stateUpdate` event. The `roundOver` event handler in `RoomManager` broadcast the game state *before* `resetRound()` was called, so the frontend received stale data.
+
+- Root cause: `resetRound()` reset the timer, health, and round number internally but never emitted a `stateUpdate` event. The `roundOver` event handler in `RoomManager` broadcast the game state _before_ `resetRound()` was called, so the frontend received stale data.
 - Fix:
-  1. Reordered: `resetRound()` is now called *before* emitting `roundOver`, so the broadcasted state reflects the new round.
+  1. Reordered: `resetRound()` is now called _before_ emitting `roundOver`, so the broadcasted state reflects the new round.
   2. `resetRound()` now emits `stateUpdate` at the end, ensuring the frontend receives the updated round number, reset health, and reset timer.
 
 **Tech Debt:**
+
 - The `POST /match` endpoint still uses HTTP long-polling, which is inherently fragile with reverse proxies. A more robust approach would be to return `{ status: 'queued' }` immediately and notify via WebSocket when a match is found. This is deferred for now since the resilience layers mitigate the issue.
 
 ---
@@ -118,12 +135,13 @@ The `QuestionDealer` and `GameEngine` have been heavily refactored to ensure a c
 After both players deposited, the room would freeze and then get cancelled by a shot clock. Server logs showed `TypeError: undefined is not an object (evaluating 'player.address')` in `GameEngine.toPlayerState`.
 
 **Root Cause (3 interlinked issues):**
+
 1. **`allDeposited` checked `room.playerMeta.values()`** — which only contains players who connected via WebSocket (`joinRoom` populates it). If only 1 player connected, the check trivially passed with a single `true` entry.
 2. **`initializeEngine` used `room.clients.keys()`** as the player address list — with only 1 client, the `GameEngine` was created with a 1-element array despite expecting a tuple of 2. The opponent lookup then returned `undefined`, crashing `toPlayerState`.
 3. **No guard for 2-player connectivity** — the game could start before both WebSocket connections were established.
 
 **The Fix:**
-*Files touched:* `apps/api/src/managers/RoomManager.ts`
+_Files touched:_ `apps/api/src/managers/RoomManager.ts`
 
 1. `allDeposited` now explicitly checks `room.playerA` and `room.playerB` deposits, not an arbitrary iteration of `playerMeta`.
 2. `initializeEngine` now uses `[room.playerA, room.playerB]` (the authoritative role assignments from matchmaking), not `room.clients.keys()`.
@@ -131,6 +149,7 @@ After both players deposited, the room would freeze and then get cancelled by a 
 4. Added a catch-up check in `joinRoom`: when the second player finally connects and both have already deposited, the game starts immediately.
 
 **Tech Debt:**
+
 - None introduced. This was a correctness fix that made the deposit flow resilient to connection timing.
 
 ---
@@ -144,13 +163,14 @@ After a match ended, the server spammed noisy retry errors and full stack traces
 No `.env` file existed (only `.env.example`), so `SOLANA_RPC_URL` was undefined and the fallback `http://127.0.0.1:8899` was unreachable. The `withRetry` helper tried 3 times before printing a massive error, even though the game itself was unaffected.
 
 **The Fix:**
-*Files touched:* `apps/api/src/utils/settlement.ts`
+_Files touched:_ `apps/api/src/utils/settlement.ts`
 
 - Added `hasExplicitRpc` flag that checks if `SOLANA_RPC_URL` is set in the environment.
 - `submitSettlementTransaction` now returns `'SKIPPED_NO_RPC'` immediately when no RPC is configured, with a clean one-line log.
 - The server startup log now indicates when the default (unconfigured) RPC is being used.
 
 **Tech Debt:**
+
 - When ready for mainnet/devnet testing, create `apps/api/.env` with `SOLANA_RPC_URL=https://api.devnet.solana.com` to enable real on-chain settlement.
 
 ---
@@ -159,7 +179,8 @@ No `.env` file existed (only `.env.example`), so `SOLANA_RPC_URL` was undefined 
 
 **The Change:**
 
-*Files touched:*
+_Files touched:_
+
 - `packages/shared-types/src/characterStats.ts` (NEW)
 - `packages/game-logic/src/GameEngine.ts`
 - `apps/api/src/managers/RoomManager.ts`
@@ -168,26 +189,29 @@ No `.env` file existed (only `.env.example`), so `SOLANA_RPC_URL` was undefined 
 
 Each character now has a **specialty question category**. When a player answers a question from their character's specialty category correctly, their damage/heal is multiplied by **1.5x**:
 
-| Character     | ID       | Specialty   | Effect                     |
-|---------------|----------|-------------|----------------------------|
-| Alan Turing   | `turing` | `sequence`  | 1.5x on sequence questions |
-| Marie Curie   | `curie`  | `logical`   | 1.5x on logical questions  |
-| Albert Einstein | `einstein` | `math`      | 1.5x on math questions     |
+| Character       | ID         | Specialty  | Effect                     |
+| --------------- | ---------- | ---------- | -------------------------- |
+| Alan Turing     | `turing`   | `sequence` | 1.5x on sequence questions |
+| Marie Curie     | `curie`    | `logical`  | 1.5x on logical questions  |
+| Albert Einstein | `einstein` | `math`     | 1.5x on math questions     |
 
 The specialty multiplier **stacks multiplicatively** with the existing extra-point phase multiplier (2x), yielding up to **3x** in the final minute on specialty questions.
 
 **Implementation Details:**
+
 1. Created `characterStats.ts` in `shared-types` as a single source of truth for character definitions (`CHARACTER_DEFS`) and a `getSpecialtyMultiplier()` helper function.
 2. In `GameEngine.playCard()`, the multiplier computation was split into `phaseMultiplier` (1x normal / 2x extra) and `specialtyMultiplier` (1x non-specialty / 1.5x specialty), then combined: `multiplier = phaseMultiplier * specialtyMultiplier`.
 3. Restored default `characterId` fallbacks in backend to `'einstein'` per user request, while leaving frontend character UI as Newton.
 4. Updated frontend character stats to visually reflect each character's specialty category (e.g. Turing's primary stat is "Sequence", Curie's is "Logical", Newton's is "Math").
 
 **The Reasoning:**
+
 - Character differentiation adds strategic depth. Players must weigh their character choice against the mixed-category question pool.
 - A shared definition in `shared-types` prevents frontend/backend character data from drifting out of sync.
 - Multiplicative stacking with extra-point phase rewards high-skill play during clutch moments.
 
 **Tech Debt:**
+
 - The frontend `CharacterCard` shows generic stat bars but does not explicitly label the 1.5x specialty bonus. A tooltip or badge ("1.5x Sequence Damage") would improve discoverability.
 - Character definitions exist in two places: `characterStats.ts` (backend-authoritative) and `SCIENTISTS[]` in `LobbyScreen.tsx` (frontend display). These should eventually be unified or auto-derived.
 
@@ -197,7 +221,8 @@ The specialty multiplier **stacks multiplicatively** with the existing extra-poi
 
 **The Change:**
 
-*Files touched:*
+_Files touched:_
+
 - `apps/api/.env.example`
 - `apps/api/src/utils/settlement.ts`
 - `apps/api/src/utils/eventListener.ts`
@@ -216,11 +241,13 @@ Migrated the Solana RPC layer from the public `api.devnet.solana.com` to support
 5. **Env files:** Updated `.env.example` and `apps/web/.env` with RPCFast-specific documentation and placeholders.
 
 **The Reasoning:**
+
 - Public Solana RPC endpoints are rate-limited and unreliable for production use (especially for `sendAndConfirmTransaction` and `onLogs` subscriptions).
 - RPCFast provides <20ms latency, dedicated infrastructure, and free hackathon credits — a direct upgrade for CORA's on-chain settlement path.
 - Adding `SOLANA_WS_URL` as a separate env var is necessary because some RPC providers (including RPCFast) serve WebSocket traffic on different endpoints than their HTTP API.
 
 **Tech Debt:**
+
 - The `actions.ts` route still creates a one-off `new Connection()` per POST request (line 199). This should be refactored to use the shared singleton from `settlement.ts`.
 - No automated health check to validate the RPC endpoint on startup. A `getSlot()` probe would catch misconfigured URLs early.
 
@@ -230,7 +257,8 @@ Migrated the Solana RPC layer from the public `api.devnet.solana.com` to support
 
 **The Change:**
 
-*Files touched:*
+_Files touched:_
+
 - `apps/api/src/managers/RoomManager.ts`
 - `packages/shared-types/src/escrow.ts`
 
@@ -251,9 +279,253 @@ Previously, `GameStatus` in `websocket.ts` already defined `settling` as a valid
 5. **`escrow.ts` (GAME_TO_CHAIN_STATUS):** Added `settling: 'Active'` mapping — on-chain the match is still Active until the settlement tx confirms.
 
 **The Reasoning:**
+
 - FE requested clarity on whether `settling` is a real status. It is now canonical and always emitted.
 - Debugging is easier when the server log shows the settlement window explicitly instead of collapsing it into `finished`.
 - FE can show a settlement spinner/animation during this brief window, improving UX.
 
 **Tech Debt:**
-- The `settling` → `finished` transition is currently synchronous (settlement tx is dispatched async via `.then()`). If we need FE to know when settlement *actually confirms* on-chain, we'd need to await the tx and broadcast a `settlementConfirmed` event. For now the async fire-and-forget is fine.
+
+- The `settling` → `finished` transition is currently synchronous (settlement tx is dispatched async via `.then()`). If we need FE to know when settlement _actually confirms_ on-chain, we'd need to await the tx and broadcast a `settlementConfirmed` event. For now the async fire-and-forget is fine.
+
+---
+
+## 12. Bugfix � FIFO Matchmaking Race Conditions & Memory Leaks (2026-05-05)
+
+**The Bugs:**
+The FIFO matchmaking queue and room lifecycle had 7 interlinked bugs causing solo rooms, locked-out players, and server crashes, especially over high-latency tunnel connections:
+
+1. `initializeEngine` mistakenly used `room.clients.keys()` instead of `room.playerA/playerB`, causing solo rooms and server crashes if one websocket connected before the other.
+2. Finished rooms were never deleted from memory, causing unbounded iteration and memory leaks.
+3. No try/catch around the `gameOver` settlement logic � if on-chain settlement failed, rooms were stuck in `settling` forever.
+4. `ws.send()` calls could throw if the socket closed unexpectedly, crashing entire event handlers.
+5. `queueMatch` reconnect guard returned zombie room IDs for rooms stuck in `depositing` or `settling`, permanently locking players out of matchmaking.
+6. GameEngine timers were never explicitly stopped when rooms were cancelled, causing leaked intervals.
+7. `cancelRoom` re-queue captured a stale WebSocket reference from the deleted room, preventing re-queued players from receiving the `matchFound` event.
+
+**The Fix:**
+_Files touched:_ `apps/api/src/managers/RoomManager.ts`, `packages/game-logic/src/GameEngine.ts`
+
+1. **Engine Role Fix:** Restored `[room.playerA, room.playerB]` initialization in `GameEngine`, guaranteeing correct 2-player setup regardless of WebSocket connection order.
+2. **Room Cleanup:** Created a `destroyRoom(roomId)` helper that safely clears timeouts, opened cards, stops the engine, and deletes the room.
+3. **Delayed Deletion:** Scheduled `destroyRoom` to run 15 seconds after `gameOver`, allowing clients time to receive final events.
+4. **Try/Catch Settlement:** Wrapped the `gameOver` handler in a `try/catch/finally` block to guarantee transition to `finished` even if anti-cheat or settlement fails.
+5. **Safe Send:** Introduced `safeSend(ws, data)` wrapper to swallow `ws.send` errors if the connection silently drops.
+6. **Staleness Guard:** Added logic to `queueMatch` reconnect: if a room is stuck in `depositing` with 0 active shot-clocks, it auto-destroys the zombie room and lets the player re-queue.
+7. **Closure Fix:** Captured the WS reference directly before re-queueing in `cancelRoom` rather than referencing the deleted client map.
+8. **TypeScript Fix:** Removed extra parameters (`tokenMint`, etc.) from `GameEngine.getStateForPlayer` return type using `Omit<GameState, ...>`.
+
+**The Reasoning:**
+
+- Matchmaking over networks (especially tunnels) requires aggressive defensive programming against dropped connections.
+- The server must never retain state indefinitely; every room must have a guaranteed path to deletion (`destroyRoom`).
+- Try/catch blocks around asynchronous third-party calls (like settlement or anti-cheat) prevent local state from locking up.
+
+**Tech Debt:**
+
+- Room state management is heavily reliant on timeouts. A state-machine approach (like XState) would formally prevent invalid transitions and zombie states.
+
+---
+
+## 13. Match Lifecycle Upgrade - Cancel, Surrender, Presence Recovery (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/index.ts`
+- `apps/api/src/managers/RoomManager.ts`
+- `apps/api/src/managers/room/Blockchain.ts`
+- `apps/api/src/managers/room/Engine.ts`
+- `apps/api/src/managers/room/Lifecycle.ts`
+- `apps/api/src/managers/room/Network.ts`
+- `apps/api/src/managers/room/Queue.ts`
+- `apps/api/src/managers/room/types.ts`
+- `apps/api/src/utils/settlement.ts`
+- `apps/api/test/RoomManager.test.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/components/lobby/OpponentFound.tsx`
+- `apps/web/src/components/play/BattleScreen.tsx`
+- `apps/web/src/hooks/useMatchSocket.ts`
+- `apps/web/src/lib/matchmaking/queueMatch.ts`
+- `packages/game-logic/src/GameEngine.ts`
+- `packages/game-logic/src/types.ts`
+- `packages/game-logic/test/GameEngine.test.ts`
+- `packages/shared-types/src/websocket.ts`
+
+Added explicit **match cancellation** and **surrender** flows across the full stack, then reworked disconnect handling so funded and active rooms stay recoverable instead of auto-forfeiting immediately.
+
+**What changed:**
+
+1. **Room lifecycle actions:** Added `cancelMatch` and `surrender` as first-class client intents instead of overloading disconnect behavior.
+2. **Cancellation reasons:** Deposit-stage rooms can now end with explicit reasons:
+   - player manually cancelled
+   - deposit timeout expired
+   - a player disconnected before the room was safely ready to start
+3. **Presence-aware reconnects:** Once both players are funded, disconnect no longer triggers an automatic 10-second loss. The room remains open, the socket is nulled, `lastSeenAt` is tracked, and the server broadcasts presence changes until the player reconnects or surrenders.
+4. **Surrender path:** A funded player can now concede during `depositing` or `playing`, and the room settles with `reason: 'surrender'` plus `surrenderedAddress`.
+5. **Shared websocket contract:** Added `roomCancelled` and `presenceUpdate` events, expanded `PlayerState` with `isConnected`, `lastSeenAt`, and `correctAnswers`, and expanded `MatchResult` to support `winnerAddress: null`, `draw`, and richer final stats.
+6. **Game engine tie resolution:** The engine now tracks `correctAnswers`, resolves round timeout by HP then correct answers, resolves final match outcome by rounds won then HP then correct answers, and emits a true `draw` if everything is still equal.
+7. **Lobby recovery UX:** FE now stores an `active-room` snapshot, restores active rooms after refresh/reopen, and redirects players back into deposit or play flow when the backend confirms they are already in a live room.
+8. **Battle UI updates:** Added a visible `Surrender` action and cleanup of persisted lobby/room recovery state once the match is complete or the player exits cleanly.
+
+**The Reasoning:**
+
+- Auto-forfeiting on disconnect was too harsh for real network conditions. Refreshes, browser restarts, and unstable tunnels should not instantly decide a wagered match.
+- Cancellation and surrender represent different phases of intent. Cancelling is a pre-match lifecycle action; surrender is an in-match competitive outcome. Splitting them keeps room logic explicit and easier to reason about.
+- Presence is part of game correctness now, not just UI polish. The server must know whether both sockets are actually alive before starting play or deciding whether a room should remain recoverable.
+- A deterministic draw path is safer than arbitrarily choosing a winner in perfect ties. Since we already track rounds, HP, and answer accuracy, the engine can now explain why a match ended the way it did.
+- FE persistence plus server-side active room lookup makes matchmaking and reconnect flow more resilient while the queue system still relies on HTTP request/response timing.
+
+**Tech Debt:**
+
+- Active-room recovery is currently split between `localStorage` snapshots and in-memory backend room lookup. It works, but the source of truth is still distributed across layers.
+- Presence and cancellation logic are growing into a real state machine, but are still implemented as imperative lifecycle branches and timers. A formal statechart would reduce the chance of future edge-case regressions.
+- Draw handling needs an end-to-end audit with the blockchain settlement path to guarantee refund behavior is fully deterministic and matches on-chain assumptions.
+- The lobby recovery code is compensating for the current HTTP matchmaking design. A websocket-native queue/ready flow would simplify this significantly and remove some of the persistence glue.
+
+---
+
+## 14. Card Distribution Rebalance - Heal 1 per 5 Cards (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `packages/game-logic/src/QuestionDealer.ts`
+- `packages/game-logic/test/QuestionDealer.test.ts`
+
+Reworked card-type assignment so `heal` no longer uses loose probability. The dealer now guarantees **exactly 1 heal card in every batch of 5 dealt cards**, while randomizing the heal slot inside each batch. That keeps the sequence less predictable without letting heal cards bunch up too often.
+
+**The Reasoning:**
+
+- The previous random distribution could create streaks that felt unfair, including too many heals appearing close together.
+- The new batch-based rule matches the intended balancing target more directly: roughly 20% heal rate, with spacing controlled at the queue level.
+- Because the match uses one shared pre-generated queue for both players, enforcing the rule in `QuestionDealer` keeps both fairness and determinism intact.
+
+**Tech Debt:**
+
+- The 5-card batch size is still hardcoded. If balancing keeps changing, this should become a configurable gameplay parameter instead of living inside `QuestionDealer`.
+
+---
+
+## 15. Queue Hardening - Deposit Cancel Recovery & Phantom Prompt Guard (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/index.ts`
+- `apps/api/src/managers/room/Queue.ts`
+- `apps/api/test/RoomManager.test.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/components/lobby/OpponentFound.tsx`
+- `apps/web/src/lib/matchmaking/queueMatch.ts`
+- `apps/web/src/lib/solana/signDepositIntent.ts`
+
+Hardened the public queue and deposit flow so cancelled deposit rooms stop trapping players, queue desync is auto-healed from the frontend, and slow Phantom approval now surfaces a clear stale-transaction warning.
+
+**What changed:**
+
+1. **Backend queue reclamation:** `Queue.queueMatch()` now reclaims abandoned `depositing` rooms before honoring a fresh queue request from the same wallet, cancelling and destroying the old room first.
+2. **Zombie room cleanup:** `findActiveRoomForAddress()` now ignores and destroys deposit rooms that have no live sockets, no active deposit timers, and no deposits, preventing dead rooms from blocking matchmaking recovery.
+3. **Queue presence endpoint:** Added `GET /match/presence/:address` so the frontend can distinguish between:
+   - still queued
+   - already inside a room
+   - no longer present in queue state
+4. **Lobby self-heal:** While on the waiting screen, the frontend now polls queue presence every 4 seconds. If the backend says the player is neither queued nor already matched, the lobby automatically restarts the matchmaking request instead of leaving the user in a fake "searching" state.
+5. **Deposit UX hardening:** On the deposit screen, if Phantom approval stays open too long, the UI now warns the player that the transaction may expire and tells them to close the stale prompt and retry for a fresh transaction.
+6. **Wallet error clarity:** RPC/blockhash-expiry style errors are now mapped to a clearer retry message rather than a generic Solana confirmation failure.
+7. **Regression test coverage:** Added a RoomManager test covering the abandoned-deposit-room requeue case so the intended recovery path is documented in code, even though the current test environment still needs API-key isolation cleanup.
+
+**The Reasoning:**
+
+- The worst queue bug was not the manual cancel itself; it was stale room state surviving just long enough to make the next queue attempt fail. Reclaiming and destroying abandoned deposit rooms closes that gap.
+- Since `/match` still relies on long-polling, the frontend needs a server-visible truth source for "am I really still queued?" Polling lightweight queue presence is much safer than trusting the local waiting screen blindly.
+- Phantom popups that sit open too long often produce expired blockhash behavior. We cannot forcibly close the wallet, but we can detect the pattern, explain it immediately, and guide the player toward a fresh signing attempt.
+
+**Tech Debt:**
+
+- The public queue is still HTTP long-polling based. The new presence endpoint mitigates desync, but a websocket-native queue would remove this whole class of issues more cleanly.
+- The RoomManager test suite currently imports services that expect external Goldrush credentials, which blocks clean local execution for pure room-lifecycle tests. Those dependencies should be isolated or mocked at the boundary.
+
+---
+
+## 16. Winner Tie-Break Update - Round, Score, Remaining Health (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `packages/game-logic/src/GameEngine.ts`
+- `packages/game-logic/test/GameEngine.test.ts`
+
+Updated final match winner resolution so a finished room is now decided in this order:
+
+1. `roundsWon`
+2. `score`
+3. `health` remaining
+
+This removes `correctAnswers` from the final match tie-break path.
+
+**What changed:**
+
+1. **Final match comparator:** `determineMatchOutcome()` now compares `roundsWon` first, then `score`, then `health`.
+2. **Removed old final fallback:** `correctAnswers` is no longer used to decide the final winner once the room finishes.
+3. **Targeted regression coverage:** Updated engine tests to explicitly verify:
+   - a player can win on higher `score` even when `health` is tied
+   - `health` is only used after both `roundsWon` and `score` are tied
+
+**The Reasoning:**
+
+- The previous final winner order did not match the intended game rule requested for room completion.
+- `score` is the better second-level match signal after round wins because it reflects total successful value generated across the match, not just the last surviving HP snapshot.
+- Keeping `health` as the last fallback preserves a deterministic outcome without arbitrarily defaulting to player A.
+
+**Test:**
+
+- Verified with `bun test packages/game-logic/test/GameEngine.test.ts`
+- Result: `20 pass`, `0 fail`
+
+**Tech Debt:**
+
+- Round timeout logic still uses its own local comparison flow (`health`, then `correctAnswers`) for deciding the winner of an expiring round. That is separate from final room resolution, but we should document and review whether both policies are intentionally different long-term.
+
+---
+
+## 17. Live Streak Payload for FE - Separate Current Streak from Anti-Cheat (2026-05-08)
+
+**The Change:**
+
+_Files touched:_
+
+- `packages/shared-types/src/websocket.ts`
+- `packages/game-logic/src/types.ts`
+- `packages/game-logic/src/GameEngine.ts`
+- `apps/api/src/managers/room/Network.ts`
+- `packages/game-logic/test/GameEngine.test.ts`
+
+Added a dedicated live streak field, `currentCorrectStreak`, to the player state returned to the frontend. This gives FE the real UX-facing streak value without reusing the anti-cheat-only `longestCorrectStreak`.
+
+**What changed:**
+
+1. **Shared websocket contract:** Extended `PlayerState` with `currentCorrectStreak` so the value is part of the canonical backend-to-FE game state.
+2. **Engine live tracking:** `GameEngine` now stores and updates `currentCorrectStreak` per player during live play.
+3. **Correct reset behavior:** A correct answer increments the streak; a wrong answer resets it to `0`.
+4. **Pre-game payload compatibility:** Waiting/depositing room states now also include `currentCorrectStreak: 0` so FE gets a stable shape before the match starts.
+5. **Regression coverage:** Added a test confirming the streak increments across consecutive correct answers and resets after a wrong answer.
+
+**The Reasoning:**
+
+- FE needs the player's *current* streak for UX feedback, but anti-cheat needs the *longest* streak over the whole match for behavioral analysis. Those are different meanings and should not share one field.
+- Returning the live streak directly from the backend avoids fragile client-side reconstruction from prior events.
+- Keeping `longestCorrectStreak` internal to anti-cheat preserves the original detection signal while giving FE a clean, player-facing value.
+
+**Test:**
+
+- Verified with `bun test packages/game-logic/test/GameEngine.test.ts`
+- Result: `21 pass`, `0 fail`
+
+**Tech Debt:**
+
+- `currentCorrectStreak` currently lives only in live `gameStateUpdate` payloads. If we later want post-match UX summaries ("best streak this round" or "final streak before loss"), we should decide whether that belongs in final match result payloads too.
