@@ -13,6 +13,15 @@ import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
+import {
+  clearMatchSessionState,
+  getMatchSessionAddress,
+  getMatchSessionToken,
+  readActiveDepositIntent,
+  readActiveMatchSession,
+  writeActiveMatchSession,
+  type ActiveMatchSession,
+} from "@/lib/session/matchSession";
 
 type MatchOutcome = {
   cardId: string;
@@ -34,8 +43,6 @@ const ENDGAME_NEUTRAL_DELAY_MS = 180;
 const ENDGAME_IMPACT_FLASH_MS = 340;
 const ENDGAME_CRACK_REVEAL_DELAY_MS = 200;
 const ENDGAME_SMOKE_REVEAL_DELAY_MS = 360;
-const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
-const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
@@ -95,9 +102,7 @@ function formatMatchClock(remainingMs?: number) {
 }
 
 function clearLobbyReturnState() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
-  window.sessionStorage.removeItem(LOBBY_DRAFT_STORAGE_KEY);
+  clearMatchSessionState();
 }
 
 type BattleSide = "player" | "opponent";
@@ -189,21 +194,37 @@ export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
   const arenaIdParam = searchParams.get("arena");
-  const tokenParam = searchParams.get("token");
-  const wagerParam = searchParams.get("wager");
-  const roomId = roomIdParam ?? "";
-  const arenaId = arenaIdParam ?? "sol";
-  const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
-  const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
-  const preSignedDepositSig = searchParams.get("depositSig");
+  const [activeMatchSession, setActiveMatchSession] = useState<ActiveMatchSession | null>(null);
+  const [matchSessionHydrated, setMatchSessionHydrated] = useState(false);
   const wallet = useWallet();
   const { publicKey } = wallet;
 
   const address = publicKey?.toBase58() ?? "";
+  const matchSessionAddress = getMatchSessionAddress(activeMatchSession);
+  const roomMatchesSession = Boolean(roomIdParam && activeMatchSession?.roomId === roomIdParam);
+  const walletMatchesSession = Boolean(address && matchSessionAddress && address === matchSessionAddress);
+  const canUseMatchSession = matchSessionHydrated && roomMatchesSession && walletMatchesSession;
+  const roomId = canUseMatchSession ? activeMatchSession?.roomId ?? "" : "";
+  const arenaId = canUseMatchSession ? activeMatchSession?.arenaId ?? arenaIdParam ?? "sol" : arenaIdParam ?? "sol";
+  const arenaToken = canUseMatchSession
+    ? getMatchSessionToken(activeMatchSession) ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL"
+    : ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const wagerUsd = canUseMatchSession ? activeMatchSession?.wagerUsd ?? FIXED_WAGER_USD : FIXED_WAGER_USD;
+  const preSignedDepositSig = canUseMatchSession ? readActiveDepositIntent(roomId, address) : null;
   const requiresWalletConnect = !address;
   const playGuardError = !roomIdParam
     ? "Missing roomId. Return to lobby and enter the match from the found flow."
-    : null;
+    : !matchSessionHydrated
+      ? null
+      : !activeMatchSession
+        ? "Missing local match session. Return to lobby and enter the match from the found flow."
+        : activeMatchSession.roomId !== roomIdParam
+          ? "This play link does not match your active local match session."
+          : !matchSessionAddress
+            ? "Local match session is missing a wallet address. Return to lobby and rejoin the match."
+            : address && matchSessionAddress !== address
+              ? "Connected wallet does not match the wallet that started this match."
+              : null;
 
   const {
     connectionState,
@@ -229,6 +250,13 @@ export function BattleScreen() {
     surrender,
     reconnect,
   } = useMatchSocket({ roomId, address });
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setActiveMatchSession(readActiveMatchSession());
+      setMatchSessionHydrated(true);
+    });
+  }, []);
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activeQuestionCard, setActiveQuestionCard] = useState<Card | null>(null);
@@ -927,21 +955,17 @@ export function BattleScreen() {
   const cleanLobbyHref = "/lobby";
 
   function onReturnToLobbyWithActiveRoom() {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      ACTIVE_ROOM_STORAGE_KEY,
-      JSON.stringify({
-        roomId,
-        arenaId,
-        arenaToken,
-        token: arenaToken,
-        wagerUsd,
-        address,
-        walletAddress: address,
-        status: "playing",
-        canSurrenderByState,
-      }),
-    );
+    writeActiveMatchSession({
+      roomId,
+      arenaId,
+      arenaToken,
+      token: arenaToken,
+      wagerUsd,
+      address,
+      walletAddress: address,
+      status: "playing",
+      canSurrenderByState,
+    });
   }
 
   useEffect(() => {

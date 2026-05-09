@@ -13,6 +13,17 @@ import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
+import {
+  getMatchSessionAddress,
+  getMatchSessionToken,
+  isLiveMatchSession,
+  readActiveMatchSession,
+  readLobbyDraftSnapshot,
+  writeActiveMatchSession,
+  writeLobbyDraftSnapshot,
+  type ActiveMatchSession,
+  type LobbyDraftSnapshot,
+} from "@/lib/session/matchSession";
 import type {
   CharacterOption,
   CharacterSelectionState,
@@ -93,9 +104,6 @@ const MATCHMAKING_TIMEOUT_MS = 45_000;
 const MATCHMAKING_PRESENCE_POLL_MS = 4_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
-const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
-const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
-
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
   animate: { opacity: 1, scale: 1 },
@@ -107,100 +115,7 @@ function shortenAddress(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
-type LobbyDraftSnapshot = {
-  arenaId?: string | null;
-  scientistId?: string | null;
-};
-
-type ActiveRoomSnapshot = {
-  walletAddress?: string | null;
-  address?: string | null;
-  roomId: string;
-  role?: "playerA" | "playerB" | null;
-  arenaId?: string | null;
-  scientistId?: string | null;
-  status?: string | null;
-  token?: string | null;
-  arenaToken?: string | null;
-  wagerUsd?: string | null;
-  canSurrenderByState?: boolean;
-};
-
-function normalizeActiveRoomSnapshot(value: unknown): ActiveRoomSnapshot | null {
-  if (!value || typeof value !== "object") return null;
-  const snapshot = value as Record<string, unknown>;
-  const roomId = typeof snapshot.roomId === "string" ? snapshot.roomId : "";
-  if (!roomId) return null;
-
-  return {
-    walletAddress:
-      typeof snapshot.walletAddress === "string"
-        ? snapshot.walletAddress
-        : typeof snapshot.address === "string"
-          ? snapshot.address
-          : null,
-    address:
-      typeof snapshot.address === "string"
-        ? snapshot.address
-        : typeof snapshot.walletAddress === "string"
-          ? snapshot.walletAddress
-          : null,
-    roomId,
-    role: snapshot.role === "playerA" || snapshot.role === "playerB" ? snapshot.role : null,
-    arenaId: typeof snapshot.arenaId === "string" ? snapshot.arenaId : null,
-    scientistId: typeof snapshot.scientistId === "string" ? snapshot.scientistId : null,
-    status: typeof snapshot.status === "string" ? snapshot.status : null,
-    token:
-      typeof snapshot.token === "string"
-        ? snapshot.token
-        : typeof snapshot.arenaToken === "string"
-          ? snapshot.arenaToken
-          : null,
-    arenaToken:
-      typeof snapshot.arenaToken === "string"
-        ? snapshot.arenaToken
-        : typeof snapshot.token === "string"
-          ? snapshot.token
-          : null,
-    wagerUsd: typeof snapshot.wagerUsd === "string" ? snapshot.wagerUsd : null,
-    canSurrenderByState: typeof snapshot.canSurrenderByState === "boolean" ? snapshot.canSurrenderByState : undefined,
-  };
-}
-
-function readActiveRoomSnapshot() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
-    if (!raw) return null;
-    return normalizeActiveRoomSnapshot(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
-function writeActiveRoomSnapshot(snapshot: ActiveRoomSnapshot | null) {
-  if (typeof window === "undefined") return;
-  if (!snapshot) {
-    window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(snapshot));
-}
-
-function getSnapshotAddress(snapshot: ActiveRoomSnapshot | null) {
-  if (!snapshot) return "";
-  return snapshot.walletAddress?.trim() || snapshot.address?.trim() || "";
-}
-
-function getSnapshotToken(snapshot: ActiveRoomSnapshot | null) {
-  if (!snapshot) return null;
-  return snapshot.token?.trim() || snapshot.arenaToken?.trim() || null;
-}
-
-function isLiveMatchSnapshot(snapshot: ActiveRoomSnapshot | null) {
-  if (!snapshot?.roomId) return false;
-  return snapshot.status === "playing" || typeof snapshot.canSurrenderByState === "boolean";
-}
+type ActiveRoomSnapshot = ActiveMatchSession;
 
 type ActiveMatchSurrenderBridgeProps = {
   roomId: string;
@@ -323,7 +238,7 @@ export function LobbyScreen() {
   const walletAddr = walletAddress || "Not connected";
   const activeMatchBannerArena =
     activeMatchBannerSnapshot?.arenaId ? ARENAS.find((arena) => arena.id === activeMatchBannerSnapshot.arenaId) ?? null : null;
-  const activeMatchBannerToken = getSnapshotToken(activeMatchBannerSnapshot) ?? activeMatchBannerArena?.token ?? "SOL";
+  const activeMatchBannerToken = getMatchSessionToken(activeMatchBannerSnapshot) ?? activeMatchBannerArena?.token ?? "SOL";
   const activeMatchBannerWager = activeMatchBannerSnapshot?.wagerUsd ?? FIXED_WAGER_USD;
   const canSurrenderActiveMatch = activeMatchBannerSnapshot?.canSurrenderByState === true;
 
@@ -394,7 +309,7 @@ export function LobbyScreen() {
     setPendingErRecovery(false);
     clearFoundTransitionTimers();
 
-    writeActiveRoomSnapshot({
+    writeActiveMatchSession({
       walletAddress,
       address: walletAddress,
       roomId: snapshot.roomId,
@@ -410,10 +325,7 @@ export function LobbyScreen() {
     if (snapshot.status === "playing") {
       const params = new URLSearchParams({
         roomId: snapshot.roomId,
-        address: walletAddress,
         arena: nextArenaId ?? "sol",
-        token: snapshot.token ?? nextArena?.token ?? "SOL",
-        wager: snapshot.wagerUsd ?? FIXED_WAGER_USD,
       });
       if (nextScientist?.id) {
         params.set("scientist", nextScientist.id);
@@ -440,7 +352,7 @@ export function LobbyScreen() {
   ]);
 
   const clearActiveMatchBanner = useCallback(() => {
-    writeActiveRoomSnapshot(null);
+    writeActiveMatchSession(null);
     setActiveMatchBannerSnapshot(null);
     setActiveMatchSurrenderSnapshot(null);
     setActiveMatchSurrenderModalOpen(false);
@@ -448,25 +360,23 @@ export function LobbyScreen() {
 
   const handleRejoinActiveMatch = useCallback(() => {
     if (!activeMatchBannerSnapshot?.roomId) return;
+    writeActiveMatchSession(activeMatchBannerSnapshot);
     const params = new URLSearchParams({
       roomId: activeMatchBannerSnapshot.roomId,
       arena: activeMatchBannerSnapshot.arenaId ?? "sol",
-      token: activeMatchBannerToken,
-      wager: activeMatchBannerWager,
     });
-    clearActiveMatchBanner();
+    setActiveMatchBannerSnapshot(null);
+    setActiveMatchSurrenderSnapshot(null);
+    setActiveMatchSurrenderModalOpen(false);
     router.push(`/play?${params.toString()}`);
   }, [
     activeMatchBannerSnapshot,
-    activeMatchBannerToken,
-    activeMatchBannerWager,
-    clearActiveMatchBanner,
     router,
   ]);
 
   const handleConfirmActiveMatchSurrender = useCallback(() => {
     if (!activeMatchBannerSnapshot?.roomId) return;
-    const surrenderAddress = getSnapshotAddress(activeMatchBannerSnapshot) || walletAddress;
+    const surrenderAddress = getMatchSessionAddress(activeMatchBannerSnapshot) || walletAddress;
     if (!surrenderAddress) {
       clearActiveMatchBanner();
       setActiveMatchToast({ text: "Could not connect - try rejoining instead", tone: "error" });
@@ -607,7 +517,7 @@ export function LobbyScreen() {
     userCancelledRef.current = true;
     matchmakingAbortRef.current?.abort();
     clearFoundTransitionTimers();
-    writeActiveRoomSnapshot(null);
+    writeActiveMatchSession(null);
     setMatchedRole(null);
     setMatchmakingState("idle");
     setMatchmakingStage("finding");
@@ -717,9 +627,8 @@ export function LobbyScreen() {
     if (draftHydratedRef.current) return;
     draftHydratedRef.current = true;
     try {
-      const raw = window.sessionStorage.getItem(LOBBY_DRAFT_STORAGE_KEY);
-      if (!raw) return;
-      const snapshot = JSON.parse(raw) as LobbyDraftSnapshot;
+      const snapshot = readLobbyDraftSnapshot();
+      if (!snapshot) return;
 
       queueMicrotask(() => {
         if (!selectedArenaId && snapshot.arenaId && ARENAS.some((arena) => arena.id === snapshot.arenaId)) {
@@ -743,7 +652,7 @@ export function LobbyScreen() {
     if (activeRoomHydratedRef.current) return;
     activeRoomHydratedRef.current = true;
 
-    const snapshot = readActiveRoomSnapshot();
+    const snapshot = readActiveMatchSession();
     if (!snapshot) return;
 
     queueMicrotask(() => {
@@ -758,7 +667,7 @@ export function LobbyScreen() {
         }
       }
 
-      if (isLiveMatchSnapshot(snapshot)) {
+      if (isLiveMatchSession(snapshot)) {
         setActiveMatchBannerSnapshot(snapshot);
       }
     });
@@ -770,7 +679,7 @@ export function LobbyScreen() {
       arenaId: selectedArenaId,
       scientistId: selectedScientist?.id ?? null,
     };
-    window.sessionStorage.setItem(LOBBY_DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
+    writeLobbyDraftSnapshot(snapshot);
   }, [selectedArenaId, selectedScientist?.id]);
 
   useEffect(() => {
@@ -780,19 +689,19 @@ export function LobbyScreen() {
       return;
     }
 
-    const storedSnapshot = readActiveRoomSnapshot();
-    const storedSnapshotAddress = getSnapshotAddress(storedSnapshot);
+    const storedSnapshot = readActiveMatchSession();
+    const storedSnapshotAddress = getMatchSessionAddress(storedSnapshot);
     const isStoredDepositingSnapshot =
       storedSnapshot?.status === "depositing" && Boolean(storedSnapshot.roomId) && phase === "setup";
 
     if (storedSnapshot && storedSnapshotAddress && storedSnapshotAddress !== walletAddress) {
-      writeActiveRoomSnapshot(null);
+      writeActiveMatchSession(null);
       queueMicrotask(() => {
         setActiveMatchBannerSnapshot(null);
         setPendingErRecovery(false);
       });
     } else if (storedSnapshot?.roomId && phase === "setup") {
-      if (isLiveMatchSnapshot(storedSnapshot)) {
+      if (isLiveMatchSession(storedSnapshot)) {
         queueMicrotask(() => {
           setActiveMatchBannerSnapshot(storedSnapshot);
         });
@@ -815,7 +724,7 @@ export function LobbyScreen() {
       let pollAttempts = 0;
 
       const clearRecoveryToSetup = (toastText?: string) => {
-        writeActiveRoomSnapshot(null);
+        writeActiveMatchSession(null);
         setPendingErRecovery(false);
         setMatchedRoomId(null);
         setMatchedRole(null);
@@ -836,9 +745,9 @@ export function LobbyScreen() {
             if (controller.signal.aborted) return;
 
             if (!activeMatch.inRoom || !activeMatch.roomId) {
-              const snapshot = readActiveRoomSnapshot();
-              if (getSnapshotAddress(snapshot) === walletAddress) {
-                writeActiveRoomSnapshot(null);
+              const snapshot = readActiveMatchSession();
+              if (getMatchSessionAddress(snapshot) === walletAddress) {
+                writeActiveMatchSession(null);
                 setActiveMatchBannerSnapshot(null);
               }
 
@@ -850,7 +759,7 @@ export function LobbyScreen() {
               return;
             }
 
-            const latestSnapshot = readActiveRoomSnapshot();
+            const latestSnapshot = readActiveMatchSession();
             if (activeMatch.status === "playing") {
               const liveSnapshot: ActiveRoomSnapshot = {
                 walletAddress,
@@ -860,12 +769,12 @@ export function LobbyScreen() {
                 arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
                 scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
                 status: "playing",
-                token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-                arenaToken: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                token: getMatchSessionToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                arenaToken: getMatchSessionToken(latestSnapshot) ?? selectedArena?.token ?? null,
                 wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
                 canSurrenderByState: latestSnapshot?.canSurrenderByState ?? false,
               };
-              writeActiveRoomSnapshot(liveSnapshot);
+              writeActiveMatchSession(liveSnapshot);
               setActiveMatchBannerSnapshot(liveSnapshot);
 
               if (isStoredDepositingSnapshot) {
@@ -887,7 +796,7 @@ export function LobbyScreen() {
                 role: activeMatch.role ?? latestSnapshot?.role ?? null,
                 status: activeMatch.status ?? latestSnapshot?.status ?? null,
                 arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
-                token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                token: getMatchSessionToken(latestSnapshot) ?? selectedArena?.token ?? null,
                 wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
                 scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
               });
@@ -990,7 +899,7 @@ export function LobbyScreen() {
 
   useEffect(() => {
     if (!walletAddress || !matchedRoomId) return;
-    writeActiveRoomSnapshot({
+    writeActiveMatchSession({
       walletAddress,
       address: walletAddress,
       roomId: matchedRoomId,
@@ -1012,10 +921,10 @@ export function LobbyScreen() {
           "radial-gradient(circle at 50% 30%, rgba(168,143,104,0.22), transparent 45%), linear-gradient(180deg, #2b3a32 0%, #223229 50%, #1a251f 100%)",
       }}
     >
-      {activeMatchSurrenderSnapshot?.roomId && getSnapshotAddress(activeMatchSurrenderSnapshot) && (
+      {activeMatchSurrenderSnapshot?.roomId && getMatchSessionAddress(activeMatchSurrenderSnapshot) && (
         <ActiveMatchSurrenderBridge
           roomId={activeMatchSurrenderSnapshot.roomId}
-          address={getSnapshotAddress(activeMatchSurrenderSnapshot)}
+          address={getMatchSessionAddress(activeMatchSurrenderSnapshot)}
           onSubmitted={handleActiveMatchSurrenderSubmitted}
           onTimeout={handleActiveMatchSurrenderTimeout}
         />
@@ -1279,7 +1188,7 @@ export function LobbyScreen() {
                   type="button"
                   disabled={showErSettling}
                   onClick={() => {
-                    writeActiveRoomSnapshot(null);
+                    writeActiveMatchSession(null);
                     setMatchedRoomId(null);
                     setMatchedRole(null);
                     setMatchmakingState("idle");
@@ -1415,7 +1324,7 @@ export function LobbyScreen() {
                     matchmakingAbortRef.current?.abort();
                     matchmakingAbortRef.current = null;
                     clearFoundTransitionTimers();
-                    writeActiveRoomSnapshot(null);
+                    writeActiveMatchSession(null);
                     setMatchedRoomId(null);
                     setMatchedRole(null);
                     setMatchmakingState("idle");

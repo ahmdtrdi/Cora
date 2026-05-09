@@ -10,6 +10,7 @@ import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
+import { writeActiveDepositIntent, writeActiveMatchSession } from "@/lib/session/matchSession";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -117,17 +118,28 @@ export function OpponentFound({
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
-      const params = new URLSearchParams({
+      writeActiveMatchSession({
+        walletAddress,
+        address: walletAddress,
+        roomId,
+        role: effectiveRole ?? null,
+        arenaId: arena.id,
+        scientistId: myScientist.id,
+        status: "playing",
+        token: arena.token,
+        arenaToken: arena.token,
+        wagerUsd,
+      });
+      writeActiveDepositIntent({
         roomId,
         address: walletAddress,
+        signature: signedDepositSignature,
+      });
+      const params = new URLSearchParams({
+        roomId,
         arena: arena.id,
-        token: arena.token,
-        wager: wagerUsd,
         scientist: myScientist.id,
       });
-      if (signedDepositSignature) {
-        params.set("depositSig", signedDepositSignature);
-      }
       router.push(`/play?${params.toString()}`);
       return;
     }
@@ -156,6 +168,7 @@ export function OpponentFound({
     signedDepositSignature,
     gameState?.status,
     isPlayerBWaitingUnlock,
+    effectiveRole,
   ]);
 
   useEffect(() => {

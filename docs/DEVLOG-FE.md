@@ -4076,6 +4076,31 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The lobby now has two ER-related polling paths: one for recovery interception and one for the missing-context fallback lock. If this flow expands further, we should consider centralizing ER recovery/status polling into a dedicated hook to reduce duplication and edge-case drift.
 
+## 2026-05-10 - Match Session Folder Naming
+
+### The Change
+- Moved the match-session helper into [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) under a lowercase `session` lib folder, matching the surrounding folder-plus-descriptive-file convention.
+
+### The Reasoning
+- Keeping the helper in a one-word lowercase folder avoids a special-case `matchSession` directory while preserving a clear helper filename.
+
+### The Tech Debt
+- None for this move; backend wallet-authenticated websocket joins and on-chain deposit verification remain the real security work after this FE guardrail.
+
+## 2026-05-10 - Play Route Match Session Guard
+
+### The Change
+- Added [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) to centralize lobby draft state, active match session state, and tab-scoped deposit intent signatures.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to write active match sessions before entering `/play`, keep rejoin sessions intact, and stop putting token, wager, address, or deposit signatures into play URLs.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `/play` only opens the match socket when the stored active match session matches the URL `roomId` and the connected wallet, and so deposit confirmation is read from tab session storage instead of query params.
+
+### The Reasoning
+- This is frontend hardening only: URL params are now treated as routing/display hints, while room identity, wallet address, wager display, token display, and deposit signature source come from the local session created by the real lobby/deposit flow.
+- Blocking socket connection until the local session and wallet match reduces casual spoofing through copied or edited `/play` links without changing the existing backend protocol.
+
+### The Tech Debt
+- This does not replace backend security. The API still needs wallet-authenticated websocket joins and on-chain verification of `confirmDeposit` signatures before the match can be considered production-safe against custom clients.
+
 ## 2026-05-09 - Lobby Deposit Flow Regression Guard
 
 ### The Change
