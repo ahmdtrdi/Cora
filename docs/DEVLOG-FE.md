@@ -4088,3 +4088,70 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The recovery-vs-live-flow distinction still depends on a mix of `phase` state and local-storage snapshot status. If more recovery paths are added, we should consider recording an explicit snapshot origin or recovery mode to make this branching less implicit.
+
+## 2026-05-09 - Deposit Failure UX Hardening
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the deposit countdown now pauses while Phantom is open, deposit signing errors are classified into user-facing messages, and a new `insufficientFunds` state drives retry copy plus longer-lived insufficient-balance feedback.
+- Updated [depositTypes.ts](/d:/projects/Cora/apps/web/src/components/deposit/depositTypes.ts) to add the new `insufficient_funds` status metadata consumed by the existing deposit status UI.
+
+### The Reasoning
+- Players were losing deposit time while the wallet approval modal was open, so treating `signing` like the existing waiting states prevents Phantom latency from burning the match window.
+- Solana simulation and Phantom rejection errors are too raw for players, so the caller now translates common wallet, network, expiry, and insufficient-funds failures into concise guidance while capping unknown fallbacks.
+- Keeping insufficient-balance state separate from generic signing errors lets the status card and primary CTA explain the actual next step: top up and retry.
+
+### The Tech Debt
+- Error classification is still substring-based inside `OpponentFound.tsx`; if more wallet providers or on-chain programs join the flow, we should consider centralizing these mappings in a shared Solana UX error helper.
+
+## 2026-05-09 - Deposit Preflight Recovery And Typed Error Routing
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so deposit signing no longer skips preflight, stops retrying failed sends, and inspects wallet error logs to preserve `insufficient_balance` and RPC-style failures through `DepositIntentError`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to consume `DepositIntentError.code` directly, add a 45-second wallet-signing timeout safety net, and treat timeout plus typed insufficient-balance failures as the existing insufficient-funds UI state.
+
+### The Reasoning
+- The broken UX came from bypassing simulation: empty-wallet deposits sat in `signing` until on-chain confirmation failed, which hid the real cause and left the timer paused for far too long.
+- Reading `SendTransactionError.logs` inside the signer keeps the error typed at the source, which is more reliable than trying to reconstruct wallet intent from raw strings in the React layer.
+- Keeping a local timeout in the UI protects against wallet adapters that abandon the signing promise without resolving, so the player gets control back instead of silently hanging until the room expires.
+
+### The Tech Debt
+- The timeout heuristic currently treats `signing_timeout` as likely insufficient funds because that is the most harmful silent-failure case we know about. If we start seeing more timeout causes in production, we should split that into its own status or collect wallet-specific telemetry before tightening the UX copy further.
+
+## 2026-05-09 - Deposit Insufficient-Balance Copy Unification
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so failed `/api/actions/challenge` responses now classify backend insufficient-balance signals, including HTTP `402` and balance/fund wording in `error`, `message`, `reason`, or `code`, as `DepositIntentError("insufficient_balance", "Insufficient Balance")`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both typed and fallback insufficient-balance detection now surface the exact user-facing message `Insufficient Balance` while preserving the existing `insufficientFunds` status behavior.
+
+### The Reasoning
+- The deposit UI already had the right state transition for insufficient funds, but some backend and fallback error paths still leaked into generic retry copy or "unexpected" messaging.
+- Normalizing the copy at both the signer boundary and the React fallback layer gives us one stable message regardless of whether the failure comes from backend transaction construction, Solana preflight, or raw wallet error text.
+
+### The Tech Debt
+- Backend insufficient-balance detection is still keyword-based because the action endpoint does not yet expose a dedicated structured error enum. If that endpoint grows a stable machine-readable code, we should prefer that over substring matching.
+
+## 2026-05-09 - Deposit Pre-Send Simulation Guard
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so deposit transactions are simulated immediately after setting `recentBlockhash` and `feePayer`, before calling `wallet.sendTransaction`.
+- Preserved existing `DepositIntentError` instances inside `mapWalletError`, and added simulation-side insufficient-balance detection that promotes matching simulation failures to `DepositIntentError("insufficient_balance", "Insufficient Balance")` before the wallet adapter can collapse them into `WalletSendTransactionError: Unexpected error`.
+
+### The Reasoning
+- The latest failure report showed the real insufficient-balance signal was happening at `wallet.sendTransaction`, which meant the backend guard was too early and the wallet adapter was too lossy.
+- Simulating the fully prepared transaction ourselves lets us inspect both `simulation.value.err` and `simulation.value.logs` while they still contain the useful Solana failure details, so we can fail fast with the same typed insufficient-balance path the UI already understands.
+
+### The Tech Debt
+- Simulation-side insufficient-balance detection is still string-based across logs and serialized error payloads. If we later standardize the transaction program errors we expect here, we should tighten this into a smaller helper with explicit structured cases instead of broad keyword matching.
+
+## 2026-05-09 - Phantom Opening Timer Badge
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) and [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) to support an optional countdown-area slot rendered directly under the timer.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to show a pill-style `Opening Phantom...` badge beneath the frozen countdown while `signingState === "signing"`.
+
+### The Reasoning
+- Once the timer began freezing during wallet signing, there was no immediate visual cue telling players that the pause was intentional and that Phantom was being opened.
+- Placing the badge directly under the countdown keeps the explanation attached to the paused timer itself, which is clearer than repurposing the broader helper text or adding another top-level banner.
+
+### The Tech Debt
+- The countdown slot is intentionally generic, but it is still a one-off prop path through the deposit components. If we add more timer-adjacent states later, it may be worth consolidating this into a dedicated countdown presentation component.
