@@ -1,14 +1,22 @@
 import { existsSync, readFileSync } from 'fs';
-import { PublicKey, Keypair, Connection, SystemProgram } from '@solana/web3.js';
+import { PublicKey, Keypair, Connection, SystemProgram, Transaction, type Signer } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, type Idl } from '@coral-xyz/anchor';
 import { deriveMatchId } from '@shared/escrow';
 
 type AddressLike = PublicKey | string;
 type FixedBytes = Uint8Array | number[];
 type RpcLane = 'base' | 'router';
+type MagicRouterBlockhash = { blockhash: string; lastValidBlockHeight: number };
 
 const DEFAULT_BASE_RPC_URL = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
-const ROUTER_RPC_URL = process.env.MAGICBLOCK_ROUTER_RPC_URL || process.env.MAGICBLOCK_RPC_URL;
+const ROUTER_RPC_URL =
+  process.env.EPHEMERAL_PROVIDER_ENDPOINT ||
+  process.env.MAGICBLOCK_ROUTER_RPC_URL ||
+  process.env.MAGICBLOCK_RPC_URL;
+const ROUTER_WS_URL =
+  process.env.EPHEMERAL_WS_ENDPOINT ||
+  process.env.MAGICBLOCK_ROUTER_WS_URL ||
+  process.env.MAGICBLOCK_WS_URL;
 const BATTLE_SEED = Buffer.from('battle');
 const CARD_SEED = Buffer.from('card');
 const DEFAULT_BATTLE_PROGRAM_ID = '3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8';
@@ -21,8 +29,14 @@ const battleIdl: Idl = {
   address: BATTLE_PROGRAM_ID.toBase58(),
 };
 
+// Keep these aligned with the on-chain account sizes in state.rs.
+const BATTLE_SESSION_ACCOUNT_SPACE = 267;
+const REGISTERED_CARD_ACCOUNT_SPACE = 95;
+
 let baseConnection: Connection | null = null;
 let routerConnection: Connection | null = null;
+let routerSupportsAccountScopedBlockhash: boolean | null = null;
+let routerEndpointLogged = false;
 
 /**
  * These constants must stay in lockstep with
@@ -147,6 +161,22 @@ interface CancelSessionParams extends SessionInstructionParams {
   reason: number;
 }
 
+function getOptionalValidatorRemainingAccounts():
+  | Array<{ pubkey: PublicKey; isSigner: false; isWritable: false }>
+  | undefined {
+  const validatorIdentity =
+    process.env.MAGICBLOCK_VALIDATOR_IDENTITY ||
+    process.env.MAGICBLOCK_LOCAL_VALIDATOR_IDENTITY;
+  if (!validatorIdentity) return undefined;
+  return [
+    {
+      pubkey: new PublicKey(validatorIdentity),
+      isSigner: false,
+      isWritable: false,
+    },
+  ];
+}
+
 function loadCoraBattleIdl(): Idl {
   const candidateUrls = [
     new URL('../../../../packages/solana-client/src/cora_battle.json', import.meta.url),
@@ -164,6 +194,27 @@ function loadCoraBattleIdl(): Idl {
 
 export function isMagicBlockConfigured(): boolean {
   return Boolean(ROUTER_RPC_URL);
+}
+
+export async function getBaseLamportBalance(address: AddressLike): Promise<number> {
+  return getBaseConnection().getBalance(toPublicKey(address), 'confirmed');
+}
+
+export async function estimateErSetupRentLamports(registeredCardCount: number): Promise<{
+  sessionRentLamports: number;
+  cardRentLamports: number;
+  totalRentLamports: number;
+}> {
+  const connection = getBaseConnection();
+  const [sessionRentLamports, cardRentLamports] = await Promise.all([
+    connection.getMinimumBalanceForRentExemption(BATTLE_SESSION_ACCOUNT_SPACE),
+    connection.getMinimumBalanceForRentExemption(REGISTERED_CARD_ACCOUNT_SPACE),
+  ]);
+  return {
+    sessionRentLamports,
+    cardRentLamports,
+    totalRentLamports: sessionRentLamports + cardRentLamports * registeredCardCount,
+  };
 }
 
 export function deriveBattleSessionPdaFromMatchId(matchId: FixedBytes): PublicKey {
@@ -193,10 +244,22 @@ function getBaseConnection(): Connection {
 
 function getRouterConnection(): Connection {
   if (!ROUTER_RPC_URL) {
-    throw new Error('MagicBlock Router RPC is not configured. Set MAGICBLOCK_ROUTER_RPC_URL.');
+    throw new Error(
+      'MagicBlock Router RPC is not configured. Set MAGICBLOCK_ROUTER_RPC_URL or EPHEMERAL_PROVIDER_ENDPOINT.',
+    );
   }
   if (!routerConnection) {
-    routerConnection = new Connection(ROUTER_RPC_URL, 'confirmed');
+    routerConnection = new Connection(ROUTER_RPC_URL, {
+      commitment: 'confirmed',
+      wsEndpoint: ROUTER_WS_URL,
+    });
+  }
+  if (!routerEndpointLogged) {
+    routerEndpointLogged = true;
+    console.log('[MagicBlock] Using router endpoint', {
+      rpc: ROUTER_RPC_URL,
+      ws: ROUTER_WS_URL ?? null,
+    });
   }
   return routerConnection;
 }
@@ -312,6 +375,166 @@ async function logInstruction<T>(
   }
 }
 
+function getWritableAccounts(transaction: Transaction): string[] {
+  const writableAccounts = new Set<string>();
+  for (const instruction of transaction.instructions) {
+    instruction.keys
+      .filter(account => account.isWritable)
+      .forEach(account => writableAccounts.add(account.pubkey.toBase58()));
+  }
+  if (transaction.feePayer) {
+    writableAccounts.add(transaction.feePayer.toBase58());
+  }
+  return Array.from(writableAccounts);
+}
+
+async function waitForSignatureStatus(
+  connection: Connection,
+  signature: string,
+  options: {
+    lastValidBlockHeight?: number;
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 45_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 500;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const { value } = await connection.getSignatureStatuses([signature]);
+    const status = value[0];
+
+    if (status?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+    }
+
+    if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') {
+      return;
+    }
+
+    if (typeof options.lastValidBlockHeight === 'number') {
+      const currentBlockHeight = await connection.getBlockHeight('confirmed');
+      if (currentBlockHeight > options.lastValidBlockHeight) {
+        throw new Error(
+          `Transaction expired before confirmation (lastValidBlockHeight=${options.lastValidBlockHeight}, currentBlockHeight=${currentBlockHeight})`,
+        );
+      }
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error(`Timed out waiting for transaction confirmation: ${signature}`);
+}
+
+async function sendBaseTransaction(transaction: Transaction, serverKeypair: Keypair): Promise<string> {
+  const connection = getBaseConnection();
+  transaction.feePayer ??= serverKeypair.publicKey;
+  const blockhash = await connection.getLatestBlockhash('confirmed');
+  transaction.recentBlockhash = blockhash.blockhash;
+  transaction.lastValidBlockHeight = blockhash.lastValidBlockHeight;
+  transaction.sign(serverKeypair as Signer);
+
+  const signature = await connection.sendRawTransaction(transaction.serialize());
+  await waitForSignatureStatus(connection, signature, {
+    lastValidBlockHeight: blockhash.lastValidBlockHeight,
+  });
+  return signature;
+}
+
+async function parseRouterJsonResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`Empty response body (status ${response.status})`);
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    const snippet = text.slice(0, 200).replace(/\s+/g, ' ').trim();
+    throw new Error(
+      `Non-JSON response body (status ${response.status}): ${snippet || '<empty>'}`,
+    );
+  }
+}
+
+async function getMagicRouterBlockhash(transaction: Transaction): Promise<MagicRouterBlockhash> {
+  const connection = getRouterConnection();
+
+  if (routerSupportsAccountScopedBlockhash !== false) {
+    try {
+      const response = await fetch(connection.rpcEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getBlockhashForAccounts',
+          params: [getWritableAccounts(transaction)],
+        }),
+      });
+      const payload = await parseRouterJsonResponse(response) as {
+        result?: { value?: { blockhash: string; lastValidBlockHeight: number } } | { blockhash: string; lastValidBlockHeight: number };
+        error?: { code?: number; message?: string } | unknown;
+      };
+
+      if (!payload.error && payload.result) {
+        routerSupportsAccountScopedBlockhash = true;
+        const result = payload.result as { value?: MagicRouterBlockhash } | MagicRouterBlockhash;
+        const blockhash = ('value' in result ? result.value : result) as MagicRouterBlockhash | undefined;
+        if (!blockhash?.blockhash || typeof blockhash.lastValidBlockHeight !== 'number') {
+          throw new Error(`Magic router returned invalid blockhash payload: ${JSON.stringify(payload)}`);
+        }
+        return blockhash;
+      }
+
+      const maybeError = payload.error as { code?: number; message?: string } | undefined;
+      const methodMissing =
+        maybeError?.code === -32601 ||
+        maybeError?.message?.toLowerCase().includes('method not found');
+
+      if (!methodMissing) {
+        throw new Error(`Magic router getBlockhashForAccounts failed: ${JSON.stringify(payload.error ?? payload)}`);
+      }
+
+      routerSupportsAccountScopedBlockhash = false;
+      console.warn(
+        `[MagicBlock] Router endpoint ${connection.rpcEndpoint} does not support getBlockhashForAccounts. ` +
+        `Falling back to getLatestBlockhash(); ER runtime support may be limited on this endpoint.`,
+      );
+    } catch (error) {
+      routerSupportsAccountScopedBlockhash = false;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[MagicBlock] Router blockhash RPC returned an unusable response for ${connection.rpcEndpoint}. ` +
+        `Falling back to getLatestBlockhash(). Details: ${message}`,
+      );
+    }
+  }
+
+  const fallback = await connection.getLatestBlockhash('confirmed');
+  return {
+    blockhash: fallback.blockhash,
+    lastValidBlockHeight: fallback.lastValidBlockHeight,
+  };
+}
+
+async function sendMagicRouterTransaction(transaction: Transaction, serverKeypair: Keypair): Promise<string> {
+  transaction.feePayer ??= serverKeypair.publicKey;
+  const blockhash = await getMagicRouterBlockhash(transaction);
+  transaction.recentBlockhash = blockhash.blockhash;
+  transaction.lastValidBlockHeight = blockhash.lastValidBlockHeight;
+  transaction.sign(serverKeypair as Signer);
+
+  const connection = getRouterConnection();
+  const signature = await connection.sendRawTransaction(transaction.serialize());
+  await waitForSignatureStatus(connection, signature, {
+    lastValidBlockHeight: blockhash.lastValidBlockHeight,
+  });
+  return signature;
+}
+
 /**
  * Intended BE room flow for new rooms:
  * createSession -> registerCardV2 -> activateSession ->
@@ -338,7 +561,7 @@ export class MagicBlockService {
     return logInstruction(
       { roomId: params.roomId, instruction: 'createSession', lane: 'base', sessionPda },
       async () => {
-        const signature = await program.methods
+        const transaction = await program.methods
           .createSession([...matchId], [...questionHash])
           .accountsPartial({
             authority: params.serverKeypair.publicKey,
@@ -347,7 +570,8 @@ export class MagicBlockService {
             battleSession: sessionPda,
             systemProgram: SystemProgram.programId,
           })
-          .rpc();
+          .transaction();
+        const signature = await sendBaseTransaction(transaction, params.serverKeypair);
 
         return { sessionPda: sessionPda.toBase58(), signature };
       },
@@ -378,16 +602,19 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'registerCard', lane: 'base', sessionPda, cardPda },
-      () => program.methods
-        // Legacy damage-only path. New flows should use registerCardV2.
-        .registerCard([...cardId], params.damage)
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-          registeredCard: cardPda,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          // Legacy damage-only path. New flows should use registerCardV2.
+          .registerCard([...cardId], params.damage)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+            registeredCard: cardPda,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction();
+        return sendBaseTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -400,15 +627,18 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'registerCardV2', lane: 'base', sessionPda, cardPda },
-      () => program.methods
-        .registerCardV2([...cardId], owner, params.effectType, params.maxValue)
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-          registeredCard: cardPda,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .registerCardV2([...cardId], owner, params.effectType, params.maxValue)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+            registeredCard: cardPda,
+            systemProgram: SystemProgram.programId,
+          })
+          .transaction();
+        return sendBaseTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -418,29 +648,39 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'activateSession', lane: 'base', sessionPda },
-      () => program.methods
-        .activateSession()
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .activateSession()
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendBaseTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
   async delegateBattleSession(params: SessionInstructionParams): Promise<string> {
     const sessionPda = toPublicKey(params.sessionPda);
-    const program = buildProgram(params.serverKeypair, 'router');
+    const program = buildProgram(params.serverKeypair, 'base');
+    const remainingAccounts = getOptionalValidatorRemainingAccounts();
 
     return logInstruction(
-      { roomId: params.roomId, instruction: 'delegateBattleSession', lane: 'router', sessionPda },
-      () => program.methods
-        .delegateBattleSession()
-        .accounts({
-          payer: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      { roomId: params.roomId, instruction: 'delegateBattleSession', lane: 'base', sessionPda },
+      async () => {
+        const builder = program.methods
+          .delegateBattleSession()
+          .accounts({
+            payer: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          });
+        if (remainingAccounts) {
+          builder.remainingAccounts(remainingAccounts);
+        }
+        const transaction = await builder.transaction();
+        return sendBaseTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -448,18 +688,25 @@ export class MagicBlockService {
     const sessionPda = toPublicKey(params.sessionPda);
     const cardPda = toPublicKey(params.cardPda);
     const cardId = params.cardId ? normalizeCardId(params.cardId) : await getRegisteredCardId(cardPda);
-    const program = buildProgram(params.serverKeypair, 'router');
+    const program = buildProgram(params.serverKeypair, 'base');
+    const remainingAccounts = getOptionalValidatorRemainingAccounts();
 
     return logInstruction(
-      { roomId: params.roomId, instruction: 'delegateRegisteredCard', lane: 'router', sessionPda, cardPda },
-      () => program.methods
-        .delegateRegisteredCard([...cardId])
-        .accounts({
-          payer: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-          registeredCard: cardPda,
-        })
-        .rpc(),
+      { roomId: params.roomId, instruction: 'delegateRegisteredCard', lane: 'base', sessionPda, cardPda },
+      async () => {
+        const builder = program.methods
+          .delegateRegisteredCard([...cardId])
+          .accounts({
+            payer: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+            registeredCard: cardPda,
+          });
+        if (remainingAccounts) {
+          builder.remainingAccounts(remainingAccounts);
+        }
+        const transaction = await builder.transaction();
+        return sendBaseTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -490,14 +737,17 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'applyCardEffect', lane: 'router', sessionPda, cardPda },
-      () => program.methods
-        .applyCardEffect(params.finalValue, params.scoreDelta)
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-          registeredCard: cardPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .applyCardEffect(params.finalValue, params.scoreDelta)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+            registeredCard: cardPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -508,13 +758,16 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'timeoutPlayerForRound', lane: 'router', sessionPda },
-      () => program.methods
-        .timeoutPlayerForRound(timedOutPlayer)
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .timeoutPlayerForRound(timedOutPlayer)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -524,13 +777,16 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'resolveRoundByState', lane: 'router', sessionPda },
-      () => program.methods
-        .resolveRoundByState()
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .resolveRoundByState()
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -540,13 +796,35 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'cancelSession', lane: 'router', sessionPda },
-      () => program.methods
-        .cancelSession(params.reason)
-        .accountsPartial({
-          authority: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .cancelSession(params.reason)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
+    );
+  }
+
+  async forceEnd(params: SessionInstructionParams): Promise<string> {
+    const sessionPda = toPublicKey(params.sessionPda);
+    const program = buildProgram(params.serverKeypair, 'router');
+
+    return logInstruction(
+      { roomId: params.roomId, instruction: 'forceEnd', lane: 'router', sessionPda },
+      async () => {
+        const transaction = await program.methods
+          .forceEnd()
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -556,13 +834,16 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'commitBattleSession', lane: 'router', sessionPda },
-      () => program.methods
-        .commitBattleSession()
-        .accounts({
-          payer: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .commitBattleSession()
+          .accounts({
+            payer: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -573,14 +854,17 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'commitRegisteredCard', lane: 'router', sessionPda, cardPda },
-      () => program.methods
-        .commitRegisteredCard()
-        .accounts({
-          payer: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-          registeredCard: cardPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .commitRegisteredCard()
+          .accounts({
+            payer: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+            registeredCard: cardPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -590,13 +874,16 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'undelegateBattleSession', lane: 'router', sessionPda },
-      () => program.methods
-        .undelegateBattleSession()
-        .accounts({
-          payer: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .undelegateBattleSession()
+          .accounts({
+            payer: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 
@@ -607,14 +894,17 @@ export class MagicBlockService {
 
     return logInstruction(
       { roomId: params.roomId, instruction: 'undelegateRegisteredCard', lane: 'router', sessionPda, cardPda },
-      () => program.methods
-        .undelegateRegisteredCard()
-        .accounts({
-          payer: params.serverKeypair.publicKey,
-          battleSession: sessionPda,
-          registeredCard: cardPda,
-        })
-        .rpc(),
+      async () => {
+        const transaction = await program.methods
+          .undelegateRegisteredCard()
+          .accounts({
+            payer: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+            registeredCard: cardPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
     );
   }
 

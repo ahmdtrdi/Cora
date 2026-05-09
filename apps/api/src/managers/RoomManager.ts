@@ -75,7 +75,7 @@ export class RoomManager {
     }
 
     if (message.type === 'playCard' && room.status === 'playing') {
-      this.engine.handlePlayCard(room, address, readPlayCardPayload(message.payload));
+      void this.engine.handlePlayCard(room, address, readPlayCardPayload(message.payload));
     }
   }
 }
