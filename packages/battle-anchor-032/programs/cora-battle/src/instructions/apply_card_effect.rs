@@ -6,9 +6,7 @@ use crate::events::CardEffectAppliedEvent;
 use crate::instructions::match_updates::award_round_and_progress;
 use crate::state::{BattleSession, BattleStatus, RegisteredCard};
 
-/// Apply a backend-authorized card effect to auditable ER state.
-/// The backend owns answer validation and private multiplier math; ER only
-/// receives the final effect value and gameplay score delta to persist.
+/// Apply a backend-authorized card effect to ER state.
 pub fn handler(ctx: Context<ApplyCardEffect>, final_value: u16, score_delta: u32) -> Result<()> {
     let session = &mut ctx.accounts.battle_session;
     let card = &mut ctx.accounts.registered_card;
@@ -25,6 +23,7 @@ pub fn handler(ctx: Context<ApplyCardEffect>, final_value: u16, score_delta: u32
         now.saturating_sub(session.created_at) <= SESSION_TIMEOUT,
         BattleError::SessionExpired
     );
+    require!(now < session.round_deadline, BattleError::RoundDeadlinePassed);
 
     require!(!card.is_used, BattleError::CardAlreadyUsed);
     require!(
