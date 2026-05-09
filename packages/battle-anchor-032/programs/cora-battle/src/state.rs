@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use crate::constants::INLINE_MANIFEST_LEN;
+
 /// The main battle session account, tracking all on-chain game state.
 /// Acts as a backend-authorized battle state mirror. Answer verification and
 /// private effect math stay off-chain; ER only records final public effects.
@@ -62,6 +64,22 @@ pub struct BattleSession {
     pub round_damage_a: u32,
     /// Attack damage contributed by player B during the current round.
     pub round_damage_b: u32,
+    /// Total inline manifest slots committed for player A.
+    pub total_slots_a: u8,
+    /// Total inline manifest slots committed for player B.
+    pub total_slots_b: u8,
+    /// Replay bitmask for player A card slots.
+    pub cards_used_a: u128,
+    /// Replay bitmask for player B card slots.
+    pub cards_used_b: u128,
+    /// Whether player A's manifest has been committed.
+    pub manifest_committed_a: bool,
+    /// Whether player B's manifest has been committed.
+    pub manifest_committed_b: bool,
+    /// Packed inline manifest for player A.
+    pub card_manifest_a: [u8; INLINE_MANIFEST_LEN],
+    /// Packed inline manifest for player B.
+    pub card_manifest_b: [u8; INLINE_MANIFEST_LEN],
 }
 
 impl BattleSession {
@@ -73,6 +91,10 @@ impl BattleSession {
     // + 8 (created) + 8 (finished) + 1 (end_reason)
     // + 4 (game_score_a) + 4 (game_score_b)
     // + 4 (round_damage_a) + 4 (round_damage_b)
+    // + 1 (total_slots_a) + 1 (total_slots_b)
+    // + 16 (cards_used_a) + 16 (cards_used_b)
+    // + 1 (manifest_committed_a) + 1 (manifest_committed_b)
+    // + 384 (card_manifest_a) + 384 (card_manifest_b)
     pub const LEN: usize = 8
         + 1
         + 32
@@ -101,7 +123,15 @@ impl BattleSession {
         + 4
         + 4
         + 4
-        + 4; // = 267
+        + 4
+        + 1
+        + 1
+        + 16
+        + 16
+        + 1
+        + 1
+        + INLINE_MANIFEST_LEN
+        + INLINE_MANIFEST_LEN; // = 1071
 
     /// Determine the match winner using the GameEngine's public final ordering:
     /// rounds won, then gameplay score, then remaining health, else draw.

@@ -58,4 +58,19 @@ pub enum BattleError {
 
     #[msg("Arithmetic overflow in game state calculation")]
     ArithmeticOverflow,
+
+    #[msg("Card manifest has not been committed yet")]
+    ManifestNotCommitted,
+
+    #[msg("Card manifest data is invalid")]
+    InvalidManifest,
+
+    #[msg("Card slot index is out of bounds")]
+    SlotOutOfBounds,
+
+    #[msg("Score delta exceeds multiplier-based maximum")]
+    ScoreDeltaExceedsMultiplier,
+
+    #[msg("Surrendering player is invalid")]
+    InvalidSurrenderPlayer,
 }

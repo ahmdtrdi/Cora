@@ -50,6 +50,16 @@ pub mod cora_battle {
         instructions::activate_session::handler(ctx)
     }
 
+    /// Commit the immutable inline manifest for one player before activation.
+    pub fn set_card_manifest(
+        ctx: Context<SetCardManifest>,
+        is_player_a: bool,
+        total_slots: u8,
+        manifest: Vec<u8>,
+    ) -> Result<()> {
+        instructions::set_card_manifest::handler(ctx, is_player_a, total_slots, manifest)
+    }
+
     /// Apply damage to the opponent of the attacker.
     /// Authority-only. Backend verifies the answer off-chain,
     /// then calls this to record damage on-chain.
@@ -66,6 +76,17 @@ pub mod cora_battle {
         score_delta: u32,
     ) -> Result<()> {
         instructions::apply_card_effect::handler(ctx, final_value, score_delta)
+    }
+
+    /// Apply a committed inline manifest slot to ER battle state.
+    pub fn apply_effect(
+        ctx: Context<ApplyEffect>,
+        slot: u8,
+        actor_is_a: bool,
+        final_value: u16,
+        score_delta: u32,
+    ) -> Result<()> {
+        instructions::apply_effect::handler(ctx, slot, actor_is_a, final_value, score_delta)
     }
 
     /// Resolve a timer-expired round from current ER state.
@@ -86,6 +107,14 @@ pub mod cora_battle {
     /// Cancel an unresolved session with an explicit ER outcome reason.
     pub fn cancel_session(ctx: Context<CancelSession>, reason: u8) -> Result<()> {
         instructions::cancel_session::handler(ctx, reason)
+    }
+
+    /// Finish the match immediately when one player surrenders.
+    pub fn surrender_match(
+        ctx: Context<SurrenderMatch>,
+        surrendering_player: Pubkey,
+    ) -> Result<()> {
+        instructions::surrender_match::handler(ctx, surrendering_player)
     }
 
     /// Emit the BattleFinalized event for the settlement oracle.
