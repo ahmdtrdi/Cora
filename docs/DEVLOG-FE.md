@@ -3850,3 +3850,50 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### Tech Debt
 - `cancelMatch` message handler on the backend (`RoomManager.handleMessage`) is now dead from the frontend side. It's safe to leave it for now but can be cleaned up if confirmed no other path sends it.
 - If a "polite cancel" that immediately notifies the opponent is needed later, it should go through a dedicated HTTP endpoint (not the deposit socket) with proper room lifecycle handling.
+
+## 2026-05-09 — OpponentFound: UX Refinements for Connection Drops and Cancel Guard
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **Cancel Button Guard**: Added `cancelFiredRef` to prevent multiple rapid clicks on the "Cancel Match" button from firing `onTimeout()` multiple times before the React component unmounts. The button now immediately changes its label to "Leaving..." and visually disables upon first click.
+- **Connection Issue Toast**: Replaced the inline `extraSlot` connection failure panel with a fixed, top-center toast banner (`connectionIssueBannerVisible`) that auto-dismisses after 6 seconds. The toast explicitly displays the WebSocket close code (e.g., `1006`) and reason if available.
+- **Context-Aware Hints**: Updated `getDepositHint()` and `getPrimaryButtonLabel()` to reflect socket disconnection states when waiting for the opponent to deposit. Instead of a generic "Waiting for Player A...", the UI now explicitly indicates "Connection issue while waiting" or "Disconnected...".
+
+### The Reasoning
+- **Cancel Guard**: React state updates are asynchronous, meaning rapid clicks on "Cancel Match" could bypass the previous `isCancellingMatch` guard before the UI had a chance to lock out further interactions. A synchronous `useRef` provides an immediate lock.
+- **Connection Issue Toast**: The top-center toast banner pattern matches the other critical alerts (e.g., Phantom taking too long, opponent failed to deposit) and provides a more consistent visual hierarchy than an inline panel.
+- **Context-Aware Hints**: The user shouldn't be left wondering why the opponent is taking so long to deposit if the underlying issue is actually a dropped socket connection. Surfacing this state directly in the primary action button and hint text improves clarity.
+
+### Tech Debt
+- The `alertDrain` animation duration for the new toast banner is hardcoded to 6000ms in the inline style, matching the `setTimeout` duration. This could be centralized into a shared constant if more timed toasts are introduced.
+
+## 2026-05-09 — OpponentFound: Removed Room Status Pill
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **Removed Room Status UI**: Completely removed the "Show Room Status" button and its expandable `RoomStatusRail` from `OpponentFound.tsx`. 
+- **Code Cleanup**: Removed the local `showRoomStatus` state, `getPlayerBadges()`, and `getOpponentBadges()` helper functions. Dropped the now-unused `RoomStatusRail` and `RoomStatusBadge` imports.
+- **Layout Adjustment**: Centered the remaining `playabilityLabel` pill (e.g., "Devnet · SOL Arena") to balance the layout after removing the trailing button.
+
+### The Reasoning
+- **Streamlined UX**: The Room Status Rail exposed low-level connection states ("matched", "deposited", "ready") that were redundant and overly technical for this phase. The new connection error toasts and primary button hints (added in the previous pass) provide all the necessary contextual feedback in a much more direct and user-friendly way.
+
+### Tech Debt
+- None introduced by this removal. The underlying `RoomStatusRail` component remains available in the codebase if needed elsewhere in the future.
+
+## 2026-05-09 — OpponentFound: Removed Playability Pill
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **Removed Playability Pill**: Completely removed the `playabilityLabel` pill and its wrapping container from `OpponentFound.tsx`.
+- **Logic Cleanup**: Removed the `useWalletArenaPlayability` hook call and its import.
+- **Top Alignment**: The arena information (`{arena.label} · ${wagerUsd} {arena.token}`) is now the very top element on the page.
+
+### The Reasoning
+- **UI Simplification**: The playability pill was redundant in the Rival Locked screen as the user had already verified their eligibility during the lobby/queue phase. Removing it makes the arena and wagering details the focal point at the top of the hierarchy.
+
+### Tech Debt
+- None.
