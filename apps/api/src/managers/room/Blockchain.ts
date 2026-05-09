@@ -43,7 +43,10 @@ export class Blockchain {
    * On any error, erEnabled is flipped to false and the match continues engine-only.
    */
   public async createBattleSession(room: Room): Promise<void> {
-    if (!room.erEnabled) return;
+    if (!room.erEnabled) {
+      console.log(`[MagicBlock] ER disabled for room ${room.id} — running engine-only`);
+      return;
+    }
     if (!room.playerA || !room.playerB) return;
     if (!room.engine) return;
 
