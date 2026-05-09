@@ -3772,3 +3772,63 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - `settlementSubtitle` remains in the prop contract but is no longer rendered.
 - Win payout formula and green `Back To Lobby` styling are currently UI-local. If reused, extract shared helper/class.
+
+## 2026-05-09 - FE-Only Destroyed Base End-Game Effect
+
+### The Change
+- Enhanced end-of-match visual sequencing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) with a frontend-only destroyed-base beat before settlement popup reveal.
+- Added short phased end-game visual states and timings for:
+- impact flash,
+- crack reveal,
+- smoke/debris particle reveal,
+- loser-base fade/sink progression,
+- popup reveal gating via existing `showSettlementOverlay`.
+- Reused existing base shake pathway (`playerBaseFx` / `opponentBaseFx` with `hit`) for the punchy shake stage.
+- Added defeated-base-only overlays (no new image assets):
+- red radial impact flash,
+- crack/damage line overlays,
+- animated smoke/debris particle puffs,
+- ground dust haze,
+- stronger or softer fade/sink based on standard defeat vs surrender outcome.
+- Kept forced `hurt` expression behavior until settlement popup appears.
+- Preserved neutral behavior for draw/cancelled/invalidated (no destroyed-base effect, short neutral delay only).
+
+### The Reasoning
+- This gives a clear final impact moment for the losing side while keeping all authoritative match/settlement logic unchanged.
+- Effects are scoped to the defeated base container only, ensuring the winning base and full-screen scene remain stable.
+- Soft-mode handling for surrender outcomes keeps visual tone appropriate while still signaling defeat.
+
+### The Tech Debt
+- Destroyed overlays (crack line geometry and particle tuning) are handcrafted inline in `BattleScreen.tsx`; if reused later, they should be extracted into a dedicated reusable effect component.
+- End-game visual timing constants are currently local and manually coordinated; if more cinematic variants are added, centralizing timing profiles would reduce drift.
+
+## 2026-05-09 - Longer Destroyed-Base Beat + Winner Confident End Emote
+
+### The Change
+- Updated end-game timing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to make the destroyed-base sequence feel more rewarding before settlement popup appears.
+- Increased total end-game transition duration from `1080ms` to `1320ms`.
+- Delayed fade and smoke beat slightly to better pace impact -> crack -> debris -> sink.
+- Added forced winner `confident` end-state reaction during the same pre-popup window, mirroring the forced loser `hurt` behavior.
+- Winner/loser forced reactions now both hold until settlement popup is shown for clear-loser outcomes.
+
+### The Reasoning
+- The previous timing felt too quick for the visual achievement moment after a win.
+- Showing both emotional states (`confident` winner and `hurt` loser) creates clearer end-match readability and stronger payoff.
+
+### The Tech Debt
+- End-game timing remains hardcoded constants in `BattleScreen.tsx`; if more variants are requested, timing profiles should be centralized.
+
+## 2026-05-09 - Extend Destroyed-Base End Sequence to 2.5s (Active FX)
+
+### The Change
+- Updated end-match timing in [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to a `2500ms` total transition.
+- Retimed effect phases so added duration is filled by active visuals:
+- impact/crack/smoke reveal delays pushed later,
+- loser-base fade/sink transition extended,
+- smoke/debris particle motion curves significantly extended with multi-stage opacity/position keyframes.
+
+### The Reasoning
+- Matches request for a longer accomplishment beat without dead air, by extending visual activity rather than just delaying popup timing.
+
+### The Tech Debt
+- End-game phase timing is still tuned by local constants and inline keyframes; a dedicated transition profile object would simplify future balancing.

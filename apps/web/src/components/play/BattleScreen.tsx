@@ -28,9 +28,12 @@ const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
 const REACTION_DISPLAY_MS = 1900;
-const ENDGAME_TRANSITION_TOTAL_MS = 1080;
-const ENDGAME_BASE_FADE_DELAY_MS = 210;
+const ENDGAME_TRANSITION_TOTAL_MS = 2500;
+const ENDGAME_BASE_FADE_DELAY_MS = 480;
 const ENDGAME_NEUTRAL_DELAY_MS = 180;
+const ENDGAME_IMPACT_FLASH_MS = 340;
+const ENDGAME_CRACK_REVEAL_DELAY_MS = 200;
+const ENDGAME_SMOKE_REVEAL_DELAY_MS = 360;
 const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
 const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
@@ -57,6 +60,15 @@ function getCardTransform(index: number) {
   }
   return index % 2 === 0 ? "translate-y-2 -rotate-2" : "translate-y-2 rotate-2";
 }
+
+const DESTROYED_SMOKE_PARTICLES = [
+  { key: "p0", x: "12%", y: "74%", scale: 0.7, driftX: -20, driftY: -14, delay: 0.0 },
+  { key: "p1", x: "26%", y: "64%", scale: 0.9, driftX: -12, driftY: -26, delay: 0.05 },
+  { key: "p2", x: "42%", y: "72%", scale: 1, driftX: 2, driftY: -22, delay: 0.02 },
+  { key: "p3", x: "58%", y: "66%", scale: 0.85, driftX: 14, driftY: -20, delay: 0.08 },
+  { key: "p4", x: "72%", y: "76%", scale: 0.95, driftX: 18, driftY: -12, delay: 0.03 },
+  { key: "p5", x: "84%", y: "68%", scale: 0.78, driftX: 24, driftY: -24, delay: 0.06 },
+] as const;
 
 function getStatusLabel(status: GameStatus) {
   if (status === "waiting") return "Waiting Opponent";
@@ -245,6 +257,10 @@ export function BattleScreen() {
   const [showSettlementOverlay, setShowSettlementOverlay] = useState(false);
   const [endgameDefeatedSide, setEndgameDefeatedSide] = useState<BattleSide | null>(null);
   const [endgameBaseFadeActive, setEndgameBaseFadeActive] = useState(false);
+  const [endgameAnimationActive, setEndgameAnimationActive] = useState(false);
+  const [endgameImpactFlashActive, setEndgameImpactFlashActive] = useState(false);
+  const [endgameCrackVisible, setEndgameCrackVisible] = useState(false);
+  const [endgameSmokeVisible, setEndgameSmokeVisible] = useState(false);
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -272,6 +288,16 @@ export function BattleScreen() {
       clearTimeout(timerId);
     }
     endgameTimersRef.current = [];
+  }, []);
+
+  const resetEndgameVisualState = useCallback(() => {
+    setShowSettlementOverlay(false);
+    setEndgameDefeatedSide(null);
+    setEndgameBaseFadeActive(false);
+    setEndgameAnimationActive(false);
+    setEndgameImpactFlashActive(false);
+    setEndgameCrackVisible(false);
+    setEndgameSmokeVisible(false);
   }, []);
 
   const showGameNotice = useCallback(
@@ -617,6 +643,8 @@ export function BattleScreen() {
       : settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
         ? "opponent"
         : null;
+  const isSurrenderOutcome =
+    settlementOutcomeKind === "player_surrender" || settlementOutcomeKind === "opponent_surrender";
   const endgameResultKey = isMatchComplete
     ? [
       settlementOutcomeKind,
@@ -625,6 +653,7 @@ export function BattleScreen() {
       surrenderedAddress ?? "none",
       settlementResult?.matchId ?? "none",
       lastRoomCancelled?.at ?? "none",
+      isSurrenderOutcome ? "surrender" : "standard",
     ].join("|")
     : null;
   const settlementStatusStyle = isRoomCancelled
@@ -734,8 +763,16 @@ export function BattleScreen() {
     endgameDefeatedSide === "opponent" && !showSettlementOverlay
       ? ({ id: "endgame-opponent-hurt", expression: "hurt" } as const)
       : null;
-  const displayPlayerReaction = forcedPlayerHurtReaction ?? playerReaction;
-  const displayOpponentReaction = forcedOpponentHurtReaction ?? opponentReaction;
+  const forcedPlayerConfidentReaction =
+    endgameDefeatedSide === "opponent" && !showSettlementOverlay
+      ? ({ id: "endgame-player-confident", expression: "confident" } as const)
+      : null;
+  const forcedOpponentConfidentReaction =
+    endgameDefeatedSide === "player" && !showSettlementOverlay
+      ? ({ id: "endgame-opponent-confident", expression: "confident" } as const)
+      : null;
+  const displayPlayerReaction = forcedPlayerHurtReaction ?? forcedPlayerConfidentReaction ?? playerReaction;
+  const displayOpponentReaction = forcedOpponentHurtReaction ?? forcedOpponentConfidentReaction ?? opponentReaction;
   const playerReactionSrc = displayPlayerReaction
     ? getCharacterExpressionSrc(playerCharacterId, displayPlayerReaction.expression)
     : null;
@@ -753,6 +790,9 @@ export function BattleScreen() {
   const targetArenaImageUrl = ARENA_IMAGE_BY_ID[arenaId] ?? null;
   const playerBaseDefeatActive = endgameDefeatedSide === "player";
   const opponentBaseDefeatActive = endgameDefeatedSide === "opponent";
+  const defeatedBaseSoftMode = isSurrenderOutcome;
+  const playerDestroyedEffectActive = playerBaseDefeatActive && endgameAnimationActive;
+  const opponentDestroyedEffectActive = opponentBaseDefeatActive && endgameAnimationActive;
 
   useEffect(() => {
     const schedule = (callback: () => void, delayMs = 0) => {
@@ -764,9 +804,7 @@ export function BattleScreen() {
       clearEndgameTransitionTimers();
       lastEndgameResultKeyRef.current = null;
       schedule(() => {
-        setShowSettlementOverlay(false);
-        setEndgameDefeatedSide(null);
-        setEndgameBaseFadeActive(false);
+        resetEndgameVisualState();
       });
       return;
     }
@@ -780,6 +818,10 @@ export function BattleScreen() {
       setShowSettlementOverlay(false);
       setEndgameDefeatedSide(resultDefeatedSide);
       setEndgameBaseFadeActive(false);
+      setEndgameAnimationActive(Boolean(resultDefeatedSide));
+      setEndgameImpactFlashActive(false);
+      setEndgameCrackVisible(false);
+      setEndgameSmokeVisible(false);
     });
 
     if (!resultDefeatedSide) {
@@ -790,6 +832,7 @@ export function BattleScreen() {
     }
 
     schedule(() => {
+      setEndgameImpactFlashActive(true);
       if (resultDefeatedSide === "player") {
         setPlayerBaseFx("hit");
         showReaction("player", "hurt", ENDGAME_TRANSITION_TOTAL_MS + 320);
@@ -798,12 +841,22 @@ export function BattleScreen() {
         showReaction("opponent", "hurt", ENDGAME_TRANSITION_TOTAL_MS + 320);
       }
     });
+    schedule(() => {
+      setEndgameCrackVisible(true);
+    }, ENDGAME_CRACK_REVEAL_DELAY_MS);
+    schedule(() => {
+      setEndgameSmokeVisible(true);
+    }, ENDGAME_SMOKE_REVEAL_DELAY_MS);
+    schedule(() => {
+      setEndgameImpactFlashActive(false);
+    }, ENDGAME_IMPACT_FLASH_MS);
 
     schedule(() => {
       setEndgameBaseFadeActive(true);
     }, ENDGAME_BASE_FADE_DELAY_MS);
     schedule(() => {
       setShowSettlementOverlay(true);
+      setEndgameAnimationActive(false);
       setPlayerBaseFx("idle");
       setOpponentBaseFx("idle");
     }, ENDGAME_TRANSITION_TOTAL_MS);
@@ -815,6 +868,7 @@ export function BattleScreen() {
     clearEndgameTransitionTimers,
     endgameResultKey,
     isMatchComplete,
+    resetEndgameVisualState,
     resultDefeatedSide,
     showReaction,
   ]);
@@ -1429,10 +1483,20 @@ export function BattleScreen() {
               }}
             />
             <div
-              className="pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[420ms] ease-out"
+              className="pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
-                opacity: playerBaseDefeatActive && endgameBaseFadeActive ? 0.05 : 0.9,
-                transform: playerBaseDefeatActive && endgameBaseFadeActive ? "translateY(18px) scale(0.94)" : "translateY(0) scale(1)",
+                opacity:
+                  playerBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? 0.22
+                      : 0.05
+                    : 0.9,
+                transform:
+                  playerBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? "translateY(12px) scale(0.965)"
+                      : "translateY(18px) scale(0.94)"
+                    : "translateY(0) scale(1)",
               }}
             >
               <motion.div
@@ -1473,21 +1537,114 @@ export function BattleScreen() {
                   className="pointer-events-none absolute inset-0 rounded-2xl"
                   style={{
                     background:
-                      playerBaseFx === "hit"
-                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
-                        : playerBaseFx === "heal"
-                          ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
-                          : "transparent",
+                      playerDestroyedEffectActive && endgameImpactFlashActive
+                        ? defeatedBaseSoftMode
+                          ? "radial-gradient(circle at 54% 46%, rgba(203,95,72,0.4), rgba(203,95,72,0.04) 44%, rgba(203,95,72,0) 66%)"
+                          : "radial-gradient(circle at 54% 46%, rgba(224,73,56,0.62), rgba(224,73,56,0.12) 42%, rgba(224,73,56,0) 66%)"
+                        : playerBaseFx === "hit"
+                          ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
+                          : playerBaseFx === "heal"
+                            ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
+                            : "transparent",
+                    opacity: playerDestroyedEffectActive && endgameImpactFlashActive ? 1 : 0.9,
                   }}
                 />
+                {playerDestroyedEffectActive && endgameCrackVisible && (
+                  <div className="pointer-events-none absolute inset-[6%] z-[2] overflow-hidden rounded-[14px]">
+                    <span
+                      className="absolute left-[34%] top-[10%] h-[78%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.88), rgba(85,24,16,0.78) 34%, rgba(20,8,7,0.85) 100%)",
+                        transform: "rotate(-16deg)",
+                        boxShadow: "0 0 10px rgba(227,88,70,0.24)",
+                      }}
+                    />
+                    <span
+                      className="absolute left-[54%] top-[16%] h-[66%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.84), rgba(102,27,19,0.72) 38%, rgba(20,8,7,0.84) 100%)",
+                        transform: "rotate(22deg)",
+                        boxShadow: "0 0 8px rgba(227,88,70,0.2)",
+                      }}
+                    />
+                    <span
+                      className="absolute left-[18%] top-[42%] h-[2px] w-[56%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.8), rgba(20,8,7,0.92))",
+                        transform: "rotate(-18deg)",
+                      }}
+                    />
+                    <span
+                      className="absolute right-[14%] top-[58%] h-[2px] w-[40%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.84), rgba(20,8,7,0.94))",
+                        transform: "rotate(24deg)",
+                      }}
+                    />
+                  </div>
+                )}
+                {playerDestroyedEffectActive && endgameSmokeVisible && (
+                  <div className="pointer-events-none absolute inset-0 z-[3]">
+                    {DESTROYED_SMOKE_PARTICLES.map((particle) => (
+                      <motion.span
+                        key={`player-${particle.key}`}
+                        className="absolute rounded-full"
+                        style={{
+                          left: particle.x,
+                          top: particle.y,
+                          width: `${Math.round(16 * particle.scale)}px`,
+                          height: `${Math.round(14 * particle.scale)}px`,
+                          background:
+                            "radial-gradient(circle at 45% 40%, rgba(170,178,170,0.82), rgba(76,84,78,0.4) 58%, rgba(20,20,20,0) 100%)",
+                          filter: "blur(0.2px)",
+                        }}
+                        initial={{ opacity: 0, scale: 0.6, x: 0, y: 0 }}
+                        animate={{
+                          opacity: [0, defeatedBaseSoftMode ? 0.34 : 0.5, defeatedBaseSoftMode ? 0.4 : 0.62, 0],
+                          scale: [0.58, 0.96, 1.14, 1.35],
+                          x: [0, particle.driftX * 0.45 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftX * (defeatedBaseSoftMode ? 0.72 : 1)],
+                          y: [0, particle.driftY * 0.36 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * 0.76 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * (defeatedBaseSoftMode ? 0.72 : 1)],
+                        }}
+                        transition={{
+                          duration: defeatedBaseSoftMode ? 1.85 : 2.05,
+                          ease: [0.2, 1, 0.35, 1],
+                          delay: particle.delay,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {playerDestroyedEffectActive && endgameSmokeVisible && (
+                  <div
+                    className="pointer-events-none absolute -bottom-1 left-[8%] h-[22%] w-[88%]"
+                    style={{
+                      background:
+                        "radial-gradient(ellipse at 50% 40%, rgba(83,89,81,0.36), rgba(83,89,81,0.12) 48%, rgba(83,89,81,0) 74%)",
+                    }}
+                  />
+                )}
               </motion.div>
             </div>
 
             <div
-              className="pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[420ms] ease-out"
+              className="pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
-                opacity: opponentBaseDefeatActive && endgameBaseFadeActive ? 0.05 : 0.9,
-                transform: opponentBaseDefeatActive && endgameBaseFadeActive ? "translateY(18px) scale(0.94)" : "translateY(0) scale(1)",
+                opacity:
+                  opponentBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? 0.22
+                      : 0.05
+                    : 0.9,
+                transform:
+                  opponentBaseDefeatActive && endgameBaseFadeActive
+                    ? defeatedBaseSoftMode
+                      ? "translateY(12px) scale(0.965)"
+                      : "translateY(18px) scale(0.94)"
+                    : "translateY(0) scale(1)",
               }}
             >
               <motion.div
@@ -1529,13 +1686,96 @@ export function BattleScreen() {
                   className="pointer-events-none absolute inset-0 rounded-2xl"
                   style={{
                     background:
-                      opponentBaseFx === "hit"
-                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
-                        : opponentBaseFx === "heal"
-                          ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
-                          : "transparent",
+                      opponentDestroyedEffectActive && endgameImpactFlashActive
+                        ? defeatedBaseSoftMode
+                          ? "radial-gradient(circle at 46% 46%, rgba(203,95,72,0.4), rgba(203,95,72,0.04) 44%, rgba(203,95,72,0) 66%)"
+                          : "radial-gradient(circle at 46% 46%, rgba(224,73,56,0.62), rgba(224,73,56,0.12) 42%, rgba(224,73,56,0) 66%)"
+                        : opponentBaseFx === "hit"
+                          ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
+                          : opponentBaseFx === "heal"
+                            ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
+                            : "transparent",
+                    opacity: opponentDestroyedEffectActive && endgameImpactFlashActive ? 1 : 0.9,
                   }}
                 />
+                {opponentDestroyedEffectActive && endgameCrackVisible && (
+                  <div className="pointer-events-none absolute inset-[6%] z-[2] overflow-hidden rounded-[14px]">
+                    <span
+                      className="absolute right-[34%] top-[10%] h-[78%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.88), rgba(85,24,16,0.78) 34%, rgba(20,8,7,0.85) 100%)",
+                        transform: "rotate(16deg)",
+                        boxShadow: "0 0 10px rgba(227,88,70,0.24)",
+                      }}
+                    />
+                    <span
+                      className="absolute right-[54%] top-[16%] h-[66%] w-[2px] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(245,227,210,0.84), rgba(102,27,19,0.72) 38%, rgba(20,8,7,0.84) 100%)",
+                        transform: "rotate(-22deg)",
+                        boxShadow: "0 0 8px rgba(227,88,70,0.2)",
+                      }}
+                    />
+                    <span
+                      className="absolute right-[18%] top-[42%] h-[2px] w-[56%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.8), rgba(20,8,7,0.92))",
+                        transform: "rotate(18deg)",
+                      }}
+                    />
+                    <span
+                      className="absolute left-[14%] top-[58%] h-[2px] w-[40%] rounded-full"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, rgba(20,8,7,0), rgba(104,30,20,0.84), rgba(20,8,7,0.94))",
+                        transform: "rotate(-24deg)",
+                      }}
+                    />
+                  </div>
+                )}
+                {opponentDestroyedEffectActive && endgameSmokeVisible && (
+                  <div className="pointer-events-none absolute inset-0 z-[3]">
+                    {DESTROYED_SMOKE_PARTICLES.map((particle) => (
+                      <motion.span
+                        key={`opponent-${particle.key}`}
+                        className="absolute rounded-full"
+                        style={{
+                          left: particle.x,
+                          top: particle.y,
+                          width: `${Math.round(16 * particle.scale)}px`,
+                          height: `${Math.round(14 * particle.scale)}px`,
+                          background:
+                            "radial-gradient(circle at 45% 40%, rgba(170,178,170,0.82), rgba(76,84,78,0.4) 58%, rgba(20,20,20,0) 100%)",
+                          filter: "blur(0.2px)",
+                        }}
+                        initial={{ opacity: 0, scale: 0.6, x: 0, y: 0 }}
+                        animate={{
+                          opacity: [0, defeatedBaseSoftMode ? 0.34 : 0.5, defeatedBaseSoftMode ? 0.4 : 0.62, 0],
+                          scale: [0.58, 0.96, 1.14, 1.35],
+                          x: [0, particle.driftX * 0.45 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftX * (defeatedBaseSoftMode ? 0.72 : 1)],
+                          y: [0, particle.driftY * 0.36 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * 0.76 * (defeatedBaseSoftMode ? 0.72 : 1), particle.driftY * (defeatedBaseSoftMode ? 0.72 : 1)],
+                        }}
+                        transition={{
+                          duration: defeatedBaseSoftMode ? 1.85 : 2.05,
+                          ease: [0.2, 1, 0.35, 1],
+                          delay: particle.delay,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {opponentDestroyedEffectActive && endgameSmokeVisible && (
+                  <div
+                    className="pointer-events-none absolute -bottom-1 left-[8%] h-[22%] w-[88%]"
+                    style={{
+                      background:
+                        "radial-gradient(ellipse at 50% 40%, rgba(83,89,81,0.36), rgba(83,89,81,0.12) 48%, rgba(83,89,81,0) 74%)",
+                    }}
+                  />
+                )}
               </motion.div>
             </div>
 
