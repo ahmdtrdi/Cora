@@ -98,17 +98,110 @@ export async function expectAnchorError(
     await promise;
     expect.fail(`Expected error including "${expectedText}"`);
   } catch (error: any) {
-    const errorText = [
-      error?.error?.errorCode?.code,
-      error?.error?.errorMessage,
-      error?.logs?.join("\n"),
-      error?.toString?.(),
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const errorText = formatAnchorError(error);
 
     expect(errorText).to.include(expectedText);
   }
+}
+
+export function formatAnchorError(error: any): string {
+  return [
+    error?.error?.errorCode?.code,
+    error?.error?.errorMessage,
+    error?.logs?.join("\n"),
+    error?.toString?.(),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function toSafeNumber(value: unknown): number {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (value && typeof (value as any).toNumber === "function") {
+    return (value as any).toNumber();
+  }
+  if (value && typeof (value as any).toString === "function") {
+    return Number((value as any).toString());
+  }
+  return Number(value);
+}
+
+export async function tryWarpForwardSlots(slotsToAdvance: number): Promise<boolean> {
+  const connection: any = provider.connection as any;
+  const currentSlot = await provider.connection.getSlot("processed");
+  const targetSlot = currentSlot + Math.max(1, Math.floor(slotsToAdvance));
+
+  for (const method of ["warpSlot", "warp_slot"]) {
+    try {
+      const response = await connection._rpcRequest(method, [targetSlot]);
+      if (!response?.error) {
+        return true;
+      }
+    } catch {
+      // Keep trying alternative method names.
+    }
+  }
+
+  return false;
+}
+
+export async function getChainUnixTimestamp(): Promise<number | null> {
+  const slot = await provider.connection.getSlot("processed");
+  const blockTime = await provider.connection.getBlockTime(slot);
+  return blockTime ?? null;
+}
+
+export async function warpPastUnixTimestamp(
+  targetUnixTimestamp: number,
+  options?: {
+    slotsPerStep?: number;
+    maxAttempts?: number;
+  }
+): Promise<boolean> {
+  const slotsPerStep = options?.slotsPerStep ?? 800;
+  const maxAttempts = options?.maxAttempts ?? 20;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const now = await getChainUnixTimestamp();
+    if (now !== null && now >= targetUnixTimestamp) {
+      return true;
+    }
+
+    const warped = await tryWarpForwardSlots(slotsPerStep);
+    if (!warped) {
+      return false;
+    }
+  }
+
+  const now = await getChainUnixTimestamp();
+  return now !== null && now >= targetUnixTimestamp;
+}
+
+export async function waitUntilUnixTimestamp(
+  targetUnixTimestamp: number,
+  options?: {
+    pollIntervalMs?: number;
+    timeoutMs?: number;
+  }
+): Promise<boolean> {
+  const pollIntervalMs = options?.pollIntervalMs ?? 1_000;
+  const timeoutMs = options?.timeoutMs ?? 1_200_000;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const now = await getChainUnixTimestamp();
+    if (now !== null && now >= targetUnixTimestamp) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  return false;
 }
 
 export async function airdropSol(
