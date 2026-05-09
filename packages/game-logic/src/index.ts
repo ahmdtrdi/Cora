@@ -5,6 +5,8 @@ export type {
   EnginePlayerState,
   EngineCard,
   PlayCardResult,
+  ExternalPlayCardResult,
+  ExternalAuthorityState,
   GameEngineEvent,
   GameEngineEventMap,
   AntiCheatVerdict,

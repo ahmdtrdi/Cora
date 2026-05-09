@@ -30,6 +30,7 @@ export class Store {
       erEnabled: isMagicBlockConfigured(),
       erLifecycleStatus: 'none',
       erCardRegistry: new Map(),
+      erNextCardNonce: 0,
       erProofMeta: null,
     };
     this.rooms.set(roomId, newRoom);

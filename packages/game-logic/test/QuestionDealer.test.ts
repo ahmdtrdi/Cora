@@ -102,7 +102,7 @@ describe('QuestionDealer', () => {
   test('deals exactly 1 heal card in each batch of 5 cards', () => {
     const manyQuestions: SchemaQuestion[] = Array.from({ length: 15 }, (_, index) => ({
       id: `q-${index + 1}`,
-      category: ['sequence', 'logical', 'math'][index % 3],
+      category: (['sequence', 'logical', 'math'] as SchemaQuestion['category'][])[index % 3],
       questionText: `question ${index + 1}`,
       options: [
         { id: 'a', text: '1', score: true },

@@ -27,6 +27,7 @@ export interface OpenedCard {
 export interface ErRegisteredCard {
   cardPda: string;
   owner: string;
+  cardId: string;
   effectType: number;
   maxValue: number;
   isDelegated: boolean;
@@ -50,6 +51,8 @@ export interface ErProofMeta {
   sessionPda: string;
   setupTxSignatures: string[];
   terminalTxSignatures: string[];
+  status: string | null;
+  winner: string | null;
   endReason: number | null;
 }
 
@@ -87,6 +90,8 @@ export interface Room {
   erLifecycleStatus: ErLifecycleStatus;
   /** Per-card ER registry, keyed by `<playerAddress>:<engineCardId>` */
   erCardRegistry: Map<string, ErRegisteredCard>;
+  /** Monotonic compact ID source for lazily registered replacement cards */
+  erNextCardNonce: number;
   /** Proof metadata for the /proof API endpoint */
   erProofMeta: ErProofMeta | null;
 }

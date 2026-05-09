@@ -294,6 +294,17 @@ export class Lifecycle {
     if (room.status !== 'playing' && room.status !== 'depositing') return;
     if (surrenderedAddress !== room.playerA && surrenderedAddress !== room.playerB) return;
 
+    if (room.erEnabled) {
+      const client = room.clients.get(surrenderedAddress);
+      this.manager.network.safeSend(client?.ws, {
+        type: 'surrenderRejected',
+        payload: {
+          message: 'Surrender is disabled for MagicBlock-authoritative matches in this release.',
+        },
+      } satisfies WsMessage);
+      return;
+    }
+
     const winnerAddress = surrenderedAddress === room.playerA ? room.playerB : room.playerA;
     if (!winnerAddress) return;
     const metaA = room.playerA ? room.playerMeta.get(room.playerA) : null;
