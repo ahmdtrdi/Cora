@@ -684,3 +684,27 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] BE still needs to wire the new room flow to `registerCardV2()` and `applyCardEffect()`; this task only made the adapter ready.
 - [ ] BE must choose `timeoutPlayerForRound()` vs `resolveRoundByState()` vs `cancelSession()` based on actual disconnect/server-state facts at deadline.
 - [ ] Settlement should eventually consume terminal ER state directly once the room flow is fully hooked up, instead of treating ER verification as an optional late check.
+
+---
+
+## Entry 20 — 2026-05-09: TypeScript Test Suite Clock Warp and MagicBlock Flow Modularization
+
+### The Change
+
+**TypeScript test expansion:**
+- `packages/battle-anchor-032/tests/16-timeout-player-for-round.test.ts`, `17-resolve-round-by-state.test.ts`, `19-force-end.test.ts` — Added positive path coverage for deadline-based instructions by utilizing new local validator clock warp capabilities.
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Implemented `tryWarpForwardSlots`, `warpPastUnixTimestamp`, and `waitUntilUnixTimestamp` to support time-travel testing in local environments.
+- `packages/battle-anchor-032/tests/30-magicblock-delegate-session.test.ts` through `35-magicblock-authz-and-edge.test.ts` — Split the monolithic MagicBlock smoke test into distinct, modular test files focusing on granular steps: session delegation, card delegation, ER effect application, committing, undelegating, and authorization edge cases.
+- `packages/battle-anchor-032/tests/helpers/magicblockFlowUtils.ts` — Extracted shared helper functions for the MagicBlock test suite.
+
+**Documentation:**
+- `docs/test_suite_report.md` — Updated the coverage matrix to reflect that `timeout_player_for_round`, `resolve_round_by_state`, and `force_end` are no longer blocked by validator clock limitations and now have their positive paths covered.
+
+### The Reasoning
+
+1. **Time-travel is critical for deadline-bound logic.** Testing only the rejection paths for timeout instructions leaves a massive blind spot. Implementing `warpSlot` helpers allows the TS test suite to instantly fast-forward the local validator clock, ensuring the smart contract correctly computes deadlines and timeouts.
+2. **Modular MagicBlock tests improve debuggability.** The original `30-magicblock-local-stack.test.ts` smoke test proved the full flow worked, but its monolithic nature made it difficult to isolate failures. Splitting it into discrete steps (delegation, mutation, commit, edge cases) provides much clearer feedback when interacting with the ER local stack.
+
+### Verification
+- [x] TS test suite successfully uses `warpSlot` RPC methods to skip the 180s/timeout limits locally.
+- [x] MagicBlock smoke flow is now divided into independent suites.
