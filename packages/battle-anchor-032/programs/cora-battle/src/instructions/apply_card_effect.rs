@@ -153,6 +153,12 @@ pub struct ApplyCardEffect<'info> {
     pub battle_session: Account<'info, BattleSession>,
     #[account(
         mut,
+        seeds = [
+            CARD_SEED,
+            battle_session.key().as_ref(),
+            registered_card.card_id.as_ref(),
+        ],
+        bump = registered_card.bump,
         constraint = registered_card.session == battle_session.key()
             @ BattleError::UnregisteredCard,
     )]
