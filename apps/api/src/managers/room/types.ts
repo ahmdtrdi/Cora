@@ -23,6 +23,36 @@ export interface OpenedCard {
   timeoutHandle: ReturnType<typeof setTimeout> | null;
 }
 
+/** Registry entry for a single card registered on the ER session */
+export interface ErRegisteredCard {
+  cardPda: string;
+  owner: string;
+  effectType: number;
+  maxValue: number;
+  isDelegated: boolean;
+  isConsumed: boolean;
+}
+
+/** ER lifecycle status tracked on the room */
+export type ErLifecycleStatus =
+  | 'none'           // ER not enabled or not yet started
+  | 'creating'       // createSession in progress
+  | 'registering'    // registerCardV2 calls in progress
+  | 'activating'     // activateSession in progress
+  | 'delegating'     // delegation in progress
+  | 'active'         // session fully delegated, ready for gameplay
+  | 'committing'     // commit/undelegate in progress (terminal)
+  | 'finished'       // terminal — ER session committed
+  | 'failed';        // setup or runtime ER error; fallback to engine-only
+
+/** Proof metadata stored for API responses */
+export interface ErProofMeta {
+  sessionPda: string;
+  setupTxSignatures: string[];
+  terminalTxSignatures: string[];
+  endReason: number | null;
+}
+
 export interface Room {
   id: string;
   /** 32-byte match ID derived from room ID — used for on-chain PDA derivation */
@@ -50,4 +80,13 @@ export interface Room {
   erSessionPda: string | null;
   /** USD value of the wager */
   wagerUsdValue?: string | null;
+
+  /** Whether this room uses ER as the authoritative source of truth */
+  erEnabled: boolean;
+  /** Current ER lifecycle phase */
+  erLifecycleStatus: ErLifecycleStatus;
+  /** Per-card ER registry, keyed by `<playerAddress>:<engineCardId>` */
+  erCardRegistry: Map<string, ErRegisteredCard>;
+  /** Proof metadata for the /proof API endpoint */
+  erProofMeta: ErProofMeta | null;
 }
