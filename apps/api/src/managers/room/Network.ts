@@ -40,6 +40,9 @@ export class Network {
           wagerAmount: room.wagerAmount?.toString() || '0',
           wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
+          erEnabled: room.erEnabled,
+          erStatus: room.erProofMeta?.status ?? room.erLifecycleStatus,
+          erSessionPda: room.erSessionPda,
         };
         this.applyPresence(room, payload);
       } else {
@@ -97,6 +100,9 @@ export class Network {
           wagerAmount: room.wagerAmount?.toString() || '0',
           wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
+          erEnabled: room.erEnabled,
+          erStatus: room.erProofMeta?.status ?? room.erLifecycleStatus,
+          erSessionPda: room.erSessionPda,
         };
       }
 

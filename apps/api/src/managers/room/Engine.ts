@@ -1,4 +1,5 @@
 import { GameEngine } from '@cora/game-logic';
+import type { PlayCardResult } from '@cora/game-logic';
 import type { MatchResult } from '@shared/websocket';
 import { fetchMatchQuestions } from '../../questions';
 import { Room } from './types';
@@ -30,7 +31,7 @@ export class Engine {
       return;
     }
 
-    const engine = new GameEngine(playersInfo, questions);
+    const engine = new GameEngine(playersInfo, questions, { externalAuthority: room.erEnabled });
     room.engine = engine;
 
     // Create ER session if MagicBlock is configured
@@ -51,6 +52,19 @@ export class Engine {
         payload: data.phase,
       });
       this.manager.network.broadcastGameState(room);
+    });
+
+    engine.on('roundDeadline', async (data) => {
+      if (!room.erEnabled) return;
+      console.log(`Room ${room.id} ER round ${data.roundNumber} deadline reached. Resolving on MagicBlock.`);
+      try {
+        await this.manager.blockchain.resolveRoundDeadline(room);
+        this.manager.network.broadcastScoreUpdate(room);
+        this.manager.network.broadcastGameState(room);
+      } catch (e) {
+        console.error(`[RoomEngineManager] ER deadline resolution failed for room ${room.id}:`, e);
+        await this.manager.blockchain.handleErFatalError(room, 'round deadline resolution', e);
+      }
     });
 
     engine.on('gameOver', (data) => {
@@ -185,6 +199,13 @@ export class Engine {
     });
 
     engine.start();
+    if (room.erEnabled) {
+      try {
+        await this.manager.blockchain.syncErState(room);
+      } catch (e) {
+        console.warn(`[RoomEngineManager] Initial ER state sync failed for room ${room.id}:`, e);
+      }
+    }
     console.log(`Room ${room.id} game engine started. 5-minute countdown begins!`);
     this.manager.network.broadcastGameState(room);
   }
@@ -227,7 +248,7 @@ export class Engine {
     }, this.CARD_COUNTDOWN_TICK_MS);
 
     const timeoutHandle = setTimeout(() => {
-      this.expireCard(room, address, cardId);
+      void this.expireCard(room, address, cardId);
     }, this.CARD_ANSWER_TIMEOUT_MS);
 
     room.openedCards.set(address, {
@@ -238,13 +259,33 @@ export class Engine {
     });
   }
 
-  public expireCard(room: Room, address: string, cardId: string) {
+  public async expireCard(room: Room, address: string, cardId: string) {
     if (!room.engine || !room.engine.isActive()) return;
 
     console.log(`Card ${cardId} expired for player ${address} in room ${room.id} (timeout).`);
 
     this.manager.lifecycle.clearOpenedCard(room, address);
-    room.engine.playCard(address, cardId, '__timeout__');
+    if (room.erEnabled) {
+      const result = room.engine.playCardNonAuthoritative(address, cardId, '__timeout__');
+      if (result.success && result.replacementCard) {
+        try {
+          await this.manager.blockchain.registerAndDelegateReplacementCard(room, address, result.replacementCard);
+        } catch (e) {
+          console.error(`[RoomEngineManager] Failed to register ER replacement card after timeout in room ${room.id}:`, e);
+          await this.manager.blockchain.handleErFatalError(room, 'timeout replacement registration', e);
+          return;
+        }
+      }
+      try {
+        await this.manager.blockchain.syncErState(room);
+      } catch (e) {
+        console.error(`[RoomEngineManager] Failed to sync ER state after timeout in room ${room.id}:`, e);
+        await this.manager.blockchain.handleErFatalError(room, 'timeout state sync', e);
+        return;
+      }
+    } else {
+      room.engine.playCard(address, cardId, '__timeout__');
+    }
 
     const client = room.clients.get(address);
     this.manager.network.safeSend(client?.ws, {
@@ -255,7 +296,7 @@ export class Engine {
     this.manager.network.broadcastScoreUpdate(room);
   }
 
-  public handlePlayCard(room: Room, address: string, payload: { cardId?: string; selectedOptionId?: string }) {
+  public async handlePlayCard(room: Room, address: string, payload: { cardId?: string; selectedOptionId?: string }) {
     if (!room.engine || !room.engine.isActive()) return;
 
     const { cardId, selectedOptionId } = payload;
@@ -271,11 +312,44 @@ export class Engine {
 
     console.log(`Player ${address} played card ${cardId} with answer ${selectedOptionId} in room ${room.id}`);
 
-    const result = room.engine.playCard(address, cardId, selectedOptionId);
+    let result: PlayCardResult;
 
-    if (!result.success) {
-      console.warn(`Card play failed for ${address} in room ${room.id}`);
-      return;
+    if (room.erEnabled) {
+      const erResult = room.engine.playCardNonAuthoritative(address, cardId, selectedOptionId);
+      result = erResult;
+
+      if (!erResult.success) {
+        console.warn(`Card play failed for ${address} in room ${room.id}`);
+        return;
+      }
+
+      try {
+        if (erResult.replacementCard) {
+          await this.manager.blockchain.registerAndDelegateReplacementCard(room, address, erResult.replacementCard);
+        }
+
+        if (erResult.correct) {
+          const erState = await this.manager.blockchain.applyErCardEffect(room, {
+            owner: address,
+            cardId,
+            finalValue: erResult.finalValue,
+            scoreDelta: erResult.scoreDelta,
+          });
+          await this.manager.blockchain.finalizeTerminalErSession(room, erState);
+        } else {
+          await this.manager.blockchain.syncErState(room);
+        }
+      } catch (e) {
+        console.error(`[RoomEngineManager] ER card play failed for room ${room.id}:`, e);
+        await this.manager.blockchain.handleErFatalError(room, 'card play', e);
+        return;
+      }
+    } else {
+      result = room.engine.playCard(address, cardId, selectedOptionId);
+      if (!result.success) {
+        console.warn(`Card play failed for ${address} in room ${room.id}`);
+        return;
+      }
     }
 
     if (result.correct) {

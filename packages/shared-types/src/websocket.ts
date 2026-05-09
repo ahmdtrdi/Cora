@@ -74,6 +74,12 @@ export interface GameState {
   wagerUsdValue?: string;
   /** Public or private match */
   roomType: 'public' | 'private';
+  /** True when public combat fields are backed by MagicBlock ER authority */
+  erEnabled?: boolean;
+  /** Current ER lifecycle/status for proof-aware clients */
+  erStatus?: string | null;
+  /** MagicBlock battle session PDA when available */
+  erSessionPda?: string | null;
 }
 
 // ─── Card Countdown Pipeline Types ────────────────────────────
@@ -139,6 +145,7 @@ export type ServerToClientEvents = {
   settlementAuthorization: (result: MatchResultPayload) => void;
   matchResult: (result: MatchResult) => void;
   matchInvalidated: (result: MatchResult) => void; // New event for anti-cheat rejections
+  surrenderRejected: (data: { message: string }) => void;
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
   phaseChange: (phase: GamePhase) => void;
@@ -159,6 +166,18 @@ export interface MatchResult {
   finalCorrectAnswers?: Record<string, number>;
   surrenderedAddress?: string;
   antiCheatWarning?: boolean; // True if the match was suspicious but still settled
+  erProof?: ErProofPayload;
+}
+
+export interface ErProofPayload {
+  erSessionPda: string;
+  explorerUrl: string;
+  erEnabled: boolean;
+  status: string | null;
+  winner: string | null;
+  endReason: number | null;
+  setupTxSignatures?: string[];
+  terminalTxSignatures?: string[];
 }
 
 export interface PresenceUpdateData {

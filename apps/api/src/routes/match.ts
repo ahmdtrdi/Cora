@@ -129,13 +129,19 @@ export function createApiMatchRouter(roomManager: RoomManager) {
   router.get('/:roomId/proof', (c) => {
     const roomId = c.req.param('roomId');
     const room = roomManager.getRoom(roomId);
-    if (!room?.erSessionPda) {
+    if (!room?.erProofMeta) {
       return c.json({ error: 'No ER session for this match' }, 404);
     }
 
     return c.json({
-      erSessionPda: room.erSessionPda,
-      explorerUrl: `https://explorer.solana.com/address/${room.erSessionPda}?cluster=devnet`,
+      erSessionPda: room.erProofMeta.sessionPda,
+      explorerUrl: `https://explorer.solana.com/address/${room.erProofMeta.sessionPda}?cluster=devnet`,
+      erEnabled: room.erEnabled,
+      status: room.erProofMeta.status ?? room.erLifecycleStatus,
+      winner: room.erProofMeta.winner,
+      setupTxSignatures: room.erProofMeta.setupTxSignatures,
+      terminalTxSignatures: room.erProofMeta.terminalTxSignatures,
+      endReason: room.erProofMeta.endReason,
     });
   });
 

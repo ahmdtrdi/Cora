@@ -13,6 +13,8 @@ import type {
   EnginePlayerState,
   EngineCard,
   PlayCardResult,
+  ExternalPlayCardResult,
+  ExternalAuthorityState,
   GameEngineEvent,
   GameEngineEventMap,
 } from './types';
@@ -58,20 +60,38 @@ export class GameEngine {
   private finished = false;
   private matchQueue: EngineCard[] = [];
   private currentRound: number = 1;
+  private externalAuthority: boolean = false;
+  private lastDeadlineNotifiedRound: number | null = null;
 
   // ─── Events ───────────────────────────────────────────────────
   private listeners: Map<string, Function[]> = new Map();
 
-  constructor(players: [{ address: string; characterId: string }, { address: string; characterId: string }], questions: SchemaQuestion[]) {
-    this.playerAddresses = [players[0].address, players[1].address];
+  constructor(
+    players: [{ address: string; characterId: string }, { address: string; characterId: string }] | [string, string],
+    questions: SchemaQuestion[],
+    options: { externalAuthority?: boolean } = {},
+  ) {
+    let normalizedPlayers: [{ address: string; characterId: string }, { address: string; characterId: string }];
+    if (typeof players[0] === 'string') {
+      const addresses = players as [string, string];
+      normalizedPlayers = [
+        { address: addresses[0], characterId: 'einstein' },
+        { address: addresses[1], characterId: 'einstein' },
+      ];
+    } else {
+      normalizedPlayers = players as [{ address: string; characterId: string }, { address: string; characterId: string }];
+    }
+
+    this.playerAddresses = [normalizedPlayers[0].address, normalizedPlayers[1].address];
     this.dealer = new QuestionDealer(questions);
     this.antiCheat = new AntiCheatAnalyzer();
+    this.externalAuthority = options.externalAuthority ?? false;
 
     // Generate a shared queue of up to 100 cards for the entire match
     this.matchQueue = this.dealer.dealHand(100);
 
     // Initialize both players
-    for (const p of players) {
+    for (const p of normalizedPlayers) {
       // Both players start with a copy of the first 5 cards
       const hand = this.matchQueue.slice(0, GameEngine.HAND_SIZE).map(c => ({ ...c }));
       this.players.set(p.address, {
@@ -140,6 +160,10 @@ export class GameEngine {
    */
   isFinished(): boolean {
     return this.finished;
+  }
+
+  setExternalAuthority(enabled: boolean): void {
+    this.externalAuthority = enabled;
   }
 
   // ─── Card Play ────────────────────────────────────────────────
@@ -286,6 +310,105 @@ export class GameEngine {
   }
 
   /**
+   * Validate and consume a card while leaving combat authority to an external
+   * source (MagicBlock ER). This preserves private answer validation,
+   * anti-cheat, card refill, and animation hints, but does not mutate HP,
+   * round wins, or terminal match outcome locally.
+   */
+  playCardNonAuthoritative(playerAddress: string, cardId: string, selectedOptionId: string): ExternalPlayCardResult {
+    const player = this.players.get(playerAddress);
+    const opponentAddress = this.playerAddresses.find(a => a !== playerAddress)!;
+    const opponent = this.players.get(opponentAddress)!;
+
+    if (!player || !opponent || this.finished) {
+      return this.failExternalResult(playerAddress, opponentAddress);
+    }
+
+    const now = Date.now();
+    const lastPlay = player.lastPlayTimestamp || 0;
+    const isCooldownHit = now - lastPlay < 500;
+
+    if (isCooldownHit) {
+      this.antiCheat.recordPlay(playerAddress, false, true);
+      return this.failExternalResult(playerAddress, opponentAddress);
+    }
+
+    player.lastPlayTimestamp = now;
+
+    const cardIndex = player.hand.findIndex(c => c.id === cardId);
+    if (cardIndex === -1) {
+      return this.failExternalResult(playerAddress, opponentAddress);
+    }
+
+    const card = player.hand[cardIndex];
+    const correct = card.correctOptionId === selectedOptionId;
+    const phaseMultiplier = this.phase === 'extra_point' ? GameEngine.EXTRA_POINT_MULTIPLIER : 1;
+    const specialtyMultiplier = getSpecialtyMultiplier(player.characterId, card.question.category);
+    const multiplier = phaseMultiplier * specialtyMultiplier;
+    const finalValue = correct
+      ? (card.type === 'attack' ? GameEngine.BASE_DAMAGE : GameEngine.BASE_HEAL) * multiplier
+      : 0;
+    const scoreDelta = correct ? finalValue : 0;
+
+    if (correct) {
+      player.correctAnswers += 1;
+      player.currentCorrectStreak += 1;
+      if (card.type === 'attack') {
+        player.characterState = 'action';
+        opponent.characterState = 'angry';
+      } else {
+        player.characterState = 'happy';
+      }
+    } else {
+      player.currentCorrectStreak = 0;
+      player.characterState = 'stay';
+    }
+
+    this.antiCheat.recordPlay(playerAddress, correct, false);
+
+    player.hand.splice(cardIndex, 1);
+    let replacementCard: EngineCard | undefined;
+    if (player.queueIndex < this.matchQueue.length) {
+      replacementCard = { ...this.matchQueue[player.queueIndex] };
+      player.hand.push(replacementCard);
+      player.queueIndex++;
+    }
+
+    if (correct) {
+      const event: DamageEvent = {
+        attackerAddress: playerAddress,
+        targetAddress: card.type === 'attack' ? opponentAddress : playerAddress,
+        damage: finalValue,
+        multiplier,
+        type: card.type,
+        timestamp: Date.now(),
+      };
+      this.damageLog.push(event);
+      if (this.damageLog.length > GameEngine.DAMAGE_LOG_MAX) {
+        this.damageLog.shift();
+      }
+    }
+
+    return {
+      success: true,
+      correct,
+      damage: card.type === 'attack' ? finalValue : 0,
+      heal: card.type === 'heal' ? finalValue : 0,
+      multiplier,
+      cardType: card.type,
+      targetAddress: card.type === 'attack' ? opponentAddress : playerAddress,
+      attackerAddress: playerAddress,
+      newTargetHealth: card.type === 'attack' ? opponent.health : player.health,
+      newAttackerHealth: player.health,
+      gameOver: false,
+      effectType: correct ? card.type : 'none',
+      finalValue,
+      scoreDelta,
+      replacementCard,
+    };
+  }
+
+  /**
    * Reset character states to 'stay'. Called by caller (e.g. RoomManager) after animations.
    */
   resetRound(): void {
@@ -315,6 +438,43 @@ export class GameEngine {
    */
   getAntiCheatVerdicts() {
     return this.antiCheat.getVerdicts();
+  }
+
+  /**
+   * Project authoritative public combat state from an external runtime back
+   * into the engine-facing state used by websocket broadcasts.
+   */
+  applyAuthoritativeState(state: ExternalAuthorityState): void {
+    const playerA = this.players.get(state.playerA);
+    const playerB = this.players.get(state.playerB);
+    if (!playerA || !playerB) return;
+
+    playerA.health = state.healthA;
+    playerB.health = state.healthB;
+    playerA.roundsWon = state.scoreA;
+    playerB.roundsWon = state.scoreB;
+    playerA.score = state.gameScoreA;
+    playerB.score = state.gameScoreB;
+
+    if (this.currentRound !== state.currentRound) {
+      this.lastDeadlineNotifiedRound = null;
+    }
+    this.currentRound = state.currentRound;
+
+    if (typeof state.roundDeadline === 'number' && state.roundDeadline > 0) {
+      const remaining = state.roundDeadline * 1000 - Date.now();
+      this.remainingMs = Math.max(0, remaining);
+      this.phase = this.remainingMs <= GameEngine.EXTRA_POINT_THRESHOLD_MS ? 'extra_point' : 'normal';
+    }
+
+    if (state.status === 'Finished' || state.status === 'Cancelled') {
+      this.finished = true;
+      this.clearTimer();
+    } else if (this.started && !this.finished && !this.timerInterval && this.remainingMs > 0) {
+      this.timerInterval = setInterval(() => this.tick(), GameEngine.TICK_INTERVAL_MS);
+    }
+
+    this.emit('stateUpdate', {});
   }
 
   /**
@@ -402,6 +562,21 @@ export class GameEngine {
   }
 
   /**
+   * Get the full list of valid questions for this match (for question hash derivation).
+   */
+  getQuestions(): SchemaQuestion[] {
+    return this.dealer.getQuestions();
+  }
+
+  /**
+   * Snapshot the shared match queue for backend setup flows such as ER card
+   * registration. Returned cards include correct answers and must stay server-only.
+   */
+  getMatchQueue(): EngineCard[] {
+    return this.matchQueue.map(card => ({ ...card }));
+  }
+
+  /**
    * Get all player addresses.
    */
   getPlayerAddresses(): [string, string] {
@@ -462,6 +637,15 @@ export class GameEngine {
       remainingMs: this.remainingMs,
       phase: this.phase,
     });
+
+    if (this.externalAuthority && this.remainingMs <= 0) {
+      this.clearTimer();
+      if (this.lastDeadlineNotifiedRound !== this.currentRound) {
+        this.lastDeadlineNotifiedRound = this.currentRound;
+        this.emit('roundDeadline', { roundNumber: this.currentRound });
+      }
+      return;
+    }
 
     // Time's up - determine this round, then finalize when best-of-3 is complete.
     if (this.remainingMs <= 0) {
@@ -592,6 +776,15 @@ export class GameEngine {
       newTargetHealth: opponent?.health ?? 0,
       newAttackerHealth: player?.health ?? 0,
       gameOver: false,
+    };
+  }
+
+  private failExternalResult(playerAddress: string, opponentAddress: string): ExternalPlayCardResult {
+    return {
+      ...this.failResult(playerAddress, opponentAddress),
+      effectType: 'none',
+      finalValue: 0,
+      scoreDelta: 0,
     };
   }
 }
