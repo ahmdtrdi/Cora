@@ -8,11 +8,8 @@ import type { Arena, Scientist } from "./LobbyScreen";
 import { signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
-import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
-import { RoomStatusRail } from "@/components/room/RoomStatusRail";
-import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -59,12 +56,14 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
-  const [showRoomStatus, setShowRoomStatus] = useState(false);
-  const [isCancellingMatch, setIsCancellingMatch] = useState(false);
+  const [isRetryingConnection, setIsRetryingConnection] = useState(false);
+  const [retryConnectionFailed, setRetryConnectionFailed] = useState(false);
+  const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
+  const cancelFiredRef = useRef(false);
   const myHappyExpressionSrc = useMemo(
     () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
     [myScientist.id],
@@ -82,7 +81,6 @@ export function OpponentFound({
     lastRoomCancelled,
     lastMatchFound,
     confirmDeposit,
-    cancelMatch,
     reconnect,
   } = useMatchSocket({
     roomId,
@@ -109,15 +107,6 @@ export function OpponentFound({
     !signed;
   const reassignedRoomId =
     lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
-  const {
-    statusLabel: playabilityLabel,
-    statusTone: playabilityTone,
-  } = useWalletArenaPlayability({
-    address: wallet.publicKey?.toBase58() ?? "",
-    arenaId: arena.id,
-    token: arena.token,
-    enabled: Boolean(wallet.publicKey),
-  });
   const roomCancelledNotice = useMemo(
     () => (lastRoomCancelled ? getRoomCancelledMessage(lastRoomCancelled.reason) : null),
     [lastRoomCancelled],
@@ -209,6 +198,24 @@ export function OpponentFound({
     return () => clearTimeout(timerId);
   }, [signingState]);
 
+  // Clear retry-in-progress flag once the socket settles to any non-reconnecting state.
+  useEffect(() => {
+    if (!isRetryingConnection) return;
+    if (connectionState === "reconnecting") return;
+    setIsRetryingConnection(false);
+    if (connectionState === "error" || connectionState === "disconnected") {
+      setRetryConnectionFailed(true);
+    }
+  }, [connectionState, isRetryingConnection]);
+
+  // Show a timed top-center banner whenever the socket drops unexpectedly.
+  useEffect(() => {
+    if (connectionState !== "error" && connectionState !== "disconnected") return;
+    setConnectionIssueBannerVisible(true);
+    const timerId = setTimeout(() => setConnectionIssueBannerVisible(false), 6000);
+    return () => clearTimeout(timerId);
+  }, [connectionState]);
+
   async function onSignDeposit() {
     console.info("[OpponentFound] Deposit click", {
       roomId,
@@ -258,9 +265,18 @@ export function OpponentFound({
   }
 
   function onCancelMatch() {
-    if (isCancellingMatch) return;
-    setIsCancellingMatch(true);
-    cancelMatch();
+    // Ref guard prevents multiple rapid clicks from firing onTimeout() more than once
+    // before the component unmounts (state updates are async, refs are synchronous).
+    if (cancelFiredRef.current) return;
+    cancelFiredRef.current = true;
+    onTimeout();
+  }
+
+  function onRetryConnection() {
+    if (isRetryingConnection) return;
+    setIsRetryingConnection(true);
+    setRetryConnectionFailed(false);
+    reconnect();
   }
 
   useEffect(() => {
@@ -274,18 +290,26 @@ export function OpponentFound({
   }, [errorVisible]);
 
   function getDepositHint() {
+    const isDisconnected = connectionState === "error" || connectionState === "disconnected";
+    const isReconnecting = connectionState === "reconnecting";
     if (reassignedRoomId) {
       return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
     }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
-    if (isPlayerBWaitingUnlock) return "Waiting for Player A to deposit first.";
+    if (isPlayerBWaitingUnlock) {
+      if (isDisconnected) {
+        const code = lastSocketCloseInfo?.code;
+        return `Connection issue while waiting${code ? ` (${code})` : ""}. Retry or cancel to return to lobby.`;
+      }
+      if (isReconnecting) return "Reconnecting... waiting for Player A to deposit.";
+      return "Waiting for Player A to deposit first.";
+    }
     if (isPlayerAWaitingForPlayerB) return "Deposit signed. Waiting for Player B.";
     if (effectiveRole === "playerB" && depositUnlockedAt && signingState === "idle") {
       return "Player A deposited. Your turn to sign.";
     }
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
-    if (isCancellingMatch) return "Cancelling match...";
     if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
     if (walletApprovalTakingLong) {
@@ -311,7 +335,13 @@ export function OpponentFound({
   }
 
   function getPrimaryButtonLabel() {
-    if (isPlayerBWaitingUnlock) return "Waiting For Player A...";
+    const isDisconnected = connectionState === "error" || connectionState === "disconnected";
+    const isReconnecting = connectionState === "reconnecting";
+    if (isPlayerBWaitingUnlock) {
+      if (isDisconnected) return "Disconnected...";
+      if (isReconnecting) return "Reconnecting...";
+      return "Waiting For Player A...";
+    }
     if (isPlayerAWaitingForPlayerB) return "Waiting For Player B...";
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
@@ -319,25 +349,7 @@ export function OpponentFound({
     return "Sign Deposit";
   }
 
-  function getPlayerBadges(): RoomStatusBadge[] {
-    if (gameState?.status === "playing") {
-      return ["connected", "matched", "deposited", "ready"];
-    }
-    if (signedDepositSignature) {
-      return ["connected", "matched", "deposited"];
-    }
-    if (signingState === "signing") {
-      return ["connected", "matched", "selecting"];
-    }
-    return ["connected", "matched", "selecting"];
-  }
 
-  function getOpponentBadges(): RoomStatusBadge[] {
-    if (opponentFailedDepositAt) return ["connected", "matched"];
-    if (gameState?.status === "playing") return ["connected", "matched", "deposited", "ready"];
-    if (depositUnlockedAt || signingState === "waiting") return ["connected", "matched", "deposited"];
-    return ["connected", "matched", "selecting"];
-  }
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
@@ -450,28 +462,49 @@ export function OpponentFound({
           </div>
         </div>
       )}
-
-      <div className="mb-4 flex w-full items-center justify-between gap-2">
-        <span
-          className="frame-cut frame-cut-sm px-3 py-1.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
-          style={{
-            border: playabilityTone === "warning" ? "1px solid rgba(186,105,49,0.75)" : "1px solid rgba(157,180,150,0.58)",
-            color: playabilityTone === "warning" ? "#f8d694" : "#d8ead4",
-            background: "rgba(16,26,22,0.72)",
-          }}
-        >
-          {playabilityLabel}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowRoomStatus((value) => !value)}
-            className="rounded-full border border-[rgba(248,214,148,0.46)] bg-[rgba(16,26,22,0.5)] px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--tone-cream)] transition-colors hover:bg-[rgba(16,26,22,0.66)]"
+      {connectionIssueBannerVisible && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(186,105,49,0.72)",
+              background: "linear-gradient(145deg, #2c1e10 0%, #3d2a14 100%)",
+            }}
           >
-            {showRoomStatus ? "Hide Room Status" : "Show Room Status"}
-          </button>
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-caprasimo text-base text-[#f8d694]">
+                Connection issue while waiting
+              </p>
+              <button
+                type="button"
+                onClick={() => setConnectionIssueBannerVisible(false)}
+                className="font-gabarito text-xs font-bold leading-none text-[#f8d694] opacity-60 hover:opacity-100"
+                aria-label="Dismiss connection banner"
+              >
+                ✕
+              </button>
+            </div>
+            {lastSocketCloseInfo && (
+              <p className="mt-1 font-mono text-xs text-[rgba(244,240,230,0.72)]">
+                Close code {lastSocketCloseInfo.code}{lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}
+              </p>
+            )}
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.12)]">
+              <div
+                className="h-full"
+                style={{
+                  width: "100%",
+                  background: "#f8d694",
+                  animationName: "alertDrain",
+                  animationDuration: "6000ms",
+                  animationTimingFunction: "linear",
+                  animationFillMode: "forwards",
+                }}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
         {arena.label} · ${wagerUsd} {arena.token}
@@ -605,10 +638,13 @@ export function OpponentFound({
             connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
               <button
                 type="button"
-                onClick={reconnect}
-                className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
+                onClick={onRetryConnection}
+                disabled={isRetryingConnection}
+                className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                  isRetryingConnection ? "cursor-not-allowed opacity-55" : ""
+                }`}
               >
-                Retry Connection
+                {isRetryingConnection ? "Retrying..." : "Retry Connection"}
               </button>
             ) : null
           }
@@ -616,57 +652,19 @@ export function OpponentFound({
             <button
               type="button"
               onClick={onCancelMatch}
-              disabled={isCancellingMatch}
-              className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
+              disabled={cancelFiredRef.current}
+              className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                cancelFiredRef.current ? "cursor-not-allowed opacity-55" : ""
+              }`}
             >
-              {isCancellingMatch ? "Cancelling..." : "Cancel Match"}
+              {cancelFiredRef.current ? "Leaving..." : "Cancel Match"}
             </button>
           }
-          extraSlot={
-            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-              <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}>
-                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
-                  {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
-                </p>
-                <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
-                  {connectionState === "reconnecting"
-                    ? "Trying to restore room state. Keep this page open."
-                    : lastSocketCloseInfo
-                    ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
-                    : lastSocketError ?? "Socket disconnected."}
-                </p>
-              </div>
-            ) : null
-          }
+          extraSlot={null}
         />
       </div>
 
-      {showRoomStatus && (
-        <div
-          className="mt-5 w-full rounded-2xl border p-4 shadow-lg"
-          style={{
-            borderColor: "rgba(248,214,148,0.32)",
-            background: "linear-gradient(160deg, rgba(12,21,17,0.62), rgba(19,32,26,0.62))",
-          }}
-        >
-          <RoomStatusRail
-            rows={[
-              {
-                id: "you",
-                label: "You",
-                subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
-                badges: getPlayerBadges(),
-              },
-              {
-                id: "opponent",
-                label: "Opponent",
-                subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
-                badges: getOpponentBadges(),
-              },
-            ]}
-          />
-        </div>
-      )}
+
     </div>
   );
 }
