@@ -48,6 +48,14 @@ export function getEphemeralWsUrl(): string {
   return process.env.EPHEMERAL_WS_ENDPOINT || DEFAULT_EPHEMERAL_WS;
 }
 
+function isLocalEndpoint(url: string): boolean {
+  return (
+    url.includes("127.0.0.1") ||
+    url.includes("localhost") ||
+    url.startsWith("http://0.0.0.0")
+  );
+}
+
 export function getLocalValidatorIdentity(): PublicKey {
   return new PublicKey(
     process.env.MAGICBLOCK_LOCAL_VALIDATOR_IDENTITY ||
@@ -199,8 +207,13 @@ export async function confirmEphemeralAccountVisible(
 }
 
 export async function waitForMagicBlockRpcReady(): Promise<void> {
+  const endpoint = getEphemeralRpcUrl();
+  const strictIdentityCheck =
+    process.env.MAGICBLOCK_STRICT_IDENTITY_CHECK === "1" ||
+    isLocalEndpoint(endpoint);
+
   await waitForCondition("MagicBlock local RPC readiness", async () => {
-    const response = await fetch(getEphemeralRpcUrl(), {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -211,7 +224,10 @@ export async function waitForMagicBlockRpcReady(): Promise<void> {
       }),
     });
     const payload = await response.json();
-    return payload?.result?.identity === localValidatorIdentity.toBase58();
+    if (strictIdentityCheck) {
+      return payload?.result?.identity === localValidatorIdentity.toBase58();
+    }
+    return Boolean(payload?.result?.identity);
   });
 }
 

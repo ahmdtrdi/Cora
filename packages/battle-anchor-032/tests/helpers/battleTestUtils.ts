@@ -208,8 +208,26 @@ export async function airdropSol(
   publicKey: PublicKey,
   lamports = LAMPORTS_PER_SOL
 ): Promise<void> {
-  const signature = await provider.connection.requestAirdrop(publicKey, lamports);
-  await provider.connection.confirmTransaction(signature, "confirmed");
+  try {
+    const signature = await provider.connection.requestAirdrop(publicKey, lamports);
+    await provider.connection.confirmTransaction(signature, "confirmed");
+    return;
+  } catch (error) {
+    const payer = (authority as any).payer as Keypair | undefined;
+    if (!payer) {
+      throw error;
+    }
+
+    const transferTx = new anchor.web3.Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: payer.publicKey,
+        toPubkey: publicKey,
+        lamports,
+      })
+    );
+
+    await provider.sendAndConfirm(transferTx, [payer]);
+  }
 }
 
 export async function createSession(params?: {
