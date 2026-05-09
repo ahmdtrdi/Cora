@@ -57,10 +57,11 @@ export function OpponentFound({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
   const [isRetryingConnection, setIsRetryingConnection] = useState(false);
-  const [retryConnectionFailed, setRetryConnectionFailed] = useState(false);
+  const [isCancellingMatch, setIsCancellingMatch] = useState(false);
   const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
+  const hasConnectedOnceRef = useRef(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
   const cancelFiredRef = useRef(false);
@@ -75,12 +76,12 @@ export function OpponentFound({
     connectionState,
     gameState,
     lastSocketCloseInfo,
-    lastSocketError,
     depositUnlockedAt,
     opponentFailedDepositAt,
     lastRoomCancelled,
     lastMatchFound,
     confirmDeposit,
+    cancelMatch,
     reconnect,
   } = useMatchSocket({
     roomId,
@@ -187,8 +188,10 @@ export function OpponentFound({
 
   useEffect(() => {
     if (signingState !== "signing") {
-      setWalletApprovalTakingLong(false);
-      return;
+      const resetTimerId = setTimeout(() => {
+        setWalletApprovalTakingLong(false);
+      }, 0);
+      return () => clearTimeout(resetTimerId);
     }
 
     const timerId = setTimeout(() => {
@@ -202,18 +205,28 @@ export function OpponentFound({
   useEffect(() => {
     if (!isRetryingConnection) return;
     if (connectionState === "reconnecting") return;
-    setIsRetryingConnection(false);
-    if (connectionState === "error" || connectionState === "disconnected") {
-      setRetryConnectionFailed(true);
-    }
+    const timerId = setTimeout(() => {
+      setIsRetryingConnection(false);
+    }, 0);
+    return () => clearTimeout(timerId);
   }, [connectionState, isRetryingConnection]);
 
   // Show a timed top-center banner whenever the socket drops unexpectedly.
   useEffect(() => {
+    if (connectionState === "connected") {
+      hasConnectedOnceRef.current = true;
+      return;
+    }
+    if (!hasConnectedOnceRef.current) return;
     if (connectionState !== "error" && connectionState !== "disconnected") return;
-    setConnectionIssueBannerVisible(true);
-    const timerId = setTimeout(() => setConnectionIssueBannerVisible(false), 6000);
-    return () => clearTimeout(timerId);
+    const showTimerId = setTimeout(() => {
+      setConnectionIssueBannerVisible(true);
+    }, 0);
+    const hideTimerId = setTimeout(() => setConnectionIssueBannerVisible(false), 6000);
+    return () => {
+      clearTimeout(showTimerId);
+      clearTimeout(hideTimerId);
+    };
   }, [connectionState]);
 
   async function onSignDeposit() {
@@ -269,13 +282,14 @@ export function OpponentFound({
     // before the component unmounts (state updates are async, refs are synchronous).
     if (cancelFiredRef.current) return;
     cancelFiredRef.current = true;
+    setIsCancellingMatch(true);
+    cancelMatch();
     onTimeout();
   }
 
   function onRetryConnection() {
     if (isRetryingConnection) return;
     setIsRetryingConnection(true);
-    setRetryConnectionFailed(false);
     reconnect();
   }
 
@@ -352,7 +366,7 @@ export function OpponentFound({
 
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
+    <div className="mx-auto flex h-[100svh] w-full max-w-5xl flex-col overflow-hidden px-4 py-8 md:px-6">
       {/* Opponent failed to deposit popup */}
       {opponentFailedDepositAt && (
         <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
@@ -506,17 +520,19 @@ export function OpponentFound({
         </div>
       )}
 
+      <div className="flex-shrink-0 text-center">
       <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
         {arena.label} · ${wagerUsd} {arena.token}
       </p>
-      <h1 className="mt-2 text-center font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
+      <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
         Rival Locked
       </h1>
-      <p className="mt-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+      <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
         Sign the deposit before the timer expires.
       </p>
+      </div>
 
-      <div className="mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+      <div className="mt-8 grid w-full flex-shrink-0 grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div
           className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
@@ -610,58 +626,62 @@ export function OpponentFound({
         </div>
       </div>
 
-      <div
-        className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
-        style={{
-          borderColor: "rgba(248,214,148,0.35)",
-          background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
-        }}
-      >
-        <DepositPanel
-          token={arena.token}
-          wagerUsd={wagerUsd}
-          status={getDepositStatus()}
-          helperText={getDepositHint()}
-          countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
-          signature={signedDepositSignature}
-          canPrimaryAction={canAttemptSign}
-          primaryActionLabel={getPrimaryButtonLabel()}
-          onPrimaryAction={onSignDeposit}
-          walletSlot={
-            !wallet.publicKey ? (
-              <div className="pt-1">
-                <HydratedWalletButton />
-              </div>
-            ) : null
-          }
-          retrySlot={
-            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-              <button
-                type="button"
-                onClick={onRetryConnection}
-                disabled={isRetryingConnection}
-                className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
-                  isRetryingConnection ? "cursor-not-allowed opacity-55" : ""
-                }`}
-              >
-                {isRetryingConnection ? "Retrying..." : "Retry Connection"}
-              </button>
-            ) : null
-          }
-          cancelSlot={
-            <button
-              type="button"
-              onClick={onCancelMatch}
-              disabled={cancelFiredRef.current}
-              className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
-                cancelFiredRef.current ? "cursor-not-allowed opacity-55" : ""
-              }`}
-            >
-              {cancelFiredRef.current ? "Leaving..." : "Cancel Match"}
-            </button>
-          }
-          extraSlot={null}
-        />
+      <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto pb-4">
+        <div
+          className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
+          style={{
+            borderColor: "rgba(248,214,148,0.35)",
+            background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
+          }}
+        >
+          <DepositPanel
+            token={arena.token}
+            wagerUsd={wagerUsd}
+            status={getDepositStatus()}
+            helperText={getDepositHint()}
+            countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
+            signature={signedDepositSignature}
+            canPrimaryAction={canAttemptSign}
+            primaryActionLabel={getPrimaryButtonLabel()}
+            onPrimaryAction={onSignDeposit}
+            walletSlot={
+              !wallet.publicKey ? (
+                <div className="pt-1">
+                  <HydratedWalletButton />
+                </div>
+              ) : null
+            }
+            retrySlot={
+              connectionState === "error" || connectionState === "disconnected" ? (
+                <button
+                  type="button"
+                  onClick={onRetryConnection}
+                  disabled={isRetryingConnection}
+                  className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                    isRetryingConnection ? "cursor-not-allowed opacity-55" : ""
+                  }`}
+                >
+                  {isRetryingConnection ? "Retrying..." : "Retry Connection"}
+                </button>
+              ) : null
+            }
+            cancelSlot={
+              signingState === "idle" || signingState === "error" ? (
+                <button
+                  type="button"
+                  onClick={onCancelMatch}
+                  disabled={isCancellingMatch}
+                  className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                    isCancellingMatch ? "cursor-not-allowed opacity-55" : ""
+                  }`}
+                >
+                  {isCancellingMatch ? "Leaving..." : "Cancel Match"}
+                </button>
+              ) : null
+            }
+            extraSlot={null}
+          />
+        </div>
       </div>
 
 

@@ -3897,3 +3897,59 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### Tech Debt
 - None.
+
+## 2026-05-09 - OpponentFound Deposit UI Stability and Banner Guard
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to lock the screen to `h-[100svh] overflow-hidden`, suppress the connection issue banner on cold mount until the socket has connected at least once, hide retry while the socket is actively reconnecting, and hide cancel while signing is in progress or waiting on confirmation.
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) to reserve a fixed `min-h-[140px]` content area beneath the helper/timer so signature, wallet, and action rows appear inside pre-allocated space instead of growing the card and pushing the page.
+- Verified [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) did not need structural changes once the reserved-space behavior was localized to the status card.
+
+### The Reasoning
+- The opponent-found screen now behaves like a locked viewport rather than a document that grows as late UI elements appear, which prevents scrollbars and layout jumps during signing-state transitions.
+- The initial socket state begins as `disconnected`, so the banner needed a "has connected once" guard to distinguish a real drop from the first handshake.
+- Retry and cancel visibility now follow the actionable states more closely: reconnecting is already communicated by the primary CTA, and cancel should not compete with active signing or waiting states.
+
+### The Tech Debt
+- The reserved `140px` card content height is tuned for the current signature/wallet/action stack. If those rows gain more vertical content later, the reserved height should be revisited instead of letting the card grow again.
+
+## 2026-05-09 - Deposit UI Layout Regression Follow-up
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) to remove the inner reserved slot stack (`min-h` plus `justify-end`) and instead give the card shell a fixed `h-[220px]` footprint with `overflow-hidden`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to replace the hard-clipped `h-[100svh] overflow-hidden` wrapper with `min-h-[100svh] overflow-y-auto` so the primary CTA is never cut off on shorter screens.
+
+### The Reasoning
+- Reserving space inside the slot stack prevented layout growth, but it also created an obvious dead zone between the countdown and the revealed controls. Moving the fixed footprint to the card wrapper keeps the card stable without pushing the dynamic rows away from the timer.
+- The screen should prefer a locked-feeling layout, but clipping the bottom action button is worse than allowing limited vertical scroll on small viewports. `overflow-y-auto` keeps the default experience intact while preserving access to all controls.
+
+### The Tech Debt
+- The fixed card height is still a tuned visual constant. If helper copy or action density increases later, we should revisit the shell height rather than reintroducing inner spacer blocks.
+
+## 2026-05-09 - OpponentFound Flex Column Layout Correction
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) to remove the fixed `h-[220px]` shell height and return the card to natural height.
+- Updated [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) to replace the root `mt-8` spacing with `pt-3`, allowing the parent layout to control the vertical rhythm.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to use a true `h-[100svh]` flex-column shell with non-shrinking header and VS sections, plus a bottom-aligned `flex-1` deposit region that owns the remaining space and becomes scrollable only when needed.
+
+### The Reasoning
+- The bottom gap in the Player B waiting state came from the fixed deposit card height, not from the slot content itself, so the correct fix was to remove that shell constraint entirely.
+- The page-level persistent scroll came from treating the whole screen like a document flow. Moving to a fixed-height flex column lets the title and matchup cards keep their natural space while the deposit section absorbs whatever space remains.
+- Removing the panel-level top margin prevents nested spacing from pushing the primary action button below the fold on shorter viewports.
+
+### The Tech Debt
+- The opponent-found layout now depends on the deposit region being the only flexible vertical section. If more large blocks are added above it later, we should preserve that contract instead of reintroducing global page scrolling.
+
+## 2026-05-09 - OpponentFound Cancel Match Room Exit Signal
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to call `cancelMatch()` from `useMatchSocket` inside `onCancelMatch()` before the immediate `onTimeout()` handoff.
+- Increased the deposit section spacing in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) from `mt-8` to `mt-12` to restore separation between the VS cards and the deposit panel.
+
+### The Reasoning
+- The UI was leaving the opponent-found screen immediately, but the room itself was not being told to close, so Player B could appear to hang in a "Leaving..." state until the backend timeout path eventually cancelled the room. Emitting `cancelMatch()` keeps the instant UI transition while still notifying the server right away.
+- The spacing change is intentionally local to the deposit wrapper so the current flex-column layout keeps its behavior without reintroducing extra panel-level offsets.
+
+### The Tech Debt
+- `OpponentFound.tsx` now depends on the socket hook exposing a cancellation action. If room-leave semantics ever get renamed or split between soft leave and hard cancel flows, this screen should consume a more explicitly named API to avoid ambiguity.
