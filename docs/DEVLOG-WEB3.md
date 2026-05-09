@@ -730,3 +730,22 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 1. **Deadlines must be enforced on-chain.** Previously, the `round_deadline` was used to authorize `timeout_player_for_round` and `resolve_round_by_state`, but `apply_card_effect` and `apply_damage` were only guarded by the match-level `SESSION_TIMEOUT`. This meant a delayed backend call could technically mutate state after the round was supposed to be over. Adding explicit `RoundDeadlinePassed` guards enforces strict temporal boundaries on all score mutations.
 2. **`END_REASON_FORCE_ENDED` is an automated outcome, not an input.** `force_end` explicitly sets this outcome internally. Allowing `cancel_session` to receive it as a manual input parameter created ambiguity in the API. Removing it solidifies `cancel_session` exclusively for `SERVER_CANCELLED` and `BOTH_PLAYERS_TIMEOUT`.
+
+---
+
+## Entry 22 — 2026-05-09: Dedicated Devnet Testing Suite and Environment Resilience
+
+### The Change
+
+**TypeScript Test Infrastructure:**
+- `packages/battle-anchor-032/package.json` — Added explicit Devnet testing scripts (`test:devnet:anchor`, `test:devnet:magicrouter`, and `test:devnet:all`).
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Modified `airdropSol` to fallback to a manual `SystemProgram.transfer` from the configured wallet authority if the RPC rejects the airdrop (which is a standard restriction on public Devnet).
+- `packages/battle-anchor-032/tests/helpers/magicblockLocalStackUtils.ts` — Updated `waitForMagicBlockRpcReady` to intelligently skip strict identity checking if the configured `EPHEMERAL_PROVIDER_ENDPOINT` is remote (e.g., MagicBlock public Devnet router).
+- `packages/battle-anchor-032/scripts/test-devnet-anchor.sh` & `test-devnet-magicrouter.sh` — **NEW**: Added dedicated bash scripts to safely bootstrap and isolate Devnet test runs without accidentally polluting or targeting localnet.
+- `packages/battle-anchor-032/.env.devnet.example` — **NEW**: Added an environment template specifically for Devnet routing.
+
+### The Reasoning
+
+1. **Devnet parity requires Devnet testing.** The local validator is excellent for fast logic validation, but it doesn't simulate real-world conditions like MagicBlock's remote router latency, RPC rate limits, or actual network congestion. We needed a frictionless way to point the entire test suite to Devnet.
+2. **Airdrops fail in production-like environments.** Relying purely on `requestAirdrop` locally is fine, but Devnet public nodes frequently throttle or outright reject airdrop requests. Adding a transparent fallback to fund transient test accounts from the primary developer wallet (`~/.config/solana/id.json`) ensures the test suite doesn't crash intermittently during account initialization.
+3. **Remote routers have different identities.** The MagicBlock local stack readiness check specifically verified our local `mAGicPQY...` validator identity. When targeting Devnet, the router will naturally have a different public key. Loosening this constraint dynamically based on the URL allows the exact same test suite to run seamlessly on both Localnet and Devnet.
