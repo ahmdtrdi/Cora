@@ -109,7 +109,29 @@ export type CoraBattle = {
         },
         {
           "name": "registeredCard",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battleSession"
+              },
+              {
+                "kind": "account",
+                "path": "registered_card.card_id",
+                "account": "registeredCard"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -171,7 +193,29 @@ export type CoraBattle = {
         },
         {
           "name": "registeredCard",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battleSession"
+              },
+              {
+                "kind": "account",
+                "path": "registered_card.card_id",
+                "account": "registeredCard"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -649,7 +693,8 @@ export type CoraBattle = {
           "signer": true
         },
         {
-          "name": "battleSession"
+          "name": "battleSession",
+          "writable": true
         },
         {
           "name": "bufferRegisteredCard",
@@ -1544,16 +1589,21 @@ export type CoraBattle = {
     },
     {
       "code": 6015,
+      "name": "roundDeadlinePassed",
+      "msg": "Round deadline has passed for applying card effects"
+    },
+    {
+      "code": 6016,
       "name": "invalidEndReason",
       "msg": "End reason is not valid for this instruction"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "sessionExpired",
       "msg": "Session has expired due to timeout"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "arithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
     }

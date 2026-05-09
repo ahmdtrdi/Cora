@@ -60,4 +60,19 @@ describe("cancel_session", () => {
       "InvalidEndReason"
     );
   });
+
+  it("rejects force-ended reason in cancel_session", async () => {
+    const { sessionPda } = await createSession();
+
+    await expectAnchorError(
+      program.methods
+        .cancelSession(TEST_CONSTANTS.endReasonForceEnded)
+        .accounts({
+          authority: authority.publicKey,
+          battleSession: sessionPda,
+        })
+        .rpc(),
+      "InvalidEndReason"
+    );
+  });
 });

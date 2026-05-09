@@ -708,3 +708,25 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 ### Verification
 - [x] TS test suite successfully uses `warpSlot` RPC methods to skip the 180s/timeout limits locally.
 - [x] MagicBlock smoke flow is now divided into independent suites.
+
+---
+
+## Entry 21 — 2026-05-09: Strict Round Deadlines on Effect Mutations and Cancel Reason Boundaries
+
+### The Change
+
+**ER Smart Contract:**
+- `packages/battle-anchor-032/programs/cora-battle/src/error.rs` — Added `RoundDeadlinePassed` error.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/apply_card_effect.rs` and `apply_damage.rs` — Added strict timeline guards (`now < session.round_deadline`) to reject late effect applications. Cleaned up legacy verbose doc comments.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/cancel_session.rs` — Removed `END_REASON_FORCE_ENDED` from the allowed manual cancellation reasons.
+
+**TypeScript Tests:**
+- `packages/battle-anchor-032/tests/14-apply-damage.test.ts`
+- `packages/battle-anchor-032/tests/15-apply-card-effect.test.ts`
+- `packages/battle-anchor-032/tests/18-cancel-session.test.ts`
+- Added explicit negative test cases ensuring mutations fail with `RoundDeadlinePassed` after the deadline, and `cancel_session` rejects `END_REASON_FORCE_ENDED`.
+
+### The Reasoning
+
+1. **Deadlines must be enforced on-chain.** Previously, the `round_deadline` was used to authorize `timeout_player_for_round` and `resolve_round_by_state`, but `apply_card_effect` and `apply_damage` were only guarded by the match-level `SESSION_TIMEOUT`. This meant a delayed backend call could technically mutate state after the round was supposed to be over. Adding explicit `RoundDeadlinePassed` guards enforces strict temporal boundaries on all score mutations.
+2. **`END_REASON_FORCE_ENDED` is an automated outcome, not an input.** `force_end` explicitly sets this outcome internally. Allowing `cancel_session` to receive it as a manual input parameter created ambiguity in the API. Removing it solidifies `cancel_session` exclusively for `SERVER_CANCELLED` and `BOTH_PLAYERS_TIMEOUT`.

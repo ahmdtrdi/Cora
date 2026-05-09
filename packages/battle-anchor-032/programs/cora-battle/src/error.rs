@@ -47,6 +47,9 @@ pub enum BattleError {
     #[msg("Session timeout has not been reached yet")]
     TimeoutNotReached,
 
+    #[msg("Round deadline has passed for applying card effects")]
+    RoundDeadlinePassed,
+
     #[msg("End reason is not valid for this instruction")]
     InvalidEndReason,
 

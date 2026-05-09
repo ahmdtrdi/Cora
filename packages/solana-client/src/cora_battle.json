@@ -1,5 +1,5 @@
 {
-  "address": "3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8",
+  "address": "3FNDHzmJywwrBbhCX1UU1ZfPQVbwqdRTFBwERqxRFABS",
   "metadata": {
     "name": "cora_battle",
     "version": "0.1.0",
@@ -103,7 +103,29 @@
         },
         {
           "name": "registered_card",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session"
+              },
+              {
+                "kind": "account",
+                "path": "registered_card.card_id",
+                "account": "RegisteredCard"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -165,7 +187,29 @@
         },
         {
           "name": "registered_card",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "battle_session"
+              },
+              {
+                "kind": "account",
+                "path": "registered_card.card_id",
+                "account": "RegisteredCard"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -643,7 +687,8 @@
           "signer": true
         },
         {
-          "name": "battle_session"
+          "name": "battle_session",
+          "writable": true
         },
         {
           "name": "buffer_registered_card",
@@ -1538,16 +1583,21 @@
     },
     {
       "code": 6015,
+      "name": "RoundDeadlinePassed",
+      "msg": "Round deadline has passed for applying card effects"
+    },
+    {
+      "code": 6016,
       "name": "InvalidEndReason",
       "msg": "End reason is not valid for this instruction"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "SessionExpired",
       "msg": "Session has expired due to timeout"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow in game state calculation"
     }

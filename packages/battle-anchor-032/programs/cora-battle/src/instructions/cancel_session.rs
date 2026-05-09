@@ -6,15 +6,12 @@ use crate::events::SessionCancelledEvent;
 use crate::state::{BattleSession, BattleStatus};
 
 /// Authority-controlled no-contest cancellation.
-/// Escrow remains responsible for refund/settlement; ER only records the
-/// outcome reason for downstream verification.
 pub fn handler(ctx: Context<CancelSession>, reason: u8) -> Result<()> {
     let session = &mut ctx.accounts.battle_session;
 
     require!(
         reason == END_REASON_BOTH_PLAYERS_TIMEOUT
-            || reason == END_REASON_SERVER_CANCELLED
-            || reason == END_REASON_FORCE_ENDED,
+            || reason == END_REASON_SERVER_CANCELLED,
         BattleError::InvalidEndReason
     );
 
