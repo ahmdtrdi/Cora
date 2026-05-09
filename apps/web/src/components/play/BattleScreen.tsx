@@ -34,6 +34,10 @@ const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
 };
+const ARENA_IMAGE_BY_ID: Record<string, string> = {
+  sol: "/assets/arena/sol.png",
+  bonk: "/assets/arena/bonk.png",
+};
 const CHARACTER_REACTION_EXPRESSIONS: CharacterExpression[] = ["happy", "confident", "hurt"];
 
 const CARD_TRANSFORMS = [
@@ -234,6 +238,7 @@ export function BattleScreen() {
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
   const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
   const [failedBaseSprites, setFailedBaseSprites] = useState<Record<string, true>>({});
+  const [failedArenaSprites, setFailedArenaSprites] = useState<Record<string, true>>({});
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -688,6 +693,7 @@ export function BattleScreen() {
   const hasOpponentReactionSprite = Boolean(opponentReactionSrc && !failedCharacterSprites[opponentReactionSrc]);
   const playerBaseHpPct = Math.max(0, Math.min(100, playerBaseHp));
   const opponentBaseHpPct = Math.max(0, Math.min(100, opponentBaseHp));
+  const targetArenaImageUrl = ARENA_IMAGE_BY_ID[arenaId] ?? null;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -997,6 +1003,13 @@ export function BattleScreen() {
     });
   }
 
+  function markArenaSpriteFailed(src: string) {
+    setFailedArenaSprites((prev) => {
+      if (prev[src]) return prev;
+      return { ...prev, [src]: true };
+    });
+  }
+
   async function onCopyChallengeLink() {
     if (!challengeLink) {
       setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
@@ -1229,6 +1242,20 @@ export function BattleScreen() {
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
+            {targetArenaImageUrl && !failedArenaSprites[targetArenaImageUrl] && (
+              <div className="pointer-events-none absolute inset-0 z-0">
+                <Image
+                  src={targetArenaImageUrl}
+                  alt={`${arenaId} arena background`}
+                  fill
+                  sizes="100vw"
+                  className="object-cover object-center opacity-60"
+                  onError={() => markArenaSpriteFailed(targetArenaImageUrl)}
+                />
+                <div className="absolute inset-0 bg-[rgba(12,21,17,0.4)] mix-blend-multiply" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_50%,rgba(12,21,17,0.8)_100%)]" />
+              </div>
+            )}
             <AnimatePresence mode="wait">
               {gameNotice && (
                 <motion.div

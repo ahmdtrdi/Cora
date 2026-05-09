@@ -3687,3 +3687,17 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - None. This aligns the matchmaking waiting UI with the asset loading patterns used elsewhere in the application.
+
+## 2026-05-09 - Arena Background in BattleScreen
+
+### The Change
+- Added dynamic arena background rendering to `BattleScreen.tsx`.
+- Mapped `arenaId` param to specific image assets (SOL or BONK).
+- Included fallback behavior for missing or failed images using the existing green/radial background.
+- Layered dark overlays for UI readability.
+
+### The Reasoning
+- Extends the lobby arena choice visually into the battle phase while keeping gameplay UI legible and undisturbed.
+
+### The Tech Debt
+- The arena images are loaded synchronously during render and fade in natively. If more arenas are added, dynamic preload strategies might be necessary.
