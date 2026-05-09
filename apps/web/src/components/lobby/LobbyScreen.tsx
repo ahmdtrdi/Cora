@@ -18,13 +18,10 @@ import type {
   OpponentCharacterStatus,
 } from "@/components/character/characterTypes";
 
-export type Stat = { label: string; value: number };
-
 export type Scientist = {
   id: string;
   name: string;
   base: string;
-  stats: [Stat, Stat];
   accentColor: string;
   portraitBg: string;
   initial: string;
@@ -44,10 +41,6 @@ export const SCIENTISTS: Scientist[] = [
     id: "turing",
     name: "Alan Turing",
     base: "The Computer",
-    stats: [
-      { label: "Logic", value: 92 },
-      { label: "Computation", value: 88 },
-    ],
     accentColor: "#9db496",
     portraitBg: "linear-gradient(160deg, #152920 0%, #274137 60%, #0d1f18 100%)",
     initial: "T",
@@ -55,11 +48,7 @@ export const SCIENTISTS: Scientist[] = [
   {
     id: "curie",
     name: "Marie Curie",
-    base: "The Laboratory",
-    stats: [
-      { label: "Chemistry", value: 95 },
-      { label: "Precision", value: 84 },
-    ],
+    base: "The Radium Reactor",
     accentColor: "#ba6931",
     portraitBg: "linear-gradient(160deg, #3d1f0a 0%, #5c2e12 60%, #210e04 100%)",
     initial: "C",
@@ -67,11 +56,7 @@ export const SCIENTISTS: Scientist[] = [
   {
     id: "einstein",
     name: "Albert Einstein",
-    base: "The Observatory",
-    stats: [
-      { label: "Physics", value: 90 },
-      { label: "Gravity", value: 91 },
-    ],
+    base: "The Relativity Room",
     accentColor: "#f8d694",
     portraitBg: "linear-gradient(160deg, #12122a 0%, #1e1e3f 60%, #080814 100%)",
     initial: "E",
@@ -202,22 +187,22 @@ export function LobbyScreen() {
     [selectedArenaId],
   );
   const characterOptions = useMemo<CharacterOption[]>(
-    () => SCIENTISTS.map((scientist) => ({ ...scientist, stats: [...scientist.stats] })),
+    () => SCIENTISTS.map((scientist) => ({ ...scientist })),
     [],
   );
   const previewEnabled = runtimeConfig.allowDevRoomPreview;
   const previewSelectionState: CharacterSelectionState =
     previewSelectStateParam === "selected" ||
-    previewSelectStateParam === "locked" ||
-    previewSelectStateParam === "auto_assigned" ||
-    previewSelectStateParam === "expired"
+      previewSelectStateParam === "locked" ||
+      previewSelectStateParam === "auto_assigned" ||
+      previewSelectStateParam === "expired"
       ? previewSelectStateParam
       : "idle";
   const previewOpponentStatus: OpponentCharacterStatus =
     previewOpponentStatusParam === "hidden" ||
-    previewOpponentStatusParam === "picked" ||
-    previewOpponentStatusParam === "locked" ||
-    previewOpponentStatusParam === "auto_assigned"
+      previewOpponentStatusParam === "picked" ||
+      previewOpponentStatusParam === "locked" ||
+      previewOpponentStatusParam === "auto_assigned"
       ? previewOpponentStatusParam
       : "waiting";
   const previewSelectionId =
@@ -245,14 +230,14 @@ export function LobbyScreen() {
     phase === "found" && (!selectedArena || !selectedScientist || !matchedRoomId);
   const phaseContextIssue = waitingMissingContext
     ? {
-        title: "Queue session missing context",
-        detail: "Room setup was refreshed before queue state finished syncing.",
-      }
+      title: "Queue session missing context",
+      detail: "Room setup was refreshed before queue state finished syncing.",
+    }
     : foundMissingContext
       ? {
-          title: "Match room context missing",
-          detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
-        }
+        title: "Match room context missing",
+        detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
+      }
       : null;
 
   const clearFoundTransitionTimers = useCallback(() => {
@@ -798,166 +783,166 @@ export function LobbyScreen() {
         </RoomPhaseShell>
       )}
       {!isSelectingCharacterPreview && (
-      phaseContextIssue ? (
-        <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
-          <div
-            className="game-card w-full p-6 md:p-8 shadow-2xl"
-            style={{ border: "2px solid var(--tone-bark)", background: "var(--warm-surface)" }}
-          >
-            <p className="font-caprasimo text-3xl text-[var(--tone-bark)]">{phaseContextIssue.title}</p>
-            <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">{phaseContextIssue.detail}</p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  writeActiveRoomSnapshot(null);
-                  setMatchedRoomId(null);
-                  setMatchedRole(null);
-                  setMatchmakingState("idle");
-                  setMatchmakingStage("finding");
-                  setMatchmakingError(null);
-                  setPhase("character-select");
-                }}
-                className="btn-game btn-game-primary px-4 py-2 text-xs"
-              >
-                Back To Character Select
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMatchedRoomId(null);
-                  setMatchedRole(null);
-                  setSelectedScientist(initialScientist);
-                  setMatchmakingState("idle");
-                  setMatchmakingStage("finding");
-                  setMatchmakingError(null);
-                  setPhase("setup");
-                }}
-                className="btn-game btn-game-secondary px-4 py-2 text-xs"
-              >
-                Restart Lobby
-              </button>
+        phaseContextIssue ? (
+          <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
+            <div
+              className="game-card w-full p-6 md:p-8 shadow-2xl"
+              style={{ border: "2px solid var(--tone-bark)", background: "var(--warm-surface)" }}
+            >
+              <p className="font-caprasimo text-3xl text-[var(--tone-bark)]">{phaseContextIssue.title}</p>
+              <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">{phaseContextIssue.detail}</p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    writeActiveRoomSnapshot(null);
+                    setMatchedRoomId(null);
+                    setMatchedRole(null);
+                    setMatchmakingState("idle");
+                    setMatchmakingStage("finding");
+                    setMatchmakingError(null);
+                    setPhase("character-select");
+                  }}
+                  className="btn-game btn-game-primary px-4 py-2 text-xs"
+                >
+                  Back To Character Select
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMatchedRoomId(null);
+                    setMatchedRole(null);
+                    setSelectedScientist(initialScientist);
+                    setMatchmakingState("idle");
+                    setMatchmakingStage("finding");
+                    setMatchmakingError(null);
+                    setPhase("setup");
+                  }}
+                  className="btn-game btn-game-secondary px-4 py-2 text-xs"
+                >
+                  Restart Lobby
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-      <AnimatePresence mode="wait">
-        {phase === "setup" && (
-          <motion.div
-            key="setup"
-            variants={PHASE_VARIANTS}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10"
-          >
-            <LobbySetup
-              walletAddress={walletAddr}
-              walletConnected={walletConnected}
-              arenas={ARENAS}
-              selectedArenaId={selectedArenaId}
-              onSelectArena={setSelectedArenaId}
-              wagerUsd={FIXED_WAGER_USD}
-              canPlay={canStart}
-              onPlay={() => {
-                if (canStart) {
-                  setPhase("character-select");
-                }
-              }}
-            />
-          </motion.div>
-        )}
+        ) : (
+          <AnimatePresence mode="wait">
+            {phase === "setup" && (
+              <motion.div
+                key="setup"
+                variants={PHASE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="relative z-10"
+              >
+                <LobbySetup
+                  walletAddress={walletAddr}
+                  walletConnected={walletConnected}
+                  arenas={ARENAS}
+                  selectedArenaId={selectedArenaId}
+                  onSelectArena={setSelectedArenaId}
+                  wagerUsd={FIXED_WAGER_USD}
+                  canPlay={canStart}
+                  onPlay={() => {
+                    if (canStart) {
+                      setPhase("character-select");
+                    }
+                  }}
+                />
+              </motion.div>
+            )}
 
-        {phase === "character-select" && selectedArena && (
-          <motion.div
-            key="character-select"
-            variants={PHASE_VARIANTS}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10"
-          >
-            <CharacterSelect
-              scientists={SCIENTISTS}
-              selected={selectedScientist}
-              onSelect={setSelectedScientist}
-              onBack={() => setPhase("setup")}
-              onContinue={() => {
-                if (canQueue) {
-                  beginMatchmaking();
-                }
-              }}
-              arena={selectedArena}
-              wagerUsd={FIXED_WAGER_USD}
-              walletAddress={walletAddr}
-            />
-          </motion.div>
-        )}
+            {phase === "character-select" && selectedArena && (
+              <motion.div
+                key="character-select"
+                variants={PHASE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="relative z-10"
+              >
+                <CharacterSelect
+                  scientists={SCIENTISTS}
+                  selected={selectedScientist}
+                  onSelect={setSelectedScientist}
+                  onBack={() => setPhase("setup")}
+                  onContinue={() => {
+                    if (canQueue) {
+                      beginMatchmaking();
+                    }
+                  }}
+                  arena={selectedArena}
+                  wagerUsd={FIXED_WAGER_USD}
+                  walletAddress={walletAddr}
+                />
+              </motion.div>
+            )}
 
-        {phase === "waiting" && selectedScientist && selectedArena && (
-          <motion.div
-            key="waiting"
-            variants={PHASE_VARIANTS}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10"
-          >
-            <MatchmakingWaiting
-              scientist={selectedScientist}
-              arena={selectedArena}
-              wagerUsd={FIXED_WAGER_USD}
-              walletAddress={walletAddr}
-              state={matchmakingState === "idle" ? "searching" : matchmakingState}
-              stage={matchmakingStage}
-              errorMessage={matchmakingError}
-              onRetry={() => {
-                void startMatchmakingSearch();
-              }}
-              onCancel={cancelMatchmaking}
-            />
-          </motion.div>
-        )}
+            {phase === "waiting" && selectedScientist && selectedArena && (
+              <motion.div
+                key="waiting"
+                variants={PHASE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="relative z-10"
+              >
+                <MatchmakingWaiting
+                  scientist={selectedScientist}
+                  arena={selectedArena}
+                  wagerUsd={FIXED_WAGER_USD}
+                  walletAddress={walletAddr}
+                  state={matchmakingState === "idle" ? "searching" : matchmakingState}
+                  stage={matchmakingStage}
+                  errorMessage={matchmakingError}
+                  onRetry={() => {
+                    void startMatchmakingSearch();
+                  }}
+                  onCancel={cancelMatchmaking}
+                />
+              </motion.div>
+            )}
 
-        {phase === "found" && selectedScientist && selectedArena && matchedRoomId && (
-          <motion.div
-            key="found"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className="relative z-10"
-          >
-            <OpponentFound
-              myScientist={selectedScientist}
-              myWallet={walletAddr}
-              roomId={matchedRoomId}
-              matchRole={matchedRole}
-              arena={selectedArena}
-              wagerUsd={FIXED_WAGER_USD}
-              onTimeout={() => {
-                // Fully reset matchmaking state — abort any hanging HTTP request,
-                // clear timers, and go back to character-select so the user can
-                // re-queue cleanly without phantom queue entries.
-                matchmakingAbortRef.current?.abort();
-                matchmakingAbortRef.current = null;
-                clearFoundTransitionTimers();
-                writeActiveRoomSnapshot(null);
-                setMatchedRoomId(null);
-                setMatchedRole(null);
-                setMatchmakingState("idle");
-                setMatchmakingStage("finding");
-                setMatchmakingError(null);
-                setPhase("character-select");
-              }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-      )
+            {phase === "found" && selectedScientist && selectedArena && matchedRoomId && (
+              <motion.div
+                key="found"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+                className="relative z-10"
+              >
+                <OpponentFound
+                  myScientist={selectedScientist}
+                  myWallet={walletAddr}
+                  roomId={matchedRoomId}
+                  matchRole={matchedRole}
+                  arena={selectedArena}
+                  wagerUsd={FIXED_WAGER_USD}
+                  onTimeout={() => {
+                    // Fully reset matchmaking state — abort any hanging HTTP request,
+                    // clear timers, and go back to character-select so the user can
+                    // re-queue cleanly without phantom queue entries.
+                    matchmakingAbortRef.current?.abort();
+                    matchmakingAbortRef.current = null;
+                    clearFoundTransitionTimers();
+                    writeActiveRoomSnapshot(null);
+                    setMatchedRoomId(null);
+                    setMatchedRole(null);
+                    setMatchmakingState("idle");
+                    setMatchmakingStage("finding");
+                    setMatchmakingError(null);
+                    setPhase("character-select");
+                  }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )
       )}
     </div>
   );

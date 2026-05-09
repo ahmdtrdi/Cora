@@ -20,10 +20,6 @@ const CHARACTERS: CharacterOption[] = [
     id: "turing",
     name: "Alan Turing",
     base: "The Computer",
-    stats: [
-      { label: "Logic", value: 92 },
-      { label: "Computation", value: 88 },
-    ],
     accentColor: "#9db496",
     portraitBg: "linear-gradient(160deg, #152920 0%, #274137 60%, #0d1f18 100%)",
     initial: "T",
@@ -31,11 +27,7 @@ const CHARACTERS: CharacterOption[] = [
   {
     id: "curie",
     name: "Marie Curie",
-    base: "The Laboratory",
-    stats: [
-      { label: "Chemistry", value: 95 },
-      { label: "Precision", value: 84 },
-    ],
+    base: "The Radium Reactor",
     accentColor: "#ba6931",
     portraitBg: "linear-gradient(160deg, #3d1f0a 0%, #5c2e12 60%, #210e04 100%)",
     initial: "C",
@@ -43,11 +35,7 @@ const CHARACTERS: CharacterOption[] = [
   {
     id: "einstein",
     name: "Albert Einstein",
-    base: "The Observatory",
-    stats: [
-      { label: "Physics", value: 90 },
-      { label: "Gravity", value: 91 },
-    ],
+    base: "The Relativity Room",
     accentColor: "#f8d694",
     portraitBg: "linear-gradient(160deg, #12122a 0%, #1e1e3f 60%, #080814 100%)",
     initial: "E",
@@ -413,8 +401,8 @@ export default function DevRoomStatesPage() {
             helperText="Mocked dev state preview only."
             signature={
               depositStatus === "submitted" ||
-              depositStatus === "confirmed" ||
-              depositStatus === "waiting_opponent"
+                depositStatus === "confirmed" ||
+                depositStatus === "waiting_opponent"
                 ? "5Bf9...mockSignature"
                 : null
             }

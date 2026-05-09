@@ -3576,3 +3576,100 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The gradients are still defined inline in the `style` prop of the button. Eventually, these specific token-mapped gradients should be added directly to the `ARENAS` data structure in `LobbyScreen.tsx` for cleaner component code.
+
+## 2026-05-09 - Polish Scientist Selection Screen Layout
+
+### The Change
+- Added a `showLabels` prop (default `true`) to `apps/web/src/components/character/CharacterSelect.tsx` to allow hiding the "Roster", status line, and "Dev Mode" toggle row.
+- Updated `apps/web/src/components/lobby/CharacterSelect.tsx` to pass `showLabels={false}`, removing the redundant UI elements from the lobby phase.
+- Removed the Back button from the `preHeadingSlot` of the `RoomPhaseShell`.
+- Reintroduced the Back button as a secondary game button (`btn-game-secondary`) positioned right-aligned directly above the character selection grid.
+
+### The Reasoning
+- Addressed visual clutter in the lobby by hiding unnecessary character select labels (like dev mode and roster).
+- Repositioned the Back button to better match the visual hierarchy of the lobby flow, placing it directly above the action area rather than floating above the main screen header.
+
+### The Tech Debt
+- Added an additional prop `showLabels` to the already dense `CharacterSelectProps` in the shared component. As more context-specific visibility toggles are added, it may be worth refactoring this component into a compound component pattern.
+
+## 2026-05-09 - Align Scientist Selection Header with Back Button
+
+### The Change
+- Added a `hideTitleBlock` prop to `RoomPhaseShell` and `RoomPhaseHeader` to conditionally hide the left-aligned title block while preserving the status slots.
+- Re-implemented the header text (`Setup`, `Choose Your Scientist`, `Choose the mind that will defend your base in the arena.`) manually inside the `CharacterSelect.tsx` screen, placing it in the same flex row as the Back button directly above the scientist cards.
+
+### The Reasoning
+- Addressed user feedback stating that the screen header floated too high above the card selection area.
+- Grouping the header and the Back button into a single visual band provides better vertical alignment and brings the context closer to the user's focus (the character grid).
+
+### The Tech Debt
+- Re-implementing the header block manually bypasses the automatic text handling from `ROOM_PHASE_LABELS`. If this layout pattern becomes standard, `RoomPhaseShell` should be updated to support rendering the header block inline with the children instead of relying on `hideTitleBlock`.
+
+## 2026-05-09 - Rebalance Scientist Selection Header
+
+### The Change
+- Removed the `statusSlot` from the `RoomPhaseShell` configuration in `apps/web/src/components/lobby/CharacterSelect.tsx`.
+- Moved the status chips (arena label, wager, and wallet address) into the custom header row, rendering them directly above the Back button.
+
+### The Reasoning
+- Addressed visual imbalance where the top-right status chips floated too high above the custom header block.
+- Moving the status chips into the custom header block ensures the entire top area reads as a single, cohesive band, anchoring the UI directly above the scientist card grid.
+
+### The Tech Debt
+- Moving the `statusSlot` contents entirely into the children removes the last piece of content from the `RoomPhaseHeader` for this phase. In the future, this lobby screen may warrant its own bespoke shell layout rather than forcing `RoomPhaseShell` to render completely empty headers.
+
+## 2026-05-09 - Polish Scientist Selection Vertical Spacing
+
+### The Change
+- Increased the internal vertical spacing of the header block inside `CharacterSelect.tsx` (e.g. `mt-3`, `leading-relaxed`).
+- Increased the gap between the header block and the scientist cards to `mb-8 md:mb-10`.
+- Moved the `Enter Queue` button out of the `RoomPhaseShell`'s `footerSlot` and placed it directly after the `CharacterSelectPanel` in the main children area with `mt-6 md:mt-8`.
+
+### The Reasoning
+- Addressed visual compression at the top of the screen by providing the header elements more breathing room before the card grid begins.
+- Moving the `Enter Queue` button out of `footerSlot` prevents it from being pinned to the absolute bottom of the `100svh` viewport. This anchors the button visually to the card selection section and eliminates the awkward empty gap that was previously separating them.
+
+### The Tech Debt
+- None added. The layout relies on flexbox flow as intended, allowing the empty space to collect safely below the content instead of awkwardly separating the UI.
+
+## 2026-05-09 - Restructure Scientist Selection Header Layout
+
+### The Change
+- Extracted the status pills (`SOL Arena`, wager, wallet) out of the main header row into their own independent utility row at the very top of `CharacterSelect.tsx`.
+- Reconfigured the main header row to contain only the text block on the left and the Back button on the right.
+- Changed the vertical alignment of the main header row to `items-center`, anchoring the Back button vertically to the title text rather than allowing it to be pushed downward.
+
+### The Reasoning
+- Addressed layout feedback where the Back button was visually misaligned, feeling closer to the scientist cards than to the header itself.
+- Separating the purely informational status pills from the navigation/header row establishes a clearer visual hierarchy and prevents awkward flexbox stacking on the right side.
+
+### The Tech Debt
+- None. This is a standard structural refinement utilizing existing Tailwind utilities.
+
+## 2026-05-09 - Adjust Scientist Selection Pill Padding
+
+### The Change
+- Restored the use of `statusSlot` in `RoomPhaseShell` within `CharacterSelect.tsx` for rendering the arena/wager/wallet pills.
+- Removed the inline pill row that was nested directly inside the custom header container (`children`).
+
+### The Reasoning
+- Addressed user feedback regarding excessive top padding above the pill row. 
+- By moving the pills back into `statusSlot`, they are rendered inside `RoomPhaseHeader`, perfectly matching the CSS container spacing (`pt-5 md:pt-6`) of the prior `LobbySetup` screen. This ensures a 1:1 visual continuity for the top-right utility elements across both phases.
+
+### The Tech Debt
+- None. This reverts a previous structural hack and utilizes the native shell slots properly.
+
+## 2026-05-09 - Remove Fake Stats from Character Cards
+
+### The Change
+- Completely removed the mock `stats` arrays (e.g., `Logic 92`, `Computation 88`) from `LobbyScreen.tsx` and `app/dev/room-states/page.tsx` character data.
+- Removed the `CharacterStat` type and the `stats` field from the `CharacterOption` interface in `characterTypes.ts`.
+- Removed the rendering block in `CharacterCard.tsx` that mapped over and displayed the fake numeric stat chips.
+- Renamed Albert Einstein's base to `The Relativity Room` and Marie Curie's base to `The Radium Reactor` to align better with their actual gameplay specialties (`math` and `logical`, respectively) and avoid misleading players with physics/chemistry imagery.
+
+### The Reasoning
+- Addressed a misleading discrepancy where the display-facing flavor stats on the character cards did not align with the actual gameplay specialty categories (`sequence`, `logical`, `math`) defined in `packages/shared-types/src/characterStats.ts`.
+- Instead of inventing new fake numbers for the real categories, the fake numeric chips were removed entirely to keep the UI clean and strictly aligned with the single source of truth. The real specialty and multiplier (e.g., `Logical Specialist`, `x1.5`) are still displayed dynamically by `CharacterCard.tsx`.
+
+### The Tech Debt
+- Removed technical debt by eliminating the need to maintain mock `stats` arrays. The character cards now rely purely on the actual backend `CHARACTER_DEFS` mapping to display specialty and multiplier info.

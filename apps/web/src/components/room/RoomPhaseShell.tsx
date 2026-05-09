@@ -16,6 +16,7 @@ type RoomPhaseShellProps = {
   footerSlot?: ReactNode;
   className?: string;
   withTransition?: boolean;
+  hideTitleBlock?: boolean;
 };
 
 const PHASE_TRANSITION = {
@@ -34,6 +35,7 @@ function ShellContent({
   children,
   footerSlot,
   className,
+  hideTitleBlock,
 }: Omit<RoomPhaseShellProps, "withTransition">) {
   return (
     <div className={`mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 text-[#1f2b24] md:px-6 md:py-6 ${className ?? ""}`}>
@@ -44,6 +46,7 @@ function ShellContent({
         preHeadingSlot={preHeadingSlot}
         statusSlot={statusSlot}
         rightPanelSlot={rightPanelSlot}
+        hideTitleBlock={hideTitleBlock}
       />
 
       <main className="flex flex-1 flex-col">{children}</main>

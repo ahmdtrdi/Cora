@@ -35,7 +35,6 @@ export function CharacterSelect({
 }: CharacterSelectProps) {
   const characters: CharacterOption[] = scientists.map((scientist) => ({
     ...scientist,
-    stats: [...scientist.stats],
   }));
 
   return (
@@ -43,18 +42,7 @@ export function CharacterSelect({
       withTransition={false}
       className="h-[100svh] overflow-hidden pb-3 pt-5 md:pb-4 md:pt-6"
       phase="setup"
-      preHeadingSlot={
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(248,214,148,0.42)] bg-[rgba(16,26,22,0.45)] px-2.5 py-1 font-gabarito text-[11px] font-semibold text-[#f4f0e6] transition-colors hover:bg-[rgba(16,26,22,0.62)]"
-        >
-          <span aria-hidden="true">&larr;</span>
-          Back
-        </button>
-      }
-      title="Choose Your Scientist"
-      subtitle="Choose the mind that will defend your base in the arena."
+      hideTitleBlock={true}
       statusSlot={
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span
@@ -77,8 +65,44 @@ export function CharacterSelect({
           </span>
         </div>
       }
-      footerSlot={
-        <div className="flex items-center justify-end">
+    >
+      <div className="flex flex-col">
+        {/* Main header row */}
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 md:mb-10">
+          <div>
+            <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[#f8d694]">
+              Setup
+            </p>
+            <h1 className="mt-3 font-caprasimo text-[2rem] leading-none text-[#fff8ea] drop-shadow-[0_5px_10px_rgba(0,0,0,0.45)] md:text-[2.6rem]">
+              Choose Your Scientist
+            </h1>
+            <p className="mt-3 max-w-2xl font-gabarito text-[14px] text-[rgba(244,240,230,0.9)] leading-relaxed">
+              Choose the mind that will defend your base in the arena.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <button
+              type="button"
+              onClick={onBack}
+              className="btn-game btn-game-secondary px-4 py-2 text-[11px] shadow-sm"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+        <CharacterSelectPanel
+          mode="pre_queue"
+          characters={characters}
+          selectedCharacterId={selected?.id}
+          showHeading={false}
+          showLabels={false}
+          onSelect={(characterId) => {
+            const next = scientists.find((scientist) => scientist.id === characterId);
+            if (!next) return;
+            onSelect(next);
+          }}
+        />
+        <div className="mt-6 flex items-center justify-end md:mt-8">
           <button
             type="button"
             onClick={onContinue}
@@ -88,20 +112,6 @@ export function CharacterSelect({
             Enter Queue
           </button>
         </div>
-      }
-    >
-      <div className="mt-2 md:mt-3">
-        <CharacterSelectPanel
-          mode="pre_queue"
-          characters={characters}
-          selectedCharacterId={selected?.id}
-          showHeading={false}
-          onSelect={(characterId) => {
-            const next = scientists.find((scientist) => scientist.id === characterId);
-            if (!next) return;
-            onSelect(next);
-          }}
-        />
       </div>
     </RoomPhaseShell>
   );
