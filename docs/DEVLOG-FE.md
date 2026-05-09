@@ -3722,3 +3722,53 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - `settlementOutcomeKind` currently lives as a local derived string in `BattleScreen.tsx`. If other screens need the same semantics, consider introducing a shared `deriveSettlementOutcomeKind(...)` helper to prevent drift.
 - `wagerUsd` parsing assumes a numeric-like string (as currently supplied). If upstream formatting changes, a dedicated formatter utility would make this safer and reusable.
+
+## 2026-05-09 - End-Game Defeated Base Transition Before Settlement Overlay
+
+### The Change
+- Updated [`apps/web/src/components/play/BattleScreen.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add a local visual-only end-game transition phase before the settlement modal appears.
+- Introduced short transition states:
+- `showSettlementOverlay` to gate settlement popup visibility without changing real match completion logic.
+- `endgameDefeatedSide` (`player` | `opponent` | `null`) to target only the losing/surrendering side.
+- `endgameBaseFadeActive` to trigger quick loser-base fade/dissolve timing.
+- Added a keyed end-game sequence (with timer cleanup) that:
+- identifies defeated side from `settlementOutcomeKind`,
+- triggers hit/hurt beat,
+- starts base fade on that side only,
+- then reveals settlement overlay after ~1080ms.
+- Draw/cancelled/invalidated/pending paths skip base fade and use a short neutral delay.
+- Forced defeated-side `hurt` reaction display while transition runs so it remains visible until the popup appears.
+- Updated base rendering to fade/sink only the defeated base (no full-screen fade, no winner base fade).
+- Updated [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to accept `showSettlementOverlay` and render the settlement popup/share modal only when the transition gate opens.
+
+### The Reasoning
+- The match-complete state should stay truthful immediately for gameplay/network logic, while the visual transition should be presentation-only.
+- Isolating the defeated-side animation avoids unintended global fade behavior and preserves battle readability.
+- A short, punchy timing window (~1.08s) delivers impact without making result flow feel sluggish.
+- Explicit timer cleanup prevents stale animation state when remounting/resetting or when rapid state changes occur.
+
+### The Tech Debt
+- End-game timing constants are local in `BattleScreen.tsx`; if additional cinematic beats are added later, this should move into a dedicated transition config/helper for consistency.
+- The defeated-base dissolve uses lightweight opacity/transform transitions; if art-direction asks for richer FX, consider a reusable shader/particle layer component.
+
+## 2026-05-09 - Settlement Overlay Follow-up Polish (Consolidated)
+
+### The Change
+- Consolidated several small follow-up tweaks in [`apps/web/src/components/play/BattleScreenOverlays.tsx`](d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx):
+- Moved `Show Settlement Details` below `Blink Share` and `Back To Lobby`, centered.
+- Kept details panel behavior but relocated it under the new toggle position.
+- Removed subtitle rendering (including `Victory secured.` style line).
+- Removed the white framed stats wrapper while keeping compact stat chips.
+- Updated win payout copy to use net formula `wagerUsd * 2 * 0.975`.
+- Finalized direct payout copy format: `You win the $X wager in SOL/BONK.`
+- Switched settlement CTAs to shared button system (`btn-game` variants).
+- Reduced CTA width/footprint and changed layout to centered compact row.
+- Applied green visual treatment to `Back To Lobby`.
+
+### The Reasoning
+- These were iterative UI micro-adjustments to improve hierarchy, reduce modal clutter, and align settlement CTAs/copy with the rest of the app.
+- Consolidating the notes keeps the devlog readable while preserving intent and final-state decisions.
+
+### The Tech Debt
+- `settlementSubtitle` remains in the prop contract but is no longer rendered.
+- Win payout formula and green `Back To Lobby` styling are currently UI-local. If reused, extract shared helper/class.

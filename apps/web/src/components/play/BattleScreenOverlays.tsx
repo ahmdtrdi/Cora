@@ -49,6 +49,7 @@ type BattleScreenOverlaysProps = {
   canSurrenderByState: boolean;
   onConfirmSurrender: () => void;
   isMatchComplete: boolean;
+  showSettlementOverlay: boolean;
   surrenderModalOpen: boolean;
   canSurrenderMatch: boolean;
   onCloseSurrenderModal: () => void;
@@ -97,11 +98,11 @@ export function BattleScreenOverlays({
   canSurrenderByState,
   onConfirmSurrender,
   isMatchComplete,
+  showSettlementOverlay,
   surrenderModalOpen,
   canSurrenderMatch,
   onCloseSurrenderModal,
   settlementText,
-  settlementSubtitle,
   settlementOutcomeKind,
   settlementEmojiMood,
   settlementExpressionSrc,
@@ -142,28 +143,39 @@ export function BattleScreenOverlays({
           maximumFractionDigits: 2,
         }).format(parsedWagerUsd)
       : null;
+  const payoutUsdDisplay =
+    Number.isFinite(parsedWagerUsd) && parsedWagerUsd > 0
+      ? new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: "USD",
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(parsedWagerUsd * 2 * 0.975)
+      : null;
   const tokenLabel = arenaToken?.trim() ? arenaToken.toUpperCase() : "TOKEN";
 
   const payoutHighlight =
     settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
-      ? wagerUsdDisplay
-        ? `You win the ${tokenLabel} wager (about ${wagerUsdDisplay} at entry).`
-        : `You win the ${tokenLabel} wager.`
+      ? payoutUsdDisplay
+        ? `You win the ${payoutUsdDisplay} wager in ${tokenLabel}`
+        : `You win the ${tokenLabel} wager`
       : settlementOutcomeKind === "lose"
-      ? "No winner payout was awarded to you for this match."
+      ? "No winner payout was awarded to you for this match"
       : settlementOutcomeKind === "player_surrender"
       ? wagerUsdDisplay
-        ? `You surrendered and forfeited your wager (about ${wagerUsdDisplay} at entry).`
-        : "You surrendered and forfeited your wager."
+        ? `You surrendered and forfeited your ${wagerUsdDisplay} wager`
+        : "You surrendered and forfeited your wager"
       : settlementOutcomeKind === "draw"
-      ? "Draw result: no winner payout."
+      ? "Draw result: no winner payout"
       : settlementOutcomeKind === "invalidated"
-      ? "Match invalidated: payout is pending the invalidation outcome."
+      ? "Match invalidated: payout is pending the invalidation outcome"
       : settlementOutcomeKind === "cancelled"
-      ? "Room cancelled before a final winner payout."
-      : "Settlement is still being finalized.";
+      ? "Room cancelled before a final winner payout"
+      : "Settlement is still being finalized";
 
   const isWinPayoutHighlight = settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender";
+
+  const shouldShowResultOverlay = isMatchComplete && showSettlementOverlay;
 
   return (
     <>
@@ -276,7 +288,7 @@ export function BattleScreenOverlays({
       )}
 
       <AnimatePresence>
-        {isMatchComplete && (
+        {shouldShowResultOverlay && (
           <motion.div
             key="match-result-backdrop"
             className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]"
@@ -305,12 +317,6 @@ export function BattleScreenOverlays({
                   style={{ textWrap: "balance" }}
                 >
                   {settlementText}
-                </p>
-                <p
-                  className="mx-auto mt-2 max-w-xl font-gabarito text-sm text-[#4f6759]"
-                  style={{ textWrap: "pretty" }}
-                >
-                  {settlementSubtitle}
                 </p>
                 <div className="mt-3 flex justify-center">
                   <span
@@ -437,10 +443,7 @@ export function BattleScreenOverlays({
                 )}
               </div>
 
-              <div
-                className="mt-4 frame-cut frame-cut-sm flex flex-wrap items-center justify-center gap-1.5 p-2"
-                style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.92)" }}
-              >
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 p-1">
                 <span
                   className="rounded-full px-2.5 py-1 font-gabarito text-[10px] font-black uppercase tracking-[0.1em] text-[#274137]"
                   style={{ background: "rgba(225,238,219,0.96)" }}
@@ -467,7 +470,30 @@ export function BattleScreenOverlays({
                 </span>
               </div>
 
-              <div className="mt-4">
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenShareModal}
+                  className="btn-game btn-game-primary min-w-[146px] px-4 py-2 text-xs shadow-xl"
+                >
+                  Blink Share
+                </button>
+                <Link
+                  href="/lobby"
+                  onClick={onReturnToLobby}
+                  className="btn-game btn-game-secondary min-w-[146px] px-4 py-2 text-center text-xs shadow-xl"
+                  style={{
+                    background: "linear-gradient(140deg, #3f6c57 0%, #274137 100%)",
+                    borderColor: "rgba(248,214,148,0.34)",
+                    boxShadow:
+                      "0 4px 0 #1c3128, 0 10px 24px rgba(39,65,55,0.34), inset 0 1px 0 rgba(255,255,255,0.18)",
+                  }}
+                >
+                  Back To Lobby
+                </Link>
+              </div>
+
+              <div className="mt-4 text-center">
                 <button
                   type="button"
                   onClick={onToggleSettlementDetails}
@@ -514,41 +540,12 @@ export function BattleScreenOverlays({
                   )}
                 </div>
               )}
-
-              <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={onOpenShareModal}
-                  className="frame-cut frame-cut-sm px-5 py-3 font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
-                  style={{
-                    border: "1px solid rgba(111,58,40,0.26)",
-                    color: "#fff8e9",
-                    background: "linear-gradient(160deg, #6f3a28 0%, #95512f 100%)",
-                    boxShadow: "0 10px 14px rgba(64,29,20,0.24)",
-                  }}
-                >
-                  Blink Share
-                </button>
-                <Link
-                  href="/lobby"
-                  onClick={onReturnToLobby}
-                  className="frame-cut frame-cut-sm px-5 py-3 text-center font-gabarito text-sm font-black uppercase tracking-[0.08em] transition hover:-translate-y-0.5"
-                  style={{
-                    border: "1px solid rgba(39,65,55,0.22)",
-                    color: "#274137",
-                    background: "rgba(255,248,236,0.96)",
-                    boxShadow: "0 10px 14px rgba(33,67,53,0.16)",
-                  }}
-                >
-                  Back To Lobby
-                </Link>
-              </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {shareModalOpen && isMatchComplete && (
+      {shareModalOpen && shouldShowResultOverlay && (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
           <div className="relative w-full max-w-3xl">
             <button

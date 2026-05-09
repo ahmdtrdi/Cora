@@ -28,6 +28,9 @@ const FIXED_WAGER_USD = "1.00";
 const SOCKET_ALERT_DISPLAY_MS = 12000;
 const SHARE_NOTICE_DISPLAY_MS = 5000;
 const REACTION_DISPLAY_MS = 1900;
+const ENDGAME_TRANSITION_TOTAL_MS = 1080;
+const ENDGAME_BASE_FADE_DELAY_MS = 210;
+const ENDGAME_NEUTRAL_DELAY_MS = 180;
 const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
 const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
@@ -239,6 +242,9 @@ export function BattleScreen() {
   const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
   const [failedBaseSprites, setFailedBaseSprites] = useState<Record<string, true>>({});
   const [failedArenaSprites, setFailedArenaSprites] = useState<Record<string, true>>({});
+  const [showSettlementOverlay, setShowSettlementOverlay] = useState(false);
+  const [endgameDefeatedSide, setEndgameDefeatedSide] = useState<BattleSide | null>(null);
+  const [endgameBaseFadeActive, setEndgameBaseFadeActive] = useState(false);
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
@@ -254,10 +260,19 @@ export function BattleScreen() {
   const previousPlayerStreakRef = useRef(0);
   const previousOpponentStreakRef = useRef(0);
   const previousRoundsWonRef = useRef<{ player: number; opponent: number } | null>(null);
+  const endgameTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const lastEndgameResultKeyRef = useRef<string | null>(null);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
   const playerBaseControls = useAnimationControls();
   const opponentBaseControls = useAnimationControls();
+
+  const clearEndgameTransitionTimers = useCallback(() => {
+    for (const timerId of endgameTimersRef.current) {
+      clearTimeout(timerId);
+    }
+    endgameTimersRef.current = [];
+  }, []);
 
   const showGameNotice = useCallback(
     (message: string, tone: "action" | "phase" = "action", durationMs = 2100) => {
@@ -316,8 +331,9 @@ export function BattleScreen() {
       if (opponentReactionTimerRef.current) {
         clearTimeout(opponentReactionTimerRef.current);
       }
+      clearEndgameTransitionTimers();
     };
-  }, []);
+  }, [clearEndgameTransitionTimers]);
 
   const hand = gameState?.hand ?? EMPTY_HAND;
   const displaySlots = hand.length > 0 ? hand.length : CARD_PLACEHOLDER_COUNT;
@@ -595,6 +611,22 @@ export function BattleScreen() {
                 ? "win"
                 : "lose"
               : "pending";
+  const resultDefeatedSide =
+    settlementOutcomeKind === "lose" || settlementOutcomeKind === "player_surrender"
+      ? "player"
+      : settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
+        ? "opponent"
+        : null;
+  const endgameResultKey = isMatchComplete
+    ? [
+      settlementOutcomeKind,
+      winnerAddress ?? "none",
+      matchResultReason ?? "none",
+      surrenderedAddress ?? "none",
+      settlementResult?.matchId ?? "none",
+      lastRoomCancelled?.at ?? "none",
+    ].join("|")
+    : null;
   const settlementStatusStyle = isRoomCancelled
     ? { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" }
     : matchInvalidated
@@ -694,11 +726,21 @@ export function BattleScreen() {
   const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
   const playerBaseSrc = getCharacterBaseSrc(playerCharacterId, "player");
   const opponentBaseSrc = getCharacterBaseSrc(opponentCharacterId, "opponent");
-  const playerReactionSrc = playerReaction
-    ? getCharacterExpressionSrc(playerCharacterId, playerReaction.expression)
+  const forcedPlayerHurtReaction =
+    endgameDefeatedSide === "player" && !showSettlementOverlay
+      ? ({ id: "endgame-player-hurt", expression: "hurt" } as const)
+      : null;
+  const forcedOpponentHurtReaction =
+    endgameDefeatedSide === "opponent" && !showSettlementOverlay
+      ? ({ id: "endgame-opponent-hurt", expression: "hurt" } as const)
+      : null;
+  const displayPlayerReaction = forcedPlayerHurtReaction ?? playerReaction;
+  const displayOpponentReaction = forcedOpponentHurtReaction ?? opponentReaction;
+  const playerReactionSrc = displayPlayerReaction
+    ? getCharacterExpressionSrc(playerCharacterId, displayPlayerReaction.expression)
     : null;
-  const opponentReactionSrc = opponentReaction
-    ? getCharacterExpressionSrc(opponentCharacterId, opponentReaction.expression)
+  const opponentReactionSrc = displayOpponentReaction
+    ? getCharacterExpressionSrc(opponentCharacterId, displayOpponentReaction.expression)
     : null;
   const hasPlayerSprite = Boolean(playerSpriteSrc && !failedCharacterSprites[playerSpriteSrc]);
   const hasOpponentSprite = Boolean(opponentSpriteSrc && !failedCharacterSprites[opponentSpriteSrc]);
@@ -709,6 +751,73 @@ export function BattleScreen() {
   const playerBaseHpPct = Math.max(0, Math.min(100, playerBaseHp));
   const opponentBaseHpPct = Math.max(0, Math.min(100, opponentBaseHp));
   const targetArenaImageUrl = ARENA_IMAGE_BY_ID[arenaId] ?? null;
+  const playerBaseDefeatActive = endgameDefeatedSide === "player";
+  const opponentBaseDefeatActive = endgameDefeatedSide === "opponent";
+
+  useEffect(() => {
+    const schedule = (callback: () => void, delayMs = 0) => {
+      const timerId = setTimeout(callback, delayMs);
+      endgameTimersRef.current.push(timerId);
+    };
+
+    if (!isMatchComplete || !endgameResultKey) {
+      clearEndgameTransitionTimers();
+      lastEndgameResultKeyRef.current = null;
+      schedule(() => {
+        setShowSettlementOverlay(false);
+        setEndgameDefeatedSide(null);
+        setEndgameBaseFadeActive(false);
+      });
+      return;
+    }
+
+    if (lastEndgameResultKeyRef.current === endgameResultKey) {
+      return;
+    }
+    lastEndgameResultKeyRef.current = endgameResultKey;
+    clearEndgameTransitionTimers();
+    schedule(() => {
+      setShowSettlementOverlay(false);
+      setEndgameDefeatedSide(resultDefeatedSide);
+      setEndgameBaseFadeActive(false);
+    });
+
+    if (!resultDefeatedSide) {
+      schedule(() => {
+        setShowSettlementOverlay(true);
+      }, ENDGAME_NEUTRAL_DELAY_MS);
+      return;
+    }
+
+    schedule(() => {
+      if (resultDefeatedSide === "player") {
+        setPlayerBaseFx("hit");
+        showReaction("player", "hurt", ENDGAME_TRANSITION_TOTAL_MS + 320);
+      } else {
+        setOpponentBaseFx("hit");
+        showReaction("opponent", "hurt", ENDGAME_TRANSITION_TOTAL_MS + 320);
+      }
+    });
+
+    schedule(() => {
+      setEndgameBaseFadeActive(true);
+    }, ENDGAME_BASE_FADE_DELAY_MS);
+    schedule(() => {
+      setShowSettlementOverlay(true);
+      setPlayerBaseFx("idle");
+      setOpponentBaseFx("idle");
+    }, ENDGAME_TRANSITION_TOTAL_MS);
+
+    return () => {
+      clearEndgameTransitionTimers();
+    };
+  }, [
+    clearEndgameTransitionTimers,
+    endgameResultKey,
+    isMatchComplete,
+    resultDefeatedSide,
+    showReaction,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1319,20 +1428,26 @@ export function BattleScreen() {
                   "radial-gradient(ellipse at center, rgba(248,214,148,0.22) 0%, rgba(82,96,68,0.18) 42%, transparent 72%)",
               }}
             />
-            <motion.div
-              className="absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] opacity-90"
+            <div
+              className="pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[420ms] ease-out"
               style={{
-                aspectRatio: "1700 / 1269",
-                filter:
-                  playerBaseFx === "hit"
-                    ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
-                    : playerBaseFx === "heal"
-                      ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
-                      : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+                opacity: playerBaseDefeatActive && endgameBaseFadeActive ? 0.05 : 0.9,
+                transform: playerBaseDefeatActive && endgameBaseFadeActive ? "translateY(18px) scale(0.94)" : "translateY(0) scale(1)",
               }}
-              animate={playerBaseControls}
             >
-              <div className="relative h-full w-full">
+              <motion.div
+                className="relative h-full w-full"
+                style={{
+                  aspectRatio: "1700 / 1269",
+                  filter:
+                    playerBaseFx === "hit"
+                      ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
+                      : playerBaseFx === "heal"
+                        ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
+                        : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+                }}
+                animate={playerBaseControls}
+              >
                 {hasPlayerBaseSprite && playerBaseSrc ? (
                   <Image
                     src={playerBaseSrc}
@@ -1359,29 +1474,35 @@ export function BattleScreen() {
                   style={{
                     background:
                       playerBaseFx === "hit"
-                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.26), rgba(186,105,49,0))"
+                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
                         : playerBaseFx === "heal"
                           ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
                           : "transparent",
                   }}
                 />
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
 
-            <motion.div
-              className="absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] opacity-90"
+            <div
+              className="pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[420ms] ease-out"
               style={{
-                aspectRatio: "1700 / 1269",
-                filter:
-                  opponentBaseFx === "hit"
-                    ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
-                    : opponentBaseFx === "heal"
-                      ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
-                      : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+                opacity: opponentBaseDefeatActive && endgameBaseFadeActive ? 0.05 : 0.9,
+                transform: opponentBaseDefeatActive && endgameBaseFadeActive ? "translateY(18px) scale(0.94)" : "translateY(0) scale(1)",
               }}
-              animate={opponentBaseControls}
             >
-              <div className="relative h-full w-full">
+              <motion.div
+                className="relative h-full w-full"
+                style={{
+                  aspectRatio: "1700 / 1269",
+                  filter:
+                    opponentBaseFx === "hit"
+                      ? "drop-shadow(0 0 24px rgba(186,105,49,0.42))"
+                      : opponentBaseFx === "heal"
+                        ? "drop-shadow(0 0 24px rgba(157,180,150,0.45))"
+                        : "drop-shadow(0 10px 16px rgba(0,0,0,0.28))",
+                }}
+                animate={opponentBaseControls}
+              >
                 {hasOpponentBaseSprite && opponentBaseSrc ? (
                   <Image
                     src={opponentBaseSrc}
@@ -1409,14 +1530,14 @@ export function BattleScreen() {
                   style={{
                     background:
                       opponentBaseFx === "hit"
-                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.26), rgba(186,105,49,0))"
+                        ? "radial-gradient(circle at 50% 45%, rgba(186,105,49,0.38), rgba(186,105,49,0))"
                         : opponentBaseFx === "heal"
                           ? "radial-gradient(circle at 50% 45%, rgba(157,180,150,0.24), rgba(157,180,150,0))"
                           : "transparent",
                   }}
                 />
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
 
             <div className="absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
               <div className="flex items-center justify-between gap-2">
@@ -1457,9 +1578,9 @@ export function BattleScreen() {
             >
               <div className="relative h-full w-full">
                 <AnimatePresence>
-                  {playerReaction && playerReactionSrc && hasPlayerReactionSprite && (
+                  {displayPlayerReaction && playerReactionSrc && hasPlayerReactionSprite && (
                     <motion.div
-                      key={playerReaction.id}
+                      key={displayPlayerReaction.id}
                       className="pointer-events-none absolute -left-[5.6rem] top-6 z-20 md:-left-[6.2rem]"
                       initial={{ opacity: 0, y: 8, scale: 0.88 }}
                       animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
@@ -1477,7 +1598,7 @@ export function BattleScreen() {
                         <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
                           <Image
                             src={playerReactionSrc}
-                            alt={`${playerCharacterId ?? "player"} ${playerReaction.expression} reaction`}
+                            alt={`${playerCharacterId ?? "player"} ${displayPlayerReaction.expression} reaction`}
                             fill
                             sizes="(max-width: 768px) 80px, 88px"
                             className="object-cover object-center"
@@ -1521,9 +1642,9 @@ export function BattleScreen() {
             >
               <div className="relative h-full w-full">
                 <AnimatePresence>
-                  {opponentReaction && opponentReactionSrc && hasOpponentReactionSprite && (
+                  {displayOpponentReaction && opponentReactionSrc && hasOpponentReactionSprite && (
                     <motion.div
-                      key={opponentReaction.id}
+                      key={displayOpponentReaction.id}
                       className="pointer-events-none absolute -right-[5.6rem] top-6 z-20 md:-right-[6.2rem]"
                       initial={{ opacity: 0, y: 8, scale: 0.88 }}
                       animate={{ opacity: 1, y: [8, 0, -1], scale: [0.88, 1.04, 1] }}
@@ -1541,7 +1662,7 @@ export function BattleScreen() {
                         <div className="relative h-20 w-20 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.16)] md:h-[5.5rem] md:w-[5.5rem]">
                           <Image
                             src={opponentReactionSrc}
-                            alt={`${opponentCharacterId ?? "opponent"} ${opponentReaction.expression} reaction`}
+                            alt={`${opponentCharacterId ?? "opponent"} ${displayOpponentReaction.expression} reaction`}
                             fill
                             sizes="(max-width: 768px) 80px, 88px"
                             className="object-cover object-center"
@@ -1794,6 +1915,7 @@ export function BattleScreen() {
         canSurrenderByState={canSurrenderByState}
         onConfirmSurrender={onConfirmSurrender}
         isMatchComplete={isMatchComplete}
+        showSettlementOverlay={showSettlementOverlay}
         surrenderModalOpen={surrenderModalOpen}
         canSurrenderMatch={canSurrenderMatch}
         onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
