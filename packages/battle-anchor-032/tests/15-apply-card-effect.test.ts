@@ -10,6 +10,9 @@ import {
   fetchSession,
   program,
   registerEffectCard,
+  toSafeNumber,
+  waitUntilUnixTimestamp,
+  warpPastUnixTimestamp,
 } from "./helpers/battleTestUtils";
 
 describe("apply_card_effect", () => {
@@ -189,5 +192,48 @@ describe("apply_card_effect", () => {
     expect(session.currentRound).to.equal(2);
     expect(session.healthA).to.equal(TEST_CONSTANTS.initialHealth);
     expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth);
+  });
+
+  it("rejects apply_card_effect after round deadline", async function () {
+    this.timeout(420_000);
+    const { sessionPda, playerA } = await createSession();
+    const { cardPda } = await registerEffectCard({
+      sessionPda,
+      cardIndex: 4,
+      owner: playerA.publicKey,
+      effectType: TEST_CONSTANTS.effectAttack,
+      maxValue: 30,
+    });
+    await activateSession(sessionPda);
+
+    const sessionBefore = await fetchSession(sessionPda);
+    const deadline = toSafeNumber(sessionBefore.roundDeadline);
+    let reachedDeadline = await warpPastUnixTimestamp(deadline + 1, {
+      slotsPerStep: 1200,
+      maxAttempts: 25,
+    });
+
+    if (!reachedDeadline && process.env.ENABLE_REALTIME_TIMEOUT_TESTS === "1") {
+      reachedDeadline = await waitUntilUnixTimestamp(deadline + 1, {
+        pollIntervalMs: 1_000,
+        timeoutMs: 240_000,
+      });
+    }
+
+    if (!reachedDeadline) {
+      this.skip();
+    }
+
+    await expectAnchorError(
+      program.methods
+        .applyCardEffect(10, 20)
+        .accounts({
+          authority: authority.publicKey,
+          battleSession: sessionPda,
+          registeredCard: cardPda,
+        })
+        .rpc(),
+      "RoundDeadlinePassed"
+    );
   });
 });

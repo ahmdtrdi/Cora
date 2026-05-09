@@ -9,6 +9,9 @@ import {
   expectAnchorError,
   fetchSession,
   program,
+  toSafeNumber,
+  waitUntilUnixTimestamp,
+  warpPastUnixTimestamp,
 } from "./helpers/battleTestUtils";
 
 describe("apply_damage", () => {
@@ -93,5 +96,38 @@ describe("apply_damage", () => {
     expect(session.currentRound).to.equal(2);
     expect(session.healthA).to.equal(TEST_CONSTANTS.initialHealth);
     expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth);
+  });
+
+  it("rejects apply_damage after round deadline", async function () {
+    this.timeout(420_000);
+    const { sessionPda, cardPdas, playerA } = await createActivatedLegacyBattle();
+    const sessionBefore = await fetchSession(sessionPda);
+    const deadline = toSafeNumber(sessionBefore.roundDeadline);
+
+    let reachedDeadline = await warpPastUnixTimestamp(deadline + 1, {
+      slotsPerStep: 1200,
+      maxAttempts: 25,
+    });
+    if (!reachedDeadline && process.env.ENABLE_REALTIME_TIMEOUT_TESTS === "1") {
+      reachedDeadline = await waitUntilUnixTimestamp(deadline + 1, {
+        pollIntervalMs: 1_000,
+        timeoutMs: 240_000,
+      });
+    }
+    if (!reachedDeadline) {
+      this.skip();
+    }
+
+    await expectAnchorError(
+      program.methods
+        .applyDamage(playerA.publicKey)
+        .accounts({
+          battleSession: sessionPda,
+          authority: authority.publicKey,
+          registeredCard: cardPdas[0],
+        })
+        .rpc(),
+      "RoundDeadlinePassed"
+    );
   });
 });
