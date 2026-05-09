@@ -3483,3 +3483,96 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - None introduced.
+
+## 2026-05-09 - Lobby Restore Fetch Hardening + Unselected Arena Null Image
+
+### The Change
+- Updated [apps/web/src/lib/matchmaking/queueMatch.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/queueMatch.ts):
+  - wrapped `getActiveMatchForAddress` fetch in a network-failure guard
+  - when fetch fails for non-abort reasons, it now returns `{ inRoom: false }` instead of throwing
+- Updated [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - defaulted arena preview background to `/assets/arena/null.png` when no arena is selected
+  - always renders the arena image layer so unselected state shows the null image explicitly
+- Ran lint verification for edited files:
+  - `npm run lint -- src/components/lobby/LobbySetup.tsx src/lib/matchmaking/queueMatch.ts`
+
+### The Reasoning
+- Active room restore is best-effort and should not surface noisy fetch exceptions when API is temporarily unreachable.
+- Returning `inRoom: false` for network misses preserves flow consistency: no active room means lobby stays in normal setup/select state.
+- The UI already contains a null arena asset, so using it as the default unselected background keeps visual state explicit and avoids empty background ambiguity.
+
+### The Tech Debt
+- `getActiveMatchForAddress` now treats network errors as "not in room"; if strict connectivity diagnostics are needed later, we should add structured telemetry separate from user-facing flow control.
+
+## 2026-05-09 - Lobby Arena Background Crossfade Stabilization
+
+### The Change
+- Updated [apps/web/src/components/lobby/LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx):
+  - added deterministic arena-image preloading for `null`, `SOL`, and `BONK` backgrounds
+  - replaced direct one-layer background swap behavior with a two-layer crossfade model:
+    - base layer uses `displayedArenaImageUrl`
+    - incoming layer fades in only after the new image is confirmed loaded/decoded
+  - committed next background only after fade duration, reducing visible snap/jank
+  - adjusted implementation to satisfy `react-hooks/set-state-in-effect` by deriving incoming URL from render state and only mutating load-state from async image callbacks
+- Verified with lint:
+  - `npm run lint -- src/components/lobby/LobbySetup.tsx`
+
+### The Reasoning
+- Occasional `SOL <-> BONK` rough transitions were caused by late image decode/cache misses while CSS `backgroundImage` URL changed immediately.
+- Decoupling "selected image" from "displayed image" lets us wait for the next asset to be ready and then fade it in reliably.
+- Keeping updates async-callback driven avoids extra synchronous render loops and aligns with current React lint guidance.
+
+### The Tech Debt
+- Crossfade timing is currently hardcoded (`320ms`); if we tune animation cadence globally, this duration should move into shared motion constants.
+
+## 2026-05-09 - Arena Dynamic Subtitle Update
+
+### The Change
+- Updated the subtitle text below "Choose Your Arena" in `apps/web/src/components/lobby/LobbySetup.tsx` to dynamically show the selected arena token (e.g. `Selected: SOL Arena`).
+- Maintained the instructional fallback text when no arena is selected.
+
+### The Reasoning
+- To provide clearer user feedback on which arena is currently selected, in alignment with user requests.
+- Kept the change minimal and isolated without altering the broader lobby flow or background behavior.
+
+### The Tech Debt
+- None added.
+
+## 2026-05-09 - Align Wallet Connecting UI and Blink Share Button
+
+### The Change
+- Grouped the wallet connecting UI and Blink Share button inside a single bottom row flex container using `justify-between` in `apps/web/src/components/lobby/LobbySetup.tsx`.
+- Removed their separate margin-top values and added a shared `mt-4` to prevent vertical stacking and vertical scrollbars.
+
+### The Reasoning
+- To resolve a layout issue where the wallet UI and Blink Share button were misaligned vertically, causing page overflow and scrolling when the wallet prompt appeared.
+- By placing them in a shared flex row, they act as a paired bottom action bar, preserving existing styling while fixing the layout bounds.
+
+### The Tech Debt
+- None added.
+
+## 2026-05-09 - Polish Arena Selection Icons
+
+### The Change
+- Replaced the hardcoded text-based characters (`\u25ce` and `\u{1F436}`) in the `LobbySetup.tsx` arena card with clean, standard SVG icons using a new internal `ArenaIcon` component.
+- The SOL arena now displays a clean geometric Solana logo SVG, and the BONK arena uses a matching styled dog-paw SVG.
+- Both icons dynamically map to the appropriate card color states depending on whether they are active or inactive.
+
+### The Reasoning
+- Addressed visual inconsistency where SOL was unreadable as a faint text character and BONK appeared as a heavily-styled emoji sticker.
+- Ensures both tokens share the same visual language, bounding box, and fill behavior, conforming to the intended premium game UI style.
+
+### The Tech Debt
+- The `ArenaIcon` component lives locally in `LobbySetup.tsx`. If these SVGs are needed elsewhere, they should be extracted to a shared icon set within `packages/ui` or `components/ui`.
+
+## 2026-05-09 - Arena Selection Card Color Polish
+
+### The Change
+- Updated the active selection state background for the SOL arena card in `LobbySetup.tsx` to use a light green gradient (`linear-gradient(180deg, #eef6ec 0%, #d2e2cd 100%)`).
+- Kept the BONK arena card's active background as the warm yellow gradient (`linear-gradient(180deg, #fff1cf 0%, #f8d694 100%)`).
+
+### The Reasoning
+- Addressed user feedback requesting a light green fill for the selected SOL button instead of yellow, ensuring better alignment with SOL's designated sage-green color palette (`#9db496`) while preserving BONK's yellow identity.
+
+### The Tech Debt
+- The gradients are still defined inline in the `style` prop of the button. Eventually, these specific token-mapped gradients should be added directly to the `ARENAS` data structure in `LobbyScreen.tsx` for cleaner component code.

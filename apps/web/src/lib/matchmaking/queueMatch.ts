@@ -106,7 +106,15 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
 
 export async function getActiveMatchForAddress(address: string, signal?: AbortSignal): Promise<ActiveMatchResponse> {
   const apiBaseUrl = resolveApiBaseUrl();
-  const response = await fetch(`${apiBaseUrl}/match/active/${encodeURIComponent(address)}`, { signal });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/match/active/${encodeURIComponent(address)}`, { signal });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+    return { inRoom: false };
+  }
   const payload = (await response.json().catch(() => null)) as ActiveMatchResponse | { error?: string } | null;
 
   if (!response.ok) {
