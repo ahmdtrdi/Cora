@@ -1,3 +1,5 @@
+import type { Question as SchemaQuestion, Option as SchemaOption } from './question';
+
 export type CharacterState = 'stay' | 'action' | 'angry' | 'happy';
 export type CardType = 'heal' | 'attack';
 export type GameStatus = 'waiting' | 'depositing' | 'playing' | 'settling' | 'finished';
@@ -37,14 +39,14 @@ export interface DamageEvent {
 }
 
 export interface Question {
-  id: string;
-  text: string;
+  id: SchemaQuestion['id'];
+  text: SchemaQuestion['questionText'];
   options: QuestionOption[];
 }
 
 export interface QuestionOption {
-  id: string;
-  text: string;
+  id: SchemaOption['id'];
+  text: SchemaOption['text'];
 }
 
 export interface Card {
@@ -110,8 +112,8 @@ export interface RoundOverData {
 // Messages sent from Client -> Server
 export type ClientToServerEvents = {
   openCard: (data: { cardId: string }) => void;
-  playCard: (cardId: string, selectedOptionId: string) => void;
-  confirmDeposit: (signature: string) => void;
+  playCard: (data: { cardId: string; selectedOptionId: string }) => void;
+  confirmDeposit: (data: { signature: string }) => void;
   cancelMatch: () => void;
   surrender: () => void;
 };
@@ -134,7 +136,8 @@ export type ServerToClientEvents = {
   matchFound: (data: { roomId: string; role: 'playerA' | 'playerB'; opponentAddress: string }) => void;
   depositUnlocked: (data: { roomId: string }) => void;
   gameStateUpdate: (state: GameState) => void;
-  matchResult: (result: MatchResultPayload | MatchResult) => void;
+  settlementAuthorization: (result: MatchResultPayload) => void;
+  matchResult: (result: MatchResult) => void;
   matchInvalidated: (result: MatchResult) => void; // New event for anti-cheat rejections
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
@@ -163,7 +166,7 @@ export interface PresenceUpdateData {
 }
 
 // Serialization format for native WebSocket (since we aren't using Socket.io)
-export interface WsMessage<T = any> {
+export interface WsMessage<T = unknown> {
   type: string;
   payload: T;
 }

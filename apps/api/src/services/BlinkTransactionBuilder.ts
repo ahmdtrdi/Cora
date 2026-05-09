@@ -9,27 +9,10 @@ import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenA
 import { ESCROW_CONSTANTS } from '@shared/escrow';
 import bs58 from 'bs58';
 import { Room } from '../managers/room/types';
+import { CORA_ESCROW_PROGRAM_ID, ESCROW_INSTRUCTION_DISCRIMINATORS } from '../config/solana';
+import { DEVNET_TOKEN_MINTS, resolveTokenMint } from '../config/tokens';
 
-export const PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
-const DEPOSIT_WAGER_DISCRIMINATOR = Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]);
-const INITIALIZE_MATCH_DISCRIMINATOR = Buffer.from([156, 133, 52, 179, 176, 29, 64, 124]);
-
-export const TOKEN_MINTS: Record<string, string> = {
-  SOL:  'So11111111111111111111111111111111111111112',
-  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-  USDC: 'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr',
-};
-
-export function resolveTokenMint(input: string): string | null {
-  const mapped = TOKEN_MINTS[input.toUpperCase()];
-  if (mapped) return mapped;
-  try {
-    new PublicKey(input);
-    return input;
-  } catch {
-    return null;
-  }
-}
+export { resolveTokenMint };
 
 export class BlinkTransactionBuilder {
   public static async buildDepositTransaction(
@@ -48,11 +31,11 @@ export class BlinkTransactionBuilder {
 
     const [matchStatePDA] = PublicKey.findProgramAddressSync(
       [Buffer.from(ESCROW_CONSTANTS.MATCH_SEED), matchIdBytes],
-      PROGRAM_ID,
+      CORA_ESCROW_PROGRAM_ID,
     );
     const [vaultPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from(ESCROW_CONSTANTS.VAULT_SEED), matchIdBytes],
-      PROGRAM_ID,
+      CORA_ESCROW_PROGRAM_ID,
     );
 
     const depositorATA = getAssociatedTokenAddressSync(tokenMint, depositor, true);
@@ -71,7 +54,7 @@ export class BlinkTransactionBuilder {
       )
     );
 
-    if (tokenMint.toBase58() === TOKEN_MINTS.SOL) {
+    if (tokenMint.toBase58() === DEVNET_TOKEN_MINTS.SOL) {
       tx.add(
         SystemProgram.transfer({
           fromPubkey: depositor,
@@ -94,14 +77,14 @@ export class BlinkTransactionBuilder {
       wagerAmountBuffer.writeBigUInt64LE(BigInt(wagerAmount));
       
       const initData = Buffer.concat([
-        INITIALIZE_MATCH_DISCRIMINATOR,
+        ESCROW_INSTRUCTION_DISCRIMINATORS.initializeMatch,
         Buffer.from(matchIdBytes),
         wagerAmountBuffer,
         serverPubkey.toBuffer()
       ]);
 
       const initIx = new TransactionInstruction({
-        programId: PROGRAM_ID,
+        programId: CORA_ESCROW_PROGRAM_ID,
         data: initData,
         keys: [
           { pubkey: depositor, isSigner: true, isWritable: true },
@@ -117,8 +100,8 @@ export class BlinkTransactionBuilder {
     }
 
     const depositWagerIx = new TransactionInstruction({
-      programId: PROGRAM_ID,
-      data: DEPOSIT_WAGER_DISCRIMINATOR,
+      programId: CORA_ESCROW_PROGRAM_ID,
+      data: ESCROW_INSTRUCTION_DISCRIMINATORS.depositWager,
       keys: [
         { pubkey: depositor,      isSigner: true,  isWritable: true  },
         { pubkey: matchStatePDA,  isSigner: false, isWritable: true  },

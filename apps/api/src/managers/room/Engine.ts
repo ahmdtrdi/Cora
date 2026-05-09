@@ -1,9 +1,8 @@
 import { GameEngine } from '@cora/game-logic';
 import type { MatchResult } from '@shared/websocket';
-import { loadQuestions, fetchMatchQuestions } from '../../questions';
+import { fetchMatchQuestions } from '../../questions';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
-import { supabase } from '../../services/supabase';
 
 export class Engine {
   private CARD_ANSWER_TIMEOUT_MS = 10_000;
@@ -256,10 +255,11 @@ export class Engine {
     this.manager.network.broadcastScoreUpdate(room);
   }
 
-  public handlePlayCard(room: Room, address: string, payload: any) {
+  public handlePlayCard(room: Room, address: string, payload: { cardId?: string; selectedOptionId?: string }) {
     if (!room.engine || !room.engine.isActive()) return;
 
     const { cardId, selectedOptionId } = payload;
+    if (!cardId || !selectedOptionId) return;
 
     const opened = room.openedCards.get(address);
     if (!opened || opened.cardId !== cardId) {

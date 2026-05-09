@@ -134,11 +134,17 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
             setGameState(message.payload as GameState);
             break;
 
-          case 'matchResult':
+          case 'settlementAuthorization':
             if (isSettlementPayload(message.payload)) {
               setSettlementResult(message.payload);
-            } else if (isMatchSummaryPayload(message.payload)) {
+            }
+            break;
+
+          case 'matchResult':
+            if (isMatchSummaryPayload(message.payload)) {
               setMatchSummaryResult(message.payload);
+            } else if (isSettlementPayload(message.payload)) {
+              setSettlementResult(message.payload);
             }
             break;
 

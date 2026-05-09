@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { PublicKey } from '@solana/web3.js';
 import { RoomManager } from '../managers/RoomManager';
-import { BlinkTransactionBuilder, resolveTokenMint } from '../services/BlinkTransactionBuilder';
+import { BlinkTransactionBuilder } from '../services/BlinkTransactionBuilder';
+import { resolveTokenMint } from '../config/tokens';
 
 export function createActionsRouter(roomManager: RoomManager) {
   const router = new Hono();

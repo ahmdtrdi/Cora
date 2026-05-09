@@ -1,22 +1,11 @@
 import { GoldRushClient } from '@covalenthq/client-sdk';
+import { MAINNET_TOKEN_MINTS, resolveTokenMint } from '../config/tokens';
 
 const apiKey = process.env.GOLDRUSH_API_KEY || 'cqt_dummy';
 const client = new GoldRushClient(apiKey);
 // NOTE: Covalent only indexes solana-mainnet. Devnet balances won't appear,
 // but pricing data and API-key validation will work correctly.
 const chainId = 'solana-mainnet';
-
-// Symbol → mainnet contract address mapping
-const TOKEN_MINTS: Record<string, string> = {
-  SOL:  'So11111111111111111111111111111111111111112',
-  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-};
-
-/** Resolve a symbol ("SOL") or pass-through a mint address. */
-function resolveMint(tokenMintOrSymbol: string): string {
-  return TOKEN_MINTS[tokenMintOrSymbol.toUpperCase()] || tokenMintOrSymbol;
-}
 
 export interface WalletPlayability {
   playable: boolean;
@@ -46,11 +35,11 @@ export interface MatchHistoryItem {
  */
 export async function getWalletPlayability(
   address: string,
-  arenaId: string,
+  _arenaId: string,
   tokenMint: string
 ): Promise<WalletPlayability> {
   try {
-    const res = await client.BalanceService.getTokenBalancesForWalletAddress(chainId as any, address, {
+    const res = await client.BalanceService.getTokenBalancesForWalletAddress(chainId, address, {
       quoteCurrency: 'USD'
     });
 
@@ -70,8 +59,6 @@ export async function getWalletPlayability(
     const tokenData = items.find(item => item.contract_address === tokenMint || item.contract_ticker_symbol?.toUpperCase() === tokenMint.toUpperCase());
 
     const balance = tokenData?.balance || 0n;
-    const decimals = tokenData?.contract_decimals || 9;
-    
     // Let's assume the required balance is at least some minimal wager like 0.1 tokens.
     // For simplicity, we just verify they have > 0 right now, but you could parameterize this.
     const requiredBalance = 1n; // At least 1 wei/lamport
@@ -86,8 +73,8 @@ export async function getWalletPlayability(
       lastCheckedAt: new Date().toISOString(),
       reliable: true,
     };
-  } catch (err: any) {
-    console.error('[GoldRush] getWalletPlayability error:', err.message);
+  } catch (err: unknown) {
+    console.error('[GoldRush] getWalletPlayability error:', err instanceof Error ? err.message : err);
     return {
       playable: false,
       reason: 'Failed to fetch balance',
@@ -106,16 +93,16 @@ export async function getWalletPlayability(
  */
 // Reverse lookup: mint address → ticker symbol for fallback matching
 const MINT_TO_SYMBOL: Record<string, string> = Object.fromEntries(
-  Object.entries(TOKEN_MINTS).map(([symbol, addr]) => [addr, symbol]),
+  Object.entries(MAINNET_TOKEN_MINTS).map(([symbol, addr]) => [addr, symbol]),
 );
 
 const PRICE_PROBE_WALLET = 'vines1vzrYbzLMRdu58ou5XTby4qAqVRLmqo36NKPTg'; // Solana Labs wallet
 export async function getTokenPriceUsd(tokenMint: string): Promise<number | null> {
-  const mint = resolveMint(tokenMint);
+  const mint = resolveTokenMint(tokenMint, 'mainnet') ?? tokenMint;
   const symbol = MINT_TO_SYMBOL[mint] ?? tokenMint.toUpperCase();
   try {
     const res = await client.BalanceService.getTokenBalancesForWalletAddress(
-      chainId as any,
+      chainId,
       PRICE_PROBE_WALLET,
       { quoteCurrency: 'USD' },
     );
@@ -129,8 +116,8 @@ export async function getTokenPriceUsd(tokenMint: string): Promise<number | null
         item.contract_ticker_symbol?.toUpperCase() === symbol,
     );
     return token?.quote_rate ?? null;
-  } catch (err: any) {
-    console.error('[GoldRush] getTokenPriceUsd error:', err.message);
+  } catch (err: unknown) {
+    console.error('[GoldRush] getTokenPriceUsd error:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -193,7 +180,7 @@ function generateMockHistory(arenaId: string, token: string, opponentPrefix: str
   ];
 }
 
-export async function getWalletHistory(address: string): Promise<MatchHistoryItem[]> {
+export async function getWalletHistory(): Promise<MatchHistoryItem[]> {
   // Stubbed response as requested by the user
   return generateMockHistory("arena-global", "SOL", "opp-");
 }

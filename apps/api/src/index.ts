@@ -1,16 +1,14 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createBunWebSocket } from 'hono/bun';
-import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
-import { PublicKey } from '@solana/web3.js';
 import { RoomManager } from './managers/RoomManager';
 import { rateLimiter } from './middleware/rateLimiter';
 import { createActionsRouter } from './routes/actions';
 import { startEventListener } from './utils/eventListener';
 import { getArenaHistory, getWalletHistory, getWalletPlayability } from './services/goldrush';
-import { supabase } from './services/supabase';
 import { fetchMatchQuestions } from './questions';
+import { resolveTokenMint } from './config/tokens';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
@@ -54,8 +52,7 @@ app.get('/api/history/arena/:arenaId', async (c) => {
 });
 
 app.get('/api/history/wallet/:address', async (c) => {
-  const address = c.req.param('address');
-  const history = await getWalletHistory(address);
+  const history = await getWalletHistory();
   return c.json({ items: history });
 });
 
@@ -67,30 +64,6 @@ app.get('/api/history/wallet/:address/playability', async (c) => {
   const playability = await getWalletPlayability(address, arena, token);
   return c.json(playability);
 });
-
-// Questions route
-// app.get('/api/questions', async (c) => {
-//   try {
-//     const defaultPath = 'data/questions/pool.json';
-//     const fallbackPath = '../../data/questions/pool.json';
-
-//     let questions;
-//     try {
-//       questions = await Bun.file(defaultPath).json();
-//     } catch {
-//       questions = await Bun.file(fallbackPath).json();
-//     }
-
-//     // Serve 5 random questions
-//     const shuffled = questions.sort(() => 0.5 - Math.random());
-//     const selected = shuffled.slice(0, 5);
-
-//     return c.json({ questions: selected });
-//   } catch (error) {
-//     console.error('Failed to load questions:', error);
-//     return c.json({ error: 'Failed to load questions' }, 500);
-//   }
-// });
 
 app.get('/api/questions', async (c) => {
   try {
@@ -109,7 +82,7 @@ app.post('/match', async (c) => {
   try {
     const body = await c.req.json();
     address = body.address;
-  } catch (e) {
+  } catch {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
 
@@ -186,25 +159,6 @@ app.get('/match/presence/:address', (c) => {
 
 // Private room creation — for Blinks / direct challenge invites
 // tokenMint and wagerAmount are stored server-side; never exposed in the Blink URL
-
-// Map UI token symbols → on-chain SPL mint addresses (devnet)
-const TOKEN_MINTS: Record<string, string> = {
-  SOL:  'So11111111111111111111111111111111111111112',
-  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-  USDC: 'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr',
-};
-
-function resolveTokenMint(input: string): string | null {
-  const mapped = TOKEN_MINTS[input.toUpperCase()];
-  if (mapped) return mapped;
-  try {
-    new PublicKey(input);
-    return input;
-  } catch {
-    return null;
-  }
-}
-
 app.post('/match/private', async (c) => {
   let address: string;
   let rawTokenMint: string;
@@ -215,7 +169,7 @@ app.post('/match/private', async (c) => {
     address = body.address;
     rawTokenMint = body.tokenMint;
     wagerAmount = body.wagerAmount;
-  } catch (e) {
+  } catch {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
 
@@ -264,7 +218,7 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
   }
 
   return {
-    onOpen(event, ws: any) {
+    onOpen(_event, ws) {
       roomManager.joinRoom(roomId, address, ws, characterId);
     },
     onMessage(event: MessageEvent) {
@@ -275,7 +229,7 @@ app.get('/match/:roomId', upgradeWebSocket((c) => {
         console.error('Failed to parse message', e);
       }
     },
-    onClose(event, ws: any) {
+    onClose(_event, ws) {
       roomManager.leaveRoom(roomId, address, ws);
     }
   };

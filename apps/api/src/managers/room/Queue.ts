@@ -1,11 +1,11 @@
-import type { ServerWebSocket } from 'bun';
 import type { WsMessage } from '@shared/websocket';
 import type { RoomManager } from '../RoomManager';
+import type { RoomSocket } from './types';
 import type { Room } from './types';
 
 interface QueueItem {
   address: string;
-  ws?: ServerWebSocket<unknown>;
+  ws?: RoomSocket;
   resolve: (roomId: string) => void;
   enqueuedAt: number;
   ttlHandle?: ReturnType<typeof setTimeout>;
@@ -89,7 +89,7 @@ export class Queue {
     });
   }
 
-  public requeueInnocent(address: string, ws: ServerWebSocket<unknown>) {
+  public requeueInnocent(address: string, ws: RoomSocket) {
     const queueItem: QueueItem = {
       address,
       ws,
