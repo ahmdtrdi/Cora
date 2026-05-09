@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Arena, Scientist } from "./LobbyScreen";
 
@@ -49,6 +50,7 @@ export function MatchmakingWaiting({
 }: MatchmakingWaitingProps) {
   const [activeLoopProgress, setActiveLoopProgress] = useState(0);
   const [flavorIdx, setFlavorIdx] = useState(0);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (state !== "searching") return;
@@ -138,16 +140,26 @@ export function MatchmakingWaiting({
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
           <div className="relative flex items-center gap-4">
             <div
-              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
                 background: scientist.portraitBg,
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
               }}
             >
-              <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                {scientist.initial}
-              </span>
+              {!failedImages[scientist.id] ? (
+                <Image
+                  src={`/assets/characters/${scientist.id.trim().toLowerCase()}/exp/idle.png`}
+                  alt={`${scientist.name} portrait`}
+                  fill
+                  className="object-cover object-center"
+                  onError={() => setFailedImages((prev) => ({ ...prev, [scientist.id]: true }))}
+                />
+              ) : (
+                <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                  {scientist.initial}
+                </span>
+              )}
             </div>
 
             <div className="min-w-0">
@@ -179,16 +191,26 @@ export function MatchmakingWaiting({
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
             <div className="relative flex items-center gap-4">
               <div
-                className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+                className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
                 style={{
                   border: "2px solid rgba(111,58,40,0.6)",
                   background: matchedOpponent.portraitBg,
                   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
                 }}
               >
-                <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
-                  {matchedOpponent.initial}
-                </span>
+                {!failedImages[matchedOpponent.id] ? (
+                  <Image
+                    src={`/assets/characters/${matchedOpponent.id.trim().toLowerCase()}/exp/idle.png`}
+                    alt={`${matchedOpponent.name} portrait`}
+                    fill
+                    className="object-cover object-center"
+                    onError={() => setFailedImages((prev) => ({ ...prev, [matchedOpponent.id]: true }))}
+                  />
+                ) : (
+                  <span className="font-caprasimo text-4xl text-[rgba(255,244,221,0.88)] drop-shadow-sm">
+                    {matchedOpponent.initial}
+                  </span>
+                )}
               </div>
               <div className="min-w-0">
                 <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">

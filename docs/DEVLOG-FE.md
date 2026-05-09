@@ -3673,3 +3673,17 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - Removed technical debt by eliminating the need to maintain mock `stats` arrays. The character cards now rely purely on the actual backend `CHARACTER_DEFS` mapping to display specialty and multiplier info.
+
+## 2026-05-09 - Matchmaking Expression Imagery & Bug Fix
+
+### The Change
+- Fixed an iterable crash in `LobbyScreen.tsx` where `.stats` was still being destructured from the `characterOptions` memo, even though the field was removed.
+- Added the selected character's `idle.png` expression image to the "You" and "Opponent" portrait slots in `MatchmakingWaiting.tsx`.
+- Included an image loading fallback mechanism in `MatchmakingWaiting.tsx` that reverts to the character's initial if the expression image fails to load.
+
+### The Reasoning
+- Addressed an oversight from the fake stats removal where a spread operation on the undefined `stats` array caused a client-side crash.
+- Replaced the text-based initials in the matchmaking waiting screen with the character's full 2D idle expressions, matching the aesthetic fidelity established in the character selection cards.
+
+### The Tech Debt
+- None. This aligns the matchmaking waiting UI with the asset loading patterns used elsewhere in the application.
