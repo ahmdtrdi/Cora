@@ -12,6 +12,7 @@ import { getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from
 import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
+import { useMatchSocket } from "@/hooks/useMatchSocket";
 import type {
   CharacterOption,
   CharacterSelectionState,
@@ -112,22 +113,66 @@ type LobbyDraftSnapshot = {
 };
 
 type ActiveRoomSnapshot = {
-  walletAddress: string;
+  walletAddress?: string | null;
+  address?: string | null;
   roomId: string;
   role?: "playerA" | "playerB" | null;
   arenaId?: string | null;
   scientistId?: string | null;
   status?: string | null;
   token?: string | null;
+  arenaToken?: string | null;
   wagerUsd?: string | null;
+  canSurrenderByState?: boolean;
 };
+
+function normalizeActiveRoomSnapshot(value: unknown): ActiveRoomSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const snapshot = value as Record<string, unknown>;
+  const roomId = typeof snapshot.roomId === "string" ? snapshot.roomId : "";
+  if (!roomId) return null;
+
+  return {
+    walletAddress:
+      typeof snapshot.walletAddress === "string"
+        ? snapshot.walletAddress
+        : typeof snapshot.address === "string"
+          ? snapshot.address
+          : null,
+    address:
+      typeof snapshot.address === "string"
+        ? snapshot.address
+        : typeof snapshot.walletAddress === "string"
+          ? snapshot.walletAddress
+          : null,
+    roomId,
+    role: snapshot.role === "playerA" || snapshot.role === "playerB" ? snapshot.role : null,
+    arenaId: typeof snapshot.arenaId === "string" ? snapshot.arenaId : null,
+    scientistId: typeof snapshot.scientistId === "string" ? snapshot.scientistId : null,
+    status: typeof snapshot.status === "string" ? snapshot.status : null,
+    token:
+      typeof snapshot.token === "string"
+        ? snapshot.token
+        : typeof snapshot.arenaToken === "string"
+          ? snapshot.arenaToken
+          : null,
+    arenaToken:
+      typeof snapshot.arenaToken === "string"
+        ? snapshot.arenaToken
+        : typeof snapshot.token === "string"
+          ? snapshot.token
+          : null,
+    wagerUsd: typeof snapshot.wagerUsd === "string" ? snapshot.wagerUsd : null,
+    canSurrenderByState: typeof snapshot.canSurrenderByState === "boolean" ? snapshot.canSurrenderByState : undefined,
+  };
+}
 
 function readActiveRoomSnapshot() {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as ActiveRoomSnapshot;
+    return normalizeActiveRoomSnapshot(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -140,6 +185,57 @@ function writeActiveRoomSnapshot(snapshot: ActiveRoomSnapshot | null) {
     return;
   }
   window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(snapshot));
+}
+
+function getSnapshotAddress(snapshot: ActiveRoomSnapshot | null) {
+  if (!snapshot) return "";
+  return snapshot.walletAddress?.trim() || snapshot.address?.trim() || "";
+}
+
+function getSnapshotToken(snapshot: ActiveRoomSnapshot | null) {
+  if (!snapshot) return null;
+  return snapshot.token?.trim() || snapshot.arenaToken?.trim() || null;
+}
+
+function isLiveMatchSnapshot(snapshot: ActiveRoomSnapshot | null) {
+  if (!snapshot?.roomId) return false;
+  return snapshot.status === "playing" || typeof snapshot.canSurrenderByState === "boolean";
+}
+
+type ActiveMatchSurrenderBridgeProps = {
+  roomId: string;
+  address: string;
+  onSubmitted: () => void;
+  onTimeout: () => void;
+};
+
+function ActiveMatchSurrenderBridge({
+  roomId,
+  address,
+  onSubmitted,
+  onTimeout,
+}: ActiveMatchSurrenderBridgeProps) {
+  const { connectionState, surrender } = useMatchSocket({ roomId, address });
+  const submittedRef = useRef(false);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (!submittedRef.current) {
+        onTimeout();
+      }
+    }, 10_000);
+    return () => clearTimeout(timeoutId);
+  }, [onTimeout]);
+
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    surrender();
+    onSubmitted();
+  }, [connectionState, onSubmitted, surrender]);
+
+  return null;
 }
 
 export function LobbyScreen() {
@@ -172,6 +268,10 @@ export function LobbyScreen() {
   const [matchmakingState, setMatchmakingState] = useState<MatchmakingState>("idle");
   const [matchmakingStage, setMatchmakingStage] = useState<MatchmakingStage>("finding");
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
+  const [activeMatchBannerSnapshot, setActiveMatchBannerSnapshot] = useState<ActiveRoomSnapshot | null>(null);
+  const [activeMatchSurrenderSnapshot, setActiveMatchSurrenderSnapshot] = useState<ActiveRoomSnapshot | null>(null);
+  const [activeMatchSurrenderModalOpen, setActiveMatchSurrenderModalOpen] = useState(false);
+  const [activeMatchToast, setActiveMatchToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const matchmakingAbortRef = useRef<AbortController | null>(null);
   const matchmakingRequestIdRef = useRef(0);
   const userCancelledRef = useRef(false);
@@ -219,6 +319,11 @@ export function LobbyScreen() {
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
   const walletAddr = walletAddress || "Not connected";
+  const activeMatchBannerArena =
+    activeMatchBannerSnapshot?.arenaId ? ARENAS.find((arena) => arena.id === activeMatchBannerSnapshot.arenaId) ?? null : null;
+  const activeMatchBannerToken = getSnapshotToken(activeMatchBannerSnapshot) ?? activeMatchBannerArena?.token ?? "SOL";
+  const activeMatchBannerWager = activeMatchBannerSnapshot?.wagerUsd ?? FIXED_WAGER_USD;
+  const canSurrenderActiveMatch = activeMatchBannerSnapshot?.canSurrenderByState === true;
 
   const wagerNumber = Number(FIXED_WAGER_USD);
   const hasValidWager = Number.isFinite(wagerNumber) && wagerNumber > 0;
@@ -277,16 +382,21 @@ export function LobbyScreen() {
     setMatchmakingState("idle");
     setMatchmakingStage("finding");
     setMatchmakingError(null);
+    setActiveMatchBannerSnapshot(null);
+    setActiveMatchSurrenderSnapshot(null);
+    setActiveMatchSurrenderModalOpen(false);
     clearFoundTransitionTimers();
 
     writeActiveRoomSnapshot({
       walletAddress,
+      address: walletAddress,
       roomId: snapshot.roomId,
       role: snapshot.role ?? null,
       arenaId: nextArenaId ?? null,
       scientistId: nextScientist?.id ?? null,
       status: snapshot.status ?? null,
       token: snapshot.token ?? nextArena?.token ?? null,
+      arenaToken: snapshot.token ?? nextArena?.token ?? null,
       wagerUsd: snapshot.wagerUsd ?? FIXED_WAGER_USD,
     });
 
@@ -321,6 +431,58 @@ export function LobbyScreen() {
     setSelectedScientist,
     walletAddress,
   ]);
+
+  const clearActiveMatchBanner = useCallback(() => {
+    writeActiveRoomSnapshot(null);
+    setActiveMatchBannerSnapshot(null);
+    setActiveMatchSurrenderSnapshot(null);
+    setActiveMatchSurrenderModalOpen(false);
+  }, []);
+
+  const handleRejoinActiveMatch = useCallback(() => {
+    if (!activeMatchBannerSnapshot?.roomId) return;
+    const params = new URLSearchParams({
+      roomId: activeMatchBannerSnapshot.roomId,
+      arena: activeMatchBannerSnapshot.arenaId ?? "sol",
+      token: activeMatchBannerToken,
+      wager: activeMatchBannerWager,
+    });
+    clearActiveMatchBanner();
+    router.push(`/play?${params.toString()}`);
+  }, [
+    activeMatchBannerSnapshot,
+    activeMatchBannerToken,
+    activeMatchBannerWager,
+    clearActiveMatchBanner,
+    router,
+  ]);
+
+  const handleConfirmActiveMatchSurrender = useCallback(() => {
+    if (!activeMatchBannerSnapshot?.roomId) return;
+    const surrenderAddress = getSnapshotAddress(activeMatchBannerSnapshot) || walletAddress;
+    if (!surrenderAddress) {
+      clearActiveMatchBanner();
+      setActiveMatchToast({ text: "Could not connect - try rejoining instead", tone: "error" });
+      return;
+    }
+
+    setActiveMatchSurrenderModalOpen(false);
+    setActiveMatchSurrenderSnapshot({
+      ...activeMatchBannerSnapshot,
+      walletAddress: surrenderAddress,
+      address: surrenderAddress,
+    });
+  }, [activeMatchBannerSnapshot, clearActiveMatchBanner, walletAddress]);
+
+  const handleActiveMatchSurrenderSubmitted = useCallback(() => {
+    clearActiveMatchBanner();
+    setActiveMatchToast({ text: "Surrender submitted", tone: "success" });
+  }, [clearActiveMatchBanner]);
+
+  const handleActiveMatchSurrenderTimeout = useCallback(() => {
+    clearActiveMatchBanner();
+    setActiveMatchToast({ text: "Could not connect - try rejoining instead", tone: "error" });
+  }, [clearActiveMatchBanner]);
 
   const startMatchmakingSearch = useCallback(async () => {
     if (!walletAddress) {
@@ -457,6 +619,14 @@ export function LobbyScreen() {
   }, []);
 
   useEffect(() => {
+    if (!activeMatchToast) return;
+    const timeoutId = setTimeout(() => {
+      setActiveMatchToast(null);
+    }, 5000);
+    return () => clearTimeout(timeoutId);
+  }, [activeMatchToast]);
+
+  useEffect(() => {
     if (phase !== "waiting") return;
     if (matchmakingState !== "searching") return;
     if (!walletAddress) return;
@@ -580,6 +750,10 @@ export function LobbyScreen() {
           setSelectedScientist(restoredScientist);
         }
       }
+
+      if (isLiveMatchSnapshot(snapshot)) {
+        setActiveMatchBannerSnapshot(snapshot);
+      }
     });
   }, [selectedArenaId, selectedScientist]);
 
@@ -600,10 +774,23 @@ export function LobbyScreen() {
     }
 
     const storedSnapshot = readActiveRoomSnapshot();
-    if (storedSnapshot && storedSnapshot.walletAddress === walletAddress && storedSnapshot.roomId && phase === "setup") {
+    const storedSnapshotAddress = getSnapshotAddress(storedSnapshot);
+
+    if (storedSnapshot && storedSnapshotAddress && storedSnapshotAddress !== walletAddress) {
+      writeActiveRoomSnapshot(null);
       queueMicrotask(() => {
-        openRecoveredRoom(storedSnapshot);
+        setActiveMatchBannerSnapshot(null);
       });
+    } else if (storedSnapshot?.roomId && phase === "setup") {
+      if (isLiveMatchSnapshot(storedSnapshot)) {
+        queueMicrotask(() => {
+          setActiveMatchBannerSnapshot(storedSnapshot);
+        });
+      } else {
+        queueMicrotask(() => {
+          openRecoveredRoom(storedSnapshot);
+        });
+      }
     }
 
     const controller = new AbortController();
@@ -617,19 +804,39 @@ export function LobbyScreen() {
 
         if (!activeMatch.inRoom || !activeMatch.roomId) {
           const snapshot = readActiveRoomSnapshot();
-          if (snapshot?.walletAddress === walletAddress) {
+          if (getSnapshotAddress(snapshot) === walletAddress) {
             writeActiveRoomSnapshot(null);
+            setActiveMatchBannerSnapshot(null);
           }
           return;
         }
 
         const latestSnapshot = readActiveRoomSnapshot();
+        if (activeMatch.status === "playing") {
+          const liveSnapshot: ActiveRoomSnapshot = {
+            walletAddress,
+            address: walletAddress,
+            roomId: activeMatch.roomId,
+            role: activeMatch.role ?? latestSnapshot?.role ?? null,
+            arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
+            scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
+            status: "playing",
+            token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+            arenaToken: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+            wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
+            canSurrenderByState: latestSnapshot?.canSurrenderByState ?? false,
+          };
+          writeActiveRoomSnapshot(liveSnapshot);
+          setActiveMatchBannerSnapshot(liveSnapshot);
+          return;
+        }
+
         openRecoveredRoom({
           roomId: activeMatch.roomId,
           role: activeMatch.role ?? latestSnapshot?.role ?? null,
           status: activeMatch.status ?? latestSnapshot?.status ?? null,
           arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
-          token: latestSnapshot?.token ?? selectedArena?.token ?? null,
+          token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
           wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
           scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
         });
@@ -655,12 +862,14 @@ export function LobbyScreen() {
     if (!walletAddress || !matchedRoomId) return;
     writeActiveRoomSnapshot({
       walletAddress,
+      address: walletAddress,
       roomId: matchedRoomId,
       role: matchedRole,
       arenaId: selectedArena?.id ?? null,
       scientistId: selectedScientist?.id ?? null,
       status: phase === "found" ? "depositing" : null,
       token: selectedArena?.token ?? null,
+      arenaToken: selectedArena?.token ?? null,
       wagerUsd: FIXED_WAGER_USD,
     });
   }, [walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
@@ -673,6 +882,119 @@ export function LobbyScreen() {
           "radial-gradient(circle at 50% 30%, rgba(168,143,104,0.22), transparent 45%), linear-gradient(180deg, #2b3a32 0%, #223229 50%, #1a251f 100%)",
       }}
     >
+      {activeMatchSurrenderSnapshot?.roomId && getSnapshotAddress(activeMatchSurrenderSnapshot) && (
+        <ActiveMatchSurrenderBridge
+          roomId={activeMatchSurrenderSnapshot.roomId}
+          address={getSnapshotAddress(activeMatchSurrenderSnapshot)}
+          onSubmitted={handleActiveMatchSurrenderSubmitted}
+          onTimeout={handleActiveMatchSurrenderTimeout}
+        />
+      )}
+      {activeMatchBannerSnapshot && (
+        <div className="fixed inset-x-0 top-0 z-[90] p-3 md:p-4">
+          <div
+            className="mx-auto w-full max-w-5xl frame-cut px-4 py-3 shadow-2xl md:px-5"
+            style={{
+              border: "1px solid rgba(248,214,148,0.36)",
+              background:
+                "linear-gradient(140deg, rgba(12,21,17,0.97) 0%, rgba(18,31,25,0.97) 52%, rgba(28,45,37,0.97) 100%)",
+            }}
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.2em] text-[rgba(248,214,148,0.82)]">
+                  {"\u2694"} You have an active match
+                </p>
+                <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+                  {activeMatchBannerArena?.label ?? "Arena battle"} - ${activeMatchBannerWager} {activeMatchBannerToken}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleRejoinActiveMatch}
+                  className="btn-game btn-game-primary px-4 py-2 text-xs shadow-xl"
+                >
+                  Rejoin Match
+                </button>
+                {canSurrenderActiveMatch && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveMatchSurrenderModalOpen(true)}
+                    className="btn-game btn-game-secondary px-4 py-2 text-xs shadow-xl"
+                  >
+                    Surrender Match
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {activeMatchToast && (
+        <div className="fixed left-1/2 top-24 z-[100] w-full max-w-md -translate-x-1/2 px-4">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border:
+                activeMatchToast.tone === "success"
+                  ? "2px solid rgba(157,180,150,0.7)"
+                  : "2px solid rgba(186,105,49,0.78)",
+              background:
+                activeMatchToast.tone === "success"
+                  ? "linear-gradient(145deg, #1b2d25 0%, #274137 100%)"
+                  : "linear-gradient(145deg, #2c1810 0%, #3d2315 100%)",
+            }}
+          >
+            <p className="font-gabarito text-sm font-bold text-[rgba(244,240,230,0.92)]">{activeMatchToast.text}</p>
+          </div>
+        </div>
+      )}
+      {activeMatchSurrenderModalOpen && activeMatchBannerSnapshot && (
+        <div className="fixed inset-0 z-[95] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4">
+          <div
+            className="frame-cut w-full max-w-lg p-5 md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">Surrender match?</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
+              Surrendering ends the match. Your rival receives the wager. Confirm?
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setActiveMatchSurrenderModalOpen(false)}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmActiveMatchSurrender}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
+              >
+                Confirm Surrender
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {activeMatchSurrenderSnapshot && (
+        <div className="fixed inset-0 z-[96] grid place-items-center bg-[rgba(2,6,5,0.82)] p-4">
+          <div
+            className="frame-cut w-full max-w-md p-5 text-center md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-[rgba(248,214,148,0.24)] border-t-[var(--tone-cream)]" />
+            <p className="mt-4 font-caprasimo text-2xl text-[var(--tone-cream)]">Connecting to room...</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.78)]">
+              Submitting surrender as soon as the match socket reconnects.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Background World Elements */}
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <div className="paper-grain absolute inset-0 opacity-25" />

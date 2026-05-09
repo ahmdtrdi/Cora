@@ -41,7 +41,7 @@ export function DepositPanel({
   extraSlot,
 }: DepositPanelProps) {
   return (
-    <div className="mt-8 w-full text-center">
+    <div className="w-full pt-1 text-center">
       <p className="inline-flex items-center justify-center rounded-full border border-[rgba(248,214,148,0.36)] bg-[rgba(16,26,22,0.62)] px-3 py-1 font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--tone-cream)]">
         ${wagerUsd} {token} - {title}
       </p>
