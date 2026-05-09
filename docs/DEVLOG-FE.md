@@ -3997,3 +3997,66 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 - The active-match banner currently lives inside `LobbyScreen.tsx`; if this pattern expands to other routes, it should move into a shared recovery/banner component.
 - Lobby-side surrender submission still has no explicit server acknowledgement event to wait on, so `Surrender submitted` currently means "socket connected and surrender message sent" rather than confirmed backend acceptance.
 - The persisted snapshot schema now carries compatibility fields (`walletAddress` plus `address`, `token` plus `arenaToken`) to bridge older lobby recovery paths and the new battle-return path. If the format settles, we should consolidate it into one shared typed helper/module.
+
+## 2026-05-09 - Lobby Coming-Soon Arena Slot for MEW
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add a visible disabled `MEW` arena card below BONK plus a second disabled `and more to come` card using the same muted styling language.
+- Wired in the existing `/assets/arena/mew.png` path so the setup screen can support a MEW-specific arena image if a coming-soon selection state is ever passed down.
+- Updated the main lobby CTA in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to switch to a disabled gray `Coming Soon` label for a `mew` coming-soon state while leaving normal SOL and BONK play flow intact.
+
+### The Reasoning
+- Keeping MEW outside the playable `arenas` prop preserves the current matchmaking and selection flow for SOL and BONK while still making the roadmap visible in the arena picker.
+- The CTA guard is defensive: today the MEW card itself does not select anything, but if upstream state ever points at `mew`, the primary action still refuses progression and presents the correct coming-soon message.
+- Reusing the same disabled visual language for `MEW` and `and more to come` makes it obvious these are future arenas rather than broken interactions.
+
+### The Tech Debt
+- `LobbySetup.tsx` now knows about a hard-coded coming-soon arena id (`mew`). If more teaser arenas are added, we should likely move arena rendering to a single typed config that can represent both playable and disabled entries.
+
+## 2026-05-09 - Lobby MEW Selection and BONK CTA Lock
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the `MEW` card is now clickable/selectable, shows selected-state styling, and swaps the right-side panel into a `MEW Arena` display using `/assets/arena/mew.png`.
+- Locked the main `Pick Scientist` CTA for both `BONK` and `MEW`, changing the button label to `Coming Soon` and preventing `onPlay` from firing for either arena.
+- Removed the `Coming Soon` copy from the `MEW` card itself while keeping the separate disabled `and more to come` card underneath it.
+
+### The Reasoning
+- This keeps the arena picker exploratory and interactive while making the gating happen where it matters most: the progression CTA.
+- Treating `BONK` and `MEW` as coming-soon arenas at the CTA layer preserves the existing upstream arena list contract and avoids forcing lobby/matchmaking changes for non-playable tokens.
+- Adding a local display model for `MEW` lets the setup panel show coherent selected-state copy and imagery even though `MEW` is not yet part of the playable `ARENAS` array in the parent screen.
+
+### The Tech Debt
+- `LobbySetup.tsx` now has mixed knowledge of playable arenas from props and teaser arenas declared locally. If more non-playable arenas are added, we should centralize this into one shared arena config with an explicit availability flag.
+
+## 2026-05-09 - MEW Arena Visual Pass
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the `MEW` arena icon now renders as a cat instead of reusing the generic token glyph.
+- Restyled the `MEW` card so its unselected state uses the same warm card treatment as the other arena options, while the icon medallion uses the requested blue tone `#85A1A5`.
+- Added the requested selected-state palette for `MEW`: blue background `#85A1A5`, blue outline `#3C5C5F`, and matching blue-toned highlight/shadow treatment.
+
+### The Reasoning
+- The earlier muted-gray treatment made `MEW` read as disabled at the card level, which conflicted with the newer requirement that it should still be clickable/selectable.
+- Giving `MEW` its own cat silhouette helps the card read as a distinct token/arena instead of a temporary placeholder.
+- Keeping the unselected card warm while only shifting the selected state to blue preserves consistency with the rest of the lobby list and makes the active choice stand out more clearly.
+
+### The Tech Debt
+- The `MEW` card styling is still bespoke inside `LobbySetup.tsx`; if more arena-specific themes arrive, we should move these visual tokens into shared config rather than branching inline.
+
+## 2026-05-09 - MEW Selected-State Gradient Tuning
+
+### The Change
+- Updated the selected `MEW` card in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so its outline now uses `#85A1A5` to match the requested selected-state color.
+- Reworked the selected `MEW` background from a flatter blue fill to a more dimensional blue gradient while keeping the same overall tone family.
+
+### The Reasoning
+- Matching the outline to the primary selected color makes the card feel cleaner and less split between two different blue accents.
+- Using a gradient instead of a flatter fill keeps the `MEW` selected state visually consistent with the other arena cards, which already use layered, beveled-looking surfaces.
+
+### The Tech Debt
+- The `MEW` visual tuning remains hand-authored inline in `LobbySetup.tsx`; if we keep iterating on per-arena themes, a shared tokenized styling layer would be easier to maintain.
+
+## 2026-05-09: MEW Arena UI Polish
+- **The Change**: Polished the MEW arena selection UI in `LobbySetup.tsx`. Simplified the MEW SVG icon to a silhouette and updated the selection button's background circle. Also fixed a TypeScript error by adding the missing `frame` property to the `mewArena` object.
+- **The Reasoning**: Improved icon abstraction and UI consistency. The `frame` property fix was required due to a recent update in the `Arena` type definition.
+- **The Tech Debt**: None.
