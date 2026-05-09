@@ -272,6 +272,8 @@ export function LobbyScreen() {
   const [activeMatchSurrenderSnapshot, setActiveMatchSurrenderSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderModalOpen, setActiveMatchSurrenderModalOpen] = useState(false);
   const [activeMatchToast, setActiveMatchToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [pendingErRecovery, setPendingErRecovery] = useState(false);
+  const [erSettling, setErSettling] = useState(false);
   const matchmakingAbortRef = useRef<AbortController | null>(null);
   const matchmakingRequestIdRef = useRef(0);
   const userCancelledRef = useRef(false);
@@ -333,17 +335,21 @@ export function LobbyScreen() {
   const waitingMissingContext = phase === "waiting" && (!selectedArena || !selectedScientist);
   const foundMissingContext =
     phase === "found" && (!selectedArena || !selectedScientist || !matchedRoomId);
-  const phaseContextIssue = waitingMissingContext
-    ? {
-      title: "Queue session missing context",
-      detail: "Room setup was refreshed before queue state finished syncing.",
-    }
-    : foundMissingContext
+  const phaseContextIssue = useMemo(() => (
+    waitingMissingContext
       ? {
-        title: "Match room context missing",
-        detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
+        title: "Queue session missing context",
+        detail: "Room setup was refreshed before queue state finished syncing.",
       }
-      : null;
+      : foundMissingContext
+        ? {
+          title: "Match room context missing",
+          detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
+        }
+        : null
+  ), [foundMissingContext, waitingMissingContext]);
+  const showPendingErRecovery = pendingErRecovery && Boolean(walletAddress);
+  const showErSettling = erSettling && Boolean(phaseContextIssue) && Boolean(matchedRoomId) && Boolean(walletAddress);
 
   const clearFoundTransitionTimers = useCallback(() => {
     for (const timerId of foundTransitionTimeoutsRef.current) {
@@ -385,6 +391,7 @@ export function LobbyScreen() {
     setActiveMatchBannerSnapshot(null);
     setActiveMatchSurrenderSnapshot(null);
     setActiveMatchSurrenderModalOpen(false);
+    setPendingErRecovery(false);
     clearFoundTransitionTimers();
 
     writeActiveRoomSnapshot({
@@ -775,16 +782,23 @@ export function LobbyScreen() {
 
     const storedSnapshot = readActiveRoomSnapshot();
     const storedSnapshotAddress = getSnapshotAddress(storedSnapshot);
+    const isStoredDepositingSnapshot =
+      storedSnapshot?.status === "depositing" && Boolean(storedSnapshot.roomId) && phase === "setup";
 
     if (storedSnapshot && storedSnapshotAddress && storedSnapshotAddress !== walletAddress) {
       writeActiveRoomSnapshot(null);
       queueMicrotask(() => {
         setActiveMatchBannerSnapshot(null);
+        setPendingErRecovery(false);
       });
     } else if (storedSnapshot?.roomId && phase === "setup") {
       if (isLiveMatchSnapshot(storedSnapshot)) {
         queueMicrotask(() => {
           setActiveMatchBannerSnapshot(storedSnapshot);
+        });
+      } else if (isStoredDepositingSnapshot) {
+        queueMicrotask(() => {
+          setPendingErRecovery(true);
         });
       } else {
         queueMicrotask(() => {
@@ -798,48 +812,112 @@ export function LobbyScreen() {
     activeRoomLookupAbortRef.current = controller;
 
     void (async () => {
+      let pollAttempts = 0;
+
+      const clearRecoveryToSetup = (toastText?: string) => {
+        writeActiveRoomSnapshot(null);
+        setPendingErRecovery(false);
+        setMatchedRoomId(null);
+        setMatchedRole(null);
+        setMatchmakingState("idle");
+        setMatchmakingStage("finding");
+        setMatchmakingError(null);
+        setActiveMatchBannerSnapshot(null);
+        setPhase("setup");
+        if (toastText) {
+          setActiveMatchToast({ text: toastText, tone: "error" });
+        }
+      };
+
       try {
-        const activeMatch = await getActiveMatchForAddress(walletAddress, controller.signal);
-        if (controller.signal.aborted) return;
+        while (!controller.signal.aborted) {
+          try {
+            const activeMatch = await getActiveMatchForAddress(walletAddress, controller.signal);
+            if (controller.signal.aborted) return;
 
-        if (!activeMatch.inRoom || !activeMatch.roomId) {
-          const snapshot = readActiveRoomSnapshot();
-          if (getSnapshotAddress(snapshot) === walletAddress) {
-            writeActiveRoomSnapshot(null);
-            setActiveMatchBannerSnapshot(null);
+            if (!activeMatch.inRoom || !activeMatch.roomId) {
+              const snapshot = readActiveRoomSnapshot();
+              if (getSnapshotAddress(snapshot) === walletAddress) {
+                writeActiveRoomSnapshot(null);
+                setActiveMatchBannerSnapshot(null);
+              }
+
+              if (isStoredDepositingSnapshot) {
+                clearRecoveryToSetup();
+              } else {
+                setPendingErRecovery(false);
+              }
+              return;
+            }
+
+            const latestSnapshot = readActiveRoomSnapshot();
+            if (activeMatch.status === "playing") {
+              const liveSnapshot: ActiveRoomSnapshot = {
+                walletAddress,
+                address: walletAddress,
+                roomId: activeMatch.roomId,
+                role: activeMatch.role ?? latestSnapshot?.role ?? null,
+                arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
+                scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
+                status: "playing",
+                token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                arenaToken: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
+                canSurrenderByState: latestSnapshot?.canSurrenderByState ?? false,
+              };
+              writeActiveRoomSnapshot(liveSnapshot);
+              setActiveMatchBannerSnapshot(liveSnapshot);
+
+              if (isStoredDepositingSnapshot) {
+                openRecoveredRoom(liveSnapshot);
+              }
+              return;
+            }
+
+            if (isStoredDepositingSnapshot) {
+              if (activeMatch.status === "finished") {
+                clearRecoveryToSetup();
+                return;
+              }
+
+              setPendingErRecovery(true);
+            } else {
+              openRecoveredRoom({
+                roomId: activeMatch.roomId,
+                role: activeMatch.role ?? latestSnapshot?.role ?? null,
+                status: activeMatch.status ?? latestSnapshot?.status ?? null,
+                arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
+                token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
+                scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
+              });
+              return;
+            }
+
+            pollAttempts = 0;
+          } catch (error) {
+            if (controller.signal.aborted) return;
+
+            if (!isStoredDepositingSnapshot) {
+              throw error;
+            }
+
+            pollAttempts += 1;
+            if (pollAttempts >= 5) {
+              console.warn("Failed to confirm pending match status.", error);
+              clearRecoveryToSetup("Could not confirm match status");
+              return;
+            }
           }
-          return;
-        }
 
-        const latestSnapshot = readActiveRoomSnapshot();
-        if (activeMatch.status === "playing") {
-          const liveSnapshot: ActiveRoomSnapshot = {
-            walletAddress,
-            address: walletAddress,
-            roomId: activeMatch.roomId,
-            role: activeMatch.role ?? latestSnapshot?.role ?? null,
-            arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
-            scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
-            status: "playing",
-            token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-            arenaToken: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-            wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
-            canSurrenderByState: latestSnapshot?.canSurrenderByState ?? false,
-          };
-          writeActiveRoomSnapshot(liveSnapshot);
-          setActiveMatchBannerSnapshot(liveSnapshot);
-          return;
+          await new Promise<void>((resolve) => {
+            const timeoutId = setTimeout(resolve, 2000);
+            controller.signal.addEventListener("abort", () => {
+              clearTimeout(timeoutId);
+              resolve();
+            }, { once: true });
+          });
         }
-
-        openRecoveredRoom({
-          roomId: activeMatch.roomId,
-          role: activeMatch.role ?? latestSnapshot?.role ?? null,
-          status: activeMatch.status ?? latestSnapshot?.status ?? null,
-          arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
-          token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-          wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
-          scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
-        });
       } catch (error) {
         if (controller.signal.aborted) return;
         console.warn("Failed to restore active room.", error);
@@ -857,6 +935,58 @@ export function LobbyScreen() {
       }
     };
   }, [walletAddress, phase, openRecoveredRoom, selectedArena, selectedArenaId, selectedScientist]);
+
+  useEffect(() => {
+    if (phase === "found" && pendingErRecovery) {
+      queueMicrotask(() => {
+        setPendingErRecovery(false);
+      });
+    }
+  }, [pendingErRecovery, phase]);
+
+  useEffect(() => {
+    if (!phaseContextIssue || !matchedRoomId || !walletAddress) return;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    const pollMatchSettlement = async () => {
+      if (inFlight) return;
+      inFlight = true;
+
+      try {
+        const activeMatch = await getActiveMatchForAddress(walletAddress);
+        if (cancelled) return;
+
+        if (!activeMatch.inRoom || activeMatch.status !== "depositing") {
+          setErSettling(false);
+        } else {
+          setErSettling(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Failed to poll ER settlement state.", error);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setErSettling(true);
+      }
+    });
+    void pollMatchSettlement();
+    const intervalId = setInterval(() => {
+      void pollMatchSettlement();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [matchedRoomId, phaseContextIssue, walletAddress]);
 
   useEffect(() => {
     if (!walletAddress || !matchedRoomId) return;
@@ -1105,7 +1235,30 @@ export function LobbyScreen() {
         </RoomPhaseShell>
       )}
       {!isSelectingCharacterPreview && (
-        phaseContextIssue ? (
+        showPendingErRecovery ? (
+          <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
+            <div
+              className="game-card w-full p-6 text-center shadow-2xl md:p-8"
+              style={{
+                border: "1px solid rgba(248,214,148,0.36)",
+                background:
+                  "linear-gradient(140deg, rgba(12,21,17,0.97) 0%, rgba(18,31,25,0.97) 52%, rgba(28,45,37,0.97) 100%)",
+              }}
+            >
+              <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-[rgba(248,214,148,0.24)] border-t-[var(--tone-cream)]" />
+              <p className="mt-4 font-caprasimo text-3xl text-[var(--tone-cream)]">Confirming your match...</p>
+              <div className="mt-3 inline-flex items-center justify-center gap-2 rounded-full border border-[rgba(248,214,148,0.18)] bg-[rgba(248,214,148,0.08)] px-3 py-1">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[var(--tone-cream)]" />
+                <span className="font-gabarito text-xs font-black uppercase tracking-[0.18em] text-[rgba(248,214,148,0.88)]">
+                  Escrow resolver is settling
+                </span>
+              </div>
+              <p className="mt-4 font-gabarito text-sm text-[rgba(244,240,230,0.78)]">
+                We&apos;re waiting for the latest room state before sending you back into the lobby.
+              </p>
+            </div>
+          </div>
+        ) : phaseContextIssue ? (
           <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
             <div
               className="game-card w-full p-6 md:p-8 shadow-2xl"
@@ -1113,9 +1266,18 @@ export function LobbyScreen() {
             >
               <p className="font-caprasimo text-3xl text-[var(--tone-bark)]">{phaseContextIssue.title}</p>
               <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">{phaseContextIssue.detail}</p>
+              {showErSettling && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[rgba(60,92,95,0.16)] bg-[rgba(60,92,95,0.08)] px-3 py-1">
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#3C5C5F]" />
+                  <span className="font-gabarito text-xs font-black uppercase tracking-[0.18em] text-[#3C5C5F]">
+                    Settling match...
+                  </span>
+                </div>
+              )}
               <div className="mt-6 flex flex-wrap gap-3">
                 <button
                   type="button"
+                  disabled={showErSettling}
                   onClick={() => {
                     writeActiveRoomSnapshot(null);
                     setMatchedRoomId(null);
@@ -1125,12 +1287,13 @@ export function LobbyScreen() {
                     setMatchmakingError(null);
                     setPhase("character-select");
                   }}
-                  className="btn-game btn-game-primary px-4 py-2 text-xs"
+                  className={`btn-game btn-game-primary px-4 py-2 text-xs ${showErSettling ? "cursor-not-allowed opacity-60" : ""}`}
                 >
                   Back To Character Select
                 </button>
                 <button
                   type="button"
+                  disabled={showErSettling}
                   onClick={() => {
                     setMatchedRoomId(null);
                     setMatchedRole(null);
@@ -1140,7 +1303,7 @@ export function LobbyScreen() {
                     setMatchmakingError(null);
                     setPhase("setup");
                   }}
-                  className="btn-game btn-game-secondary px-4 py-2 text-xs"
+                  className={`btn-game btn-game-secondary px-4 py-2 text-xs ${showErSettling ? "cursor-not-allowed opacity-60" : ""}`}
                 >
                   Restart Lobby
                 </button>

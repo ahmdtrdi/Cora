@@ -4060,3 +4060,31 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 - **The Change**: Polished the MEW arena selection UI in `LobbySetup.tsx`. Simplified the MEW SVG icon to a silhouette and updated the selection button's background circle. Also fixed a TypeScript error by adding the missing `frame` property to the `mewArena` object.
 - **The Reasoning**: Improved icon abstraction and UI consistency. The `frame` property fix was required due to a recent update in the `Arena` type definition.
 - **The Tech Debt**: None.
+
+## 2026-05-09 - Lobby ER Recovery Guardrails
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to defer stale `depositing` room recovery behind a new `pendingErRecovery` state instead of immediately reopening the found-room flow from `cora:active-room`.
+- Added a full-screen "Confirming your match..." recovery screen that polls ER state every 2 seconds, auto-redirects to `/play` once the match becomes `playing`, and falls back to lobby setup with a toast after the room disappears, finishes, or fails confirmation repeatedly.
+- Added `erSettling` polling for the existing missing-context fallback card so its reset buttons stay disabled with an animated settling indicator while ER still reports the room as `depositing`.
+
+### The Reasoning
+- The broken loop came from trusting stale local storage before fresh ER state was available, so the safest fix was to gate that recovery path until the backend confirms whether the room is still live.
+- Keeping the user on an intermediate confirmation screen avoids bouncing them into `phase="found"` with incomplete hydrated context, which is what produced the "Match room context missing" dead end.
+- Locking the fallback-card buttons during active settlement preserves an escape hatch once ER resolves, without letting the user trigger state resets that would immediately be overwritten by the same stale snapshot.
+
+### The Tech Debt
+- The lobby now has two ER-related polling paths: one for recovery interception and one for the missing-context fallback lock. If this flow expands further, we should consider centralizing ER recovery/status polling into a dedicated hook to reduce duplication and edge-case drift.
+
+## 2026-05-09 - Lobby Deposit Flow Regression Guard
+
+### The Change
+- Tightened the `pendingErRecovery` trigger in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so stale `depositing` snapshots are only treated as ER-recovery when they are read from `phase === "setup"`.
+- Added a small safety-valve effect that clears `pendingErRecovery` if the lobby legitimately transitions into `phase === "found"`, ensuring the normal `OpponentFound` deposit UI stays visible.
+
+### The Reasoning
+- The previous ER guardrail fix correctly protected the “back from battle while settling” case, but it was too broad: the normal fresh match-found flow also writes a `depositing` snapshot, so later effect runs mistook that for recovery and hid the deposit screen.
+- Restricting the intercept to the actual lobby landing phase preserves the original loop fix while restoring the intended live deposit experience for newly matched players.
+
+### The Tech Debt
+- The recovery-vs-live-flow distinction still depends on a mix of `phase` state and local-storage snapshot status. If more recovery paths are added, we should consider recording an explicit snapshot origin or recovery mode to make this branching less implicit.
