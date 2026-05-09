@@ -140,16 +140,7 @@ export function CharacterCard({
         </span>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {character.stats.map((stat) => (
-          <span
-            key={stat.label}
-            className="rounded-full border border-[rgba(111,58,40,0.28)] bg-[rgba(255,250,239,0.94)] px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.08em] text-[#5a3d2b]"
-          >
-            {stat.label} <span className="font-mono text-[#274137]">{stat.value}</span>
-          </span>
-        ))}
-      </div>
+
 
       <div className="mt-auto pt-2">
         <div

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -28,6 +28,22 @@ function truncateWallet(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function ArenaIcon({ token, active }: { token: string; active: boolean }) {
+  const color = active ? "#4d2a18" : "var(--tone-bark)";
+  if (token === "SOL") {
+    return (
+      <svg width="20" height="20" viewBox="0 0 35 30" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ color }}>
+        <path d="M6.3 0L0 6.3h28.7l6.3-6.3H6.3zm28.7 11.8L28.7 18.2H0l6.3-6.4h28.7zm-28.7 12L0 30h28.7l6.3-6.3H6.3z" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ color }}>
+      <path d="M12 8.5c-1.5 0-2.8-1.5-3-3.2C8.8 3.5 10.2 2 12 2s3.2 1.5 3 3.3c-.2 1.7-1.5 3.2-3 3.2zM6.5 11.5c-1.2 0-2.4-1.2-2.5-2.8C3.8 7 5 6 6.5 6s2.5 1 2.5 2.7c-.1 1.6-1.3 2.8-2.5 2.8zM17.5 11.5c-1.2 0-2.4-1.2-2.5-2.8C14.8 7 16 6 17.5 6s2.5 1 2.5 2.7c-.1 1.6-1.3 2.8-2.5 2.8zM12 11c2.5 0 4.5 2 5.5 4.5.2.5.5 1 .5 1.5C18 19 15.5 22 12 22s-6-3-6-5c0-.5.3-1 .5-1.5C7.5 13 9.5 11 12 11z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function LobbySetup({
   walletAddress,
   walletConnected,
@@ -38,9 +54,25 @@ export function LobbySetup({
   canPlay,
   onPlay,
 }: LobbySetupProps) {
+  const NULL_ARENA_IMAGE_URL = "/assets/arena/null.png";
+  const SOL_ARENA_IMAGE_URL = "/assets/arena/sol.png";
+  const BONK_ARENA_IMAGE_URL = "/assets/arena/bonk.png";
   const rightBoardBackground =
     "radial-gradient(circle at 58% 42%, rgba(248,214,148,0.16), transparent 36%), linear-gradient(145deg, #10231b 0%, #18392d 48%, #0d1a14 100%)";
   const selectedArena = arenas.find((arena) => arena.id === selectedArenaId) ?? null;
+  let arenaImageUrl = NULL_ARENA_IMAGE_URL;
+  if (selectedArena?.token === "SOL") {
+    arenaImageUrl = SOL_ARENA_IMAGE_URL;
+  } else if (selectedArena?.token === "BONK") {
+    arenaImageUrl = BONK_ARENA_IMAGE_URL;
+  }
+  const [displayedArenaImageUrl, setDisplayedArenaImageUrl] = useState<string>(arenaImageUrl);
+  const [loadedArenaImageUrls, setLoadedArenaImageUrls] = useState<Record<string, true>>({
+    [arenaImageUrl]: true,
+  });
+  const incomingArenaImageUrl = arenaImageUrl !== displayedArenaImageUrl ? arenaImageUrl : null;
+  const incomingArenaImageReady = incomingArenaImageUrl ? Boolean(loadedArenaImageUrls[incomingArenaImageUrl]) : false;
+
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const playabilityEnabled = walletConnected && Boolean(selectedArena);
@@ -173,6 +205,55 @@ export function LobbySetup({
     return () => clearTimeout(id);
   }, [shareNotice]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const preloads = [NULL_ARENA_IMAGE_URL, SOL_ARENA_IMAGE_URL, BONK_ARENA_IMAGE_URL];
+    for (const url of preloads) {
+      const image = new window.Image();
+      image.onload = () => {
+        setLoadedArenaImageUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+      };
+      image.onerror = () => {
+        setLoadedArenaImageUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+      };
+      image.src = url;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!incomingArenaImageUrl || typeof window === "undefined") return;
+    if (loadedArenaImageUrls[incomingArenaImageUrl]) return;
+
+    let cancelled = false;
+    const image = new window.Image();
+    const targetUrl = incomingArenaImageUrl;
+    const markLoaded = () => {
+      if (cancelled) return;
+      setLoadedArenaImageUrls((prev) => (prev[targetUrl] ? prev : { ...prev, [targetUrl]: true }));
+    };
+
+    image.onload = markLoaded;
+    image.onerror = markLoaded;
+    image.src = targetUrl;
+    if (image.complete) {
+      markLoaded();
+    }
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [incomingArenaImageUrl, loadedArenaImageUrls]);
+
+  useEffect(() => {
+    if (!incomingArenaImageUrl || !incomingArenaImageReady) return;
+    const id = setTimeout(() => {
+      setDisplayedArenaImageUrl(incomingArenaImageUrl);
+    }, 320);
+    return () => clearTimeout(id);
+  }, [incomingArenaImageReady, incomingArenaImageUrl]);
+
   return (
     <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 md:px-6 md:py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -255,7 +336,6 @@ export function LobbySetup({
             {arenas.map((arena) => {
               const active = selectedArenaId === arena.id;
               const flavor = arena.token === "SOL" ? "The Classic Arena" : "Meme Battleground";
-              const icon = arena.token === "SOL" ? "\u25ce" : "\u{1F436}";
 
               return (
                 <button
@@ -268,7 +348,9 @@ export function LobbySetup({
                   style={{
                     border: `2.5px solid ${active ? arena.accent : "rgba(111,58,40,0.28)"}`,
                     background: active
-                      ? "linear-gradient(180deg, #fff1cf 0%, #f8d694 100%)"
+                      ? arena.token === "SOL"
+                        ? "linear-gradient(180deg, #eef6ec 0%, #d2e2cd 100%)"
+                        : "linear-gradient(180deg, #fff1cf 0%, #f8d694 100%)"
                       : "linear-gradient(180deg, #fffaf0 0%, #efe3c8 100%)",
                     boxShadow: active
                       ? `0 8px 0 rgba(111,58,40,0.22), 0 14px 24px ${arena.accent}55`
@@ -277,10 +359,10 @@ export function LobbySetup({
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg shadow-inner"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-inner transition-colors duration-200"
                       style={{ background: arena.previewBg, border: `1.5px solid ${arena.accent}` }}
                     >
-                      {icon}
+                      <ArenaIcon token={arena.token} active={active} />
                     </div>
                     <div>
                       <p
@@ -312,6 +394,26 @@ export function LobbySetup({
           className="relative flex min-h-[400px] grow flex-col justify-between overflow-hidden p-6 md:min-h-[500px] md:p-8"
           style={{ background: rightBoardBackground }}
         >
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage: `url('${displayedArenaImageUrl}')`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          />
+          {incomingArenaImageUrl && (
+            <div
+              className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ease-out ${
+                incomingArenaImageReady ? "opacity-100" : "opacity-0"
+              }`}
+              style={{
+                backgroundImage: `url('${incomingArenaImageUrl}')`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            />
+          )}
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_28%,rgba(0,0,0,0.58)_100%)]" />
           <div className="arena-grid pointer-events-none absolute inset-0 opacity-20 mix-blend-overlay" />
           {selectedArena && (
@@ -333,7 +435,7 @@ export function LobbySetup({
               Choose Your Arena
             </h1>
             <p className="mt-3 max-w-md font-gabarito text-sm text-[var(--tone-cream)] drop-shadow-sm">
-              Pick SOL or BONK, lock the wager, then draft your scientist.
+              {selectedArena ? `Selected: ${selectedArena.token} Arena` : "Pick SOL or BONK, lock the wager, then draft your scientist."}
             </p>
           </div>
 
@@ -362,21 +464,23 @@ export function LobbySetup({
         </section>
       </div>
 
-      {!walletConnected && (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <p className="font-gabarito text-xs text-[#6f3a28]">
-            Connect wallet to unlock queue and deposit signing.
-          </p>
-          <HydratedWalletButton />
+      <div className="mt-4 flex w-full flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          {!walletConnected && (
+            <>
+              <p className="font-gabarito text-xs text-[#6f3a28]">
+                Connect wallet to unlock queue and deposit signing.
+              </p>
+              <HydratedWalletButton />
+            </>
+          )}
         </div>
-      )}
 
-      <div className="mt-6 flex justify-end">
         <button
           type="button"
           onClick={() => setShareModalOpen(true)}
           disabled={!selectedArena}
-          className={`btn-game btn-game-secondary px-5 py-2 text-xs shadow-md ${!selectedArena ? "opacity-50" : ""}`}
+          className={`btn-game btn-game-secondary shrink-0 px-5 py-2 text-xs shadow-md ${!selectedArena ? "opacity-50" : ""}`}
         >
           Blink Share
         </button>
@@ -413,5 +517,3 @@ export function LobbySetup({
     </div>
   );
 }
-
-
