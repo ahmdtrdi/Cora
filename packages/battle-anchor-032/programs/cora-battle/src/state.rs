@@ -138,7 +138,7 @@ impl BattleSession {
 /// Transitions: WaitingCards → Active → Finished
 ///                                    → Cancelled (via force_end)
 ///              WaitingCards → Cancelled (via force_end)
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BattleStatus {
     /// Session created, waiting for card registration
     WaitingCards,
