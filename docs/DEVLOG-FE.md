@@ -3832,3 +3832,21 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - End-game phase timing is still tuned by local constants and inline keyframes; a dedicated transition profile object would simplify future balancing.
+
+## 2026-05-09 — OpponentFound: Cancel Match & Retry Connection Fixes
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **`apps/web/src/components/lobby/OpponentFound.tsx`** — two targeted patches:
+  1. **Cancel Match button**: removed the `cancelMatch` WebSocket send + async "Cancelling..." wait. The button now calls `onTimeout()` directly, immediately routing the user back to character select. `cancelMatch` was removed from the `useMatchSocket` destructure (dead code cleanup).
+  2. **Retry Connection button**: replaced the bare `reconnect()` call with a full `onRetryConnection()` handler that sets `isRetryingConnection` state. While the socket is reconnecting, the button shows "Retrying..." and is disabled. A new `useEffect` detects when `connectionState` settles out of `reconnecting`; if it lands on `error`/`disconnected`, `retryConnectionFailed` is set. The `extraSlot` connection banner then turns red with a "Couldn't connect" heading and an explicit message to cancel back to lobby, persisting until the next retry or cancel.
+
+### The Reasoning
+- The old cancel flow was broken: `cancelMatch` is sent over the socket, but if the socket was in an error/disconnected state (the exact scenario where you'd want to cancel), the send was a no-op and the button locked on "Cancelling..." forever.
+- Re-queueing the innocent player was deliberately removed to avoid ghost players. The room deposit timeout is the correct authoritative cancel mechanism on the backend.
+- The retry button previously gave zero feedback on outcome — a silent failure if reconnect didn't work. The new state machine makes the failure explicit and keeps the "cancel to lobby" escape hatch visible.
+
+### Tech Debt
+- `cancelMatch` message handler on the backend (`RoomManager.handleMessage`) is now dead from the frontend side. It's safe to leave it for now but can be cleaned up if confirmed no other path sends it.
+- If a "polite cancel" that immediately notifies the opponent is needed later, it should go through a dedicated HTTP endpoint (not the deposit socket) with proper room lifecycle handling.

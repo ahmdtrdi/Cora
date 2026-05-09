@@ -60,11 +60,13 @@ export function OpponentFound({
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
   const [showRoomStatus, setShowRoomStatus] = useState(false);
-  const [isCancellingMatch, setIsCancellingMatch] = useState(false);
+  const [isRetryingConnection, setIsRetryingConnection] = useState(false);
+  const [retryConnectionFailed, setRetryConnectionFailed] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
+  const cancelFiredRef = useRef(false);
   const myHappyExpressionSrc = useMemo(
     () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
     [myScientist.id],
@@ -82,7 +84,6 @@ export function OpponentFound({
     lastRoomCancelled,
     lastMatchFound,
     confirmDeposit,
-    cancelMatch,
     reconnect,
   } = useMatchSocket({
     roomId,
@@ -209,6 +210,16 @@ export function OpponentFound({
     return () => clearTimeout(timerId);
   }, [signingState]);
 
+  // Clear retry-in-progress flag once the socket settles to any non-reconnecting state.
+  useEffect(() => {
+    if (!isRetryingConnection) return;
+    if (connectionState === "reconnecting") return;
+    setIsRetryingConnection(false);
+    if (connectionState === "error" || connectionState === "disconnected") {
+      setRetryConnectionFailed(true);
+    }
+  }, [connectionState, isRetryingConnection]);
+
   async function onSignDeposit() {
     console.info("[OpponentFound] Deposit click", {
       roomId,
@@ -258,9 +269,18 @@ export function OpponentFound({
   }
 
   function onCancelMatch() {
-    if (isCancellingMatch) return;
-    setIsCancellingMatch(true);
-    cancelMatch();
+    // Ref guard prevents multiple rapid clicks from firing onTimeout() more than once
+    // before the component unmounts (state updates are async, refs are synchronous).
+    if (cancelFiredRef.current) return;
+    cancelFiredRef.current = true;
+    onTimeout();
+  }
+
+  function onRetryConnection() {
+    if (isRetryingConnection) return;
+    setIsRetryingConnection(true);
+    setRetryConnectionFailed(false);
+    reconnect();
   }
 
   useEffect(() => {
@@ -285,7 +305,6 @@ export function OpponentFound({
     }
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
-    if (isCancellingMatch) return "Cancelling match...";
     if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
     if (walletApprovalTakingLong) {
@@ -605,10 +624,13 @@ export function OpponentFound({
             connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
               <button
                 type="button"
-                onClick={reconnect}
-                className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
+                onClick={onRetryConnection}
+                disabled={isRetryingConnection}
+                className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                  isRetryingConnection ? "cursor-not-allowed opacity-55" : ""
+                }`}
               >
-                Retry Connection
+                {isRetryingConnection ? "Retrying..." : "Retry Connection"}
               </button>
             ) : null
           }
@@ -616,20 +638,28 @@ export function OpponentFound({
             <button
               type="button"
               onClick={onCancelMatch}
-              disabled={isCancellingMatch}
-              className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
+              disabled={cancelFiredRef.current}
+              className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                cancelFiredRef.current ? "cursor-not-allowed opacity-55" : ""
+              }`}
             >
-              {isCancellingMatch ? "Cancelling..." : "Cancel Match"}
+              {cancelFiredRef.current ? "Leaving..." : "Cancel Match"}
             </button>
           }
           extraSlot={
-            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-              <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}>
-                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
-                  {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
+            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" || retryConnectionFailed ? (
+              <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: `2px solid ${retryConnectionFailed ? "#c0392b" : "var(--tone-clay)"}`, background: retryConnectionFailed ? "linear-gradient(145deg, #2c1810 0%, #3d1f14 100%)" : "var(--warm-surface)" }}>
+                <p className={`font-gabarito text-xs font-bold uppercase tracking-wide ${retryConnectionFailed ? "text-[#e74c3c]" : "text-[var(--tone-bark)]"}`}>
+                  {retryConnectionFailed
+                    ? "Couldn't connect"
+                    : connectionState === "reconnecting"
+                    ? "Reconnecting to room server"
+                    : "Connection issue while waiting"}
                 </p>
                 <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
-                  {connectionState === "reconnecting"
+                  {retryConnectionFailed
+                    ? "Unable to reach the room server. Check your connection and try again, or cancel to return to the lobby."
+                    : connectionState === "reconnecting"
                     ? "Trying to restore room state. Keep this page open."
                     : lastSocketCloseInfo
                     ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
