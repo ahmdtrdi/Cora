@@ -11,15 +11,20 @@ import { createHash } from 'crypto';
 export const ESCROW_CONSTANTS = {
   MATCH_SEED: 'match',
   VAULT_SEED: 'vault',
+  CHALLENGE_SEED: 'challenge',
+  CHALLENGE_VAULT_SEED: 'challenge_vault',
   CONFIG_SEED: 'config',
-  DEPOSIT_TIMEOUT_SECONDS: 300,
-  MATCH_TIMEOUT_SECONDS: 1800,
+  DEPOSIT_TIMEOUT_SECONDS: 30,
+  MATCH_TIMEOUT_SECONDS: 900,
+  CHALLENGE_EXPIRY_SECONDS: 900,
   FEE_BASIS_POINTS: 250,
   BASIS_POINTS_DIVISOR: 10_000,
   /** The exact fee percentage as a readable number */
   FEE_PERCENTAGE: 2.5,
   /** Current version of MatchState struct (must match state.rs) */
   MATCH_STATE_VERSION: 1,
+  /** Current version of OpenChallengeState struct (must match state.rs) */
+  OPEN_CHALLENGE_STATE_VERSION: 1,
   /** Current version of ProgramConfig struct (must match state.rs) */
   PROGRAM_CONFIG_VERSION: 1,
 } as const;
