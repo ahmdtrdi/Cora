@@ -1,5 +1,6 @@
 export const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
 export const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
+export const ACTIVE_BLINK_CHALLENGE_STORAGE_KEY = "cora:active-blink-challenge";
 
 const ACTIVE_DEPOSIT_INTENT_STORAGE_KEY = "cora:active-deposit-intent";
 
@@ -22,11 +23,77 @@ export type ActiveMatchSession = {
   canSurrenderByState?: boolean;
 };
 
+export type ActiveBlinkChallengeSession = {
+  walletAddress: string;
+  roomId: string;
+  blinkUrl: string;
+  webChallengeUrl?: string | null;
+  createSignature: string;
+  role: "playerA";
+  arenaId?: string | null;
+  scientistId?: string | null;
+  token?: string | null;
+  wagerUsd?: string | null;
+  wagerAmount?: number | null;
+  status?: string | null;
+  createdAt?: string | null;
+  expiresAt?: string | null;
+  joinDeadline?: string | null;
+};
+
 type ActiveDepositIntent = {
   roomId: string;
   address: string;
   signature: string;
 };
+
+export function normalizeActiveBlinkChallengeSession(value: unknown): ActiveBlinkChallengeSession | null {
+  if (!value || typeof value !== "object") return null;
+  const snapshot = value as Record<string, unknown>;
+  const walletAddress = typeof snapshot.walletAddress === "string" ? snapshot.walletAddress : "";
+  const roomId = typeof snapshot.roomId === "string" ? snapshot.roomId : "";
+  const blinkUrl = typeof snapshot.blinkUrl === "string" ? snapshot.blinkUrl : "";
+  const createSignature = typeof snapshot.createSignature === "string" ? snapshot.createSignature : "";
+  if (!walletAddress || !roomId || !blinkUrl || !createSignature) return null;
+
+  return {
+    walletAddress,
+    roomId,
+    blinkUrl,
+    webChallengeUrl: typeof snapshot.webChallengeUrl === "string" ? snapshot.webChallengeUrl : null,
+    createSignature,
+    role: "playerA",
+    arenaId: typeof snapshot.arenaId === "string" ? snapshot.arenaId : null,
+    scientistId: typeof snapshot.scientistId === "string" ? snapshot.scientistId : null,
+    token: typeof snapshot.token === "string" ? snapshot.token : null,
+    wagerUsd: typeof snapshot.wagerUsd === "string" ? snapshot.wagerUsd : null,
+    wagerAmount: typeof snapshot.wagerAmount === "number" ? snapshot.wagerAmount : null,
+    status: typeof snapshot.status === "string" ? snapshot.status : null,
+    createdAt: typeof snapshot.createdAt === "string" ? snapshot.createdAt : null,
+    expiresAt: typeof snapshot.expiresAt === "string" ? snapshot.expiresAt : null,
+    joinDeadline: typeof snapshot.joinDeadline === "string" ? snapshot.joinDeadline : null,
+  };
+}
+
+export function readActiveBlinkChallengeSession() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_BLINK_CHALLENGE_STORAGE_KEY);
+    if (!raw) return null;
+    return normalizeActiveBlinkChallengeSession(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function writeActiveBlinkChallengeSession(snapshot: ActiveBlinkChallengeSession | null) {
+  if (typeof window === "undefined") return;
+  if (!snapshot) {
+    window.localStorage.removeItem(ACTIVE_BLINK_CHALLENGE_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(ACTIVE_BLINK_CHALLENGE_STORAGE_KEY, JSON.stringify(snapshot));
+}
 
 export function normalizeActiveMatchSession(value: unknown): ActiveMatchSession | null {
   if (!value || typeof value !== "object") return null;
@@ -125,6 +192,7 @@ export function writeLobbyDraftSnapshot(snapshot: LobbyDraftSnapshot) {
 export function clearMatchSessionState() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+  window.localStorage.removeItem(ACTIVE_BLINK_CHALLENGE_STORAGE_KEY);
   window.sessionStorage.removeItem(LOBBY_DRAFT_STORAGE_KEY);
   clearActiveDepositIntent();
 }

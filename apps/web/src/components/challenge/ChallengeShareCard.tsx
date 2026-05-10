@@ -16,9 +16,11 @@ type ChallengeShareCardProps = {
   description: string;
   statusLabel: string;
   actionCopyLabel?: string;
+  actionSecondaryCopyLabel?: string;
   actionSaveLabel?: string;
   actionShareLabel?: string;
   onCopy: () => void;
+  onSecondaryCopy?: () => void;
   onSaveJpg: () => void;
   onShareX: () => void;
   notice: ShareNotice | null;
@@ -40,9 +42,11 @@ export function ChallengeShareCard({
   description,
   statusLabel,
   actionCopyLabel = "Copy Link",
+  actionSecondaryCopyLabel,
   actionSaveLabel = "Save As JPG",
   actionShareLabel = "Share On X",
   onCopy,
+  onSecondaryCopy,
   onSaveJpg,
   onShareX,
   notice,
@@ -132,6 +136,16 @@ export function ChallengeShareCard({
         >
           {actionCopyLabel}
         </button>
+        {onSecondaryCopy && actionSecondaryCopyLabel && (
+          <button
+            type="button"
+            onClick={onSecondaryCopy}
+            className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5"
+            style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
+          >
+            {actionSecondaryCopyLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={onSaveJpg}

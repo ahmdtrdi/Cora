@@ -4342,3 +4342,65 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - If we add a dedicated “locked card” visual later, replace the generic disabled opacity with a clearer final-turn lock treatment.
+
+## 2026-05-10 - Blink Challenge Creator Path And Temporary Browser Link
+
+### The Change
+- Added [privateChallenge.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/privateChallenge.ts) for the FE private-match contract: create challenge, confirm creator funding, poll challenge status, resolve API base URL, and derive a temporary web challenge URL.
+- Added [signBackendTransaction.ts](/d:/projects/Cora/apps/web/src/lib/solana/signBackendTransaction.ts) so the creator can sign the backend-provided `create_open_challenge` transaction before calling `/match/private/confirm`.
+- Added creator/challenger Blink UI pieces: [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx), [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx), [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx), and [page.tsx](/d:/projects/Cora/apps/web/src/app/challenge/[roomId]/page.tsx).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx), and [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so active Blink challenges are persisted, normal queueing is blocked while a creator challenge is live, challenge status is polled, and the creator auto-joins when a rival accepts.
+- The creator panel now exposes both `Copy Blink URL` and `Copy Browser Link`: the Blink URL remains the primary share target for Blink-supported apps, while the browser link is a temporary direct route to `/challenge/:roomId`.
+
+### The Reasoning
+- Backend now owns the true Blink escrow transaction flow, so FE should sign and confirm the backend-provided transaction instead of inventing or changing API behavior.
+- A creator with an unresolved Blink challenge must be kept out of normal matchmaking to avoid a shared-link accept racing against a regular queue match.
+- The Blink URL and browser challenge page are not currently the same thing: opening the raw Blink URL in a normal browser returns the backend action payload unless backend later adds browser redirect/content negotiation. Keeping two explicit copy actions is the honest temporary UX while preserving the desired future direction.
+
+### The Tech Debt
+- Backend should eventually redirect normal browser requests from the Blink action URL to the FE `/challenge/:roomId` page so the product can return to a single canonical share link.
+- The browser accept page currently relies on challenge room lookup and default FE arena/scientist context because the backend Blink URL does not carry frontend presentation metadata.
+- Active Blink challenge cleanup is local for terminal states; if backend adds richer cancellation/expiry events, the lobby can switch from polling to a more authoritative push-driven state.
+
+## 2026-05-10 - Blink Share Actions Consolidated Into Card
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to support an optional secondary copy action.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the top active-challenge banner is informational only.
+- Moved the temporary browser-link copy action into the share card alongside `Copy Blink URL`, `Save As JPG`, and `Share On X`.
+- Replaced the framed `Close` control with a plain corner `x` to keep the overlay chrome quieter.
+
+### The Reasoning
+- The previous overlay duplicated CTAs between the banner and card, making the hierarchy noisy.
+- Keeping all share/export actions in the card makes the banner read as status context and the card read as the action surface.
+- A lightweight `x` is enough for dismissing the panel and avoids competing with the share actions.
+
+### The Tech Debt
+- The card now has two explicit copy actions because the raw Blink URL and temporary browser accept URL are still separate. Once backend browser redirect support lands, the secondary browser-copy action should be removed.
+
+## 2026-05-10 - Blink Acceptance Notification And Challenger Page Polish
+
+### The Change
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) with a compact notification variant that still mounts the match socket and sends creator `confirmDeposit`.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `Rival Accepted` no longer replaces the whole lobby; it appears as a notification while presence confirmation runs in the background.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger page shows arena, token, and `$1.00` wager copy, uses the green page background with a light content section, and makes `Back To Lobby` readable with dark text.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) so socket close `1008` with `Room not found or already finished` is treated as a terminal closed-room state: local active match state is cleared, retry is hidden, and `Back To Lobby` is always available.
+- Reused the shared `btn-game btn-game-secondary` style for the challenger page `Back To Lobby` action so it matches the primary accept button system, with local matching text/border color overrides for readability on the light panel.
+- Normalized the wrapped SOL mint display to `SOL` on the challenger page while keeping the raw mint for signing/API calls.
+- Changed creator-side Blink acceptance sequencing so `Rival Accepted` is a passive notification first; clicking `View Challenge` opens the full `Confirming your match...` screen and mounts the websocket confirmer.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) and [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger sends its accepted transaction signature through the existing `confirmDeposit` websocket event after signing.
+
+### The Reasoning
+- `Rival Accepted` is a transient state, not a full page destination. The FE still needs the socket mounted to confirm creator presence, but the user should not feel trapped on an interstitial if the backend takes time to advance the room to `playing`.
+- Challenger-side challenge details should match the lobby product framing: token arena plus fixed `$1.00` wager, not raw base-unit wording.
+- Display should use player-facing token symbols instead of raw mint addresses; signing still needs the backend-provided mint value.
+- The previous back button inherited light text against a light section, so the button needed local contrast styling instead of the generic dark-surface button class.
+- Expired private rooms can disappear before the challenger reconnects, and retrying that socket cannot succeed. FE should surface that as a closed challenge and let the player leave cleanly.
+- Reusing the shared button classes keeps the action row visually consistent, while local color overrides avoid the washed-out white-on-light button state.
+- The previous creator flow stacked a notification and the recovery/confirming page because the background joiner wrote an active `depositing` match session. The new flow avoids that automatic write until the user intentionally opens the confirming screen.
+- Current backend hydration marks both private-room players deposited, but `joinRoom` overwrites the joining player's `hasDeposited` flag back to `false`. Sending the challenger signature over the already-supported socket event is a frontend-side compatibility fix so both player metas become deposited and the room can transition to `playing`.
+
+### The Tech Debt
+- If the creator notification remains visible forever after `confirmDeposit`, FE has done its part and is waiting for the backend/socket to emit a `playing` game state or equivalent room-ready event. A dedicated private-challenge presence/ready event would make this transition easier to diagnose.
+- Terminal socket-close detection is still based on close code/reason text. If the backend adds a structured close reason or REST status for accepted-but-expired rooms, switch to that instead of parsing text.
+- Backend should preserve hydrated private-room `hasDeposited: true` metadata on websocket join instead of requiring FE to re-confirm the challenger deposit signature after `accept_challenge`.
