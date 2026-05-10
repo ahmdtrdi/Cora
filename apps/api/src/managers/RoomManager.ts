@@ -17,6 +17,7 @@ export class RoomManager {
   public blockchain: Blockchain;
   public blinkMatches: BlinkMatchStore;
   private blinkJanitorInterval: ReturnType<typeof setInterval> | null = null;
+  private publicJanitorInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.store = new Store();
@@ -159,6 +160,26 @@ export class RoomManager {
     }
   }
 
+  /** Periodically sweeps zombie public deposit rooms that have no timers, sockets, or deposits. */
+  public startPublicRoomJanitor(intervalMs = 30_000): void {
+    if (this.publicJanitorInterval) return;
+    this.publicJanitorInterval = setInterval(() => {
+      for (const room of this.store.getAllRooms()) {
+        if (room.roomType !== 'public') continue;
+        if (this.queue.isZombieDepositRoom(room)) {
+          console.warn(`[Janitor] Destroying zombie public room ${room.id}`);
+          this.lifecycle.destroyRoom(room.id);
+        }
+      }
+    }, intervalMs);
+  }
+
+  public stopPublicRoomJanitor(): void {
+    if (!this.publicJanitorInterval) return;
+    clearInterval(this.publicJanitorInterval);
+    this.publicJanitorInterval = null;
+  }
+
   private async hydrateBlinkRoomInternal(matchOrRoomId: BlinkMatch | string): Promise<Room | null> {
     const existing = this.store.getRoom(typeof matchOrRoomId === 'string' ? matchOrRoomId : matchOrRoomId.id);
     if (existing) return existing;
@@ -179,6 +200,8 @@ export class RoomManager {
     room.blinkJoinDeadline = match.joinDeadline ? Date.parse(match.joinDeadline) : null;
     room.playerMeta.set(match.creatorWallet, { hasDeposited: false, characterId: 'einstein' });
     room.playerMeta.set(match.opponentWallet, { hasDeposited: true, characterId: 'einstein' });
+    this.store.trackPlayer(match.creatorWallet, match.id);
+    this.store.trackPlayer(match.opponentWallet, match.id);
 
     void this.blockchain.fetchWagerUsd(room);
     return room;

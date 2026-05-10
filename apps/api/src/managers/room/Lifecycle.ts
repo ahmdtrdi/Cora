@@ -17,6 +17,7 @@ export class Lifecycle {
     room.playerA = playerAPubkey;
     room.tokenMint = tokenMint;
     room.wagerAmount = wagerAmount;
+    this.manager.store.trackPlayer(playerAPubkey, roomId);
 
     console.log(`[Private] Room ${roomId} created for Player A: ${playerAPubkey}`);
     this.armDepositTimeout(room, playerAPubkey);
@@ -35,6 +36,7 @@ export class Lifecycle {
 
     room.playerB = playerBPubkey;
     room.playerMeta.set(playerBPubkey, { hasDeposited: false, characterId: 'einstein' });
+    this.manager.store.trackPlayer(playerBPubkey, roomId);
     console.log(`[Private] Player B ${playerBPubkey} joined room ${roomId}`);
     return 'ok';
   }
@@ -265,10 +267,13 @@ export class Lifecycle {
   ): void {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
-    const shouldRequeueInnocent = room.status !== 'depositing';
     const reason = options?.reason ?? 'deposit_timeout';
 
-    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'}`);
+    // Check if the innocent player had deposited — if so, trigger a refund before re-queue
+    const innocentMeta = innocentAddress ? room.playerMeta.get(innocentAddress) : null;
+    const innocentHadDeposited = innocentMeta?.hasDeposited ?? false;
+
+    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'} (deposited: ${innocentHadDeposited})`);
 
     for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
     room.depositTimeouts.clear();
@@ -282,16 +287,18 @@ export class Lifecycle {
     });
 
     if (innocentAddress) {
+      // Refund the innocent player's deposit if they had already deposited
+      if (innocentHadDeposited) {
+        console.log(`[Cancel] Refunding innocent player ${innocentAddress} deposit for room ${roomId}.`);
+        this.manager.blockchain.refundMatch(room, 'server_error');
+      }
+
       const client = room.clients.get(innocentAddress);
       const innocentWs = client?.ws;
 
       if (innocentWs) {
         this.manager.network.safeSend(innocentWs, { type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage);
-        if (shouldRequeueInnocent) {
-          this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
-        } else {
-          console.log(`[Cancel] Room ${roomId} ended during depositing. Skipping re-queue for ${innocentAddress}.`);
-        }
+        this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
       } else {
         console.log(`[Cancel] ${innocentAddress} already disconnected — skipping re-queue.`);
       }

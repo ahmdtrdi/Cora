@@ -16,6 +16,7 @@ const app = new Hono();
 const roomManager = new RoomManager();
 const matchSocketRoute = createMatchSocketRoute(roomManager);
 roomManager.startBlinkJanitor();
+roomManager.startPublicRoomJanitor();
 
 // Global middleware
 app.use('/*', cors());

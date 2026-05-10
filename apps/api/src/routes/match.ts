@@ -22,6 +22,11 @@ export function createMatchRouter(roomManager: RoomManager) {
 
     const existingRoom = roomManager.queue.findActiveRoomForAddress(address);
     const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
+
+    if (roomId === '__aborted__') {
+      return c.json({ error: 'Queue cancelled' }, 400);
+    }
+
     const room = roomManager.getRoom(roomId);
     const role =
       room?.playerA === address ? 'playerA' :

@@ -17,10 +17,7 @@ export class Queue {
   constructor(private manager: RoomManager) {}
 
   public findActiveRoomForAddress(address: string) {
-    const activeRoom = this.manager.store.getAllRooms().find((room) => (
-      (room.playerA === address || room.playerB === address) &&
-      room.status !== 'finished'
-    ));
+    const activeRoom = this.manager.store.findRoomByPlayer(address);
 
     if (activeRoom && this.isZombieDepositRoom(activeRoom)) {
       console.warn(`[Queue] Ignoring zombie deposit room ${activeRoom.id} for ${this.shortAddr(address)}.`);
@@ -63,6 +60,8 @@ export class Queue {
       room.playerA = playerAEntry.address;
       room.playerB = address;
       room.status = 'depositing';
+      this.manager.store.trackPlayer(playerAEntry.address, roomId);
+      this.manager.store.trackPlayer(address, roomId);
 
       this.manager.lifecycle.armDepositTimeout(room, playerAEntry.address);
       this.printQueueState('MATCH FOUND', `${this.shortAddr(playerAEntry.address)} vs ${this.shortAddr(address)} -> ${roomId}`);
@@ -114,6 +113,7 @@ export class Queue {
     signal.addEventListener('abort', () => {
       if (queueItem.ttlHandle) clearTimeout(queueItem.ttlHandle);
       if (this.removeQueueItem(queueItem)) {
+        queueItem.resolve('__aborted__');
         this.printQueueState('ABORTED', `${this.shortAddr(address)} left matchmaking`);
       }
     }, { once: true });
@@ -127,12 +127,8 @@ export class Queue {
   }
 
   private reclaimAbandonedDepositRoom(address: string): void {
-    const activeRoom = this.manager.store.getAllRooms().find((room) => (
-      (room.playerA === address || room.playerB === address) &&
-      room.status === 'depositing'
-    ));
-
-    if (!activeRoom) return;
+    const activeRoom = this.manager.store.findRoomByPlayer(address);
+    if (!activeRoom || activeRoom.status !== 'depositing') return;
 
     const playerMeta = activeRoom.playerMeta.get(address);
     const hasDeposited = playerMeta?.hasDeposited ?? false;
@@ -147,7 +143,7 @@ export class Queue {
     });
   }
 
-  private isZombieDepositRoom(room: Room): boolean {
+  public isZombieDepositRoom(room: Room): boolean {
     if (room.status !== 'depositing') return false;
 
     const hasAnyDepositTimer = room.depositTimeouts.size > 0;
