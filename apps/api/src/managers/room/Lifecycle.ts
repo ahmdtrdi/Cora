@@ -112,6 +112,16 @@ export class Lifecycle {
 
     this.manager.network.broadcastGameState(room);
     this.manager.network.broadcastPresence(room);
+
+    if (room.status === 'depositing' && address === room.playerB && room.playerBUnlocked) {
+      const meta = room.playerMeta.get(address);
+      if (!meta?.hasDeposited) {
+        this.manager.network.safeSend(ws, {
+          type: 'depositUnlocked',
+          payload: { roomId: room.id },
+        } satisfies WsMessage);
+      }
+    }
   }
 
   public leaveRoom(roomId: string, address: string, ws?: RoomSocket) {
