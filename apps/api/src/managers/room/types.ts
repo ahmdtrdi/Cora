@@ -83,6 +83,8 @@ export interface Room {
   erSessionPda: string | null;
   /** USD value of the wager */
   wagerUsdValue?: string | null;
+  /** Blink creator response deadline for private soft-commitment rooms */
+  blinkJoinDeadline?: number | null;
 
   /** Whether this room uses ER as the authoritative source of truth */
   erEnabled: boolean;

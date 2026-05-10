@@ -6,6 +6,7 @@ import { Engine } from './room/Engine';
 import { Queue } from './room/Queue';
 import { Blockchain } from './room/Blockchain';
 import type { Room, RoomSocket } from './room/types';
+import { createBlinkMatchStore, type BlinkMatch, type BlinkMatchStore } from '../services/blinkMatches';
 
 export class RoomManager {
   public store: Store;
@@ -14,6 +15,8 @@ export class RoomManager {
   public lifecycle: Lifecycle;
   public queue: Queue;
   public blockchain: Blockchain;
+  public blinkMatches: BlinkMatchStore;
+  private blinkJanitorInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.store = new Store();
@@ -22,6 +25,7 @@ export class RoomManager {
     this.lifecycle = new Lifecycle(this);
     this.queue = new Queue(this);
     this.blockchain = new Blockchain(this);
+    this.blinkMatches = createBlinkMatchStore();
   }
 
   public getRoom(roomId: string): Room | undefined {
@@ -32,8 +36,13 @@ export class RoomManager {
     return this.store.createRoom(roomId);
   }
 
-  public createPrivateRoom(playerAPubkey: string, tokenMint: string, wagerAmount: bigint): string {
-    return this.lifecycle.createPrivateRoom(playerAPubkey, tokenMint, wagerAmount);
+  public async createPrivateRoom(playerAPubkey: string, tokenMint: string, wagerAmount: bigint): Promise<string> {
+    const match = await this.blinkMatches.createPending({
+      creatorWallet: playerAPubkey,
+      tokenMint,
+      wagerAmount,
+    });
+    return match.id;
   }
 
   public joinPrivateRoom(playerBPubkey: string, roomId: string): 'ok' | 'not_found' | 'full' | 'cancelled' {
@@ -45,7 +54,24 @@ export class RoomManager {
   }
 
   public joinRoom(roomId: string, address: string, ws: RoomSocket, characterId: string = 'einstein') {
-    this.lifecycle.joinRoom(roomId, address, ws, characterId);
+    const room = this.store.getRoom(roomId);
+    if (room) {
+      this.lifecycle.joinRoom(roomId, address, ws, characterId);
+      return;
+    }
+
+    void this.hydrateBlinkRoom(roomId)
+      .then((hydrated) => {
+        if (!hydrated) {
+          ws.close(1008, 'Room not found or already finished');
+          return;
+        }
+        this.lifecycle.joinRoom(roomId, address, ws, characterId);
+      })
+      .catch((err) => {
+        console.error(`[RoomManager] Failed to hydrate Blink room ${roomId}:`, err);
+        ws.close(1011, 'Room hydration failed');
+      });
   }
 
   public leaveRoom(roomId: string, address: string, ws?: RoomSocket) {
@@ -77,6 +103,83 @@ export class RoomManager {
     if (message.type === 'playCard' && room.status === 'playing') {
       void this.engine.handlePlayCard(room, address, readPlayCardPayload(message.payload));
     }
+  }
+
+  public async getBlinkMatch(roomId: string): Promise<BlinkMatch | null> {
+    return this.blinkMatches.get(roomId);
+  }
+
+  public async refreshBlinkMatchExpiry(roomId: string): Promise<BlinkMatch | null> {
+    const match = await this.blinkMatches.get(roomId);
+    if (!match) return null;
+
+    const now = Date.now();
+    if (match.status === 'PENDING' && now > Date.parse(match.expiresAt)) {
+      return this.blinkMatches.expirePending(roomId);
+    }
+    if (match.status === 'CHALLENGED' && match.joinDeadline && now > Date.parse(match.joinDeadline)) {
+      return this.blinkMatches.forfeitChallenged(roomId);
+    }
+    return match;
+  }
+
+  public hydrateBlinkRoom(matchOrRoomId: BlinkMatch | string): Promise<Room | null> {
+    return this.hydrateBlinkRoomInternal(matchOrRoomId);
+  }
+
+  public startBlinkJanitor(intervalMs = 15_000): void {
+    if (this.blinkJanitorInterval) return;
+    this.blinkJanitorInterval = setInterval(() => {
+      void this.runBlinkJanitorOnce();
+    }, intervalMs);
+  }
+
+  public stopBlinkJanitor(): void {
+    if (!this.blinkJanitorInterval) return;
+    clearInterval(this.blinkJanitorInterval);
+    this.blinkJanitorInterval = null;
+  }
+
+  public async runBlinkJanitorOnce(): Promise<void> {
+    const updates = await this.blinkMatches.sweepExpired();
+    for (const update of updates) {
+      const room = this.store.getRoom(update.id);
+      if (!room) continue;
+
+      this.network.broadcastToRoom(room, {
+        type: 'roomCancelled',
+        payload: {
+          cancelledBy: null,
+          reason: update.status === 'FORFEITED' ? 'deposit_timeout' : 'player_cancelled',
+        },
+      });
+      this.lifecycle.destroyRoom(update.id);
+    }
+  }
+
+  private async hydrateBlinkRoomInternal(matchOrRoomId: BlinkMatch | string): Promise<Room | null> {
+    const existing = this.store.getRoom(typeof matchOrRoomId === 'string' ? matchOrRoomId : matchOrRoomId.id);
+    if (existing) return existing;
+
+    const match = typeof matchOrRoomId === 'string'
+      ? await this.refreshBlinkMatchExpiry(matchOrRoomId)
+      : matchOrRoomId;
+    if (!match || match.status !== 'CHALLENGED' || !match.opponentWallet) return null;
+
+    const room = this.store.createRoom(match.id);
+    room.status = 'depositing';
+    room.roomType = 'private';
+    room.playerA = match.creatorWallet;
+    room.playerB = match.opponentWallet;
+    room.playerBUnlocked = true;
+    room.tokenMint = match.tokenMint;
+    room.wagerAmount = BigInt(match.wagerAmount);
+    room.blinkJoinDeadline = match.joinDeadline ? Date.parse(match.joinDeadline) : null;
+    room.playerMeta.set(match.creatorWallet, { hasDeposited: false, characterId: 'einstein' });
+    room.playerMeta.set(match.opponentWallet, { hasDeposited: true, characterId: 'einstein' });
+
+    void this.blockchain.fetchWagerUsd(room);
+    return room;
   }
 }
 

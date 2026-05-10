@@ -1,17 +1,14 @@
 import { Hono } from 'hono';
 import { PublicKey } from '@solana/web3.js';
+import { deriveMatchId } from '@shared/escrow';
 import { RoomManager } from '../managers/RoomManager';
 import { BlinkTransactionBuilder } from '../services/BlinkTransactionBuilder';
+import type { BlinkMatch } from '../services/blinkMatches';
 import { resolveTokenMint } from '../config/tokens';
 
 export function createActionsRouter(roomManager: RoomManager) {
   const router = new Hono();
 
-  // ---------------------------------------------------------------------------
-  // Solana Actions & Blinks Middleware
-  // Spec: https://solana.com/docs/advanced/actions#options-response
-  // All Action endpoints MUST return these CORS headers for GET, POST & OPTIONS.
-  // ---------------------------------------------------------------------------
   router.use('/*', async (c, next) => {
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
@@ -21,7 +18,7 @@ export function createActionsRouter(roomManager: RoomManager) {
     );
     c.header('Access-Control-Expose-Headers', 'X-Action-Version, X-Blockchain-Ids');
     c.header('X-Action-Version', '2.1.3');
-    c.header('X-Blockchain-Ids', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'); // Solana Devnet
+    c.header('X-Blockchain-Ids', 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1');
 
     if (c.req.method === 'OPTIONS') {
       return c.text('OK', 200);
@@ -30,34 +27,33 @@ export function createActionsRouter(roomManager: RoomManager) {
     await next();
   });
 
-  // ---------------------------------------------------------------------------
-  // GET /api/actions/challenge — Action metadata (renders the Blink on X)
-  //
-  // If ?roomId is provided, validates the room state and returns contextual metadata.
-  // If no roomId, returns the generic public matchmaking Blink.
-  // ---------------------------------------------------------------------------
-  router.get('/challenge', (c) => {
+  router.get('/challenge', async (c) => {
     const roomId = c.req.query('roomId');
     const iconUrl = 'https://arweave.net/qN7Xy_CgGf2Y-DItf-Bf0iV9Wl80S-c4m2rV6Q5S3j0';
 
     if (roomId) {
-      const room = roomManager.getRoom(roomId);
+      const match = await roomManager.refreshBlinkMatchExpiry(roomId);
 
-      if (!room || room.status === 'finished') {
-        return c.json({ error: { message: 'Challenge canceled — this room no longer exists.' } }, 400);
+      if (!match) {
+        return c.json({ error: { message: 'Challenge canceled - this room no longer exists.' } }, 400);
       }
-      if (room.playerB !== null) {
-        return c.json({ error: { message: 'Challenge already accepted — this match is full.' } }, 400);
+      if (match.status === 'EXPIRED') {
+        return c.json({ error: { message: 'Expired - this challenge was not accepted within 15 minutes.' } }, 410);
+      }
+      if (match.status === 'FORFEITED') {
+        return c.json({ error: { message: 'Challenge forfeited - the creator missed the response window.' } }, 410);
+      }
+      if (match.status !== 'PENDING' || match.opponentWallet !== null) {
+        return c.json({ error: { message: 'Challenge already accepted - this match is full.' } }, 400);
       }
 
-      // Valid open room — return a targeted Blink
       return c.json({
         type: 'action' as const,
         icon: iconUrl,
-        title: 'CORA — Accept the Challenge ⚔️',
+        title: 'CORA - Accept the Challenge',
         description:
-          'Your opponent is waiting! Deposit your wager and join the battle. ' +
-          '97.5% to the winner — powered by Solana.',
+          'Your opponent is waiting. Deposit your wager and join the battle. ' +
+          '97.5% to the winner - powered by Solana.',
         label: 'Accept & Deposit',
         links: {
           actions: [
@@ -71,15 +67,14 @@ export function createActionsRouter(roomManager: RoomManager) {
       });
     }
 
-    // Generic public matchmaking Blink (no roomId)
     return c.json({
       type: 'action' as const,
       icon: iconUrl,
-      title: 'CORA — Challenge Me ⚔️',
+      title: 'CORA - Challenge Me',
       description:
-        'Wager your tokens in a high-stakes aptitude battle! ' +
+        'Wager your tokens in a high-stakes aptitude battle. ' +
         'Match instantly, prove your logic skills, and take the pot. ' +
-        '97.5% to the winner — powered by Solana.',
+        '97.5% to the winner - powered by Solana.',
       label: 'Deposit & Play',
       links: {
         actions: [
@@ -119,9 +114,6 @@ export function createActionsRouter(roomManager: RoomManager) {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // POST /api/actions/challenge — Build unsigned Solana transaction (base64)
-  // ---------------------------------------------------------------------------
   router.post('/challenge', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
@@ -142,68 +134,114 @@ export function createActionsRouter(roomManager: RoomManager) {
         );
       }
 
-      const room = roomManager.getRoom(roomId)!;
-      if (!room) {
-        return c.json({ message: 'Challenge canceled — this room no longer exists.' } satisfies ActionError, 404);
-      }
-
-      // Allow frontend to populate missing tokenMint and wagerAmount for public matchmaking
-      if (room.roomType === 'public' && room.tokenMint === null && body.tokenMint) {
-        const resolved = resolveTokenMint(body.tokenMint);
-        if (!resolved) {
-          return c.json({ message: `Unknown token "${body.tokenMint}" — provide a symbol (SOL, BONK, USDC) or a valid mint address.` } satisfies ActionError, 400);
-        }
-        room.tokenMint = resolved;
-      }
-      if (room.roomType === 'public' && room.wagerAmount === null && body.wagerAmount !== undefined) {
-        room.wagerAmount = BigInt(body.wagerAmount);
-      }
-
-      // Check if user is already in the room
-      const isPlayerA = room.playerA === account;
-      const isPlayerB = room.playerB === account;
-
-      // If not already in the room, try to join as Player B (Blink flow)
-      if (!isPlayerA && !isPlayerB) {
-        const joinResult = roomManager.joinPrivateRoom(account, roomId);
-        if (joinResult === 'not_found') {
-          return c.json({ message: 'Challenge canceled — this room no longer exists.' } satisfies ActionError, 404);
-        }
-        if (joinResult === 'cancelled') {
-          return c.json({ message: 'Challenge canceled — the deposit window has expired.' } satisfies ActionError, 410);
-        }
-        if (joinResult === 'full') {
-          return c.json({ message: 'Challenge already accepted — this match is full.' } satisfies ActionError, 409);
-        }
-      }
-
-      if (!room.tokenMint || room.wagerAmount === null) {
-        return c.json({ message: 'Internal error — room is missing token configuration.' } satisfies ActionError, 500);
-      }
-
-      // Validate that account and tokenMint are valid base58 public keys
       try {
         new PublicKey(account);
       } catch {
-        return c.json({ message: 'Invalid `account` — not a valid base58 public key.' } satisfies ActionError, 400);
-      }
-      try {
-        new PublicKey(room.tokenMint);
-      } catch {
-        return c.json({ message: 'Internal error — room has an invalid tokenMint.' } satisfies ActionError, 500);
+        return c.json({ message: 'Invalid `account` - not a valid base58 public key.' } satisfies ActionError, 400);
       }
 
-      // Delegate transaction building to the Builder service
-      const base64 = await BlinkTransactionBuilder.buildDepositTransaction(account, room, isPlayerA);
+      const publicRoom = roomManager.getRoom(roomId);
+      if (publicRoom?.roomType === 'public') {
+        if (publicRoom.tokenMint === null && body.tokenMint) {
+          const resolved = resolveTokenMint(body.tokenMint);
+          if (!resolved) {
+            return c.json({ message: `Unknown token "${body.tokenMint}" - provide a symbol (SOL, BONK, USDC) or a valid mint address.` } satisfies ActionError, 400);
+          }
+          publicRoom.tokenMint = resolved;
+        }
+        if (publicRoom.wagerAmount === null && body.wagerAmount !== undefined) {
+          publicRoom.wagerAmount = BigInt(body.wagerAmount);
+        }
+        if (!publicRoom.tokenMint || publicRoom.wagerAmount === null) {
+          return c.json({ message: 'Internal error - room is missing token configuration.' } satisfies ActionError, 500);
+        }
+
+        try {
+          new PublicKey(publicRoom.tokenMint);
+        } catch {
+          return c.json({ message: 'Internal error - room has an invalid tokenMint.' } satisfies ActionError, 500);
+        }
+
+        const isPlayerA = publicRoom.playerA === account;
+        const isPlayerB = publicRoom.playerB === account;
+        if (!isPlayerA && !isPlayerB) {
+          return c.json({ message: 'Account is not a participant in this room.' } satisfies ActionError, 403);
+        }
+
+        const base64 = await BlinkTransactionBuilder.buildDepositTransaction(account, publicRoom, isPlayerA);
+        return c.json({
+          transaction: base64,
+          message: 'Sign to deposit your wager and join the CORA battle!',
+        });
+      }
+
+      const match = await roomManager.refreshBlinkMatchExpiry(roomId);
+      if (!match) {
+        return c.json({ message: 'Challenge canceled - this room no longer exists.' } satisfies ActionError, 404);
+      }
+
+      try {
+        new PublicKey(match.tokenMint);
+      } catch {
+        return c.json({ message: 'Internal error - room has an invalid tokenMint.' } satisfies ActionError, 500);
+      }
+
+      if (match.status === 'EXPIRED') {
+        return c.json({ message: 'Expired - this challenge was not accepted within 15 minutes.' } satisfies ActionError, 410);
+      }
+      if (match.status === 'FORFEITED') {
+        return c.json({ message: 'Challenge forfeited - the creator missed the response window.' } satisfies ActionError, 410);
+      }
+
+      let acceptedMatch: BlinkMatch = match;
+      let initializeMatch = false;
+      let initializeOpponent: string | undefined;
+      let message = 'Sign to deposit your wager and join the CORA battle!';
+
+      if (match.status === 'PENDING') {
+        const acceptResult = await roomManager.blinkMatches.acceptPending(roomId, account);
+        if (!acceptResult.ok) {
+          return c.json(
+            { message: actionErrorForAcceptReason(acceptResult.reason) } satisfies ActionError,
+            statusForAcceptReason(acceptResult.reason),
+          );
+        }
+
+        acceptedMatch = acceptResult.match;
+        initializeMatch = true;
+        initializeOpponent = acceptedMatch.creatorWallet;
+        message = 'Challenge accepted. Sign to initialize escrow and deposit your wager first.';
+        await roomManager.hydrateBlinkRoom(acceptedMatch);
+      } else if (match.status === 'CHALLENGED') {
+        if (account === match.creatorWallet) {
+          message = 'Challenge accepted. Sign your deposit within the response window to start the game.';
+          await roomManager.hydrateBlinkRoom(match);
+        } else if (account === match.opponentWallet) {
+          initializeMatch = true;
+          initializeOpponent = match.creatorWallet;
+          message = 'Re-sign to initialize escrow and deposit your wager.';
+          await roomManager.hydrateBlinkRoom(match);
+        } else {
+          return c.json({ message: 'Challenge already accepted - this match is full.' } satisfies ActionError, 409);
+        }
+      } else {
+        return c.json({ message: 'Challenge is no longer accepting deposits.' } satisfies ActionError, 409);
+      }
+
+      const base64 = await BlinkTransactionBuilder.buildDepositTransaction(
+        account,
+        roomLikeFromBlinkMatch(acceptedMatch),
+        { initializeMatch, initializeOpponent },
+      );
 
       return c.json({
         transaction: base64,
-        message: 'Sign to deposit your wager and join the CORA battle!',
+        message,
       });
     } catch (err) {
       console.error('[actions/challenge POST] Failed to build transaction', err);
       return c.json(
-        { message: 'Internal error — failed to build transaction' } satisfies ActionError,
+        { message: 'Internal error - failed to build transaction' } satisfies ActionError,
         500,
       );
     }
@@ -214,4 +252,29 @@ export function createActionsRouter(roomManager: RoomManager) {
 
 interface ActionError {
   message: string;
+}
+
+function roomLikeFromBlinkMatch(match: BlinkMatch) {
+  return {
+    id: match.id,
+    matchIdBytes: deriveMatchId(match.id),
+    tokenMint: match.tokenMint,
+    wagerAmount: BigInt(match.wagerAmount),
+    playerB: match.opponentWallet,
+  };
+}
+
+function actionErrorForAcceptReason(reason: string): string {
+  if (reason === 'not_found') return 'Challenge canceled - this room no longer exists.';
+  if (reason === 'expired') return 'Expired - this challenge was not accepted within 15 minutes.';
+  if (reason === 'creator_cannot_accept') return 'Challenge creator cannot accept their own Blink.';
+  if (reason === 'already_accepted') return 'Challenge already accepted - this match is full.';
+  return 'Challenge is no longer accepting deposits.';
+}
+
+function statusForAcceptReason(reason: string): 400 | 404 | 409 | 410 {
+  if (reason === 'not_found') return 404;
+  if (reason === 'expired') return 410;
+  if (reason === 'already_accepted') return 409;
+  return 400;
 }

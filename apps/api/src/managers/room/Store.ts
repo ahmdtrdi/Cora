@@ -27,6 +27,7 @@ export class Store {
       depositTimeouts: new Map(),
       erSessionPda: null,
       wagerUsdValue: null,
+      blinkJoinDeadline: null,
       erEnabled: isMagicBlockConfigured(),
       erLifecycleStatus: 'none',
       erCardRegistry: new Map(),

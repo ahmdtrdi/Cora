@@ -594,3 +594,27 @@
 - [ ] **Surrender rejection:** ER rooms should reject surrender at the websocket layer — to be implemented in Point 4.
 - [ ] **Pre-existing test failures:** The same 7 `RoomManager.test.ts` failures around message ordering and async `initializeEngine()` persist — they predate this change and are documented in the 2026-05-08 Backend Contract Deduplication entry.
 - [ ] **`allQuestions` memory:** `QuestionDealer` now stores a copy of all valid questions for the match lifetime. This is ~60 question objects per match — negligible, but worth noting.
+
+## 2026-05-10 - Blink Matchmaking Soft Commitment Backend
+
+### The Change
+- Added `apps/api/src/services/blinkMatches.ts` with a Supabase-backed Blink match repository and in-memory fallback for local/no-env testing.
+- Reworked private Blink creation so `/match/private` creates a `PENDING` DB challenge instead of an in-memory depositing room.
+- Replaced targeted `/api/actions/challenge?roomId=...` handling with the soft-commitment flow:
+  - Player A/creator creates the challenge without paying.
+  - Player B/challenger accepts first and receives an `initialize_match + deposit_wager` transaction.
+  - Player A later receives a `deposit_wager` transaction and starts the game after websocket `confirmDeposit`.
+- Added private room hydration from Supabase when `/match/:roomId` is opened for a `CHALLENGED` Blink match.
+- Added a Blink janitor in `RoomManager` to mark `PENDING -> EXPIRED` and `CHALLENGED -> FORFEITED`.
+- Added `apps/api/supabase/matches.sql`, `apps/api/test/blinkMatches.test.ts`, and the smoke script `bun run test:blink-soft`.
+
+### The Reasoning
+- The current escrow program requires `player_b` at `initialize_match`, so the backend cannot implement true Player-A-pays-first Blinks yet.
+- The workaround preserves the user-facing creator/challenger roles while using Player B as the on-chain initializer for now.
+- Keeping this path in a separate Blink match repository avoids touching the working public FIFO matchmaking queue.
+
+### The Tech Debt
+- True Player-A-pays-first Blink challenges require smart contract support for open challenges where `player_b` is assigned later.
+- During `PENDING`, Player A has no funds at risk; if Player A flakes after Player B accepts, Player B can only reclaim/refund their own deposit with today's contract.
+- Current on-chain timeout constants may not align with the backend's 15-minute accept window and 3-minute creator response window.
+- Full `bun test` and `bun run lint` still hit pre-existing repo harness/lint issues; focused Blink tests and API typecheck pass.
