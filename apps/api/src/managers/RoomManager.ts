@@ -144,6 +144,11 @@ export class RoomManager {
       this.lifecycle.cancelDuringDeposit(roomId, address);
     }
 
+    if (message.type === 'requestSnapshot') {
+      this.network.broadcastGameState(room);
+      this.network.broadcastPresence(room);
+    }
+
     if (message.type === 'surrender') {
       void this.lifecycle.surrender(roomId, address).catch((err) => {
         console.error(`[RoomManager] Surrender failed for ${address} in room ${roomId}:`, err);

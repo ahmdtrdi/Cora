@@ -51,6 +51,9 @@ function trimTrailingSlash(input: string) {
   return input.replace(/\/+$/, '');
 }
 
+const MATCH_SOCKET_OPEN_TIMEOUT_MS = 6_000;
+const MATCH_SOCKET_SNAPSHOT_TIMEOUT_MS = 5_000;
+
 function isSettlementPayload(value: unknown): value is MatchResultPayload {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Record<string, unknown>;
@@ -107,8 +110,33 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     if (!socketUrl) return;
 
     let isCleaningUp = false;
+    let hasReceivedGameState = false;
+    let snapshotTimerId: ReturnType<typeof setTimeout> | null = null;
     const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
+    const reconnectSocket = (reason: string) => {
+      if (isCleaningUp || socketRef.current !== ws) return;
+      console.warn(`[useMatchSocket] ${reason}; reconnecting.`);
+      setConnectionState('reconnecting');
+      setLastSocketIssueAt(Date.now());
+      setLastSocketCloseInfo({
+        code: 0,
+        reason,
+        wasClean: false,
+      });
+      try {
+        ws.close();
+      } catch {
+        // Ignore close failures during reconnect.
+      }
+      setReconnectNonce((prev) => prev + 1);
+    };
+    const openTimerId = setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) {
+        reconnectSocket('Match socket open timed out');
+      }
+    }, MATCH_SOCKET_OPEN_TIMEOUT_MS);
+
     queueMicrotask(() => {
       setConnectionState((prev) => {
         if (reconnectNonce > 0 || prev === 'reconnecting') {
@@ -119,10 +147,17 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     });
 
     ws.onopen = () => {
+      clearTimeout(openTimerId);
       setConnectionState('connected');
       setLastSocketError(null);
       setLastSocketCloseInfo(null);
       setLastSocketIssueAt(null);
+      ws.send(JSON.stringify({ type: 'requestSnapshot', payload: {} }));
+      snapshotTimerId = setTimeout(() => {
+        if (!hasReceivedGameState) {
+          reconnectSocket('Match room snapshot timed out');
+        }
+      }, MATCH_SOCKET_SNAPSHOT_TIMEOUT_MS);
     };
 
     ws.onmessage = (event) => {
@@ -131,6 +166,11 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
         switch (message.type) {
           case 'gameStateUpdate':
+            hasReceivedGameState = true;
+            if (snapshotTimerId) {
+              clearTimeout(snapshotTimerId);
+              snapshotTimerId = null;
+            }
             setGameState(message.payload as GameState);
             break;
 
@@ -265,6 +305,10 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
     return () => {
       isCleaningUp = true;
+      clearTimeout(openTimerId);
+      if (snapshotTimerId) {
+        clearTimeout(snapshotTimerId);
+      }
       ws.close();
       if (socketRef.current === ws) {
         socketRef.current = null;

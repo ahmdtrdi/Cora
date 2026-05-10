@@ -17,6 +17,14 @@ type SignDepositIntentParams = {
   signal?: AbortSignal;
 };
 
+type PrepareDepositIntentParams = Omit<SignDepositIntentParams, "connection">;
+type SendDepositIntentParams = {
+  connection: Connection;
+  wallet: WalletContextState;
+  transaction: Transaction;
+  signal?: AbortSignal;
+};
+
 type SignSettlementReleaseIntentParams = {
   connection: Connection;
   wallet: WalletContextState;
@@ -97,6 +105,9 @@ function mapWalletError(error: unknown): DepositIntentError {
   const message = error instanceof Error ? error.message : "Unknown wallet error";
   const lowered = message.toLowerCase();
   const combined = `${lowered} ${logs}`;
+  if (lowered.includes("aborted") || (error instanceof Error && error.name.toLowerCase().includes("abort"))) {
+    return new DepositIntentError("unknown", "signing_timeout");
+  }
 
   // Network / fetch failures — the tunnel is down or backend unreachable
   if (
@@ -223,14 +234,31 @@ export async function signDepositIntent({
   wagerUsd,
   signal,
 }: SignDepositIntentParams): Promise<string> {
+  const transaction = await prepareDepositIntentTransaction({
+    wallet,
+    roomId,
+    token,
+    wagerUsd,
+    signal,
+  });
+
+  return sendDepositIntentTransaction({
+    connection,
+    wallet,
+    transaction,
+    signal,
+  });
+}
+
+export async function prepareDepositIntentTransaction({
+  wallet,
+  roomId,
+  token,
+  wagerUsd,
+  signal,
+}: PrepareDepositIntentParams): Promise<Transaction> {
   if (!wallet.publicKey) {
     throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
-  }
-  if (!wallet.sendTransaction) {
-    throw new DepositIntentError(
-      "wallet_signing_not_supported",
-      "Connected wallet does not support transaction signing.",
-    );
   }
 
   try {
@@ -280,6 +308,29 @@ export async function signDepositIntent({
     const transaction = Transaction.from(txBuffer);
 
     transaction.feePayer = wallet.publicKey;
+    return transaction;
+  } catch (error) {
+    throw mapWalletError(error);
+  }
+}
+
+export async function sendDepositIntentTransaction({
+  connection,
+  wallet,
+  transaction,
+  signal,
+}: SendDepositIntentParams): Promise<string> {
+  if (!wallet.publicKey) {
+    throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
+  }
+  if (!wallet.sendTransaction) {
+    throw new DepositIntentError(
+      "wallet_signing_not_supported",
+      "Connected wallet does not support transaction signing.",
+    );
+  }
+
+  try {
 
     // NOTE: Simulation removed — sendTransaction performs preflight simulation
     // automatically (preflightCommitment: "confirmed"). This removes one full
