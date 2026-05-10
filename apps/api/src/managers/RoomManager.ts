@@ -92,7 +92,9 @@ export class RoomManager {
     }
 
     if (message.type === 'surrender') {
-      this.lifecycle.surrender(roomId, address);
+      void this.lifecycle.surrender(roomId, address).catch((err) => {
+        console.error(`[RoomManager] Surrender failed for ${address} in room ${roomId}:`, err);
+      });
     }
 
     if (message.type === 'openCard' && room.status === 'playing') {

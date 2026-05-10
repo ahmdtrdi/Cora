@@ -529,3 +529,39 @@ Added a dedicated live streak field, `currentCorrectStreak`, to the player state
 **Tech Debt:**
 
 - `currentCorrectStreak` currently lives only in live `gameStateUpdate` payloads. If we later want post-match UX summaries ("best streak this round" or "final streak before loss"), we should decide whether that belongs in final match result payloads too.
+
+---
+
+## 18. Inline Manifest Architecture Integration — (2026-05-10)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/services/magicblock.ts`
+- `apps/api/src/managers/room/Blockchain.ts`
+- `apps/api/src/managers/room/Engine.ts`
+- `apps/api/src/managers/room/Lifecycle.ts`
+- `apps/api/src/managers/room/types.ts`
+- `apps/api/src/managers/room/Store.ts`
+- `apps/api/src/managers/RoomManager.ts`
+
+Migrated to the **Inline Manifest** ER architecture to solve severe performance bottlenecks in setup/settlement and enable instant surrenders.
+
+**What changed:**
+
+1. **5-Tx Setup:** Replaced loop-based `registerCard` logic with a 2-transaction pre-commitment of both players' card manifests. Setup dropped from ~99 transactions (~45s) down to **5 transactions (~15s)**.
+2. **2-Tx Settlement:** Since individual cards no longer generate on-chain PDAs, settlement no longer requires loop-based `commit` / `undelegate` calls. Settlement dropped from ~98 transactions (~52s) to **2 transactions (~4s)**.
+3. **Slot-Based Tracking:** Modified the play-flow from referencing arbitrary card IDs to referencing precise, sequential manifest slot indexes. Valid answers, wrong answers, and timeouts now all definitively consume on-chain slots to maintain source-of-truth syncing.
+4. **Authoritative Surrender:** Enabled the previously-disabled surrender flow via a terminal `surrender_match` ER instruction, resolving the winner/loser instantly and on-chain.
+5. **Optimistic UI:** The `Engine` now fires `damageEvent` and `playCardResult` payloads immediately upon client validation **before** waiting for the ER lane transaction round-trip, stripping the apparent latency from gameplay entirely.
+
+**The Reasoning:**
+
+- The 1-PDA-per-card architecture imposed astronomical setup/teardown bloat on the Solana base layer. Moving that state into two inline vectors embedded into the primary `BattleSession` account is an asymptotic speedup for the platform.
+- Optimistic UI is standard for modern online games. Relying on chain confirmation latency for animation rendering hurts the 'feel' of high-speed trivia.
+
+**Tech Debt:**
+
+- The legacy logic (registered card PDA loops) is deprecated but remains theoretically supported by raw functions in `magicblock.ts` for backwards compatibility during migration cutoff. It should be completely pruned once version stability is locked.
+- Currently waiting on client-side IDL synchronization for final verification since instructions must perfectly match the new program schema.

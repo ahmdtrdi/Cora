@@ -1,13 +1,14 @@
 import { serverPublicKey, signSettlementAuthorization, submitRefundTransaction, submitSettlementTransaction, getServerKeypair } from '../../utils/settlement';
 import {
   magicBlockService,
-  deriveRegisteredCardPda,
+  packCardManifest,
   estimateErSetupRentLamports,
   EFFECT_ATTACK,
   EFFECT_HEAL,
   END_REASON_SINGLE_PLAYER_TIMEOUT,
   END_REASON_BOTH_PLAYERS_TIMEOUT,
   END_REASON_SERVER_CANCELLED,
+  END_REASON_SURRENDER,
   getBaseLamportBalance,
   type BattleSessionState,
 } from '../../services/magicblock';
@@ -16,34 +17,26 @@ import { deriveQuestionHash } from '../../utils/questionHash';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
 import type { MatchResult, WsMessage } from '@shared/websocket';
-import type { EngineCard } from '@cora/game-logic';
 
 const GAMEPLAY_MAX_ATTACK_EFFECT_VALUE = 150;
 const GAMEPLAY_MAX_HEAL_EFFECT_VALUE = 30;
 const DEPLOYED_MAX_EFFECT_VALUE = Number(process.env.CORA_BATTLE_MAX_EFFECT_VALUE ?? 100);
 const REGISTERED_MAX_ATTACK_EFFECT_VALUE = Math.min(GAMEPLAY_MAX_ATTACK_EFFECT_VALUE, DEPLOYED_MAX_EFFECT_VALUE);
 const REGISTERED_MAX_HEAL_EFFECT_VALUE = Math.min(GAMEPLAY_MAX_HEAL_EFFECT_VALUE, DEPLOYED_MAX_EFFECT_VALUE);
-const MIN_ER_PRE_REGISTER_CARD_LIMIT = 5;
-const ER_PRE_REGISTER_CARD_LIMIT = Math.max(
-  MIN_ER_PRE_REGISTER_CARD_LIMIT,
-  Number(process.env.CORA_BATTLE_PRE_REGISTER_CARD_LIMIT ?? 20),
+
+/**
+ * Maximum cards per player to pre-commit in the inline manifest.
+ * Must be <= 128 (MAX_CARD_SLOTS on-chain).
+ */
+const ER_MANIFEST_CARD_LIMIT = Math.max(
+  5,
+  Math.min(128, Number(process.env.CORA_BATTLE_PRE_REGISTER_CARD_LIMIT ?? 20)),
 );
-const ER_SETUP_CONCURRENCY = Math.max(1, Number(process.env.CORA_BATTLE_SETUP_CONCURRENCY ?? 8));
+
 const ER_SETUP_FEE_CUSHION_LAMPORTS = Math.max(
   500_000,
   Number(process.env.CORA_BATTLE_SETUP_FEE_CUSHION_LAMPORTS ?? 1_500_000),
 );
-
-async function runWithConcurrency(tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> {
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
-    while (nextIndex < tasks.length) {
-      const task = tasks[nextIndex++];
-      await task();
-    }
-  });
-  await Promise.all(workers);
-}
 
 export class Blockchain {
   constructor(private manager: RoomManager) {}
@@ -66,13 +59,16 @@ export class Blockchain {
   }
 
   /**
-   * Full ER setup pipeline for MagicBlock-enabled rooms.
+   * Full ER setup pipeline using inline manifest (v5).
    *
-   * Flow: createSession → registerCardV2 (visible hand × 2 players)
-   *     → activateSession → delegateBattleSession
-   *     → delegateRegisteredCard (each card)
-   *     → persist registry on room
+   * Flow (5 tx, ~9-15s):
+   *   Phase 1: createSession                   → 1 tx (base)
+   *   Phase 2: setCardManifest(isPlayerA=true)  → 1 tx (base)
+   *   Phase 3: setCardManifest(isPlayerA=false) → 1 tx (base)
+   *   Phase 4: activateSession                  → 1 tx (base)
+   *   Phase 5: delegateBattleSession            → 1 tx (base)
    *
+   * Previously this was 99+ tx with registerCardV2 and delegateRegisteredCard loops.
    * On any error, erEnabled is flipped to false and the match continues engine-only.
    */
   public async createBattleSession(room: Room): Promise<void> {
@@ -91,21 +87,19 @@ export class Blockchain {
 
     const keypair = getServerKeypair();
     const setupTxs: string[] = [];
-    const queue = room.engine.getMatchQueue().slice(0, ER_PRE_REGISTER_CARD_LIMIT);
-    const registeredCardCount = queue.length * 2;
+
+    // Inline manifest: only need session account rent, no card accounts
     const [availableLamports, rentEstimate] = await Promise.all([
       getBaseLamportBalance(keypair.publicKey),
-      estimateErSetupRentLamports(registeredCardCount),
+      estimateErSetupRentLamports(0), // no registered cards needed
     ]);
-    const recommendedLamports = rentEstimate.totalRentLamports + ER_SETUP_FEE_CUSHION_LAMPORTS;
+    const recommendedLamports = rentEstimate.sessionRentLamports + ER_SETUP_FEE_CUSHION_LAMPORTS;
 
     if (availableLamports < recommendedLamports) {
       console.warn(
         `[MagicBlock] ER disabled for room ${room.id} — insufficient server SOL for setup. ` +
-        `Available=${availableLamports} lamports, recommended_min=${recommendedLamports} ` +
-        `for ${registeredCardCount} registered cards (rent=${rentEstimate.totalRentLamports}, ` +
-        `fee_cushion=${ER_SETUP_FEE_CUSHION_LAMPORTS}). Top up ${keypair.publicKey.toBase58()} ` +
-        `on devnet or reduce CORA_BATTLE_PRE_REGISTER_CARD_LIMIT.`,
+        `Available=${availableLamports} lamports, recommended_min=${recommendedLamports}. ` +
+        `Top up ${keypair.publicKey.toBase58()} on devnet.`,
       );
       room.erEnabled = false;
       room.erLifecycleStatus = 'failed';
@@ -129,55 +123,43 @@ export class Blockchain {
       setupTxs.push(createSig);
       console.log(`[MagicBlock] Phase 1/5 done — session created: ${sessionPda}`);
 
-      // ── Phase 2: Register visible hand cards ─────────────────────
+      // ── Phase 2+3: Commit inline manifests ────────────────────────
       room.erLifecycleStatus = 'registering';
-      const players: [string, string] = [room.playerA, room.playerB];
-      const registrationJobs: Array<() => Promise<void>> = [];
+      const queue = room.engine.getMatchQueue().slice(0, ER_MANIFEST_CARD_LIMIT);
+      const cardDefs = queue.map(card => ({
+        effectType: card.type === 'attack' ? EFFECT_ATTACK : EFFECT_HEAL,
+        maxValue: card.type === 'attack' ? REGISTERED_MAX_ATTACK_EFFECT_VALUE : REGISTERED_MAX_HEAL_EFFECT_VALUE,
+      }));
+      const manifest = packCardManifest(cardDefs);
+
       console.log(
-        `[MagicBlock] Pre-registering ${queue.length} cards per player for room ${room.id} ` +
-        `with concurrency ${ER_SETUP_CONCURRENCY}.`,
+        `[MagicBlock] Committing inline manifest for room ${room.id}: ` +
+        `${queue.length} slots per player.`,
       );
 
-      for (let pIdx = 0; pIdx < players.length; pIdx++) {
-        const playerAddr = players[pIdx];
+      // Commit manifests in parallel for both players
+      const [manifestASig, manifestBSig] = await Promise.all([
+        magicBlockService.setCardManifest({
+          roomId: room.id,
+          sessionPda,
+          isPlayerA: true,
+          totalSlots: queue.length,
+          manifest,
+          serverKeypair: keypair,
+        }),
+        magicBlockService.setCardManifest({
+          roomId: room.id,
+          sessionPda,
+          isPlayerA: false,
+          totalSlots: queue.length,
+          manifest,
+          serverKeypair: keypair,
+        }),
+      ]);
+      setupTxs.push(manifestASig, manifestBSig);
+      console.log(`[MagicBlock] Phase 2+3/5 done — both manifests committed`);
 
-        for (let queueIdx = 0; queueIdx < queue.length; queueIdx++) {
-          const card = queue[queueIdx];
-          // Deterministic compact card key: <playerIndex>-<queueIndex>.
-          const cardKey = `${pIdx}-${String(queueIdx).padStart(2, '0')}`;
-          const effectType = card.type === 'attack' ? EFFECT_ATTACK : EFFECT_HEAL;
-          const maxValue = card.type === 'attack' ? REGISTERED_MAX_ATTACK_EFFECT_VALUE : REGISTERED_MAX_HEAL_EFFECT_VALUE;
-
-          const cardPda = deriveRegisteredCardPda(sessionPda, cardKey);
-          registrationJobs.push(async () => {
-            const regSig = await magicBlockService.registerCardV2({
-              roomId: room.id,
-              sessionPda,
-              serverKeypair: keypair,
-              owner: playerAddr,
-              cardId: cardKey,
-              effectType,
-              maxValue,
-            });
-            setupTxs.push(regSig);
-
-            // Persist in room registry
-            room.erCardRegistry.set(`${playerAddr}:${card.id}`, {
-              cardPda: cardPda.toBase58(),
-              owner: playerAddr,
-              cardId: cardKey,
-              effectType,
-              maxValue,
-              isDelegated: false,
-              isConsumed: false,
-            });
-          });
-        }
-      }
-      await runWithConcurrency(registrationJobs, ER_SETUP_CONCURRENCY);
-      console.log(`[MagicBlock] Phase 2/5 done — ${room.erCardRegistry.size} cards registered`);
-
-      // ── Phase 3: Activate session ────────────────────────────────
+      // ── Phase 4: Activate session ────────────────────────────────
       room.erLifecycleStatus = 'activating';
       const activateSig = await magicBlockService.activateSession({
         roomId: room.id,
@@ -185,9 +167,9 @@ export class Blockchain {
         serverKeypair: keypair,
       });
       setupTxs.push(activateSig);
-      console.log(`[MagicBlock] Phase 3/5 done — session activated`);
+      console.log(`[MagicBlock] Phase 4/5 done — session activated`);
 
-      // ── Phase 4: Delegate session PDA ────────────────────────────
+      // ── Phase 5: Delegate session PDA ────────────────────────────
       room.erLifecycleStatus = 'delegating';
       const delegateSessionSig = await magicBlockService.delegateBattleSession({
         roomId: room.id,
@@ -195,25 +177,12 @@ export class Blockchain {
         serverKeypair: keypair,
       });
       setupTxs.push(delegateSessionSig);
-      console.log(`[MagicBlock] Phase 4/5 done — session delegated`);
-
-      // ── Phase 5: Delegate each registered card PDA ───────────────
-      const delegateJobs = Array.from(room.erCardRegistry.values()).map(regCard => async () => {
-        const delegateCardSig = await magicBlockService.delegateRegisteredCard({
-          roomId: room.id,
-          sessionPda,
-          cardPda: regCard.cardPda,
-          cardId: regCard.cardId,
-          serverKeypair: keypair,
-        });
-        setupTxs.push(delegateCardSig);
-        regCard.isDelegated = true;
-      });
-      await runWithConcurrency(delegateJobs, ER_SETUP_CONCURRENCY);
-      console.log(`[MagicBlock] Phase 5/5 done — all cards delegated`);
+      console.log(`[MagicBlock] Phase 5/5 done — session delegated`);
 
       // ── Done ─────────────────────────────────────────────────────
       room.erLifecycleStatus = 'active';
+      room.erNextSlotA = 0;
+      room.erNextSlotB = 0;
       room.erProofMeta = {
         sessionPda,
         setupTxSignatures: setupTxs,
@@ -223,7 +192,7 @@ export class Blockchain {
         endReason: null,
       };
 
-      console.log(`[MagicBlock] ER setup complete for room ${room.id}. Session: ${sessionPda}. Cards: ${room.erCardRegistry.size}. Txs: ${setupTxs.length}`);
+      console.log(`[MagicBlock] ER setup complete for room ${room.id}. Session: ${sessionPda}. Manifest slots: ${queue.length}. Txs: ${setupTxs.length}`);
 
     } catch (err) {
       console.warn(`[MagicBlock] ER setup failed for room ${room.id}, falling back to engine-only:`, err);
@@ -233,49 +202,76 @@ export class Blockchain {
     }
   }
 
-  public async registerAndDelegateReplacementCard(room: Room, owner: string, card: EngineCard): Promise<void> {
-    if (!room.erEnabled || !room.erSessionPda) return;
-    if (room.erCardRegistry.has(`${owner}:${card.id}`)) return;
-    throw new Error(
-      `ER replacement card was not pre-registered for ${owner}:${card.id}. ` +
-      `Increase CORA_BATTLE_PRE_REGISTER_CARD_LIMIT or deploy lazy registration support.`,
-    );
-  }
-
+  /**
+   * Apply an inline manifest effect on the ER.
+   *
+   * Every card consumption (correct, wrong, or timeout) must call this to keep
+   * the slot counter in sync with the engine queue.
+   */
   public async applyErCardEffect(
     room: Room,
     params: { owner: string; cardId: string; finalValue: number; scoreDelta: number },
   ): Promise<BattleSessionState | null> {
     if (!room.erEnabled || !room.erSessionPda) return null;
 
-    const registeredCard = room.erCardRegistry.get(`${params.owner}:${params.cardId}`);
-    if (!registeredCard) {
-      throw new Error(`ER card registry missing ${params.owner}:${params.cardId}`);
-    }
-    if (registeredCard.isConsumed) {
-      throw new Error(`ER card already consumed ${params.owner}:${params.cardId}`);
-    }
+    const actorIsA = params.owner === room.playerA;
+    const slot = actorIsA ? room.erNextSlotA++ : room.erNextSlotB++;
 
-    const finalValue = Math.min(params.finalValue, registeredCard.maxValue);
-    const scoreDelta = Math.min(params.scoreDelta, finalValue);
+    const finalValue = Math.min(params.finalValue, DEPLOYED_MAX_EFFECT_VALUE);
+    const scoreDelta = Math.min(params.scoreDelta, finalValue * 100); // MAX_SCORE_MULTIPLIER = 100
+
     if (finalValue !== params.finalValue || scoreDelta !== params.scoreDelta) {
       console.warn(
-        `[MagicBlock] Capping ER card effect for room ${room.id}: requested finalValue=${params.finalValue}, ` +
-        `scoreDelta=${params.scoreDelta}, registeredMax=${registeredCard.maxValue}.`,
+        `[MagicBlock] Capping ER effect for room ${room.id}: requested finalValue=${params.finalValue}, ` +
+        `scoreDelta=${params.scoreDelta}, slot=${slot}.`,
       );
     }
 
-    await magicBlockService.applyCardEffect({
+    await magicBlockService.applyEffect({
       roomId: room.id,
       sessionPda: room.erSessionPda,
-      cardPda: registeredCard.cardPda,
+      slot,
+      actorIsA,
       finalValue,
       scoreDelta,
       serverKeypair: getServerKeypair(),
     });
-    registeredCard.isConsumed = true;
 
     return this.syncErState(room);
+  }
+
+  /**
+   * Consume a slot on-chain for a wrong answer or timeout — no HP effect.
+   * Keeps the manifest slot counter in sync with the engine queue.
+   */
+  public async consumeErSlotEmpty(
+    room: Room,
+    owner: string,
+  ): Promise<BattleSessionState | null> {
+    return this.applyErCardEffect(room, {
+      owner,
+      cardId: '__empty__',
+      finalValue: 0,
+      scoreDelta: 0,
+    });
+  }
+
+  /**
+   * Surrender the ER match. Calls surrender_match instruction which immediately
+   * sets status=Finished and winner=opponent on-chain.
+   */
+  public async surrenderErMatch(room: Room, surrenderingPlayer: string): Promise<void> {
+    if (!room.erEnabled || !room.erSessionPda) return;
+
+    await magicBlockService.surrenderMatch({
+      roomId: room.id,
+      sessionPda: room.erSessionPda,
+      surrenderingPlayer,
+      serverKeypair: getServerKeypair(),
+    });
+
+    const erState = await this.syncErState(room);
+    await this.finalizeTerminalErSession(room, erState);
   }
 
   public async syncErState(room: Room): Promise<BattleSessionState | null> {
@@ -369,6 +365,12 @@ export class Blockchain {
     this.forceLocalErFailure(room);
   }
 
+  /**
+   * Finalize a terminal ER session: commit + undelegate session only.
+   *
+   * With inline manifest, there are no RegisteredCard accounts to commit/undelegate.
+   * Settlement flow: commitBattleSession → undelegateBattleSession (2 tx, ~4s).
+   */
   public async finalizeTerminalErSession(room: Room, state?: BattleSessionState | null): Promise<boolean> {
     if (!room.erEnabled || !room.erSessionPda || !room.engine) return false;
     if (room.erLifecycleStatus === 'committing' || room.erLifecycleStatus === 'finished') return true;
@@ -383,32 +385,12 @@ export class Blockchain {
     const keypair = getServerKeypair();
     const terminalTxs: string[] = [];
 
-    for (const card of room.erCardRegistry.values()) {
-      if (!card.isDelegated) continue;
-      terminalTxs.push(await magicBlockService.commitRegisteredCard({
-        roomId: room.id,
-        sessionPda: room.erSessionPda,
-        cardPda: card.cardPda,
-        serverKeypair: keypair,
-      }));
-    }
-
+    // No more card commit/undelegate loops — inline manifest means session only.
     terminalTxs.push(await magicBlockService.commitBattleSession({
       roomId: room.id,
       sessionPda: room.erSessionPda,
       serverKeypair: keypair,
     }));
-
-    for (const card of room.erCardRegistry.values()) {
-      if (!card.isDelegated) continue;
-      terminalTxs.push(await magicBlockService.undelegateRegisteredCard({
-        roomId: room.id,
-        sessionPda: room.erSessionPda,
-        cardPda: card.cardPda,
-        serverKeypair: keypair,
-      }));
-      card.isDelegated = false;
-    }
 
     terminalTxs.push(await magicBlockService.undelegateBattleSession({
       roomId: room.id,
@@ -537,12 +519,21 @@ export class Blockchain {
     const erProof = this.buildErProofPayload(room);
 
     if (finalState.status === 'Finished' && finalState.winner) {
+      const reason = finalState.endReason === END_REASON_SINGLE_PLAYER_TIMEOUT
+        ? 'time_up'
+        : finalState.endReason === END_REASON_SURRENDER
+          ? 'surrender'
+          : 'hp_zero';
+
       this.settleMatch(room, finalState.winner);
       this.manager.network.broadcastToRoom(room, {
         type: 'matchResult',
         payload: {
           winnerAddress: finalState.winner,
-          reason: finalState.endReason === END_REASON_SINGLE_PLAYER_TIMEOUT ? 'time_up' : 'hp_zero',
+          reason,
+          surrenderedAddress: finalState.endReason === END_REASON_SURRENDER
+            ? (finalState.winner === finalState.playerA ? finalState.playerB : finalState.playerA)
+            : undefined,
           finalScores,
           finalHealth,
           finalRoundsWon,
