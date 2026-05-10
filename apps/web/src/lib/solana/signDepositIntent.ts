@@ -244,22 +244,16 @@ export async function signDepositIntent({
       account: wallet.publicKey.toBase58(),
     });
 
-    // Fetch backend transaction and latest blockhash in parallel to reduce latency.
-    // The backend transaction usually includes a valid blockhash, but we fetch one
-    // as a fallback in case the backend's has expired (e.g., slow tunnels).
-    const [res, latestBlockhash] = await Promise.all([
-      fetch(`${apiBase}/api/actions/challenge?roomId=${roomId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal,
-        body: JSON.stringify({ 
-          account: wallet.publicKey.toBase58(),
-          tokenMint: token,
-          wagerAmount: Math.floor(parseFloat(wagerUsd) * 1_000_000) 
-        }),
+    const res = await fetch(`${apiBase}/api/actions/challenge?roomId=${roomId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        account: wallet.publicKey.toBase58(),
+        tokenMint: token,
+        wagerAmount: Math.floor(parseFloat(wagerUsd) * 1_000_000),
       }),
-      connection.getLatestBlockhash("confirmed").catch(() => null),
-    ]);
+    });
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -285,10 +279,6 @@ export async function signDepositIntent({
     const txBuffer = Buffer.from(base64Tx, "base64");
     const transaction = Transaction.from(txBuffer);
 
-    // Use the fresh blockhash if available, otherwise trust the backend's
-    if (latestBlockhash) {
-      transaction.recentBlockhash = latestBlockhash.blockhash;
-    }
     transaction.feePayer = wallet.publicKey;
 
     // NOTE: Simulation removed — sendTransaction performs preflight simulation
@@ -306,27 +296,6 @@ export async function signDepositIntent({
     });
 
     // Return the signature immediately — don't block on confirmation.
-    // The backend will verify the deposit on-chain when it receives confirmDeposit.
-    // We fire confirmation in the background for logging purposes only.
-    if (latestBlockhash) {
-      connection.confirmTransaction(
-        {
-          signature,
-          blockhash: latestBlockhash.blockhash,
-          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-        },
-        "confirmed",
-      ).then((confirmation) => {
-        if (confirmation.value.err) {
-          console.warn("[signDepositIntent] Transaction failed on-chain:", confirmation.value.err);
-        } else {
-          console.info("[signDepositIntent] Transaction confirmed on-chain:", signature);
-        }
-      }).catch((err) => {
-        console.warn("[signDepositIntent] Background confirmation check failed:", err);
-      });
-    }
-
     return signature;
   } catch (error) {
     throw mapWalletError(error);
