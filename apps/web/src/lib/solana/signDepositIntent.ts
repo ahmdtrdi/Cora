@@ -30,6 +30,7 @@ export class DepositIntentError extends Error {
     | "wallet_declined"
     | "insufficient_balance"
     | "rpc_error"
+    | "network_error"
     | "unknown";
 
   constructor(
@@ -39,11 +40,13 @@ export class DepositIntentError extends Error {
       | "wallet_declined"
       | "insufficient_balance"
       | "rpc_error"
+      | "network_error"
       | "unknown",
     message: string,
   ) {
     super(message);
     this.code = code;
+    this.name = "DepositIntentError";
   }
 }
 
@@ -93,6 +96,17 @@ function mapWalletError(error: unknown): DepositIntentError {
   const message = error instanceof Error ? error.message : "Unknown wallet error";
   const lowered = message.toLowerCase();
   const combined = `${lowered} ${logs}`;
+
+  // Network / fetch failures — the tunnel is down or backend unreachable
+  if (
+    lowered.includes("failed to fetch") ||
+    lowered.includes("networkerror") ||
+    lowered.includes("network request failed") ||
+    lowered.includes("load failed") ||
+    (error instanceof TypeError && lowered.includes("fetch"))
+  ) {
+    return new DepositIntentError("network_error", "Unable to reach the game server. Check your connection and retry.");
+  }
 
   if (combined.includes("rejected") || combined.includes("denied") || combined.includes("cancel")) {
     return new DepositIntentError("wallet_declined", "Wallet request was declined.");

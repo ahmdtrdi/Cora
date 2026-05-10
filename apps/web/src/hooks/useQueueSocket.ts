@@ -47,6 +47,14 @@ export function useQueueSocket(): UseQueueSocketReturn {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intentionalCloseRef = useRef(false);
 
+  // Use refs to track mutable state that the onclose handler needs.
+  // This avoids the stale-closure problem where onclose captures
+  // the queueState/matchResult values from the render when openSocket was called.
+  const queueStateRef = useRef<QueueState>(queueState);
+  queueStateRef.current = queueState;
+  const matchResultRef = useRef<MatchFoundResult | null>(matchResult);
+  matchResultRef.current = matchResult;
+
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
 
   const cleanup = useCallback(() => {
@@ -66,11 +74,13 @@ export function useQueueSocket(): UseQueueSocketReturn {
     intentionalCloseRef.current = false;
 
     const socketUrl = `${wsBaseUrl}/queue?address=${encodeURIComponent(address)}`;
+    console.info('[useQueueSocket] Opening connection to', socketUrl);
     const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
     setQueueState('connecting');
 
     ws.onopen = () => {
+      console.info('[useQueueSocket] Connected');
       setQueueState('queued');
       reconnectAttemptsRef.current = 0;
     };
@@ -91,10 +101,10 @@ export function useQueueSocket(): UseQueueSocketReturn {
 
           case 'matchFound': {
             const payload = message.payload as MatchFoundResult;
+            console.info('[useQueueSocket] Match found:', payload.roomId, payload.role);
             setMatchResult(payload);
             setQueueState('matched');
             setQueueStatus(null);
-            // Don't close the WS here — the server or close handler will clean up
             break;
           }
 
@@ -122,14 +132,14 @@ export function useQueueSocket(): UseQueueSocketReturn {
     ws.onclose = (event) => {
       if (intentionalCloseRef.current || socketRef.current !== ws) return;
 
-      // If we already matched, don't try to reconnect
-      if (queueState === 'matched' || matchResult) return;
+      // Use refs for current values (not stale closure values)
+      if (queueStateRef.current === 'matched' || matchResultRef.current) return;
 
       // Attempt reconnect for unexpected closes
       if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS && addressRef.current) {
         reconnectAttemptsRef.current += 1;
         console.warn(
-          `[useQueueSocket] Connection lost (code ${event.code}), reconnecting (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`,
+          `[useQueueSocket] Connection lost (code ${event.code}, reason: ${event.reason || 'none'}), reconnecting (${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`,
         );
         setQueueState('connecting');
         reconnectTimerRef.current = setTimeout(() => {
@@ -138,17 +148,20 @@ export function useQueueSocket(): UseQueueSocketReturn {
           }
         }, RECONNECT_DELAY_MS);
       } else {
-        console.warn(`[useQueueSocket] Connection lost, no more reconnect attempts.`);
+        console.warn(`[useQueueSocket] Connection lost (code ${event.code}), no more reconnect attempts.`);
         setQueueState('error');
         setQueueStatus(null);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('[useQueueSocket] WebSocket error:', error);
-      // onclose will handle reconnect
+    ws.onerror = () => {
+      // WebSocket error events don't carry useful info — onclose handles recovery.
+      // Only log if we're not already in an intentional close.
+      if (!intentionalCloseRef.current) {
+        console.warn('[useQueueSocket] WebSocket error (details not available in browser). Will reconnect on close.');
+      }
     };
-  }, [wsBaseUrl, cleanup, queueState, matchResult]);
+  }, [wsBaseUrl, cleanup]);
 
   const connect = useCallback((address: string) => {
     addressRef.current = address;

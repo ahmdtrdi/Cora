@@ -144,7 +144,7 @@ export function OpponentFound({
       return;
     }
 
-    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing") return;
+    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -256,6 +256,8 @@ export function OpponentFound({
           return "Your wallet does not support transaction signing.";
         case "rpc_error":
           return "Transaction expired before it could be confirmed. Please retry.";
+        case "network_error":
+          return "Unable to reach the game server. Check your connection and retry.";
         case "unknown":
           if (error.message === "signing_timeout") {
             return "Wallet approval timed out. If Phantom showed a warning, your balance may be too low. Retry or top up your wallet.";
@@ -362,11 +364,16 @@ export function OpponentFound({
       setSignedDepositSignature(signature);
       setSigningState("waiting");
     } catch (error) {
-      console.error("[OpponentFound] Deposit signing failed", {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorCode = error instanceof DepositIntentError ? error.code : "unknown";
+      const errorName = error instanceof Error ? error.name : typeof error;
+      console.error(`[OpponentFound] Deposit signing failed: [${errorCode}] ${errorMsg}`, {
         roomId,
         role: effectiveRole ?? "unknown",
         connectionState,
-        error,
+        errorCode,
+        errorName,
+        errorMsg,
       });
       const message = classifyDepositError(error);
       const hasInsufficientFunds =
