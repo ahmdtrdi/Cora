@@ -163,6 +163,23 @@ export class Lifecycle {
   public handleDeposit(room: Room, address: string, signature: string) {
     console.log(`Player ${address} confirmed deposit with signature ${signature} in room ${room.id}`);
 
+    if (
+      room.roomType === 'private' &&
+      address === room.playerA &&
+      room.blinkJoinDeadline &&
+      Date.now() > room.blinkJoinDeadline
+    ) {
+      console.log(`[Blink] Creator deposit missed join deadline in room ${room.id}. Forfeiting.`);
+      void this.manager.blinkMatches.forfeitChallenged(room.id).catch((err) => {
+        console.error(`[Blink] Failed to mark room ${room.id} forfeited:`, err);
+      });
+      this.cancelRoom(room.id, room.playerB ?? undefined, {
+        reason: 'deposit_timeout',
+        cancelledBy: address,
+      });
+      return;
+    }
+
     const timer = room.depositTimeouts.get(address);
     if (timer) {
       clearTimeout(timer);
@@ -171,6 +188,19 @@ export class Lifecycle {
 
     const meta = room.playerMeta.get(address);
     if (meta) meta.hasDeposited = true;
+
+    if (room.roomType === 'private' && address === room.playerA) {
+      void this.manager.blinkMatches.markActive(room.id, address, signature).then((match) => {
+        if (match?.status === 'FORFEITED') {
+          this.cancelRoom(room.id, room.playerB ?? undefined, {
+            reason: 'deposit_timeout',
+            cancelledBy: address,
+          });
+        }
+      }).catch((err) => {
+        console.error(`[Blink] Failed to mark private room ${room.id} active:`, err);
+      });
+    }
 
     const isPlayerA = address === room.playerA;
 

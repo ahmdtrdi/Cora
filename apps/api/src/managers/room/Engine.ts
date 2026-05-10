@@ -151,6 +151,11 @@ export class Engine {
         });
       } finally {
         room.status = 'finished';
+        if (room.roomType === 'private') {
+          void this.manager.blinkMatches.markCompleted(room.id).catch((err) => {
+            console.error(`[Blink] Failed to mark private room ${room.id} completed:`, err);
+          });
+        }
         console.log(`FINISHED: Room ${room.id} settlement dispatched.`);
         this.manager.network.broadcastGameState(room);
         
