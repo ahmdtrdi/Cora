@@ -105,6 +105,11 @@ export function useQueueSocket(): UseQueueSocketReturn {
             setMatchResult(payload);
             setQueueState('matched');
             setQueueStatus(null);
+            intentionalCloseRef.current = true;
+            ws.close(1000, 'Match found');
+            if (socketRef.current === ws) {
+              socketRef.current = null;
+            }
             break;
           }
 

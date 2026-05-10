@@ -332,13 +332,26 @@ export class Lifecycle {
 
       if (innocentWs) {
         this.manager.network.safeSend(innocentWs, { type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage);
-        this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
       } else {
         console.log(`[Cancel] ${innocentAddress} already disconnected — skipping re-queue.`);
       }
     }
 
+    this.closeRoomSockets(room, 'Match cancelled');
     this.destroyRoom(roomId);
+  }
+
+  private closeRoomSockets(room: Room, reason: string): void {
+    for (const [address, client] of room.clients) {
+      if (!client.ws) continue;
+      try {
+        client.ws.close(1000, reason);
+        client.ws = null;
+        client.lastSeenAt = Date.now();
+      } catch (error) {
+        console.warn(`[RoomLifecycle] Failed to close room socket for ${address} in ${room.id}:`, error);
+      }
+    }
   }
 
   public destroyRoom(roomId: string): void {

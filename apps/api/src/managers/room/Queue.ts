@@ -107,23 +107,6 @@ export class Queue {
     });
   }
 
-  public requeueInnocent(address: string, ws: RoomSocket) {
-    const queueItem: QueueItem = {
-      address,
-      ws,
-      resolve: (newRoomId: string) => {
-        this.manager.network.safeSend(ws, {
-          type: 'matchFound',
-          payload: { roomId: newRoomId, role: 'playerA', opponentAddress: '' },
-        } satisfies WsMessage);
-      },
-      enqueuedAt: Date.now(),
-    };
-    this.queue.unshift(queueItem);
-    this.broadcastQueuePositions();
-    this.printQueueState('REQUEUED', `${this.shortAddr(address)} returned to queue`);
-  }
-
   /**
    * WebSocket-based queue entry. Instead of hanging an HTTP request,
    * this pushes real-time events (queueJoined, queueStatus, matchFound)
@@ -195,7 +178,7 @@ export class Queue {
       address,
       queueWs,
       resolve: (roomId: string) => {
-        // When matched via HTTP path or requeueInnocent, also notify the queueWs
+        // When matched via the HTTP path, also notify the queueWs.
         if (queueItem.queueWs) {
           this.manager.network.safeSend(queueItem.queueWs, {
             type: 'matchFound',
