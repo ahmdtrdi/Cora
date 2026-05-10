@@ -30,7 +30,8 @@ const battleIdl: Idl = {
 };
 
 // Keep these aligned with the on-chain account sizes in state.rs.
-const BATTLE_SESSION_ACCOUNT_SPACE = 267;
+// v5 inline-manifest layout: 267 (old) + 1+1+16+16+1+1+384+384 = 1071
+const BATTLE_SESSION_ACCOUNT_SPACE = 1071;
 const REGISTERED_CARD_ACCOUNT_SPACE = 95;
 
 let baseConnection: Connection | null = null;
@@ -54,6 +55,7 @@ export const END_REASON_SERVER_CANCELLED = 4;
 export const END_REASON_CHEATER_FLAGGED = 5;
 export const END_REASON_FORCE_ENDED = 6;
 export const END_REASON_DRAW_NO_CONTEST = 7;
+export const END_REASON_SURRENDER = 8;
 
 export const MAGICBLOCK_END_REASONS = {
   NONE: END_REASON_NONE,
@@ -64,6 +66,7 @@ export const MAGICBLOCK_END_REASONS = {
   CHEATER_FLAGGED: END_REASON_CHEATER_FLAGGED,
   FORCE_ENDED: END_REASON_FORCE_ENDED,
   DRAW_NO_CONTEST: END_REASON_DRAW_NO_CONTEST,
+  SURRENDER: END_REASON_SURRENDER,
 } as const;
 
 export const MAGICBLOCK_EFFECT_TYPES = {
@@ -98,6 +101,11 @@ export interface BattleSessionState {
   endReason: number;
   finishedAt: number;
   totalPlays: number;
+  // Inline manifest fields (v5)
+  totalSlotsA: number;
+  totalSlotsB: number;
+  manifestCommittedA: boolean;
+  manifestCommittedB: boolean;
 }
 
 interface CreateSessionParams {
@@ -151,6 +159,23 @@ interface ApplyDamageParams extends SessionCardInstructionParams {
 interface ApplyCardEffectParams extends SessionCardInstructionParams {
   finalValue: number;
   scoreDelta: number;
+}
+
+interface SetCardManifestParams extends SessionInstructionParams {
+  isPlayerA: boolean;
+  totalSlots: number;
+  manifest: Uint8Array;  // packed [effectType, maxValueLo, maxValueHi] × totalSlots
+}
+
+interface ApplyEffectParams extends SessionInstructionParams {
+  slot: number;
+  actorIsA: boolean;
+  finalValue: number;
+  scoreDelta: number;
+}
+
+interface SurrenderMatchParams extends SessionInstructionParams {
+  surrenderingPlayer: AddressLike;
 }
 
 interface TimeoutPlayerForRoundParams extends SessionInstructionParams {
@@ -536,12 +561,16 @@ async function sendMagicRouterTransaction(transaction: Transaction, serverKeypai
 }
 
 /**
- * Intended BE room flow for new rooms:
+ * Intended BE room flow for new rooms (inline manifest):
+ * createSession -> setCardManifest(A) -> setCardManifest(B) -> activateSession ->
+ * delegateBattleSession ->
+ * applyEffect -> timeoutPlayerForRound / resolveRoundByState / cancelSession / surrenderMatch ->
+ * commitBattleSession -> undelegateBattleSession.
+ *
+ * Legacy flow (still supported but not used for new rooms):
  * createSession -> registerCardV2 -> activateSession ->
  * delegateBattleSession -> delegateRegisteredCard ->
- * applyCardEffect -> timeoutPlayerForRound / resolveRoundByState / cancelSession ->
- * commitBattleSession / commitRegisteredCard ->
- * undelegateBattleSession / undelegateRegisteredCard.
+ * applyCardEffect -> ... -> commitRegisteredCard -> undelegateRegisteredCard.
  *
  * Notes for BE:
  * - BE chooses timeout vs resolve vs cancel based on connection-state facts.
@@ -657,6 +686,64 @@ export class MagicBlockService {
           })
           .transaction();
         return sendBaseTransaction(transaction, params.serverKeypair);
+      },
+    );
+  }
+
+  async setCardManifest(params: SetCardManifestParams): Promise<string> {
+    const sessionPda = toPublicKey(params.sessionPda);
+    const program = buildProgram(params.serverKeypair, 'base');
+
+    return logInstruction(
+      { roomId: params.roomId, instruction: 'setCardManifest', lane: 'base', sessionPda },
+      async () => {
+        const transaction = await program.methods
+          .setCardManifest(params.isPlayerA, params.totalSlots, Buffer.from(params.manifest))
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendBaseTransaction(transaction, params.serverKeypair);
+      },
+    );
+  }
+
+  async applyEffect(params: ApplyEffectParams): Promise<string> {
+    const sessionPda = toPublicKey(params.sessionPda);
+    const program = buildProgram(params.serverKeypair, 'router');
+
+    return logInstruction(
+      { roomId: params.roomId, instruction: 'applyEffect', lane: 'router', sessionPda },
+      async () => {
+        const transaction = await program.methods
+          .applyEffect(params.slot, params.actorIsA, params.finalValue, params.scoreDelta)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
+      },
+    );
+  }
+
+  async surrenderMatch(params: SurrenderMatchParams): Promise<string> {
+    const sessionPda = toPublicKey(params.sessionPda);
+    const surrenderingPlayer = toPublicKey(params.surrenderingPlayer);
+    const program = buildProgram(params.serverKeypair, 'router');
+
+    return logInstruction(
+      { roomId: params.roomId, instruction: 'surrenderMatch', lane: 'router', sessionPda },
+      async () => {
+        const transaction = await program.methods
+          .surrenderMatch(surrenderingPlayer)
+          .accountsPartial({
+            authority: params.serverKeypair.publicKey,
+            battleSession: sessionPda,
+          })
+          .transaction();
+        return sendMagicRouterTransaction(transaction, params.serverKeypair);
       },
     );
   }
@@ -927,13 +1014,17 @@ export class MagicBlockService {
   /**
    * Reads BattleSession from router first, then base layer as a fallback.
    *
-   * Offsets below match the current on-chain BattleSession layout:
+   * Offsets below match the v5 on-chain BattleSession layout:
    * version(0) matchId(1) authority(33) playerA(65) playerB(97) healthA(129)
    * healthB(131) scoreA(133) scoreB(135) currentRound(137) roundsWonA(138)
    * roundsWonB(139) roundStartedAt(140) roundDeadline(148) missedA(156)
    * missedB(157) totalPlays(158) status(160) winner(161) questionHash(193)
    * bump(225) createdAt(226) finishedAt(234) endReason(242) gameScoreA(243)
-   * gameScoreB(247) roundDamageA(251) roundDamageB(255).
+   * gameScoreB(247) roundDamageA(251) roundDamageB(255)
+   * -- v5 inline manifest additions --
+   * totalSlotsA(259) totalSlotsB(260) cardsUsedA(261) cardsUsedB(277)
+   * manifestCommittedA(293) manifestCommittedB(294)
+   * cardManifestA(295..679) cardManifestB(679..1063)
    */
   async getSessionState(sessionPda: AddressLike): Promise<BattleSessionState> {
     const sessionKey = toPublicKey(sessionPda);
@@ -966,6 +1057,14 @@ export class MagicBlockService {
     const roundDamageA = data.readUInt32LE(disc + 251);
     const roundDamageB = data.readUInt32LE(disc + 255);
 
+    // v5 inline manifest fields (safe even if account is old/short — default to 0/false)
+    const hasV5Fields = data.length >= disc + 295;
+    const totalSlotsA = hasV5Fields ? data.readUInt8(disc + 259) : 0;
+    const totalSlotsB = hasV5Fields ? data.readUInt8(disc + 260) : 0;
+    // cardsUsedA/B at 261..293 are u128 bitmasks — skip for state interface
+    const manifestCommittedA = hasV5Fields ? data.readUInt8(disc + 293) !== 0 : false;
+    const manifestCommittedB = hasV5Fields ? data.readUInt8(disc + 294) !== 0 : false;
+
     return {
       sessionPda: sessionKey.toBase58(),
       authority,
@@ -987,8 +1086,31 @@ export class MagicBlockService {
       endReason,
       finishedAt,
       totalPlays,
+      totalSlotsA,
+      totalSlotsB,
+      manifestCommittedA,
+      manifestCommittedB,
     };
   }
+}
+
+/**
+ * Pack an array of card definitions into the inline manifest byte format
+ * expected by `set_card_manifest`.
+ *
+ * Each slot is 3 bytes: [effect_type, max_value_lo, max_value_hi]
+ */
+export function packCardManifest(
+  cards: Array<{ effectType: number; maxValue: number }>,
+): Uint8Array {
+  const buf = new Uint8Array(cards.length * 3);
+  for (let i = 0; i < cards.length; i++) {
+    const { effectType, maxValue } = cards[i];
+    buf[i * 3] = effectType;
+    buf[i * 3 + 1] = maxValue & 0xff;        // low byte
+    buf[i * 3 + 2] = (maxValue >> 8) & 0xff;  // high byte
+  }
+  return buf;
 }
 
 export const magicBlockService = new MagicBlockService();

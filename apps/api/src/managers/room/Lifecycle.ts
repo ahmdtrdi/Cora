@@ -318,22 +318,11 @@ export class Lifecycle {
     this.manager.store.deleteRoom(roomId);
   }
 
-  public surrender(roomId: string, surrenderedAddress: string): void {
+  public async surrender(roomId: string, surrenderedAddress: string): Promise<void> {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
     if (room.status !== 'playing' && room.status !== 'depositing') return;
     if (surrenderedAddress !== room.playerA && surrenderedAddress !== room.playerB) return;
-
-    if (room.erEnabled) {
-      const client = room.clients.get(surrenderedAddress);
-      this.manager.network.safeSend(client?.ws, {
-        type: 'surrenderRejected',
-        payload: {
-          message: 'Surrender is disabled for MagicBlock-authoritative matches in this release.',
-        },
-      } satisfies WsMessage);
-      return;
-    }
 
     const winnerAddress = surrenderedAddress === room.playerA ? room.playerB : room.playerA;
     if (!winnerAddress) return;
@@ -351,6 +340,20 @@ export class Lifecycle {
     room.depositTimeouts.clear();
     this.clearAllOpenedCards(room);
 
+    // ER-authoritative surrender: send surrender_match instruction to ER
+    if (room.erEnabled && room.erSessionPda) {
+      try {
+        await this.manager.blockchain.surrenderErMatch(room, surrenderedAddress);
+        // finalizeTerminalErSession handles settlement + broadcast
+        return;
+      } catch (e) {
+        console.error(`[Surrender] ER surrender failed for room ${roomId}, falling back to engine:`, e);
+        await this.manager.blockchain.handleErFatalError(room, 'surrender', e);
+        return;
+      }
+    }
+
+    // Non-ER path: engine-only surrender
     if (room.engine) {
       room.engine.surrender(surrenderedAddress);
       return;
