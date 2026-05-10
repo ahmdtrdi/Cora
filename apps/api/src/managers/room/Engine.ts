@@ -275,8 +275,8 @@ export class Engine {
       if (!result.success) return;
 
       try {
-        // Consume slot on-chain even for timeout — keeps manifest in sync
-        await this.manager.blockchain.consumeErSlotEmpty(room, address);
+        // Consume slot on-chain even for timeout
+        await this.manager.blockchain.consumeErSlotEmpty(room, address, cardId);
       } catch (e) {
         console.error(`[RoomEngineManager] Failed to consume ER slot after timeout in room ${room.id}:`, e);
         await this.manager.blockchain.handleErFatalError(room, 'timeout slot consumption', e);
@@ -364,7 +364,7 @@ export class Engine {
           await this.manager.blockchain.finalizeTerminalErSession(room, erState);
         } else {
           // Wrong answer: consume the slot on-chain with zero effect
-          await this.manager.blockchain.consumeErSlotEmpty(room, address);
+          await this.manager.blockchain.consumeErSlotEmpty(room, address, cardId);
         }
         this.manager.network.broadcastScoreUpdate(room);
       } catch (e) {
