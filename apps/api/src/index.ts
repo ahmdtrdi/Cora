@@ -15,6 +15,7 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
 const roomManager = new RoomManager();
 const matchSocketRoute = createMatchSocketRoute(roomManager);
+roomManager.startBlinkJanitor();
 
 // Global middleware
 app.use('/*', cors());
