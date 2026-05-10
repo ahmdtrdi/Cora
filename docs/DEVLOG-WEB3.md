@@ -238,6 +238,8 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 **Test update (1 file):**
 
+---
+
 - `tests/test_initialize.rs` — Added `test_initialize_match_below_min_wager_fails` (wager = 1 lamport, should be rejected).
 
 **Total test count: 18 → 19**
@@ -835,3 +837,107 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] Redeploy latest `cora_battle` binary to Devnet under `3eMD...` (same keypair) so account layout matches current IDL (`BattleSession::LEN = 1071`).
 - [ ] Refresh client IDL artifacts after deploy (`target/idl`, `packages/solana-client/src/cora_battle.json/.ts`) and re-run Devnet suite.
 - [ ] Stabilize Devnet RPC for CI-like runs (dedicated endpoint + tuned retry/confirm strategy), because public/shared RPC introduces non-deterministic timeouts for transaction-heavy integration tests.
+
+---
+
+## Entry 25 — 2026-05-10: Blink Escrow Plan Revision for Soft-to-True Cutover
+
+### The Change
+
+- Rewrote `docs/blink_escrow_PLAN.md` into a stricter execution plan for the true Blink escrow flow.
+- Clarified that the backend soft Blink work is **not throwaway**; it remains the off-chain orchestration base while the on-chain escrow semantics are upgraded.
+- Added canonical decisions for:
+  - `match_id = deriveMatchId(roomId)`
+  - DB statuses vs on-chain `MatchStatus`
+  - creator no-show resolved via normal `settle_match(action = 0, target = challenger)`
+  - temporary challenge-account rent returning to the creator
+- Added a concrete backend cutover section specifying which parts of the soft implementation stay, which transaction-building assumptions must change, and the required merge/deploy order.
+- Added explicit Web3/BE handoff notes and a smoke checklist covering both contract lifecycle and Blink/API lifecycle.
+
+### The Reasoning
+
+1. **The previous escrow plan was technically close but operationally under-specified.** The biggest risk was not Rust implementation itself, but drift between backend DB semantics, on-chain state semantics, and the soft Blink work already done on another branch.
+
+2. **`match_id` canonicalization is a cross-team contract.** Without explicitly pinning Blink to `deriveMatchId(roomId)`, it is too easy for the backend, settlement oracle, and contract client to derive different PDAs for the same challenge.
+
+3. **No-show needs one authoritative policy.** Since both wagers are already locked after `accept_challenge`, the cleanest MVP rule is to settle the challenger as the winner through the existing settlement path instead of introducing a Blink-only refund or slash branch.
+
+4. **The soft backend implementation still has lasting value.** Its Supabase persistence, janitor logic, and private room hydration should survive the smart-contract upgrade; only the transaction semantics need to change.
+
+### The Tech Debt
+
+- [ ] `MASTER.md` still describes the escrow as a simpler 2-transaction model; Blink is now documented as an intentional async exception, but the high-level product doc may still need wording cleanup later.
+- [ ] This was a documentation hardening pass only. The Rust instructions, IDL, and backend builders still need to be updated in code.
+- [ ] A matching backend devlog entry should be added when the BE branch actually performs the soft-to-true Blink cutover.
+
+---
+
+## Entry 26 — 2026-05-10: True Blink Escrow Smart-Contract Implementation
+
+### The Change
+
+**Plan hardening:**
+- `docs/blink_escrow_PLAN.md` — Folded the key review findings into the canonical plan:
+  - added `EXPIRED` DB state
+  - clarified `creator` must be mutable in `accept_challenge`
+  - documented SPL `close_account` CPI for `challenge_vault`
+  - documented required `MatchState.version` and `MatchState.bump` initialization
+  - added duplicate-accept test requirement and no-show signing ceremony note
+
+**Smart contract (9 files):**
+- `packages/solana-program/programs/solana-program/src/state.rs`
+  - added `OpenChallengeState` with `created_at`, `expires_at`, and PDA bumps
+- `.../constants.rs`
+  - added `CHALLENGE_SEED`, `CHALLENGE_VAULT_SEED`, and `CHALLENGE_EXPIRY`
+- `.../error.rs`
+  - added `ChallengeExpired`, `ChallengeNotExpired`, `CreatorCannotAccept`
+- `.../events.rs`
+  - added `OpenChallengeCreatedEvent`, `ChallengeAcceptedEvent`, `ChallengeReclaimedEvent`
+- `.../instructions/create_open_challenge.rs`
+  - **NEW** creator-funded open challenge path
+- `.../instructions/accept_challenge.rs`
+  - **NEW** challenger accepts, migrates funds into the final `MatchState` + vault, returns temporary PDA rent to creator
+- `.../instructions/reclaim_challenge.rs`
+  - **NEW** creator reclaim path after challenge expiry
+- `.../instructions.rs` and `.../lib.rs`
+  - wired the 3 new instructions into the Anchor program and client account re-exports
+
+**Tests (2 files):**
+- `packages/solana-program/programs/solana-program/tests/common/mod.rs`
+  - added PDA helpers, lamport/account helpers, and reusable helpers for create/accept/reclaim challenge flow
+- `.../tests/test_blink_challenge.rs`
+  - **NEW** 10-test Blink escrow lifecycle suite covering create, accept, reclaim, full settlement, refund-after-timeout, and duplicate-accept race behavior
+
+**Shared/client artifacts (3 files):**
+- `packages/shared-types/src/escrow.ts`
+  - added challenge constants and aligned timeout constants with Rust (`30 / 900 / 900`)
+- `packages/solana-client/src/solana_program.json`
+- `packages/solana-client/src/solana_program.ts`
+  - refreshed from `anchor build` so FE/BE can consume the new instruction/account surface
+
+### The Reasoning
+
+1. **The soft BE branch needed a real escrow target, not a vague future note.** The new instructions let us preserve BE's Supabase/private-room orchestration while upgrading the economic commitment model to true creator-funded challenges.
+
+2. **`accept_challenge` was designed as the compatibility bridge.** After acceptance, the contract emits a standard `MatchState` in `Active` status so the existing `settle_match` and `refund` instructions continue to work without Blink-specific branching.
+
+3. **Rent routing matters economically and operationally.** Returning temporary challenge-account rent to the creator matches who funded those accounts and avoids a subtle value transfer to the challenger.
+
+4. **SBF stack limits surfaced immediately in `accept_challenge`.** The first `anchor build` hit a stack-frame overflow in `AcceptChallenge::try_accounts`; boxing the heavier accounts fixed the issue without changing the external instruction contract.
+
+5. **Generated artifacts must move with the contract.** Refreshing `solana_program.json/.ts` right after `anchor build` keeps FE/BE from integrating against an outdated IDL.
+
+### Verification
+
+- [x] `anchor build`
+- [x] `cargo test`
+- [x] Blink escrow suite: `10 passed`
+- [x] Full Rust suite result: `26 passed, 0 failed`
+- [x] Generated client artifacts copied from `target/idl` and `target/types` into `packages/solana-client/src`
+
+### The Tech Debt
+
+- [ ] This session implemented the Web3 side only. The BE branch still needs the transaction-builder cutover from soft flow to true flow (`create_open_challenge` / `accept_challenge`).
+- [ ] `MASTER.md` still describes a simpler 2-transaction escrow story; Blink remains an intentional async exception that may need product-doc cleanup later.
+- [ ] `anchor build` warns that the Anchor CLI is `0.32.1` while the crate uses `anchor-lang = 1.0.1`. It built successfully here, but version pinning in `Anchor.toml` would reduce future environment drift.
+- [ ] `packages/shared-types/src/escrow.ts` had stale timeout constants before this change. They are now aligned with Rust, but FE/BE should be made aware because any logic that assumed `300 / 1800` seconds was already drifted from the actual program.
