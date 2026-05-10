@@ -33,7 +33,7 @@ export function Navbar() {
         ? "border-b border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.18)]"
         : "border-b border-transparent"
         }`}
-      style={solid ? { backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)", backgroundColor: "rgba(99, 99, 99, 0.55)" } : undefined}
+      style={solid ? { backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)", backgroundColor: "rgba(99, 99, 99, 0.55)" } : { backgroundColor: "transparent" }}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
         <Link href="/" className="group flex items-center gap-3" aria-label="Cora home">
