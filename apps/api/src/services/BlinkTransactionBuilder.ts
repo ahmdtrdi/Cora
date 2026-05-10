@@ -8,18 +8,27 @@ import {
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction } from '@solana/spl-token';
 import { ESCROW_CONSTANTS } from '@shared/escrow';
 import bs58 from 'bs58';
-import { Room } from '../managers/room/types';
+import type { Room } from '../managers/room/types';
 import { CORA_ESCROW_PROGRAM_ID, ESCROW_INSTRUCTION_DISCRIMINATORS } from '../config/solana';
 import { DEVNET_TOKEN_MINTS, resolveTokenMint } from '../config/tokens';
 
 export { resolveTokenMint };
 
+type DepositTransactionRoom = Pick<Room, 'id' | 'matchIdBytes' | 'tokenMint' | 'wagerAmount' | 'playerB'>;
+
+type BuildDepositOptions = boolean | {
+  initializeMatch?: boolean;
+  initializeOpponent?: string;
+};
+
 export class BlinkTransactionBuilder {
   public static async buildDepositTransaction(
     account: string,
-    room: Room,
-    isPlayerA: boolean
+    room: DepositTransactionRoom,
+    options: BuildDepositOptions
   ): Promise<string> {
+    const initializeMatch = typeof options === 'boolean' ? options : Boolean(options.initializeMatch);
+    const initializeOpponent = typeof options === 'boolean' ? room.playerB : options.initializeOpponent ?? room.playerB;
     const depositor = new PublicKey(account);
     const tokenMint = new PublicKey(room.tokenMint!);
     const wagerAmount = room.wagerAmount!;
@@ -65,7 +74,7 @@ export class BlinkTransactionBuilder {
       );
     }
 
-    if (isPlayerA) {
+    if (initializeMatch) {
       const privateKey = process.env.SERVER_KEYPAIR;
       if (!privateKey) throw new Error("Missing SERVER_KEYPAIR for backend");
       const serverKeypair = privateKey.trimStart().startsWith('[')
@@ -88,7 +97,7 @@ export class BlinkTransactionBuilder {
         data: initData,
         keys: [
           { pubkey: depositor, isSigner: true, isWritable: true },
-          { pubkey: new PublicKey(room.playerB || account), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(initializeOpponent || account), isSigner: false, isWritable: false },
           { pubkey: tokenMint, isSigner: false, isWritable: false },
           { pubkey: matchStatePDA, isSigner: false, isWritable: true },
           { pubkey: vaultPDA, isSigner: false, isWritable: true },

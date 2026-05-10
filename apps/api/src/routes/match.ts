@@ -112,12 +112,33 @@ export function createMatchRouter(roomManager: RoomManager) {
       return c.json({ error: `Unknown token "${rawTokenMint}" - provide a symbol (SOL, BONK, USDC) or a valid mint address.` }, 400);
     }
 
-    const roomId = roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
+    const roomId = await roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
 
     const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 8080}`;
     const blinkUrl = `${baseUrl}/api/actions/challenge?roomId=${roomId}`;
 
     return c.json({ roomId, blinkUrl, role: 'playerA', roomType: 'private' });
+  });
+
+  router.get('/private/:roomId', async (c) => {
+    const roomId = c.req.param('roomId');
+    const match = await roomManager.refreshBlinkMatchExpiry(roomId);
+
+    if (!match) {
+      return c.json({ error: 'Private challenge not found' }, 404);
+    }
+
+    return c.json({
+      roomId: match.id,
+      roomType: 'private',
+      status: match.status,
+      creatorWallet: match.creatorWallet,
+      opponentWallet: match.opponentWallet,
+      tokenMint: match.tokenMint,
+      wagerAmount: match.wagerAmount,
+      expiresAt: match.expiresAt,
+      joinDeadline: match.joinDeadline,
+    });
   });
 
   return router;
