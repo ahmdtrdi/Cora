@@ -35,6 +35,25 @@ impl MatchState {
     pub const LEN: usize = 8 + 1 + 32 + 32 + 32 + 32 + 32 + 8 + 1 + 1 + 8 + 8 + 1 + 1;
 }
 
+#[account]
+pub struct OpenChallengeState {
+    pub version: u8,
+    pub match_id: [u8; 32],
+    pub creator: Pubkey,
+    pub token_mint: Pubkey,
+    pub server_pubkey: Pubkey,
+    pub wager_amount: u64,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub bump: u8,
+    pub vault_bump: u8,
+}
+
+impl OpenChallengeState {
+    // 8 + 1 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1 = 163
+    pub const LEN: usize = 8 + 1 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum MatchStatus {
     WaitingDeposit,
