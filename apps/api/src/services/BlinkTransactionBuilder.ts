@@ -66,10 +66,7 @@ export class BlinkTransactionBuilder {
     );
 
     // wSOL wrap if native SOL
-    if (
-      // mint.toBase58() === DEVNET_TOKEN_MINTS.SOL
-      mint.equals(NATIVE_MINT)
-    ) {
+    if (mint.equals(NATIVE_MINT)) {
       tx.add(
         SystemProgram.transfer({
           fromPubkey: creator,

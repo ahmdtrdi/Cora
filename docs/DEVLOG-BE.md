@@ -686,7 +686,6 @@
 
 ### The Tech Debt
 
-- [ ] **wSOL wrap in accept_challenge:** The `buildAcceptChallengeTransaction` doesn't include wSOL wrap instructions for the challenger's wager. For SOL wagers, the challenger must have pre-wrapped wSOL in their ATA. A future update should read the wager amount from the challenge PDA and add wrap instructions.
 - [ ] **confirmTransaction timeout:** `connection.confirmTransaction` uses the default timeout (~30s). For production, consider using `confirmTransaction` with `lastValidBlockHeight` for more reliable timeout behavior.
 - [ ] **Pre-existing test failures:** 8 `RoomManager.test.ts` failures remain (engine is null due to missing questions API in test environment). These predate this change.
 - [ ] **Reclaim challenge:** The `reclaim_challenge` instruction is supported by the contract but not yet wired in the backend. If a creator's challenge expires on-chain before anyone accepts, the creator can reclaim via a frontend-only flow.
