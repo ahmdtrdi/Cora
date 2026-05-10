@@ -8,6 +8,268 @@
   },
   "instructions": [
     {
+      "name": "accept_challenge",
+      "discriminator": [
+        195,
+        227,
+        139,
+        241,
+        55,
+        193,
+        153,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "challenger",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "creator",
+          "writable": true
+        },
+        {
+          "name": "challenge_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenge_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "match_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenger_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "match_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_open_challenge",
+      "discriminator": [
+        238,
+        208,
+        117,
+        255,
+        0,
+        232,
+        161,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "challenge_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenge_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "match_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "match_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "wager_amount",
+          "type": "u64"
+        },
+        {
+          "name": "server_pubkey",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "deposit_wager",
       "discriminator": [
         234,
@@ -228,6 +490,97 @@
           "type": "pubkey"
         }
       ]
+    },
+    {
+      "name": "reclaim_challenge",
+      "discriminator": [
+        199,
+        39,
+        36,
+        43,
+        94,
+        134,
+        149,
+        57
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challenge_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge_state.match_id",
+                "account": "OpenChallengeState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenge_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge_state.match_id",
+                "account": "OpenChallengeState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "refund",
@@ -495,6 +848,19 @@
       ]
     },
     {
+      "name": "OpenChallengeState",
+      "discriminator": [
+        112,
+        83,
+        41,
+        36,
+        20,
+        86,
+        191,
+        88
+      ]
+    },
+    {
       "name": "ProgramConfig",
       "discriminator": [
         196,
@@ -509,6 +875,32 @@
     }
   ],
   "events": [
+    {
+      "name": "ChallengeAcceptedEvent",
+      "discriminator": [
+        212,
+        47,
+        209,
+        236,
+        94,
+        165,
+        207,
+        176
+      ]
+    },
+    {
+      "name": "ChallengeReclaimedEvent",
+      "discriminator": [
+        234,
+        116,
+        66,
+        202,
+        206,
+        43,
+        160,
+        106
+      ]
+    },
     {
       "name": "ConfigInitializedEvent",
       "discriminator": [
@@ -572,6 +964,19 @@
         126,
         13,
         227
+      ]
+    },
+    {
+      "name": "OpenChallengeCreatedEvent",
+      "discriminator": [
+        59,
+        176,
+        249,
+        88,
+        64,
+        33,
+        72,
+        201
       ]
     },
     {
@@ -663,9 +1068,82 @@
       "code": 6014,
       "name": "InvalidTreasury",
       "msg": "Treasury account does not belong to the configured authority"
+    },
+    {
+      "code": 6015,
+      "name": "ChallengeExpired",
+      "msg": "Open challenge has expired"
+    },
+    {
+      "code": 6016,
+      "name": "ChallengeNotExpired",
+      "msg": "Open challenge has not expired yet"
+    },
+    {
+      "code": 6017,
+      "name": "CreatorCannotAccept",
+      "msg": "Creator cannot accept their own challenge"
     }
   ],
   "types": [
+    {
+      "name": "ChallengeAcceptedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenger",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChallengeReclaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "refunded_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
     {
       "name": "ConfigInitializedEvent",
       "type": {
@@ -858,6 +1336,92 @@
           },
           {
             "name": "Refunded"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OpenChallengeCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_amount",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OpenChallengeState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "match_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "server_pubkey",
+            "type": "pubkey"
+          },
+          {
+            "name": "wager_amount",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
           }
         ]
       }

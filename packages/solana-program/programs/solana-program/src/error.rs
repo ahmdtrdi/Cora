@@ -46,4 +46,13 @@ pub enum CoraError {
 
     #[msg("Treasury account does not belong to the configured authority")]
     InvalidTreasury,
+
+    #[msg("Open challenge has expired")]
+    ChallengeExpired,
+
+    #[msg("Open challenge has not expired yet")]
+    ChallengeNotExpired,
+
+    #[msg("Creator cannot accept their own challenge")]
+    CreatorCannotAccept,
 }

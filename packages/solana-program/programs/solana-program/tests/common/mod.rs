@@ -3,7 +3,7 @@
 use {
     anchor_lang::{
         solana_program::instruction::Instruction,
-        InstructionData, ToAccountMetas,
+        AccountDeserialize, InstructionData, ToAccountMetas,
     },
     litesvm::LiteSVM,
     solana_account::Account,
@@ -60,8 +60,26 @@ pub fn find_vault_pda(match_id: &[u8; 32], pid: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"vault", match_id.as_ref()], pid)
 }
 
+pub fn find_challenge_pda(match_id: &[u8; 32], pid: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"challenge", match_id.as_ref()], pid)
+}
+
+pub fn find_challenge_vault_pda(match_id: &[u8; 32], pid: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"challenge_vault", match_id.as_ref()], pid)
+}
+
 pub fn find_config_pda(pid: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"config"], pid)
+}
+
+pub fn get_lamports(svm: &mut LiteSVM, addr: &Pubkey) -> u64 {
+    svm.get_account(addr).unwrap().lamports
+}
+
+pub fn get_anchor_account<T: AccountDeserialize>(svm: &mut LiteSVM, addr: &Pubkey) -> T {
+    let account = svm.get_account(addr).unwrap();
+    let mut data: &[u8] = &account.data;
+    T::try_deserialize(&mut data).unwrap()
 }
 
 pub fn send_tx(
@@ -119,6 +137,83 @@ pub fn do_deposit(
         }.to_account_metas(None),
     );
     send_tx(svm, &[ix], depositor, &[depositor]).unwrap();
+}
+
+pub fn do_create_open_challenge(
+    svm: &mut LiteSVM, pid: Pubkey, creator: &Keypair,
+    creator_token: Pubkey, token_mint: Pubkey, match_id: [u8; 32], wager: u64,
+    server_pk: Pubkey,
+) -> (Pubkey, Pubkey) {
+    let (challenge_pda, _) = find_challenge_pda(&match_id, &pid);
+    let (challenge_vault_pda, _) = find_challenge_vault_pda(&match_id, &pid);
+    let ix = Instruction::new_with_bytes(
+        pid,
+        &solana_program::instruction::CreateOpenChallenge {
+            match_id,
+            wager_amount: wager,
+            server_pubkey: server_pk,
+        }.data(),
+        solana_program::accounts::CreateOpenChallenge {
+            creator: creator.pubkey(),
+            token_mint,
+            challenge_state: challenge_pda,
+            challenge_vault: challenge_vault_pda,
+            creator_token_account: creator_token,
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: Pubkey::default(),
+        }.to_account_metas(None),
+    );
+    send_tx(svm, &[ix], creator, &[creator]).unwrap();
+    (challenge_pda, challenge_vault_pda)
+}
+
+pub fn do_accept_challenge(
+    svm: &mut LiteSVM, pid: Pubkey, challenger: &Keypair, creator_pk: Pubkey,
+    challenger_token: Pubkey, token_mint: Pubkey, match_id: [u8; 32],
+) -> (Pubkey, Pubkey) {
+    let (challenge_pda, _) = find_challenge_pda(&match_id, &pid);
+    let (challenge_vault_pda, _) = find_challenge_vault_pda(&match_id, &pid);
+    let (match_pda, _) = find_match_pda(&match_id, &pid);
+    let (vault_pda, _) = find_vault_pda(&match_id, &pid);
+    let ix = Instruction::new_with_bytes(
+        pid,
+        &solana_program::instruction::AcceptChallenge { match_id }.data(),
+        solana_program::accounts::AcceptChallenge {
+            challenger: challenger.pubkey(),
+            creator: creator_pk,
+            challenge_state: challenge_pda,
+            challenge_vault: challenge_vault_pda,
+            token_mint,
+            match_state: match_pda,
+            vault: vault_pda,
+            challenger_token_account: challenger_token,
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: Pubkey::default(),
+        }.to_account_metas(None),
+    );
+    send_tx(svm, &[ix], challenger, &[challenger]).unwrap();
+    (match_pda, vault_pda)
+}
+
+pub fn do_reclaim_challenge(
+    svm: &mut LiteSVM, pid: Pubkey, creator: &Keypair,
+    creator_token: Pubkey, token_mint: Pubkey, match_id: [u8; 32],
+) {
+    let (challenge_pda, _) = find_challenge_pda(&match_id, &pid);
+    let (challenge_vault_pda, _) = find_challenge_vault_pda(&match_id, &pid);
+    let ix = Instruction::new_with_bytes(
+        pid,
+        &solana_program::instruction::ReclaimChallenge {}.data(),
+        solana_program::accounts::ReclaimChallenge {
+            creator: creator.pubkey(),
+            challenge_state: challenge_pda,
+            challenge_vault: challenge_vault_pda,
+            creator_token_account: creator_token,
+            token_mint,
+            token_program: TOKEN_PROGRAM_ID,
+        }.to_account_metas(None),
+    );
+    send_tx(svm, &[ix], creator, &[creator]).unwrap();
 }
 
 /// Full match setup: init + both deposits → Active state

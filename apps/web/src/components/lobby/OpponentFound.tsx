@@ -11,6 +11,7 @@ import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
 import { writeActiveDepositIntent, writeActiveMatchSession } from "@/lib/session/matchSession";
+import { getDepositMagicBlockUi } from "@/lib/magicblock/magicblockUi";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -115,6 +116,43 @@ export function OpponentFound({
     () => (lastRoomCancelled ? getRoomCancelledMessage(lastRoomCancelled.reason) : null),
     [lastRoomCancelled],
   );
+  const magicBlockUi = getDepositMagicBlockUi({
+    erEnabled: gameState?.erEnabled,
+    erStatus: gameState?.erStatus,
+    status: gameState?.status,
+    effectiveRole,
+    signingState,
+    depositUnlockedAt,
+  });
+  const hasArenaPreparationSignal =
+    Boolean(gameState?.erStatus && gameState.erStatus !== "none") ||
+    gameState?.status === "playing" ||
+    gameState?.status === "settling";
+  const playerBHasCompletedSecondDeposit =
+    effectiveRole === "playerB" &&
+    Boolean(depositUnlockedAt) &&
+    Boolean(signedDepositSignature);
+  const playerHasSignedDeposit =
+    signingState === "waiting" &&
+    Boolean(signedDepositSignature) &&
+    !isPlayerBWaitingUnlock;
+  const displayedMagicBlockUi =
+    playerHasSignedDeposit && !hasArenaPreparationSignal
+      ? {
+          ...magicBlockUi,
+          tone: "standard" as const,
+          badgeLabel: "Fast Arena",
+          title: playerBHasCompletedSecondDeposit ? "Syncing MagicBlock" : "Fast Arena queued",
+          detail: playerBHasCompletedSecondDeposit
+            ? "Both deposits signed. Preparing the fast arena."
+            : "Deposit signed. Waiting for the rival wager.",
+          progress: playerBHasCompletedSecondDeposit ? 45 : 30,
+          showPulse: true,
+        }
+      : magicBlockUi;
+  const showArenaStatusStrip = playerHasSignedDeposit;
+  const isMagicBlockArenaLoading = displayedMagicBlockUi.tone === "magicblock";
+  const isArenaProcessing = displayedMagicBlockUi.tone === "magicblock" || displayedMagicBlockUi.showPulse;
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
@@ -780,6 +818,56 @@ export function OpponentFound({
             canPrimaryAction={canAttemptSign}
             primaryActionLabel={getPrimaryButtonLabel()}
             onPrimaryAction={onSignDeposit}
+            statusStripSlot={
+              showArenaStatusStrip ? (
+                <div className="mx-auto flex min-h-[58px] w-full max-w-xl items-center justify-center">
+                  <div
+                    className="w-full rounded-2xl px-3 py-2"
+                    style={{
+                      border:
+                        displayedMagicBlockUi.tone === "magicblock"
+                          ? "1px solid rgba(157,180,150,0.34)"
+                          : "1px solid rgba(248,214,148,0.24)",
+                      background:
+                        displayedMagicBlockUi.tone === "magicblock"
+                          ? "linear-gradient(145deg, rgba(157,180,150,0.14), rgba(60,92,95,0.12))"
+                          : "linear-gradient(145deg, rgba(248,214,148,0.10), rgba(255,255,255,0.04))",
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex shrink-0 rounded-full border border-[rgba(255,255,255,0.16)] px-2.5 py-1 font-gabarito text-[10px] font-black uppercase tracking-[0.14em] text-[var(--tone-cream)]">
+                        {displayedMagicBlockUi.badgeLabel}
+                      </span>
+                      <div className="min-w-0 flex-1 text-left">
+                        <p className="truncate font-gabarito text-xs font-bold uppercase tracking-[0.08em] text-[rgba(244,240,230,0.92)]">
+                          {displayedMagicBlockUi.title}
+                        </p>
+                        <p className="truncate font-gabarito text-xs text-[rgba(244,240,230,0.72)]">
+                          {displayedMagicBlockUi.detail}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+                      <div
+                        className={`h-full rounded-full ${
+                          displayedMagicBlockUi.showPulse && !isArenaProcessing ? "animate-pulse" : ""
+                        }`}
+                        style={{
+                          width: isArenaProcessing ? "100%" : `${displayedMagicBlockUi.progress ?? 0}%`,
+                          background: isMagicBlockArenaLoading
+                            ? "linear-gradient(90deg, #5f806d 0%, #9db496 35%, #e1f2d8 50%, #9db496 65%, #5f806d 100%)"
+                            : isArenaProcessing
+                              ? "linear-gradient(90deg, #ba6931 0%, #f8d694 35%, #fff6e0 50%, #f8d694 65%, #ba6931 100%)"
+                              : "linear-gradient(90deg, #f8d694 0%, #ba6931 100%)",
+                          backgroundSize: isArenaProcessing ? "200% 100%" : undefined,
+                          animation: isArenaProcessing ? "shimmer 2s linear infinite" : undefined,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null
+            }
             walletSlot={
               !wallet.publicKey ? (
                 <div className="pt-1">

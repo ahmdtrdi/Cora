@@ -92,7 +92,8 @@ export function createMatchRouter(roomManager: RoomManager) {
     });
   });
 
-  // Private room creation for Blinks / direct challenge invites.
+  // Private room creation for Blinks / direct challenge invites (Step 1).
+  // Returns an unsigned create_open_challenge transaction. DB row is NOT written yet.
   // tokenMint and wagerAmount are stored server-side; never exposed in the Blink URL.
   router.post('/private', async (c) => {
     let address: string;
@@ -117,12 +118,65 @@ export function createMatchRouter(roomManager: RoomManager) {
       return c.json({ error: `Unknown token "${rawTokenMint}" - provide a symbol (SOL, BONK, USDC) or a valid mint address.` }, 400);
     }
 
-    const roomId = await roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
+    const { roomId, transaction } = await roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
 
     const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 8080}`;
     const blinkUrl = `${baseUrl}/api/actions/challenge?roomId=${roomId}`;
 
-    return c.json({ roomId, blinkUrl, role: 'playerA', roomType: 'private' });
+    return c.json({ roomId, blinkUrl, transaction, role: 'playerA', roomType: 'private' });
+  });
+
+  // Private room creation confirmation (Step 2).
+  // Client signs the create_open_challenge tx, then calls this to confirm on-chain.
+  // DB row is only written after successful on-chain confirmation.
+  router.post('/private/confirm', async (c) => {
+    let roomId: string;
+    let address: string;
+    let signature: string;
+    let rawTokenMint: string;
+    let wagerAmount: number;
+
+    try {
+      const body = await c.req.json();
+      roomId = body.roomId;
+      address = body.address;
+      signature = body.signature;
+      rawTokenMint = body.tokenMint;
+      wagerAmount = body.wagerAmount;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    if (!roomId || !address || !signature || !rawTokenMint || !wagerAmount) {
+      return c.json({ error: 'roomId, address, signature, tokenMint, and wagerAmount are required' }, 400);
+    }
+
+    const tokenMint = resolveTokenMint(rawTokenMint);
+    if (!tokenMint) {
+      return c.json({ error: `Unknown token "${rawTokenMint}"` }, 400);
+    }
+
+    try {
+      const match = await roomManager.confirmPrivateRoom(
+        roomId,
+        address,
+        signature,
+        tokenMint,
+        BigInt(wagerAmount),
+      );
+
+      return c.json({ status: match.status, roomId: match.id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+
+      // Distinguish timeout from other failures
+      if (message.includes('timeout') || message.includes('Timeout') || message.includes('expired')) {
+        return c.json({ error: 'Transaction confirmation timed out. Please retry.' }, 408);
+      }
+
+      console.error(`[match/private/confirm] Confirmation failed for room ${roomId}:`, err);
+      return c.json({ error: `Transaction confirmation failed: ${message}` }, 400);
+    }
   });
 
   router.get('/private/:roomId', async (c) => {

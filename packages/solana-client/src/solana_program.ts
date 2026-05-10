@@ -14,6 +14,268 @@ export type SolanaProgram = {
   },
   "instructions": [
     {
+      "name": "acceptChallenge",
+      "discriminator": [
+        195,
+        227,
+        139,
+        241,
+        55,
+        193,
+        153,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "challenger",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "creator",
+          "writable": true
+        },
+        {
+          "name": "challengeState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "matchId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challengeVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "matchId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
+          "name": "matchState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "matchId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "matchId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challengerTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "matchId",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "createOpenChallenge",
+      "discriminator": [
+        238,
+        208,
+        117,
+        255,
+        0,
+        232,
+        161,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
+          "name": "challengeState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "matchId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challengeVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "matchId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creatorTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "matchId",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "wagerAmount",
+          "type": "u64"
+        },
+        {
+          "name": "serverPubkey",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "depositWager",
       "discriminator": [
         234,
@@ -234,6 +496,97 @@ export type SolanaProgram = {
           "type": "pubkey"
         }
       ]
+    },
+    {
+      "name": "reclaimChallenge",
+      "discriminator": [
+        199,
+        39,
+        36,
+        43,
+        94,
+        134,
+        149,
+        57
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "challengeState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge_state.match_id",
+                "account": "openChallengeState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challengeVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge_state.match_id",
+                "account": "openChallengeState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creatorTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": []
     },
     {
       "name": "refund",
@@ -501,6 +854,19 @@ export type SolanaProgram = {
       ]
     },
     {
+      "name": "openChallengeState",
+      "discriminator": [
+        112,
+        83,
+        41,
+        36,
+        20,
+        86,
+        191,
+        88
+      ]
+    },
+    {
       "name": "programConfig",
       "discriminator": [
         196,
@@ -515,6 +881,32 @@ export type SolanaProgram = {
     }
   ],
   "events": [
+    {
+      "name": "challengeAcceptedEvent",
+      "discriminator": [
+        212,
+        47,
+        209,
+        236,
+        94,
+        165,
+        207,
+        176
+      ]
+    },
+    {
+      "name": "challengeReclaimedEvent",
+      "discriminator": [
+        234,
+        116,
+        66,
+        202,
+        206,
+        43,
+        160,
+        106
+      ]
+    },
     {
       "name": "configInitializedEvent",
       "discriminator": [
@@ -578,6 +970,19 @@ export type SolanaProgram = {
         126,
         13,
         227
+      ]
+    },
+    {
+      "name": "openChallengeCreatedEvent",
+      "discriminator": [
+        59,
+        176,
+        249,
+        88,
+        64,
+        33,
+        72,
+        201
       ]
     },
     {
@@ -669,9 +1074,82 @@ export type SolanaProgram = {
       "code": 6014,
       "name": "invalidTreasury",
       "msg": "Treasury account does not belong to the configured authority"
+    },
+    {
+      "code": 6015,
+      "name": "challengeExpired",
+      "msg": "Open challenge has expired"
+    },
+    {
+      "code": 6016,
+      "name": "challengeNotExpired",
+      "msg": "Open challenge has not expired yet"
+    },
+    {
+      "code": 6017,
+      "name": "creatorCannotAccept",
+      "msg": "Creator cannot accept their own challenge"
     }
   ],
   "types": [
+    {
+      "name": "challengeAcceptedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenger",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wagerAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "challengeReclaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "refundedAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
     {
       "name": "configInitializedEvent",
       "type": {
@@ -864,6 +1342,92 @@ export type SolanaProgram = {
           },
           {
             "name": "refunded"
+          }
+        ]
+      }
+    },
+    {
+      "name": "openChallengeCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wagerAmount",
+            "type": "u64"
+          },
+          {
+            "name": "expiresAt",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "openChallengeState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "matchId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "serverPubkey",
+            "type": "pubkey"
+          },
+          {
+            "name": "wagerAmount",
+            "type": "u64"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "expiresAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vaultBump",
+            "type": "u8"
           }
         ]
       }

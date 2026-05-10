@@ -1,6 +1,8 @@
 import type { WsMessage, MatchResult } from '@shared/websocket';
+import { deriveMatchId } from '@shared/escrow';
 import type { Room, RoomSocket } from './types';
 import type { RoomManager } from '../RoomManager';
+import { submitSettlementTransaction } from '../../utils/settlement';
 
 export class Lifecycle {
   private DEPOSIT_TIMEOUT_MS = 30_000;
@@ -182,9 +184,28 @@ export class Lifecycle {
       Date.now() > room.blinkJoinDeadline
     ) {
       console.log(`[Blink] Creator deposit missed join deadline in room ${room.id}. Forfeiting.`);
-      void this.manager.blinkMatches.forfeitChallenged(room.id).catch((err) => {
-        console.error(`[Blink] Failed to mark room ${room.id} forfeited:`, err);
-      });
+      void this.manager.blinkMatches.forfeitChallenged(room.id)
+        .then(async (forfeitedMatch) => {
+          // Trigger on-chain settlement awarding the challenger
+          if (forfeitedMatch?.opponentWallet) {
+            const matchIdBytes = deriveMatchId(room.id);
+            try {
+              await submitSettlementTransaction(0, matchIdBytes, forfeitedMatch.opponentWallet);
+              await this.manager.blinkMatches.markCompleted(room.id);
+              console.log(`[Blink] FORFEITED room ${room.id} settled on-chain. Challenger ${forfeitedMatch.opponentWallet} awarded. DB marked COMPLETED.`);
+            } catch (settlementErr) {
+              // Keep DB as FORFEITED — do NOT mark COMPLETED
+              console.error(
+                `[Blink] Settlement FAILED for FORFEITED room ${room.id}. ` +
+                `Challenger: ${forfeitedMatch.opponentWallet}. DB remains FORFEITED.`,
+                settlementErr,
+              );
+            }
+          }
+        })
+        .catch((err) => {
+          console.error(`[Blink] Failed to mark room ${room.id} forfeited:`, err);
+        });
       this.cancelRoom(room.id, room.playerB ?? undefined, {
         reason: 'deposit_timeout',
         cancelledBy: address,
@@ -201,6 +222,9 @@ export class Lifecycle {
     const meta = room.playerMeta.get(address);
     if (meta) meta.hasDeposited = true;
 
+    // True flow: for private rooms, both wagers are already locked on-chain
+    // after accept_challenge. Creator's deposit confirmation via WebSocket
+    // just means they've connected. Mark the match as ACTIVE in DB.
     if (room.roomType === 'private' && address === room.playerA) {
       void this.manager.blinkMatches.markActive(room.id, address, signature).then((match) => {
         if (match?.status === 'FORFEITED') {

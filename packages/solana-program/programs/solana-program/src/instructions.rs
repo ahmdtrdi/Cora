@@ -21,3 +21,15 @@ pub(crate) use settle_match::__client_accounts_settle_match;
 pub mod refund;
 pub use refund::Refund;
 pub(crate) use refund::__client_accounts_refund;
+
+pub mod create_open_challenge;
+pub use create_open_challenge::CreateOpenChallenge;
+pub(crate) use create_open_challenge::__client_accounts_create_open_challenge;
+
+pub mod accept_challenge;
+pub use accept_challenge::AcceptChallenge;
+pub(crate) use accept_challenge::__client_accounts_accept_challenge;
+
+pub mod reclaim_challenge;
+pub use reclaim_challenge::ReclaimChallenge;
+pub(crate) use reclaim_challenge::__client_accounts_reclaim_challenge;
