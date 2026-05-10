@@ -181,8 +181,6 @@ export class Blockchain {
 
       // ── Done ─────────────────────────────────────────────────────
       room.erLifecycleStatus = 'active';
-      room.erNextSlotA = 0;
-      room.erNextSlotB = 0;
       room.erProofMeta = {
         sessionPda,
         setupTxSignatures: setupTxs,
@@ -212,10 +210,16 @@ export class Blockchain {
     room: Room,
     params: { owner: string; cardId: string; finalValue: number; scoreDelta: number },
   ): Promise<BattleSessionState | null> {
-    if (!room.erEnabled || !room.erSessionPda) return null;
+    if (!room.erEnabled || !room.erSessionPda || !room.engine) return null;
 
     const actorIsA = params.owner === room.playerA;
-    const slot = actorIsA ? room.erNextSlotA++ : room.erNextSlotB++;
+    // Look up the exact slot index for this card from the queue
+    const slot = room.engine.getMatchQueue().findIndex(c => c.id === params.cardId);
+    
+    if (slot === -1) {
+      console.error(`[MagicBlock] Could not find card ${params.cardId} in match queue for room ${room.id}`);
+      return null;
+    }
 
     const finalValue = Math.min(params.finalValue, DEPLOYED_MAX_EFFECT_VALUE);
     const scoreDelta = Math.min(params.scoreDelta, finalValue * 100); // MAX_SCORE_MULTIPLIER = 100
@@ -242,15 +246,15 @@ export class Blockchain {
 
   /**
    * Consume a slot on-chain for a wrong answer or timeout — no HP effect.
-   * Keeps the manifest slot counter in sync with the engine queue.
    */
   public async consumeErSlotEmpty(
     room: Room,
     owner: string,
+    cardId: string,
   ): Promise<BattleSessionState | null> {
     return this.applyErCardEffect(room, {
       owner,
-      cardId: '__empty__',
+      cardId,
       finalValue: 0,
       scoreDelta: 0,
     });

@@ -96,8 +96,4 @@ export interface Room {
   erNextCardNonce: number;
   /** Proof metadata for the /proof API endpoint */
   erProofMeta: ErProofMeta | null;
-  /** Next inline manifest slot index to consume for player A */
-  erNextSlotA: number;
-  /** Next inline manifest slot index to consume for player B */
-  erNextSlotB: number;
 }
