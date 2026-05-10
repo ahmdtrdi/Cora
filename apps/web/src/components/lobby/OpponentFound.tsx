@@ -891,7 +891,7 @@ export function OpponentFound({
                         }`}
                         style={{
                           width: isArenaProcessing ? "100%" : `${displayedMagicBlockUi.progress ?? 0}%`,
-                          background: isMagicBlockArenaLoading
+                          backgroundImage: isMagicBlockArenaLoading
                             ? "linear-gradient(90deg, #5f806d 0%, #9db496 35%, #e1f2d8 50%, #9db496 65%, #5f806d 100%)"
                             : isArenaProcessing
                               ? "linear-gradient(90deg, #ba6931 0%, #f8d694 35%, #fff6e0 50%, #f8d694 65%, #ba6931 100%)"
