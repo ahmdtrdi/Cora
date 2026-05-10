@@ -67,7 +67,7 @@ export interface GameState {
   /** Number of rounds needed to win the match */
   roundsToWin: number;
   /** Token address */
-  tokenMint: string;  
+  tokenMint: string;
   /** Wager amount */
   wagerAmount: string;
   /** Wager USD value */
@@ -122,6 +122,8 @@ export type ClientToServerEvents = {
   confirmDeposit: (data: { signature: string }) => void;
   cancelMatch: () => void;
   surrender: () => void;
+  /** Sent on /queue WS to cancel matchmaking */
+  cancelQueue: () => void;
 };
 
 // Settlement result payload sent after match ends
@@ -133,6 +135,16 @@ export interface MatchResultPayload {
   settlementSignature: string;
   /** Server public key (base58) — matches the one stored in MatchState on-chain */
   serverPublicKey: string;
+}
+
+/** Queue status payload sent on /queue WS */
+export interface QueueStatusData {
+  /** 1-based position in the queue */
+  position: number;
+  /** Estimated wait time in ms (null if unknown) */
+  estimatedWaitMs: number | null;
+  /** Total number of players currently in queue */
+  queueDepth: number;
 }
 
 // Messages sent from Server -> Client
@@ -155,6 +167,12 @@ export type ServerToClientEvents = {
   cardExpired: (data: CardExpiredData) => void;
   scoreUpdate: (data: ScoreUpdateData) => void;
   presenceUpdate: (data: PresenceUpdateData) => void;
+  /** Queue-phase: sent when player successfully joins the queue */
+  queueJoined: (data: QueueStatusData) => void;
+  /** Queue-phase: periodic position updates while waiting */
+  queueStatus: (data: QueueStatusData) => void;
+  /** Queue-phase: sent when player is removed from queue (not via matchFound) */
+  queueLeft: (data: { reason: 'cancelled' | 'ttl_expired' | 'error' }) => void;
 };
 
 export interface MatchResult {

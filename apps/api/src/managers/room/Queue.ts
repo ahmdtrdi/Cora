@@ -1,4 +1,4 @@
-import type { WsMessage } from '@shared/websocket';
+import type { QueueStatusData, WsMessage } from '@shared/websocket';
 import type { RoomManager } from '../RoomManager';
 import type { RoomSocket } from './types';
 import type { Room } from './types';
@@ -6,6 +6,8 @@ import type { Room } from './types';
 interface QueueItem {
   address: string;
   ws?: RoomSocket;
+  /** The /queue WebSocket (separate from room WS) — used for queue status events */
+  queueWs?: RoomSocket;
   resolve: (roomId: string) => void;
   enqueuedAt: number;
   ttlHandle?: ReturnType<typeof setTimeout>;
@@ -84,6 +86,7 @@ export class Queue {
 
       this.queue.push(queueItem);
       this.bindAbort(signal, queueItem, address);
+      this.broadcastQueuePositions();
       this.printQueueState('WAITING', `${this.shortAddr(address)} added to queue`);
     });
   }
@@ -101,7 +104,109 @@ export class Queue {
       enqueuedAt: Date.now(),
     };
     this.queue.unshift(queueItem);
+    this.broadcastQueuePositions();
     this.printQueueState('REQUEUED', `${this.shortAddr(address)} returned to queue`);
+  }
+
+  /**
+   * WebSocket-based queue entry. Instead of hanging an HTTP request,
+   * this pushes real-time events (queueJoined, queueStatus, matchFound)
+   * over the provided /queue WebSocket.
+   */
+  public queueMatchWs(address: string, queueWs: RoomSocket, signal: AbortSignal): void {
+    this.reclaimAbandonedDepositRoom(address);
+
+    // Check for active room (reconnect)
+    const activeRoom = this.findActiveRoomForAddress(address);
+    if (activeRoom) {
+      const role = activeRoom.playerA === address ? 'playerA' : 'playerB';
+      this.manager.network.safeSend(queueWs, {
+        type: 'matchFound',
+        payload: { roomId: activeRoom.id, role, opponentAddress: '' },
+      } satisfies WsMessage);
+      this.printQueueState('RECONNECT (WS)', `${this.shortAddr(address)} already in room ${activeRoom.id}`);
+      return;
+    }
+
+    // Already queued — attach WS to existing item
+    const existing = this.queue.find((item) => item.address === address);
+    if (existing) {
+      existing.queueWs = queueWs;
+      this.sendQueueStatus(existing, 'queueJoined');
+      this.bindAbort(signal, existing, address);
+      this.printQueueState('REATTACH (WS)', `${this.shortAddr(address)} WS attached to existing queue item`);
+      return;
+    }
+
+    // Try instant match
+    const opponentIndex = this.queue.findIndex((item) => item.address !== address);
+    if (opponentIndex !== -1) {
+      const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
+      if (playerAEntry.ttlHandle) clearTimeout(playerAEntry.ttlHandle);
+
+      const roomId = `room-${Date.now()}`;
+      const room = this.manager.store.createRoom(roomId);
+      room.playerA = playerAEntry.address;
+      room.playerB = address;
+      room.status = 'depositing';
+      this.manager.store.trackPlayer(playerAEntry.address, roomId);
+      this.manager.store.trackPlayer(address, roomId);
+
+      this.manager.lifecycle.armDepositTimeout(room, playerAEntry.address);
+      this.printQueueState('MATCH FOUND (WS)', `${this.shortAddr(playerAEntry.address)} vs ${this.shortAddr(address)} -> ${roomId}`);
+
+      // Notify Player A (opponent) via their queue WS if available
+      if (playerAEntry.queueWs) {
+        this.manager.network.safeSend(playerAEntry.queueWs, {
+          type: 'matchFound',
+          payload: { roomId, role: 'playerA', opponentAddress: address },
+        } satisfies WsMessage);
+      }
+      playerAEntry.resolve(roomId);
+
+      // Notify current player (Player B) via their queue WS
+      this.manager.network.safeSend(queueWs, {
+        type: 'matchFound',
+        payload: { roomId, role: 'playerB', opponentAddress: playerAEntry.address },
+      } satisfies WsMessage);
+
+      this.broadcastQueuePositions();
+      return;
+    }
+
+    // No opponent — add to queue and wait
+    const queueItem: QueueItem = {
+      address,
+      queueWs,
+      resolve: (roomId: string) => {
+        // When matched via HTTP path or requeueInnocent, also notify the queueWs
+        if (queueItem.queueWs) {
+          this.manager.network.safeSend(queueItem.queueWs, {
+            type: 'matchFound',
+            payload: { roomId, role: 'playerA', opponentAddress: '' },
+          } satisfies WsMessage);
+        }
+      },
+      enqueuedAt: Date.now(),
+    };
+
+    queueItem.ttlHandle = setTimeout(() => {
+      this.removeQueueItem(queueItem);
+      if (queueItem.queueWs) {
+        this.manager.network.safeSend(queueItem.queueWs, {
+          type: 'queueLeft',
+          payload: { reason: 'ttl_expired' },
+        } satisfies WsMessage);
+      }
+      this.broadcastQueuePositions();
+      this.printQueueState('TTL EXPIRED (WS)', `${this.shortAddr(address)} removed after 5m timeout`);
+    }, 300_000);
+
+    this.queue.push(queueItem);
+    this.bindAbort(signal, queueItem, address);
+    this.sendQueueStatus(queueItem, 'queueJoined');
+    this.broadcastQueuePositions();
+    this.printQueueState('WAITING (WS)', `${this.shortAddr(address)} added to queue`);
   }
 
   public isQueued(address: string): boolean {
@@ -123,6 +228,7 @@ export class Queue {
     const index = this.queue.indexOf(queueItem);
     if (index === -1) return false;
     this.queue.splice(index, 1);
+    this.broadcastQueuePositions();
     return true;
   }
 
@@ -165,5 +271,31 @@ export class Queue {
     const waiting = this.queue.map((item) => this.shortAddr(item.address)).join(', ') || 'empty';
     const activeRooms = this.manager.store.getAllRooms().filter((room) => room.status !== 'finished').length;
     console.log(`[Queue] ${event}${detail ? ` - ${detail}` : ''} | waiting=${waiting} | activeRooms=${activeRooms}`);
+  }
+
+  // ─── Queue Position Broadcasting ──────────────────────────────
+
+  /** Send queue status to a single player */
+  private sendQueueStatus(item: QueueItem, type: 'queueJoined' | 'queueStatus' = 'queueStatus'): void {
+    if (!item.queueWs) return;
+    const position = this.queue.indexOf(item) + 1;
+    const payload: QueueStatusData = {
+      position,
+      estimatedWaitMs: null,
+      queueDepth: this.queue.length,
+    };
+    this.manager.network.safeSend(item.queueWs, { type, payload } satisfies WsMessage);
+  }
+
+  /** Broadcast updated positions to ALL waiting players after any queue mutation */
+  private broadcastQueuePositions(): void {
+    for (const item of this.queue) {
+      this.sendQueueStatus(item);
+    }
+  }
+
+  /** Expose queue depth for health/admin endpoints */
+  public getQueueDepth(): number {
+    return this.queue.length;
   }
 }
