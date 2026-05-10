@@ -18,7 +18,9 @@ import {
 } from "@/lib/matchmaking/privateChallenge";
 import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { BlinkChallengePanel } from "@/components/challenge/BlinkChallengePanel";
+import { BlinkCharacterGate } from "@/components/challenge/BlinkCharacterGate";
 import { BlinkRoomJoiner } from "@/components/challenge/BlinkRoomJoiner";
+import { BlinkSurrenderBridge } from "@/components/challenge/BlinkSurrenderBridge";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
@@ -30,6 +32,7 @@ import {
   readActiveMatchSession,
   readLobbyDraftSnapshot,
   writeActiveBlinkChallengeSession,
+  clearActiveMatchRoomSession,
   writeActiveMatchSession,
   writeLobbyDraftSnapshot,
   type ActiveBlinkChallengeSession,
@@ -217,7 +220,9 @@ export function LobbyScreen() {
   const [blinkChallengeBusy, setBlinkChallengeBusy] = useState(false);
   const [blinkChallengeNotice, setBlinkChallengeNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [blinkJoinSnapshot, setBlinkJoinSnapshot] = useState<ActiveBlinkChallengeSession | null>(null);
+  const [blinkCharacterSelectOpen, setBlinkCharacterSelectOpen] = useState(false);
   const [blinkConfirmingOpen, setBlinkConfirmingOpen] = useState(false);
+  const [blinkSurrenderSnapshot, setBlinkSurrenderSnapshot] = useState<ActiveBlinkChallengeSession | null>(null);
   const [pendingErRecovery, setPendingErRecovery] = useState(false);
   const [erSettling, setErSettling] = useState(false);
   const matchmakingAbortRef = useRef<AbortController | null>(null);
@@ -403,6 +408,7 @@ export function LobbyScreen() {
     setMatchmakingError,
     setMatchmakingStage,
     setMatchmakingState,
+    setPendingErRecovery,
     setPhase,
     setSelectedArenaId,
     setSelectedScientist,
@@ -420,18 +426,25 @@ export function LobbyScreen() {
     writeActiveBlinkChallengeSession(null);
     setActiveBlinkChallenge(null);
     setBlinkJoinSnapshot(null);
+    setBlinkCharacterSelectOpen(false);
     setBlinkConfirmingOpen(false);
+    setBlinkSurrenderSnapshot(null);
     setBlinkChallengePanelOpen(false);
     if (toastText) setActiveMatchToast({ text: toastText, tone });
   }, [
     setActiveBlinkChallenge,
     setActiveMatchToast,
+    setBlinkCharacterSelectOpen,
     setBlinkConfirmingOpen,
+    setBlinkSurrenderSnapshot,
     setBlinkChallengePanelOpen,
     setBlinkJoinSnapshot,
   ]);
 
-  const openBlinkJoin = useCallback((challenge: ActiveBlinkChallengeSession) => {
+  const openBlinkJoin = useCallback((
+    challenge: ActiveBlinkChallengeSession,
+    presentation: "notification" | "select" | "confirm" = "notification",
+  ) => {
     const nextArenaId =
       challenge.arenaId && ARENAS.some((arena) => arena.id === challenge.arenaId)
         ? challenge.arenaId
@@ -453,7 +466,8 @@ export function LobbyScreen() {
     setMatchmakingStage("finding");
     setMatchmakingError(null);
     setBlinkChallengePanelOpen(false);
-    setBlinkConfirmingOpen(false);
+    setBlinkCharacterSelectOpen(presentation === "select");
+    setBlinkConfirmingOpen(presentation === "confirm");
     setBlinkJoinSnapshot({
       ...challenge,
       arenaId: nextArenaId,
@@ -463,6 +477,7 @@ export function LobbyScreen() {
     clearFoundTransitionTimers,
     selectedArenaId,
     selectedScientist,
+    setBlinkCharacterSelectOpen,
     setBlinkConfirmingOpen,
     setBlinkChallengePanelOpen,
     setBlinkJoinSnapshot,
@@ -817,7 +832,11 @@ export function LobbyScreen() {
         if (latest.status === "CHALLENGED" || latest.status === "ACTIVE") {
           writeActiveBlinkChallengeSession(next);
           setActiveBlinkChallenge(next);
-          openBlinkJoin(next);
+          const alreadyHandlingRoom =
+            blinkJoinSnapshot?.roomId === next.roomId && (blinkCharacterSelectOpen || blinkConfirmingOpen);
+          if (!alreadyHandlingRoom) {
+            openBlinkJoin(next);
+          }
           return;
         }
 
@@ -854,6 +873,9 @@ export function LobbyScreen() {
     activeBlinkChallenge?.roomId,
     activeBlinkChallenge?.status,
     activeBlinkChallenge?.walletAddress,
+    blinkCharacterSelectOpen,
+    blinkConfirmingOpen,
+    blinkJoinSnapshot?.roomId,
     walletAddress,
     openBlinkJoin,
     clearActiveBlinkChallenge,
@@ -1076,6 +1098,38 @@ export function LobbyScreen() {
             }
 
             const latestSnapshot = readActiveMatchSession();
+            const isTerminalMatch = activeMatch.status ? BLINK_TERMINAL_STATUSES.has(activeMatch.status as PrivateChallengeStatus) : false;
+
+            if (isTerminalMatch) {
+              clearRecoveryToSetup();
+              return;
+            }
+
+            if (activeMatch.roomType === "private" && activeMatch.status === "depositing") {
+              clearActiveMatchRoomSession();
+              setPendingErRecovery(false);
+              setActiveMatchBannerSnapshot(null);
+              setMatchedRoomId(null);
+              setMatchedRole(null);
+              setMatchmakingState("idle");
+              setMatchmakingStage("finding");
+              setMatchmakingError(null);
+
+              const blinkSnapshot = activeBlinkChallengeRef.current;
+              if (activeMatch.role === "playerA" && blinkSnapshot?.roomId === activeMatch.roomId) {
+                openBlinkJoin(blinkSnapshot, latestSnapshot?.scientistId ? "confirm" : "select");
+                return;
+              }
+
+              if (activeMatch.role === "playerB") {
+                router.replace(`/challenge/${activeMatch.roomId}`);
+                return;
+              }
+
+              setPhase("setup");
+              return;
+            }
+
             if (activeMatch.status === "playing") {
               const liveSnapshot: ActiveRoomSnapshot = {
                 walletAddress,
@@ -1159,7 +1213,7 @@ export function LobbyScreen() {
         activeRoomLookupAbortRef.current = null;
       }
     };
-  }, [walletAddress, phase, openRecoveredRoom, selectedArena, selectedArenaId, selectedScientist]);
+  }, [walletAddress, phase, openBlinkJoin, openRecoveredRoom, router, selectedArena, selectedArenaId, selectedScientist]);
 
   useEffect(() => {
     if (phase === "found" && pendingErRecovery) {
@@ -1245,6 +1299,22 @@ export function LobbyScreen() {
           onTimeout={handleActiveMatchSurrenderTimeout}
         />
       )}
+      {blinkSurrenderSnapshot?.roomId && blinkSurrenderSnapshot.walletAddress && (
+        <BlinkSurrenderBridge
+          roomId={blinkSurrenderSnapshot.roomId}
+          address={blinkSurrenderSnapshot.walletAddress}
+          characterId={selectedScientist?.id ?? blinkSurrenderSnapshot.scientistId ?? null}
+          confirmSignature={blinkSurrenderSnapshot.createSignature}
+          onSettled={(message) => {
+            clearActiveBlinkChallenge(message ?? "Blink challenge surrendered.", "success");
+            writeActiveMatchSession(null);
+          }}
+          onError={(message) => {
+            setBlinkSurrenderSnapshot(null);
+            setActiveMatchToast({ text: message, tone: "error" });
+          }}
+        />
+      )}
       {activeMatchBannerSnapshot && (
         <div className="fixed inset-x-0 top-0 z-[90] p-3 md:p-4">
           <div
@@ -1317,7 +1387,7 @@ export function LobbyScreen() {
           onClear={() => clearActiveBlinkChallenge("Blink challenge cleared locally.", "success")}
         />
       )}
-      {blinkJoinSnapshot && !blinkConfirmingOpen && (
+      {blinkJoinSnapshot && !blinkConfirmingOpen && !blinkCharacterSelectOpen && (
         <div className="fixed right-4 top-4 z-[88] w-[calc(100%-2rem)] max-w-md md:right-6 md:top-6">
           <div
             className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
@@ -1343,7 +1413,8 @@ export function LobbyScreen() {
                     type="button"
                     onClick={() => {
                       setPendingErRecovery(false);
-                      setBlinkConfirmingOpen(true);
+                      setBlinkCharacterSelectOpen(true);
+                      setBlinkConfirmingOpen(false);
                     }}
                     className="btn-game btn-game-secondary px-3 py-1.5 text-[10px]"
                   >
@@ -1510,13 +1581,30 @@ export function LobbyScreen() {
         </RoomPhaseShell>
       )}
       {!isSelectingCharacterPreview && (
-        blinkJoinSnapshot && blinkConfirmingOpen ? (
+        blinkJoinSnapshot && blinkCharacterSelectOpen ? (
+          <BlinkCharacterGate
+            title="Choose your scientist"
+            subtitle="Your rival accepted. Pick your scientist before confirming presence and entering the room."
+            characters={characterOptions}
+            selectedCharacterId={selectedScientist?.id ?? null}
+            onSelect={(characterId) => {
+              const next = SCIENTISTS.find((scientist) => scientist.id === characterId) ?? null;
+              setSelectedScientist(next);
+            }}
+            onContinue={() => {
+              if (!selectedScientist) return;
+              setBlinkCharacterSelectOpen(false);
+              setBlinkConfirmingOpen(true);
+            }}
+            onSurrender={() => setBlinkSurrenderSnapshot(blinkJoinSnapshot)}
+          />
+        ) : blinkJoinSnapshot && blinkConfirmingOpen ? (
           <BlinkRoomJoiner
             roomId={blinkJoinSnapshot.roomId}
             address={blinkJoinSnapshot.walletAddress}
             role="playerA"
             arenaId={blinkJoinSnapshot.arenaId ?? "sol"}
-            scientistId={blinkJoinSnapshot.scientistId ?? "einstein"}
+            scientistId={selectedScientist?.id ?? blinkJoinSnapshot.scientistId ?? "einstein"}
             token={blinkJoinSnapshot.token}
             wagerUsd={blinkJoinSnapshot.wagerUsd ?? FIXED_WAGER_USD}
             creatorConfirmSignature={blinkJoinSnapshot.createSignature}
@@ -1525,6 +1613,7 @@ export function LobbyScreen() {
             onBack={() => {
               writeActiveMatchSession(null);
               setBlinkConfirmingOpen(false);
+              setBlinkCharacterSelectOpen(true);
             }}
           />
         ) : showPendingErRecovery ? (
@@ -1548,6 +1637,23 @@ export function LobbyScreen() {
               <p className="mt-4 font-gabarito text-sm text-[rgba(244,240,230,0.78)]">
                 We&apos;re waiting for the latest room state before sending you back into the lobby.
               </p>
+              <button
+                type="button"
+                onClick={() => {
+                  clearActiveMatchRoomSession();
+                  setPendingErRecovery(false);
+                  setErSettling(false);
+                  setMatchedRoomId(null);
+                  setMatchedRole(null);
+                  setMatchmakingState("idle");
+                  setMatchmakingStage("finding");
+                  setMatchmakingError(null);
+                  setPhase("setup");
+                }}
+                className="btn-game btn-game-secondary mt-6 px-4 py-2 text-xs"
+              >
+                Back To Lobby
+              </button>
             </div>
           </div>
         ) : phaseContextIssue ? (

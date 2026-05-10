@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { BlinkCharacterGate } from "@/components/challenge/BlinkCharacterGate";
 import { BlinkRoomJoiner } from "@/components/challenge/BlinkRoomJoiner";
+import { BlinkSurrenderBridge } from "@/components/challenge/BlinkSurrenderBridge";
 import { getPrivateChallenge, type PrivateChallenge } from "@/lib/matchmaking/privateChallenge";
 import { DepositIntentError, signDepositIntent } from "@/lib/solana/signDepositIntent";
-import { writeActiveDepositIntent, writeActiveMatchSession } from "@/lib/session/matchSession";
+import {
+  clearActiveDepositIntent,
+  getMatchSessionAddress,
+  readActiveDepositIntent,
+  readActiveMatchSession,
+  writeActiveDepositIntent,
+  writeActiveMatchSession,
+} from "@/lib/session/matchSession";
+import { SCIENTISTS } from "@/components/lobby/LobbyScreen";
 
 type BlinkChallengeAcceptProps = {
   roomId: string;
@@ -15,6 +26,7 @@ type BlinkChallengeAcceptProps = {
 type AcceptState = "idle" | "loading" | "signing" | "accepted" | "error";
 const FIXED_WAGER_USD = "1.00";
 const SOL_WRAPPED_MINT = "SO11111111111111111111111111111111111111112";
+const BLINK_TERMINAL_STATUSES = new Set(["EXPIRED", "FORFEITED", "COMPLETED"]);
 
 function getTokenLabel(tokenMint: string | null | undefined) {
   const token = (tokenMint || "SOL").toUpperCase();
@@ -46,18 +58,36 @@ function classifyError(error: unknown) {
 }
 
 export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
+  const router = useRouter();
   const { connection } = useConnection();
   const wallet = useWallet();
   const [challenge, setChallenge] = useState<PrivateChallenge | null>(null);
   const [state, setState] = useState<AcceptState>("loading");
   const [errorText, setErrorText] = useState<string | null>(null);
   const [acceptedSignature, setAcceptedSignature] = useState<string | null>(null);
+  const [selectedScientistId, setSelectedScientistId] = useState<string | null>(null);
+  const [scientistConfirmed, setScientistConfirmed] = useState(false);
+  const [surrendering, setSurrendering] = useState(false);
   const walletAddress = wallet.publicKey?.toBase58() ?? "";
   const isCreator = Boolean(walletAddress && challenge?.creatorWallet === walletAddress);
   const isAcceptedByWallet = Boolean(walletAddress && challenge?.opponentWallet === walletAddress);
   const canAccept = Boolean(wallet.publicKey) && challenge?.status === "PENDING" && !isCreator && state !== "signing";
+  const isTerminalChallenge = challenge?.status ? BLINK_TERMINAL_STATUSES.has(challenge.status) : false;
   const tokenLabel = getTokenLabel(challenge?.tokenMint);
   const arenaLabel = useMemo(() => getArenaLabel(challenge?.tokenMint), [challenge?.tokenMint]);
+  const characterOptions = useMemo(() => SCIENTISTS.map((scientist) => ({ ...scientist })), []);
+  const joinSignature = acceptedSignature ?? (walletAddress ? readActiveDepositIntent(roomId, walletAddress) : null);
+  const hasAcceptedContext = Boolean(walletAddress && isAcceptedByWallet && !isTerminalChallenge && (state === "accepted" || joinSignature));
+  const recoveredMatchSnapshot = useMemo(() => {
+    if (!walletAddress) return null;
+    const snapshot = readActiveMatchSession();
+    if (!snapshot || snapshot.roomId !== roomId) return null;
+    if (getMatchSessionAddress(snapshot) !== walletAddress) return null;
+    return snapshot;
+  }, [roomId, walletAddress]);
+  const effectiveScientistId = selectedScientistId ?? recoveredMatchSnapshot?.scientistId ?? null;
+  const effectiveScientistConfirmed =
+    scientistConfirmed || (recoveredMatchSnapshot?.status === "depositing" && Boolean(recoveredMatchSnapshot.scientistId));
   const wagerUsd = FIXED_WAGER_USD;
 
   useEffect(() => {
@@ -75,6 +105,22 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
     return () => controller.abort();
   }, [roomId]);
 
+  useEffect(() => {
+    if (!isTerminalChallenge) return;
+    // Clear any stale local recovery state for this room if it's terminal
+    const snapshot = readActiveMatchSession();
+    if (snapshot?.roomId === roomId) {
+      writeActiveMatchSession(null);
+      clearActiveDepositIntent();
+    }
+  }, [isTerminalChallenge, roomId]);
+
+  function handleBackToLobby() {
+    writeActiveMatchSession(null);
+    clearActiveDepositIntent();
+    router.replace("/lobby");
+  }
+
   async function onAcceptChallenge() {
     if (!canAccept || !challenge) return;
     setState("signing");
@@ -88,18 +134,6 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
         wagerUsd,
       });
       setAcceptedSignature(signature);
-      writeActiveMatchSession({
-        walletAddress,
-        address: walletAddress,
-        roomId,
-        role: "playerB",
-        arenaId: "sol",
-        scientistId: "einstein",
-        status: "depositing",
-        token: challenge.tokenMint,
-        arenaToken: challenge.tokenMint,
-        wagerUsd,
-      });
       writeActiveDepositIntent({ roomId, address: walletAddress, signature });
       setState("accepted");
     } catch (error) {
@@ -108,19 +142,63 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
     }
   }
 
-  if ((state === "accepted" && walletAddress) || (isAcceptedByWallet && walletAddress)) {
+  if (hasAcceptedContext) {
+    if (surrendering) {
+      return (
+        <div className="relative min-h-[100svh] overflow-hidden bg-[linear-gradient(145deg,#10231b_0%,#18392d_52%,#0d1a14_100%)]">
+          <BlinkSurrenderBridge
+            roomId={roomId}
+            address={walletAddress}
+            characterId={effectiveScientistId}
+            confirmSignature={joinSignature}
+            onSettled={() => {
+              writeActiveMatchSession(null);
+              router.replace("/lobby");
+            }}
+            onError={(message) => {
+              setErrorText(message);
+              setSurrendering(false);
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (!effectiveScientistConfirmed) {
+      return (
+        <div className="relative min-h-[100svh] overflow-hidden bg-[linear-gradient(145deg,#10231b_0%,#18392d_52%,#0d1a14_100%)]">
+          <BlinkCharacterGate
+            title="Choose your scientist"
+            subtitle={errorText ?? "Your wager is locked. Pick your scientist before joining the Blink room."}
+            characters={characterOptions}
+            selectedCharacterId={effectiveScientistId}
+            onSelect={(characterId) => {
+              setErrorText(null);
+              setSelectedScientistId(characterId);
+              setScientistConfirmed(false);
+            }}
+            onContinue={() => {
+              if (!effectiveScientistId) return;
+              setScientistConfirmed(true);
+            }}
+            onSurrender={() => setSurrendering(true)}
+          />
+        </div>
+      );
+    }
+
     return (
       <BlinkRoomJoiner
         roomId={roomId}
         address={walletAddress}
         role="playerB"
         arenaId="sol"
-        scientistId="einstein"
+        scientistId={effectiveScientistId}
         token={challenge?.tokenMint}
         wagerUsd={wagerUsd}
-        depositConfirmSignature={acceptedSignature}
+        depositConfirmSignature={joinSignature}
         title="Challenge Accepted"
-        subtitle={acceptedSignature ? "Your wager is locked. Waiting for creator to join." : "Rejoining your accepted Blink match."}
+        subtitle={joinSignature ? "Your wager is locked. Waiting for creator to join." : "Rejoining your accepted Blink match."}
       />
     );
   }
@@ -141,10 +219,12 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
             CORA Blink Challenge
           </p>
           <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[var(--tone-bark)] md:text-5xl">
-            Accept The Challenge
+            {isTerminalChallenge ? "Challenge Closed" : "Accept The Challenge"}
           </h1>
           <p className="mt-3 font-gabarito text-sm text-[var(--warm-text)]">
-            Sign once to lock your wager. The creator already funded the open challenge.
+            {isTerminalChallenge
+              ? "This Blink challenge is no longer available. It may have expired or been forfeited."
+              : "Sign once to lock your wager. The creator already funded the open challenge."}
           </p>
 
           <div className="mt-6 grid gap-3 rounded-2xl border border-[rgba(111,58,40,0.24)] bg-[rgba(255,255,255,0.36)] p-4 font-gabarito text-sm text-[var(--warm-text)]">
@@ -170,8 +250,28 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
             </div>
           )}
 
+          {!hasAcceptedContext && isAcceptedByWallet && !isTerminalChallenge && challenge?.status !== "PENDING" && (
+            <div className="mt-4 frame-cut px-4 py-3" style={{ border: "2px solid var(--tone-clay)", background: "#fff4dd" }}>
+              <p className="font-gabarito text-sm font-bold text-[var(--tone-bark)]">
+                This wallet already accepted the challenge, but the local Blink recovery context is gone.
+              </p>
+            </div>
+          )}
+
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {!wallet.publicKey && <HydratedWalletButton />}
+            <button
+              type="button"
+              onClick={handleBackToLobby}
+              className="btn-game btn-game-secondary ml-auto px-5 py-3 text-xs"
+              style={{
+                borderColor: "rgba(111,58,40,0.42)",
+                boxShadow: "0 4px 0 rgba(111,58,40,0.22)",
+                color: "rgba(111,58,40,0.42)",
+              }}
+            >
+              Back To Lobby
+            </button>
             <button
               type="button"
               onClick={onAcceptChallenge}
@@ -180,17 +280,6 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
             >
               {state === "signing" ? "Signing In Wallet..." : "Accept & Lock Wager"}
             </button>
-            <a
-              href="/lobby"
-              className="btn-game btn-game-secondary px-5 py-3 text-xs"
-              style={{
-                borderColor: "rgba(111,58,40,0.42)",
-                boxShadow: "0 4px 0 rgba(111,58,40,0.22)",
-                color: "rgba(111,58,40,0.42)",
-              }}
-            >
-              Back To Lobby
-            </a>
           </div>
         </section>
       </main>

@@ -157,6 +157,11 @@ export function writeActiveMatchSession(snapshot: ActiveMatchSession | null) {
   window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(snapshot));
 }
 
+export function clearActiveMatchRoomSession() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+}
+
 export function getMatchSessionAddress(snapshot: ActiveMatchSession | null) {
   if (!snapshot) return "";
   return snapshot.walletAddress?.trim() || snapshot.address?.trim() || "";

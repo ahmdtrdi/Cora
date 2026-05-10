@@ -4404,3 +4404,150 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 - If the creator notification remains visible forever after `confirmDeposit`, FE has done its part and is waiting for the backend/socket to emit a `playing` game state or equivalent room-ready event. A dedicated private-challenge presence/ready event would make this transition easier to diagnose.
 - Terminal socket-close detection is still based on close code/reason text. If the backend adds a structured close reason or REST status for accepted-but-expired rooms, switch to that instead of parsing text.
 - Backend should preserve hydrated private-room `hasDeposited: true` metadata on websocket join instead of requiring FE to re-confirm the challenger deposit signature after `accept_challenge`.
+
+## 2026-05-10 - Blink Character Gate Before Websocket Join
+
+### The Change
+- Added [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), a shared Blink-only post-deposit character selection surface built on the existing character roster component.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `View Challenge` opens character selection first, then mounts [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) only after `Confirm Scientist`.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challengers see the same character gate after accepting/signing the Blink challenge and before joining the websocket room.
+- Passed the selected character ID into the existing `useMatchSocket` join URL via `BlinkRoomJoiner`, so the backend receives the picked scientist through the currently-supported `characterId` query parameter.
+- Adjusted the challenger accept action row so `Back To Lobby` sits directly to the left of the right-aligned `Accept & Lock Wager` button.
+
+### The Reasoning
+- Backend does not currently expose a real post-deposit `selecting_character` phase or character-lock websocket event for Blink rooms.
+- Delaying websocket join is the FE-only way to support `deposit -> select character -> play` without backend changes, because backend reads the character from the websocket join request before the engine initializes.
+- This keeps normal matchmaking unchanged while giving Blink matches a scientist pick step instead of silently defaulting both players to Einstein.
+
+### The Tech Debt
+- If a user refreshes after accepting a Blink challenge but before joining, FE can only re-confirm through websocket if the accepted signature is still available in session storage. Backend preserving hydrated private-room deposit metadata would make this more robust.
+- A proper backend character-lock phase would allow both players to connect first, show opponent selection state, enforce a timer, and auto-assign characters server-side.
+
+## 2026-05-10 - Blink Character Gate CTA And Surrender Confirmation
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so all scientist cards are neutral `Tap To Select` choices, with no Einstein `Balanced Default` label in the Blink post-deposit flow.
+- Moved the Blink gate action row below the scientist roster so the page reads as `choose first, then confirm`.
+- Replaced the gate `Back` action with `Surrender`, guarded by a confirmation popup that warns the wager is already locked.
+- Added [BlinkSurrenderBridge.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkSurrenderBridge.tsx), a frontend-only bridge that connects to the existing match websocket, replays the stored deposit confirmation signature when available, sends the existing `surrender` event, and clears local match state.
+- Wired creator-side surrender from [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and challenger-side surrender from [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- After deposit, leaving is no longer a harmless navigation event. The UI should say `Surrender` and require confirmation because the backend treats that as forfeiting the locked wager.
+- Blink still delays websocket join until after character selection, so surrender from the character gate needs a tiny temporary socket bridge rather than changing backend APIs.
+- Removing the neutral default label prevents the Blink flow from nudging players back toward Einstein after we added explicit character selection.
+
+### The Tech Debt
+- The bridge currently treats successful websocket submission/terminal close as enough to clear local state, matching the existing active-match surrender behavior. A dedicated backend private-challenge surrender endpoint or acknowledgement event would make this more authoritative.
+
+## 2026-05-10 - Blink Pre-Character Recovery Escape
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so accepting a Blink challenge stores only the deposit signature before character selection, not a generic active match session.
+- Added [clearActiveMatchRoomSession](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so FE can clear stale active-room localStorage without deleting the accepted Blink deposit signature from sessionStorage.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so `private + depositing` active rooms are treated as Blink pre-character rooms instead of normal escrow-settlement recovery.
+- Creator recovery now reopens the Blink accepted path when the active private room matches the locally stored Blink challenge.
+- Challenger recovery now routes back to `/challenge/:roomId` so the player can pick a scientist and join through the Blink flow.
+- Added a `Back To Lobby` escape button to the generic `Escrow resolver is settling` screen for stale local recovery cases.
+
+### The Reasoning
+- The previous challenger accept flow wrote `status: depositing` into the generic active-room store before the Blink websocket had joined. If the player hit browser back before choosing a scientist, lobby recovery interpreted that stale local marker as a normal match settlement and got stuck waiting.
+- Blink pre-character state is not equivalent to normal ER settlement. It needs to return to the Blink challenge path, preserving the deposit signature so websocket `confirmDeposit` can still be replayed later.
+
+### The Tech Debt
+- This is still a frontend classification fix based on `roomType: private` and `status: depositing`. A backend-owned Blink room phase like `awaiting_character` would make recovery clearer and remove the need for FE inference.
+
+## 2026-05-10 - Blink Character Gate Label Cleanup
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to hide the reusable roster/status pills in the Blink post-deposit character picker.
+- Restyled the `Surrender` button with the same readable light-panel secondary treatment used by `Back To Lobby` on the challenge accept page.
+
+### The Reasoning
+- The Blink page already has enough heading/subtitle context, so the extra `Roster` and `Pick your scientist to continue` pills were redundant visual noise.
+- The shared secondary button style defaults to light text, which becomes unreadable on the cream Blink card without local color overrides.
+
+### The Tech Debt
+- These local button overrides should eventually become a named light-surface secondary button variant if more light-card flows need the same treatment.
+
+## 2026-05-10 - Compact Blink Character Cards
+
+### The Change
+- Added a `compactCards` option to [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) and [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx).
+- Enabled compact cards in [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), reducing card min-height, portrait size, and the internal gap above each card CTA.
+- Pulled the Blink gate action row closer to the roster.
+
+### The Reasoning
+- The shared character card uses `mt-auto` to create a roomy draft-card layout, but on the Blink cream panel that left too much empty vertical space between character details and `Tap To Select`.
+- A prop keeps the tighter Blink treatment local instead of changing normal matchmaking character select.
+
+### The Tech Debt
+- If more compact selection surfaces appear, the card sizing should move from a boolean prop to a named density variant.
+
+## 2026-05-10 - Blink Character Card Stretch Removal
+
+### The Change
+- Updated compact mode in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) so Blink character cards no longer stretch vertically to fill the parent panel.
+- Compact mode now removes the selector/grid `flex-1` stretch and aligns cards to the top of the grid.
+
+### The Reasoning
+- The remaining bottom gap was caused by the grid stretching each card row, not by internal card spacing.
+- Blink character selection should be allowed to produce a shorter overall section instead of forcing draft cards to fill the available cream-panel height.
+
+### The Tech Debt
+- The compact layout is still a boolean mode. If the character selector accumulates more layout variants, replace it with explicit density/layout tokens.
+
+## 2026-05-10 - Blink Character Panel Height Shrink
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to remove the forced viewport-height minimum from the cream character selection panel.
+
+### The Reasoning
+- After compacting the character cards, the remaining lower gap came from the outer panel still being forced to nearly full screen height.
+- The Blink character selection surface is allowed to be shorter overall, so the panel should wrap its content instead of reserving empty vertical space.
+
+### The Tech Debt
+- If we need more precise vertical rhythm across Blink pages, define shared panel sizing tokens instead of per-component height overrides.
+
+## 2026-05-10 - Blink Character Gate Vertical Centering
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so the full character selection section is vertically centered within the viewport instead of sitting at the top.
+
+### The Reasoning
+- Once the Blink panel height was reduced, the remaining layout issue was placement rather than size. The screen reads better when the compact cream panel is framed in the middle of the dark background.
+
+### The Tech Debt
+- If Blink gets more page states with different heights, it may be worth standardizing per-state vertical alignment rules instead of setting them one component at a time.
+
+## 2026-05-10 - Blink Refresh And Surrender Recovery Corrections
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side Blink status polling no longer demotes an in-progress room recovery back into the lower-priority notification state.
+- Added presentation-aware Blink recovery in the lobby: creator-side private `depositing` rooms now resume directly into `Confirming your match...` when a scientist was already locked, otherwise they reopen character select.
+- Prevented the floating `Rival Accepted` notification from stacking on top of the Blink character gate.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challenger-side resume only happens when real local accepted context still exists, using the stored deposit signature instead of only `opponentWallet` ownership.
+- Added render-time recovery from the stored active match snapshot on the challenge page, so a challenger refresh after already locking a scientist resumes straight back into the joiner instead of dropping to character select.
+
+### The Reasoning
+- Two FE recovery rules were fighting each other. Lobby refresh recovery could correctly detect a creator still in a private `depositing` room, but the Blink status poll would immediately reopen the weaker notification state and kick the creator back out of the join flow.
+- Challenger recovery was too optimistic: if the backend row still said the wallet had accepted the Blink, FE would reopen the character gate even after local surrender/cleanup had already cleared the real resume context.
+
+### The Tech Debt
+- FE still infers Blink recovery mode from a mix of local storage, websocket stage, and backend room/challenge status. A backend-owned private-room phase model would remove a lot of this recovery branching.
+
+## 2026-05-10 - Fix Blink challenge terminal-state loop
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) to detect terminal statuses (`FORFEITED`, `EXPIRED`, `COMPLETED`) and clear stale local session state (`cora:active-room`, `cora:active-deposit-intent`).
+- Replaced the plain `<a>` tag for "Back To Lobby" in [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) with a button that explicitly clears local state before navigating.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) recovery logic to check for terminal match statuses and clear stale recovery state instead of redirecting the challenger back to the challenge page.
+- Added a "Challenge Closed" UI state to [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) for terminal challenges.
+
+### The Reasoning
+- Challengers were getting stuck on the challenge accept screen or redirected back to it even after a challenge was forfeited or expired because the frontend wasn't consistently clearing local recovery state or checking the challenge status during lobby recovery.
+- A plain link doesn't allow for the necessary side effects (clearing local storage) before navigation.
+
+### The Tech Debt
+- Terminal status strings are duplicated across `BlinkChallengeAccept.tsx` and `LobbyScreen.tsx`. These should eventually be centralized in a shared constants file or type definition.
+

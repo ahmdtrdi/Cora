@@ -14,6 +14,7 @@ type CharacterCardProps = {
   autoAssigned?: boolean;
   showNeutralDefault?: boolean;
   previewExpression?: "happy";
+  compact?: boolean;
   index: number;
   onSelect: (characterId: string) => void;
 };
@@ -26,6 +27,7 @@ export function CharacterCard({
   autoAssigned = false,
   showNeutralDefault = false,
   previewExpression = "happy",
+  compact = false,
   index,
   onSelect,
 }: CharacterCardProps) {
@@ -78,7 +80,7 @@ export function CharacterCard({
       animate={{ opacity: 1, y: selected ? -5 : 0 }}
       transition={{ duration: 0.32, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
       whileHover={isInteractive ? { y: selected ? -6 : -1.5 } : undefined}
-      className="game-card relative flex min-h-[350px] flex-col overflow-hidden p-4 text-left transition-transform"
+      className={`game-card relative flex flex-col overflow-hidden p-4 text-left transition-transform ${compact ? "min-h-[320px]" : "min-h-[350px]"}`}
       style={{
         border: selected ? "3px solid #ba6931" : "3px solid rgba(111,58,40,0.38)",
         background: selected
@@ -95,7 +97,7 @@ export function CharacterCard({
     >
       <motion.div
         animate={portraitControls}
-        className="relative mx-auto mb-4 aspect-square w-full max-w-[210px] overflow-hidden rounded-2xl"
+        className={`relative mx-auto mb-4 aspect-square w-full overflow-hidden rounded-2xl ${compact ? "max-w-[190px]" : "max-w-[210px]"}`}
         style={{
           border: selected ? "2px solid rgba(248,214,148,0.94)" : "2px solid rgba(15,20,17,0.7)",
           background: character.portraitBg,
@@ -142,7 +144,7 @@ export function CharacterCard({
 
 
 
-      <div className="mt-auto pt-2">
+      <div className={compact ? "mt-4" : "mt-auto pt-2"}>
         <div
           className={`rounded-xl border px-3 py-2 text-center font-gabarito text-[11px] font-bold uppercase tracking-[0.12em] ${
             selected
