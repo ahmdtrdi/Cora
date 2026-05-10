@@ -14,6 +14,7 @@ type SignDepositIntentParams = {
   roomId: string;
   token: string;
   wagerUsd: string;
+  signal?: AbortSignal;
 };
 
 type SignSettlementReleaseIntentParams = {
@@ -155,6 +156,12 @@ function mapWalletError(error: unknown): DepositIntentError {
   return new DepositIntentError("unknown", message);
 }
 
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new DepositIntentError("unknown", "signing_timeout");
+  }
+}
+
 async function signMemoIntent({
   connection,
   wallet,
@@ -214,6 +221,7 @@ export async function signDepositIntent({
   roomId,
   token,
   wagerUsd,
+  signal,
 }: SignDepositIntentParams): Promise<string> {
   if (!wallet.publicKey) {
     throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
@@ -226,6 +234,7 @@ export async function signDepositIntent({
   }
 
   try {
+    throwIfAborted(signal);
     const apiBase = resolveApiBaseUrl();
     console.info("[signDepositIntent] Requesting backend deposit transaction", {
       roomId,
@@ -242,6 +251,7 @@ export async function signDepositIntent({
       fetch(`${apiBase}/api/actions/challenge?roomId=${roomId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal,
         body: JSON.stringify({ 
           account: wallet.publicKey.toBase58(),
           tokenMint: token,
@@ -268,6 +278,7 @@ export async function signDepositIntent({
     }
 
     const { transaction: base64Tx } = await res.json();
+    throwIfAborted(signal);
     console.info("[signDepositIntent] Backend transaction received", {
       hasTransaction: Boolean(base64Tx),
     });
@@ -288,6 +299,7 @@ export async function signDepositIntent({
       feePayer: wallet.publicKey.toBase58(),
       blockhash: transaction.recentBlockhash,
     });
+    throwIfAborted(signal);
     const signature = await wallet.sendTransaction(transaction, connection, {
       preflightCommitment: "confirmed",
       maxRetries: 2,

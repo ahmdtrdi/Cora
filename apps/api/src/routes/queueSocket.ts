@@ -26,6 +26,8 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
 
     return {
       onOpen(_event, ws) {
+        roomManager.queue.releaseUnfundedPublicDepositRoom(address);
+
         // Check for active room first (reconnect scenario)
         const activeRoom = roomManager.queue.findActiveRoomForAddress(address);
         if (activeRoom) {

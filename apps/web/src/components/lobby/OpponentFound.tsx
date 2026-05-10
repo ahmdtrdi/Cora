@@ -26,8 +26,8 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
-const PHANTOM_SIGNING_WARNING_MS = 20_000;
-const SIGNING_TIMEOUT_MS = 45_000;
+const PHANTOM_SIGNING_WARNING_MS = 12_000;
+const SIGNING_TIMEOUT_MS = 28_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -281,6 +281,22 @@ export function OpponentFound({
     return `${raw} ${logs}`.toLowerCase().includes("insufficient") || logs.includes("lamport") || logs.includes("0x1");
   }
 
+  function isWalletCancelledDepositError(error: unknown) {
+    if (error instanceof DepositIntentError) {
+      return error.code === "wallet_declined" || error.message === "signing_timeout";
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const combined = `${error instanceof Error ? error.name : ""} ${raw}`.toLowerCase();
+    return (
+      combined.includes("rejected") ||
+      combined.includes("denied") ||
+      combined.includes("cancel") ||
+      combined.includes("signing_timeout") ||
+      combined.includes("user rejected")
+    );
+  }
+
   function classifyDepositError(error: unknown): string {
     if (error instanceof DepositIntentError) {
       switch (error.code) {
@@ -298,7 +314,7 @@ export function OpponentFound({
           return "Unable to reach the game server. Check your connection and retry.";
         case "unknown":
           if (error.message === "signing_timeout") {
-            return "Wallet approval timed out. If Phantom showed a warning, your balance may be too low. Retry or top up your wallet.";
+            return "Wallet approval timed out. Returning to lobby so you can queue again.";
           }
           break;
         default:
@@ -380,10 +396,15 @@ export function OpponentFound({
     setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
+    const signingAbortController = new AbortController();
+    let signingTimeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const signingTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new DepositIntentError("unknown", "signing_timeout")), SIGNING_TIMEOUT_MS),
-      );
+      const signingTimeout = new Promise<never>((_, reject) => {
+        signingTimeoutId = setTimeout(() => {
+          signingAbortController.abort();
+          reject(new DepositIntentError("unknown", "signing_timeout"));
+        }, SIGNING_TIMEOUT_MS);
+      });
       const signature = await Promise.race([
         signDepositIntent({
           connection,
@@ -391,6 +412,7 @@ export function OpponentFound({
           roomId,
           token: arena.token,
           wagerUsd,
+          signal: signingAbortController.signal,
         }),
         signingTimeout,
       ]);
@@ -405,23 +427,38 @@ export function OpponentFound({
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorCode = error instanceof DepositIntentError ? error.code : "unknown";
       const errorName = error instanceof Error ? error.name : typeof error;
-      console.error(`[OpponentFound] Deposit signing failed: [${errorCode}] ${errorMsg}`, {
+      const userCancelledDeposit = isWalletCancelledDepositError(error);
+      const logPayload = {
         roomId,
         role: effectiveRole ?? "unknown",
         connectionState,
         errorCode,
         errorName,
         errorMsg,
-      });
+      };
+      if (userCancelledDeposit) {
+        console.info(`[OpponentFound] Deposit signing cancelled: [${errorCode}] ${errorMsg}`, logPayload);
+      } else {
+        console.error(`[OpponentFound] Deposit signing failed: [${errorCode}] ${errorMsg}`, logPayload);
+      }
       const message = classifyDepositError(error);
-      const hasInsufficientFunds =
-        isInsufficientFundsError(error) ||
-        (error instanceof DepositIntentError && error.message === "signing_timeout");
+      const hasInsufficientFunds = isInsufficientFundsError(error);
       setSigningState("error");
       setErrorText(message);
       setErrorVisible(true);
       if (hasInsufficientFunds) {
         setInsufficientFunds(true);
+      }
+      if (userCancelledDeposit && !cancelFiredRef.current) {
+        cancelFiredRef.current = true;
+        cancelMatch();
+        window.setTimeout(() => {
+          onTimeout();
+        }, 900);
+      }
+    } finally {
+      if (signingTimeoutId) {
+        clearTimeout(signingTimeoutId);
       }
     }
   }
