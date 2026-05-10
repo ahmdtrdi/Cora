@@ -4180,3 +4180,165 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The countdown slot is intentionally generic, but it is still a one-off prop path through the deposit components. If we add more timer-adjacent states later, it may be worth consolidating this into a dedicated countdown presentation component.
+
+## 2026-05-10 - MagicBlock UI Enhancement Layer
+
+### The Change
+- Added [magicblockUi.ts](/d:/projects/Cora/apps/web/src/lib/magicblock/magicblockUi.ts) to translate MagicBlock/ER lifecycle states into player-facing badge labels, short copy, progress values, and pulse behavior for deposit and settlement surfaces.
+- Updated [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) with an optional `statusStripSlot`, then wired [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to render a compact `Fast Arena` / `Standard Arena` status strip inside the existing deposit panel.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to show the same style of support strip inside the existing settlement result overlay without changing the primary outcome copy.
+
+### The Reasoning
+- We wanted to support MagicBlock delays as a presentation enhancement, not as a separate screen or layout branch. Keeping the enhancement inside existing deposit and settlement slots avoids layout jumps and keeps fallback to standard mode feeling intentional.
+- The result overlay keeps player-centered copy like `You Win` / `You Lose`, while the new strip explains what the arena/proof layer is doing underneath. This protects the emotional result moment while still making ER settlement progress legible.
+- Centralizing the ER-to-UI mapping keeps raw lifecycle labels such as `creating`, `delegating`, and `committing` out of component markup and makes it easier to tune copy later.
+
+### The Tech Debt
+- The status strips are currently local JSX in `OpponentFound` and `BattleScreenOverlays`; if more screens need the same treatment, extract a shared `ArenaStatusStrip` component.
+- Production build verification was blocked by a local `.next` file lock (`EPERM unlink ... .next/build/chunks/...`) after Google Fonts access was allowed. Lint and TypeScript checks passed, but the build should be rerun after clearing the locked build artifact or stopping the process holding it.
+
+## 2026-05-10 - MagicBlock Enhancement Timing And Fallback Result Copy
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the arena/proof status strip only appears after the player has signed and the room has an actual preparation signal (`erStatus`, `playing`, or `settling`). Player A waiting for Player B and Player B waiting for unlock now stay on the normal deposit UI.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `server_error` fallback match results are classified as finalized standard fallback instead of unresolved pending settlement.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so `server_error` outcomes show clear fallback payout copy instead of `Settlement is still being finalized`.
+
+### The Reasoning
+- The MagicBlock strip should communicate post-deposit loading, not appear as a default decoration from the start of the opponent-found screen.
+- When ER card play fails and the backend emits local `server_error` finalization, the FE receives a terminal `matchResult` without a settlement authorization. Treating that as `Pending` made a completed fallback path look stuck.
+- Forcing the settlement support UI into standard mode on `server_error` prevents stale pre-fallback `gameState.erEnabled` / `erStatus` snapshots from briefly showing a MagicBlock proof state after fallback has already won.
+
+### The Tech Debt
+- The FE still depends on `server_error` as the fallback signal. If the backend later emits a more specific ER fallback reason or status enum, the settlement copy should switch to that structured signal.
+
+## 2026-05-10 - Player-B MagicBlock Loading Color Timing
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the MagicBlock status strip can show an orange `Fast Arena` loading state immediately after Player B signs the second deposit.
+- Kept the green state tied to the existing server-provided preparation signal (`erStatus` / `playing` / `settling`), so the strip now visually moves from local post-deposit loading to server-confirmed fast-arena readiness.
+
+### The Reasoning
+- The frontend cannot infer Player B completion from Player A's side without a new backend event, but Player B's client knows it was unlocked and just signed. Using that local fact lets us show the intended yellow/orange loading phase without touching backend code.
+- Keeping Player A on the normal waiting UI avoids pretending both deposits are done before the frontend has a reliable signal.
+
+### The Tech Debt
+- This is intentionally asymmetric until the backend emits a dedicated `bothDeposited` / `erSetupStarted` event or broadcasts ER lifecycle changes during setup. If that signal becomes available later, Player A can show the same orange loading phase too.
+
+## 2026-05-10 - Shared Post-Sign Fast Arena Loading State
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both players now see the Fast Arena strip after their own deposit signature is captured.
+- Player A sees an orange `Fast Arena queued` state while waiting for Player B's wager, and Player B sees an orange `Syncing MagicBlock` state after signing the second deposit.
+- Existing server-provided `erStatus` / `playing` / `settling` signals still drive the green ready state when the room snapshot catches up.
+
+### The Reasoning
+- This keeps the UX fair: both players get an immediate post-sign loading state without requiring backend changes.
+- Player A cannot know from frontend-only state that Player B has signed, so the copy stays honest by saying the fast arena is queued rather than claiming setup has started.
+
+### The Tech Debt
+- The orange-to-green transition is still partly local/optimistic because the frontend does not receive a dedicated `bothDeposited` or `erSetupStarted` event. If backend events are added later, this can become fully authoritative for both players.
+
+## 2026-05-10 - Settlement Overlay Pending Bar Simplification
+
+### The Change
+- Removed the arena/proof support strip from [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so settlement results no longer show internal copy like `Standard Arena`, `Result secured`, or `Match outcome is finalized`.
+- Added a slim bottom shimmer bar to the settlement overlay only when `settlementStatus === "Pending"`.
+- Removed now-unused settlement support prop plumbing from [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+
+### The Reasoning
+- The settlement result overlay should stay outcome-focused. Showing standard/proof state text inside the card felt too implementation-facing and competed with the actual result.
+- Pending still needs motion feedback, but a bottom loading rail is enough to communicate that the app is waiting without adding more copy or shifting the layout.
+
+### The Tech Debt
+- The bottom rail currently keys off the display string `Pending`. If settlement states become richer later, this should switch to a boolean derived in `BattleScreen` instead of comparing UI copy.
+
+## 2026-05-10 - Settlement Fallback Copy Softening
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so `server_error` fallback copy now reads `Match closed safely. No winner payout was awarded`.
+
+### The Reasoning
+- The previous wording (`Standard fallback finalized`) sounded too implementation-facing for a player result overlay.
+- The new copy keeps the important payout expectation clear while sounding more like product language and less like a backend state.
+
+### The Tech Debt
+- `server_error` still covers multiple fallback causes. If backend eventually distinguishes ER failure, refund-gated draw, or settlement-service issues, these should get more specific result copy.
+
+## 2026-05-10 - Settlement Review Copy For ER Failure
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `server_error` match results show a `Review` settlement status instead of `Finalized`.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so ER failure fallback copy says `Match closed safely. Wager resolution is pending review`.
+- Softened the standard loss payout line from `No winner payout was awarded to you for this match` to `Rival secured the wager for this match`.
+
+### The Reasoning
+- The MagicBlock failure log shows local `server_error` finalization after a delegated ER transaction failure, not the normal winner-payout settlement path.
+- The UI should not imply the match had no winner or that players had no reason to play. It should communicate that the room was closed safely and wager handling needs a review/resolution path.
+
+### The Tech Debt
+- This remains frontend wording over a broad backend `server_error` reason. A dedicated escrow review/refund/winner-settlement status would let the UI be more precise later.
+
+## 2026-05-10 - Opponent Found Green Loading Rail
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so confirmed green MagicBlock states use a continuous full-width loading rail instead of a fixed progress width.
+
+### The Reasoning
+- Once the UI turns green, the player should read it as server-confirmed Fast Arena preparation, not as a precise percentage countdown. The moving rail keeps the wait feeling alive without implying exact backend progress.
+
+### The Tech Debt
+- Orange local states still use optimistic progress values because the frontend does not receive authoritative phase progress before the server snapshot catches up.
+
+## 2026-05-10 - Endgame Notice And Processing Rails
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both orange post-sign Fast Arena states use a full-width left-to-right infinite loading rail.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so terminal results show as a small in-game battle notice while cards are locked and the base destruction/result sequence resolves.
+- Updated the card helper text to say `Match locked. Resolving final sequence.` when a terminal result has arrived.
+
+### The Reasoning
+- Orange should communicate active processing for both players, not a static/progress estimate.
+- The final win/loss overlay should be the only big result popup. The earlier match-finished moment now reads as an in-game transition while the base animation completes.
+
+### The Tech Debt
+- The endgame notice reuses the existing battle notice layer. If more transition states are added, that notice model may need explicit variants instead of overloading the `phase` tone.
+
+## 2026-05-10 - Match Finished Notice Gate
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so raw `status === "finished"` no longer opens the large settlement/result overlay by itself.
+- Generic finished state now stays in the in-game notice bar as `Match finished. Cards locked while result syncs.`
+- The large result overlay is reserved for resolved outcomes from `settlementResult`, `matchResult`, invalidation, or room cancellation.
+
+### The Reasoning
+- `Match Finished` is a transition state, not an emotional result. Keeping it in the battle notice bar avoids showing two similar popup moments before the base-destroyed sequence and final result.
+
+### The Tech Debt
+- This still depends on the existing socket result payloads arriving after `finished`. If backend ever emits a dedicated `result_syncing` status, the FE should key the notice from that explicit state.
+
+## 2026-05-10 - Endgame Base Notice Removal
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so resolved endgame/base-destruction sequences no longer show `Final impact registered. Cards locked while the base resolves.`
+- Kept the generic `Match finished. Cards locked while result syncs.` notice only for unresolved raw `finished` status.
+
+### The Reasoning
+- The base destruction animation is already the transition moment. Removing extra copy lets the final result popup land cleaner.
+
+### The Tech Debt
+- If the result-sync delay becomes long, we may want a quieter visual-only lock indicator instead of text.
+
+## 2026-05-10 - Terminal Card Lock Tightening
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so answer clicks are ignored once `isMatchComplete` is true.
+- Marked answer options disabled during match completion using the derived terminal lock state.
+- Removed the active-card glow from hand cards during terminal lock so the played card no longer looks interactable while the result sequence resolves.
+
+### The Reasoning
+- Hand cards were technically disabled by `isMatchComplete`, but the active card could still look selected/available because active styling overrode the locked opacity.
+- The open answer panel already unmounts on match completion, but guarding `onAnswer` closes the small race window between terminal socket updates and React render.
+
+### The Tech Debt
+- If we add a dedicated “locked card” visual later, replace the generic disabled opacity with a clearer final-turn lock treatment.
