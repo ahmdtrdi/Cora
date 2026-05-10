@@ -8,6 +8,7 @@ type DepositStatusCardProps = {
   status: DepositStatus;
   helperText?: string;
   countdownSeconds?: number;
+  countdownSlot?: ReactNode;
   signature?: string | null;
   walletSlot?: ReactNode;
   retrySlot?: ReactNode;
@@ -18,6 +19,7 @@ export function DepositStatusCard({
   status,
   helperText,
   countdownSeconds,
+  countdownSlot,
   signature,
   walletSlot,
   retrySlot,
@@ -45,9 +47,12 @@ export function DepositStatusCard({
         <p className="mt-1 font-gabarito text-sm text-[rgba(203,227,193,0.9)]">{helperText ?? meta.helper}</p>
 
         {showCountdown && (
-          <p className="mt-3 font-caprasimo text-5xl text-[#f8d694] drop-shadow-[0_4px_10px_rgba(0,0,0,0.38)]">
-            {countdownSeconds}
-          </p>
+          <div className="mt-3 flex flex-col items-center gap-2">
+            <p className="font-caprasimo text-5xl text-[#f8d694] drop-shadow-[0_4px_10px_rgba(0,0,0,0.38)]">
+              {countdownSeconds}
+            </p>
+            {countdownSlot ? <div>{countdownSlot}</div> : null}
+          </div>
         )}
 
         <div className="mt-3 flex flex-col gap-3">

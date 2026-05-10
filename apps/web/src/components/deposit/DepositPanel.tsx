@@ -13,6 +13,7 @@ type DepositPanelProps = {
   status: DepositStatus;
   helperText?: string;
   countdownSeconds?: number;
+  countdownSlot?: ReactNode;
   signature?: string | null;
   canPrimaryAction?: boolean;
   primaryActionLabel?: string;
@@ -31,6 +32,7 @@ export function DepositPanel({
   status,
   helperText,
   countdownSeconds,
+  countdownSlot,
   signature,
   canPrimaryAction = true,
   primaryActionLabel = "Sign Deposit",
@@ -52,6 +54,7 @@ export function DepositPanel({
           status={status}
           helperText={helperText}
           countdownSeconds={countdownSeconds}
+          countdownSlot={countdownSlot}
           signature={signature}
           walletSlot={walletSlot}
           retrySlot={retrySlot}

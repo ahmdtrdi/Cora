@@ -13,6 +13,17 @@ import { getRuntimeConfig } from "@/lib/config/runtimeModes";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
+import {
+  getMatchSessionAddress,
+  getMatchSessionToken,
+  isLiveMatchSession,
+  readActiveMatchSession,
+  readLobbyDraftSnapshot,
+  writeActiveMatchSession,
+  writeLobbyDraftSnapshot,
+  type ActiveMatchSession,
+  type LobbyDraftSnapshot,
+} from "@/lib/session/matchSession";
 import type {
   CharacterOption,
   CharacterSelectionState,
@@ -93,9 +104,6 @@ const MATCHMAKING_TIMEOUT_MS = 45_000;
 const MATCHMAKING_PRESENCE_POLL_MS = 4_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
-const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
-const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
-
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
   animate: { opacity: 1, scale: 1 },
@@ -107,100 +115,7 @@ function shortenAddress(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
-type LobbyDraftSnapshot = {
-  arenaId?: string | null;
-  scientistId?: string | null;
-};
-
-type ActiveRoomSnapshot = {
-  walletAddress?: string | null;
-  address?: string | null;
-  roomId: string;
-  role?: "playerA" | "playerB" | null;
-  arenaId?: string | null;
-  scientistId?: string | null;
-  status?: string | null;
-  token?: string | null;
-  arenaToken?: string | null;
-  wagerUsd?: string | null;
-  canSurrenderByState?: boolean;
-};
-
-function normalizeActiveRoomSnapshot(value: unknown): ActiveRoomSnapshot | null {
-  if (!value || typeof value !== "object") return null;
-  const snapshot = value as Record<string, unknown>;
-  const roomId = typeof snapshot.roomId === "string" ? snapshot.roomId : "";
-  if (!roomId) return null;
-
-  return {
-    walletAddress:
-      typeof snapshot.walletAddress === "string"
-        ? snapshot.walletAddress
-        : typeof snapshot.address === "string"
-          ? snapshot.address
-          : null,
-    address:
-      typeof snapshot.address === "string"
-        ? snapshot.address
-        : typeof snapshot.walletAddress === "string"
-          ? snapshot.walletAddress
-          : null,
-    roomId,
-    role: snapshot.role === "playerA" || snapshot.role === "playerB" ? snapshot.role : null,
-    arenaId: typeof snapshot.arenaId === "string" ? snapshot.arenaId : null,
-    scientistId: typeof snapshot.scientistId === "string" ? snapshot.scientistId : null,
-    status: typeof snapshot.status === "string" ? snapshot.status : null,
-    token:
-      typeof snapshot.token === "string"
-        ? snapshot.token
-        : typeof snapshot.arenaToken === "string"
-          ? snapshot.arenaToken
-          : null,
-    arenaToken:
-      typeof snapshot.arenaToken === "string"
-        ? snapshot.arenaToken
-        : typeof snapshot.token === "string"
-          ? snapshot.token
-          : null,
-    wagerUsd: typeof snapshot.wagerUsd === "string" ? snapshot.wagerUsd : null,
-    canSurrenderByState: typeof snapshot.canSurrenderByState === "boolean" ? snapshot.canSurrenderByState : undefined,
-  };
-}
-
-function readActiveRoomSnapshot() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
-    if (!raw) return null;
-    return normalizeActiveRoomSnapshot(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
-function writeActiveRoomSnapshot(snapshot: ActiveRoomSnapshot | null) {
-  if (typeof window === "undefined") return;
-  if (!snapshot) {
-    window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(snapshot));
-}
-
-function getSnapshotAddress(snapshot: ActiveRoomSnapshot | null) {
-  if (!snapshot) return "";
-  return snapshot.walletAddress?.trim() || snapshot.address?.trim() || "";
-}
-
-function getSnapshotToken(snapshot: ActiveRoomSnapshot | null) {
-  if (!snapshot) return null;
-  return snapshot.token?.trim() || snapshot.arenaToken?.trim() || null;
-}
-
-function isLiveMatchSnapshot(snapshot: ActiveRoomSnapshot | null) {
-  if (!snapshot?.roomId) return false;
-  return snapshot.status === "playing" || typeof snapshot.canSurrenderByState === "boolean";
-}
+type ActiveRoomSnapshot = ActiveMatchSession;
 
 type ActiveMatchSurrenderBridgeProps = {
   roomId: string;
@@ -272,6 +187,8 @@ export function LobbyScreen() {
   const [activeMatchSurrenderSnapshot, setActiveMatchSurrenderSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderModalOpen, setActiveMatchSurrenderModalOpen] = useState(false);
   const [activeMatchToast, setActiveMatchToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [pendingErRecovery, setPendingErRecovery] = useState(false);
+  const [erSettling, setErSettling] = useState(false);
   const matchmakingAbortRef = useRef<AbortController | null>(null);
   const matchmakingRequestIdRef = useRef(0);
   const userCancelledRef = useRef(false);
@@ -321,7 +238,7 @@ export function LobbyScreen() {
   const walletAddr = walletAddress || "Not connected";
   const activeMatchBannerArena =
     activeMatchBannerSnapshot?.arenaId ? ARENAS.find((arena) => arena.id === activeMatchBannerSnapshot.arenaId) ?? null : null;
-  const activeMatchBannerToken = getSnapshotToken(activeMatchBannerSnapshot) ?? activeMatchBannerArena?.token ?? "SOL";
+  const activeMatchBannerToken = getMatchSessionToken(activeMatchBannerSnapshot) ?? activeMatchBannerArena?.token ?? "SOL";
   const activeMatchBannerWager = activeMatchBannerSnapshot?.wagerUsd ?? FIXED_WAGER_USD;
   const canSurrenderActiveMatch = activeMatchBannerSnapshot?.canSurrenderByState === true;
 
@@ -333,17 +250,21 @@ export function LobbyScreen() {
   const waitingMissingContext = phase === "waiting" && (!selectedArena || !selectedScientist);
   const foundMissingContext =
     phase === "found" && (!selectedArena || !selectedScientist || !matchedRoomId);
-  const phaseContextIssue = waitingMissingContext
-    ? {
-      title: "Queue session missing context",
-      detail: "Room setup was refreshed before queue state finished syncing.",
-    }
-    : foundMissingContext
+  const phaseContextIssue = useMemo(() => (
+    waitingMissingContext
       ? {
-        title: "Match room context missing",
-        detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
+        title: "Queue session missing context",
+        detail: "Room setup was refreshed before queue state finished syncing.",
       }
-      : null;
+      : foundMissingContext
+        ? {
+          title: "Match room context missing",
+          detail: "Opponent-found state lost required room data. Return to character select and re-queue.",
+        }
+        : null
+  ), [foundMissingContext, waitingMissingContext]);
+  const showPendingErRecovery = pendingErRecovery && Boolean(walletAddress);
+  const showErSettling = erSettling && Boolean(phaseContextIssue) && Boolean(matchedRoomId) && Boolean(walletAddress);
 
   const clearFoundTransitionTimers = useCallback(() => {
     for (const timerId of foundTransitionTimeoutsRef.current) {
@@ -385,9 +306,10 @@ export function LobbyScreen() {
     setActiveMatchBannerSnapshot(null);
     setActiveMatchSurrenderSnapshot(null);
     setActiveMatchSurrenderModalOpen(false);
+    setPendingErRecovery(false);
     clearFoundTransitionTimers();
 
-    writeActiveRoomSnapshot({
+    writeActiveMatchSession({
       walletAddress,
       address: walletAddress,
       roomId: snapshot.roomId,
@@ -403,10 +325,7 @@ export function LobbyScreen() {
     if (snapshot.status === "playing") {
       const params = new URLSearchParams({
         roomId: snapshot.roomId,
-        address: walletAddress,
         arena: nextArenaId ?? "sol",
-        token: snapshot.token ?? nextArena?.token ?? "SOL",
-        wager: snapshot.wagerUsd ?? FIXED_WAGER_USD,
       });
       if (nextScientist?.id) {
         params.set("scientist", nextScientist.id);
@@ -433,7 +352,7 @@ export function LobbyScreen() {
   ]);
 
   const clearActiveMatchBanner = useCallback(() => {
-    writeActiveRoomSnapshot(null);
+    writeActiveMatchSession(null);
     setActiveMatchBannerSnapshot(null);
     setActiveMatchSurrenderSnapshot(null);
     setActiveMatchSurrenderModalOpen(false);
@@ -441,25 +360,23 @@ export function LobbyScreen() {
 
   const handleRejoinActiveMatch = useCallback(() => {
     if (!activeMatchBannerSnapshot?.roomId) return;
+    writeActiveMatchSession(activeMatchBannerSnapshot);
     const params = new URLSearchParams({
       roomId: activeMatchBannerSnapshot.roomId,
       arena: activeMatchBannerSnapshot.arenaId ?? "sol",
-      token: activeMatchBannerToken,
-      wager: activeMatchBannerWager,
     });
-    clearActiveMatchBanner();
+    setActiveMatchBannerSnapshot(null);
+    setActiveMatchSurrenderSnapshot(null);
+    setActiveMatchSurrenderModalOpen(false);
     router.push(`/play?${params.toString()}`);
   }, [
     activeMatchBannerSnapshot,
-    activeMatchBannerToken,
-    activeMatchBannerWager,
-    clearActiveMatchBanner,
     router,
   ]);
 
   const handleConfirmActiveMatchSurrender = useCallback(() => {
     if (!activeMatchBannerSnapshot?.roomId) return;
-    const surrenderAddress = getSnapshotAddress(activeMatchBannerSnapshot) || walletAddress;
+    const surrenderAddress = getMatchSessionAddress(activeMatchBannerSnapshot) || walletAddress;
     if (!surrenderAddress) {
       clearActiveMatchBanner();
       setActiveMatchToast({ text: "Could not connect - try rejoining instead", tone: "error" });
@@ -600,7 +517,7 @@ export function LobbyScreen() {
     userCancelledRef.current = true;
     matchmakingAbortRef.current?.abort();
     clearFoundTransitionTimers();
-    writeActiveRoomSnapshot(null);
+    writeActiveMatchSession(null);
     setMatchedRole(null);
     setMatchmakingState("idle");
     setMatchmakingStage("finding");
@@ -710,9 +627,8 @@ export function LobbyScreen() {
     if (draftHydratedRef.current) return;
     draftHydratedRef.current = true;
     try {
-      const raw = window.sessionStorage.getItem(LOBBY_DRAFT_STORAGE_KEY);
-      if (!raw) return;
-      const snapshot = JSON.parse(raw) as LobbyDraftSnapshot;
+      const snapshot = readLobbyDraftSnapshot();
+      if (!snapshot) return;
 
       queueMicrotask(() => {
         if (!selectedArenaId && snapshot.arenaId && ARENAS.some((arena) => arena.id === snapshot.arenaId)) {
@@ -736,7 +652,7 @@ export function LobbyScreen() {
     if (activeRoomHydratedRef.current) return;
     activeRoomHydratedRef.current = true;
 
-    const snapshot = readActiveRoomSnapshot();
+    const snapshot = readActiveMatchSession();
     if (!snapshot) return;
 
     queueMicrotask(() => {
@@ -751,7 +667,7 @@ export function LobbyScreen() {
         }
       }
 
-      if (isLiveMatchSnapshot(snapshot)) {
+      if (isLiveMatchSession(snapshot)) {
         setActiveMatchBannerSnapshot(snapshot);
       }
     });
@@ -763,7 +679,7 @@ export function LobbyScreen() {
       arenaId: selectedArenaId,
       scientistId: selectedScientist?.id ?? null,
     };
-    window.sessionStorage.setItem(LOBBY_DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
+    writeLobbyDraftSnapshot(snapshot);
   }, [selectedArenaId, selectedScientist?.id]);
 
   useEffect(() => {
@@ -773,18 +689,25 @@ export function LobbyScreen() {
       return;
     }
 
-    const storedSnapshot = readActiveRoomSnapshot();
-    const storedSnapshotAddress = getSnapshotAddress(storedSnapshot);
+    const storedSnapshot = readActiveMatchSession();
+    const storedSnapshotAddress = getMatchSessionAddress(storedSnapshot);
+    const isStoredDepositingSnapshot =
+      storedSnapshot?.status === "depositing" && Boolean(storedSnapshot.roomId) && phase === "setup";
 
     if (storedSnapshot && storedSnapshotAddress && storedSnapshotAddress !== walletAddress) {
-      writeActiveRoomSnapshot(null);
+      writeActiveMatchSession(null);
       queueMicrotask(() => {
         setActiveMatchBannerSnapshot(null);
+        setPendingErRecovery(false);
       });
     } else if (storedSnapshot?.roomId && phase === "setup") {
-      if (isLiveMatchSnapshot(storedSnapshot)) {
+      if (isLiveMatchSession(storedSnapshot)) {
         queueMicrotask(() => {
           setActiveMatchBannerSnapshot(storedSnapshot);
+        });
+      } else if (isStoredDepositingSnapshot) {
+        queueMicrotask(() => {
+          setPendingErRecovery(true);
         });
       } else {
         queueMicrotask(() => {
@@ -798,48 +721,112 @@ export function LobbyScreen() {
     activeRoomLookupAbortRef.current = controller;
 
     void (async () => {
+      let pollAttempts = 0;
+
+      const clearRecoveryToSetup = (toastText?: string) => {
+        writeActiveMatchSession(null);
+        setPendingErRecovery(false);
+        setMatchedRoomId(null);
+        setMatchedRole(null);
+        setMatchmakingState("idle");
+        setMatchmakingStage("finding");
+        setMatchmakingError(null);
+        setActiveMatchBannerSnapshot(null);
+        setPhase("setup");
+        if (toastText) {
+          setActiveMatchToast({ text: toastText, tone: "error" });
+        }
+      };
+
       try {
-        const activeMatch = await getActiveMatchForAddress(walletAddress, controller.signal);
-        if (controller.signal.aborted) return;
+        while (!controller.signal.aborted) {
+          try {
+            const activeMatch = await getActiveMatchForAddress(walletAddress, controller.signal);
+            if (controller.signal.aborted) return;
 
-        if (!activeMatch.inRoom || !activeMatch.roomId) {
-          const snapshot = readActiveRoomSnapshot();
-          if (getSnapshotAddress(snapshot) === walletAddress) {
-            writeActiveRoomSnapshot(null);
-            setActiveMatchBannerSnapshot(null);
+            if (!activeMatch.inRoom || !activeMatch.roomId) {
+              const snapshot = readActiveMatchSession();
+              if (getMatchSessionAddress(snapshot) === walletAddress) {
+                writeActiveMatchSession(null);
+                setActiveMatchBannerSnapshot(null);
+              }
+
+              if (isStoredDepositingSnapshot) {
+                clearRecoveryToSetup();
+              } else {
+                setPendingErRecovery(false);
+              }
+              return;
+            }
+
+            const latestSnapshot = readActiveMatchSession();
+            if (activeMatch.status === "playing") {
+              const liveSnapshot: ActiveRoomSnapshot = {
+                walletAddress,
+                address: walletAddress,
+                roomId: activeMatch.roomId,
+                role: activeMatch.role ?? latestSnapshot?.role ?? null,
+                arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
+                scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
+                status: "playing",
+                token: getMatchSessionToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                arenaToken: getMatchSessionToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
+                canSurrenderByState: latestSnapshot?.canSurrenderByState ?? false,
+              };
+              writeActiveMatchSession(liveSnapshot);
+              setActiveMatchBannerSnapshot(liveSnapshot);
+
+              if (isStoredDepositingSnapshot) {
+                openRecoveredRoom(liveSnapshot);
+              }
+              return;
+            }
+
+            if (isStoredDepositingSnapshot) {
+              if (activeMatch.status === "finished") {
+                clearRecoveryToSetup();
+                return;
+              }
+
+              setPendingErRecovery(true);
+            } else {
+              openRecoveredRoom({
+                roomId: activeMatch.roomId,
+                role: activeMatch.role ?? latestSnapshot?.role ?? null,
+                status: activeMatch.status ?? latestSnapshot?.status ?? null,
+                arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
+                token: getMatchSessionToken(latestSnapshot) ?? selectedArena?.token ?? null,
+                wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
+                scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
+              });
+              return;
+            }
+
+            pollAttempts = 0;
+          } catch (error) {
+            if (controller.signal.aborted) return;
+
+            if (!isStoredDepositingSnapshot) {
+              throw error;
+            }
+
+            pollAttempts += 1;
+            if (pollAttempts >= 5) {
+              console.warn("Failed to confirm pending match status.", error);
+              clearRecoveryToSetup("Could not confirm match status");
+              return;
+            }
           }
-          return;
-        }
 
-        const latestSnapshot = readActiveRoomSnapshot();
-        if (activeMatch.status === "playing") {
-          const liveSnapshot: ActiveRoomSnapshot = {
-            walletAddress,
-            address: walletAddress,
-            roomId: activeMatch.roomId,
-            role: activeMatch.role ?? latestSnapshot?.role ?? null,
-            arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
-            scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
-            status: "playing",
-            token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-            arenaToken: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-            wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
-            canSurrenderByState: latestSnapshot?.canSurrenderByState ?? false,
-          };
-          writeActiveRoomSnapshot(liveSnapshot);
-          setActiveMatchBannerSnapshot(liveSnapshot);
-          return;
+          await new Promise<void>((resolve) => {
+            const timeoutId = setTimeout(resolve, 2000);
+            controller.signal.addEventListener("abort", () => {
+              clearTimeout(timeoutId);
+              resolve();
+            }, { once: true });
+          });
         }
-
-        openRecoveredRoom({
-          roomId: activeMatch.roomId,
-          role: activeMatch.role ?? latestSnapshot?.role ?? null,
-          status: activeMatch.status ?? latestSnapshot?.status ?? null,
-          arenaId: latestSnapshot?.arenaId ?? selectedArenaId,
-          token: getSnapshotToken(latestSnapshot) ?? selectedArena?.token ?? null,
-          wagerUsd: latestSnapshot?.wagerUsd ?? FIXED_WAGER_USD,
-          scientistId: latestSnapshot?.scientistId ?? selectedScientist?.id ?? null,
-        });
       } catch (error) {
         if (controller.signal.aborted) return;
         console.warn("Failed to restore active room.", error);
@@ -859,8 +846,60 @@ export function LobbyScreen() {
   }, [walletAddress, phase, openRecoveredRoom, selectedArena, selectedArenaId, selectedScientist]);
 
   useEffect(() => {
+    if (phase === "found" && pendingErRecovery) {
+      queueMicrotask(() => {
+        setPendingErRecovery(false);
+      });
+    }
+  }, [pendingErRecovery, phase]);
+
+  useEffect(() => {
+    if (!phaseContextIssue || !matchedRoomId || !walletAddress) return;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    const pollMatchSettlement = async () => {
+      if (inFlight) return;
+      inFlight = true;
+
+      try {
+        const activeMatch = await getActiveMatchForAddress(walletAddress);
+        if (cancelled) return;
+
+        if (!activeMatch.inRoom || activeMatch.status !== "depositing") {
+          setErSettling(false);
+        } else {
+          setErSettling(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Failed to poll ER settlement state.", error);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setErSettling(true);
+      }
+    });
+    void pollMatchSettlement();
+    const intervalId = setInterval(() => {
+      void pollMatchSettlement();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [matchedRoomId, phaseContextIssue, walletAddress]);
+
+  useEffect(() => {
     if (!walletAddress || !matchedRoomId) return;
-    writeActiveRoomSnapshot({
+    writeActiveMatchSession({
       walletAddress,
       address: walletAddress,
       roomId: matchedRoomId,
@@ -882,10 +921,10 @@ export function LobbyScreen() {
           "radial-gradient(circle at 50% 30%, rgba(168,143,104,0.22), transparent 45%), linear-gradient(180deg, #2b3a32 0%, #223229 50%, #1a251f 100%)",
       }}
     >
-      {activeMatchSurrenderSnapshot?.roomId && getSnapshotAddress(activeMatchSurrenderSnapshot) && (
+      {activeMatchSurrenderSnapshot?.roomId && getMatchSessionAddress(activeMatchSurrenderSnapshot) && (
         <ActiveMatchSurrenderBridge
           roomId={activeMatchSurrenderSnapshot.roomId}
-          address={getSnapshotAddress(activeMatchSurrenderSnapshot)}
+          address={getMatchSessionAddress(activeMatchSurrenderSnapshot)}
           onSubmitted={handleActiveMatchSurrenderSubmitted}
           onTimeout={handleActiveMatchSurrenderTimeout}
         />
@@ -1105,7 +1144,30 @@ export function LobbyScreen() {
         </RoomPhaseShell>
       )}
       {!isSelectingCharacterPreview && (
-        phaseContextIssue ? (
+        showPendingErRecovery ? (
+          <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
+            <div
+              className="game-card w-full p-6 text-center shadow-2xl md:p-8"
+              style={{
+                border: "1px solid rgba(248,214,148,0.36)",
+                background:
+                  "linear-gradient(140deg, rgba(12,21,17,0.97) 0%, rgba(18,31,25,0.97) 52%, rgba(28,45,37,0.97) 100%)",
+              }}
+            >
+              <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-[rgba(248,214,148,0.24)] border-t-[var(--tone-cream)]" />
+              <p className="mt-4 font-caprasimo text-3xl text-[var(--tone-cream)]">Confirming your match...</p>
+              <div className="mt-3 inline-flex items-center justify-center gap-2 rounded-full border border-[rgba(248,214,148,0.18)] bg-[rgba(248,214,148,0.08)] px-3 py-1">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[var(--tone-cream)]" />
+                <span className="font-gabarito text-xs font-black uppercase tracking-[0.18em] text-[rgba(248,214,148,0.88)]">
+                  Escrow resolver is settling
+                </span>
+              </div>
+              <p className="mt-4 font-gabarito text-sm text-[rgba(244,240,230,0.78)]">
+                We&apos;re waiting for the latest room state before sending you back into the lobby.
+              </p>
+            </div>
+          </div>
+        ) : phaseContextIssue ? (
           <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
             <div
               className="game-card w-full p-6 md:p-8 shadow-2xl"
@@ -1113,11 +1175,20 @@ export function LobbyScreen() {
             >
               <p className="font-caprasimo text-3xl text-[var(--tone-bark)]">{phaseContextIssue.title}</p>
               <p className="mt-2 font-gabarito text-sm text-[var(--warm-text)]">{phaseContextIssue.detail}</p>
+              {showErSettling && (
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[rgba(60,92,95,0.16)] bg-[rgba(60,92,95,0.08)] px-3 py-1">
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#3C5C5F]" />
+                  <span className="font-gabarito text-xs font-black uppercase tracking-[0.18em] text-[#3C5C5F]">
+                    Settling match...
+                  </span>
+                </div>
+              )}
               <div className="mt-6 flex flex-wrap gap-3">
                 <button
                   type="button"
+                  disabled={showErSettling}
                   onClick={() => {
-                    writeActiveRoomSnapshot(null);
+                    writeActiveMatchSession(null);
                     setMatchedRoomId(null);
                     setMatchedRole(null);
                     setMatchmakingState("idle");
@@ -1125,12 +1196,13 @@ export function LobbyScreen() {
                     setMatchmakingError(null);
                     setPhase("character-select");
                   }}
-                  className="btn-game btn-game-primary px-4 py-2 text-xs"
+                  className={`btn-game btn-game-primary px-4 py-2 text-xs ${showErSettling ? "cursor-not-allowed opacity-60" : ""}`}
                 >
                   Back To Character Select
                 </button>
                 <button
                   type="button"
+                  disabled={showErSettling}
                   onClick={() => {
                     setMatchedRoomId(null);
                     setMatchedRole(null);
@@ -1140,7 +1212,7 @@ export function LobbyScreen() {
                     setMatchmakingError(null);
                     setPhase("setup");
                   }}
-                  className="btn-game btn-game-secondary px-4 py-2 text-xs"
+                  className={`btn-game btn-game-secondary px-4 py-2 text-xs ${showErSettling ? "cursor-not-allowed opacity-60" : ""}`}
                 >
                   Restart Lobby
                 </button>
@@ -1252,7 +1324,7 @@ export function LobbyScreen() {
                     matchmakingAbortRef.current?.abort();
                     matchmakingAbortRef.current = null;
                     clearFoundTransitionTimers();
-                    writeActiveRoomSnapshot(null);
+                    writeActiveMatchSession(null);
                     setMatchedRoomId(null);
                     setMatchedRole(null);
                     setMatchmakingState("idle");

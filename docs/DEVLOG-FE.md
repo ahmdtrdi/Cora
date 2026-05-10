@@ -3997,3 +3997,186 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 - The active-match banner currently lives inside `LobbyScreen.tsx`; if this pattern expands to other routes, it should move into a shared recovery/banner component.
 - Lobby-side surrender submission still has no explicit server acknowledgement event to wait on, so `Surrender submitted` currently means "socket connected and surrender message sent" rather than confirmed backend acceptance.
 - The persisted snapshot schema now carries compatibility fields (`walletAddress` plus `address`, `token` plus `arenaToken`) to bridge older lobby recovery paths and the new battle-return path. If the format settles, we should consolidate it into one shared typed helper/module.
+
+## 2026-05-09 - Lobby Coming-Soon Arena Slot for MEW
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add a visible disabled `MEW` arena card below BONK plus a second disabled `and more to come` card using the same muted styling language.
+- Wired in the existing `/assets/arena/mew.png` path so the setup screen can support a MEW-specific arena image if a coming-soon selection state is ever passed down.
+- Updated the main lobby CTA in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to switch to a disabled gray `Coming Soon` label for a `mew` coming-soon state while leaving normal SOL and BONK play flow intact.
+
+### The Reasoning
+- Keeping MEW outside the playable `arenas` prop preserves the current matchmaking and selection flow for SOL and BONK while still making the roadmap visible in the arena picker.
+- The CTA guard is defensive: today the MEW card itself does not select anything, but if upstream state ever points at `mew`, the primary action still refuses progression and presents the correct coming-soon message.
+- Reusing the same disabled visual language for `MEW` and `and more to come` makes it obvious these are future arenas rather than broken interactions.
+
+### The Tech Debt
+- `LobbySetup.tsx` now knows about a hard-coded coming-soon arena id (`mew`). If more teaser arenas are added, we should likely move arena rendering to a single typed config that can represent both playable and disabled entries.
+
+## 2026-05-09 - Lobby MEW Selection and BONK CTA Lock
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the `MEW` card is now clickable/selectable, shows selected-state styling, and swaps the right-side panel into a `MEW Arena` display using `/assets/arena/mew.png`.
+- Locked the main `Pick Scientist` CTA for both `BONK` and `MEW`, changing the button label to `Coming Soon` and preventing `onPlay` from firing for either arena.
+- Removed the `Coming Soon` copy from the `MEW` card itself while keeping the separate disabled `and more to come` card underneath it.
+
+### The Reasoning
+- This keeps the arena picker exploratory and interactive while making the gating happen where it matters most: the progression CTA.
+- Treating `BONK` and `MEW` as coming-soon arenas at the CTA layer preserves the existing upstream arena list contract and avoids forcing lobby/matchmaking changes for non-playable tokens.
+- Adding a local display model for `MEW` lets the setup panel show coherent selected-state copy and imagery even though `MEW` is not yet part of the playable `ARENAS` array in the parent screen.
+
+### The Tech Debt
+- `LobbySetup.tsx` now has mixed knowledge of playable arenas from props and teaser arenas declared locally. If more non-playable arenas are added, we should centralize this into one shared arena config with an explicit availability flag.
+
+## 2026-05-09 - MEW Arena Visual Pass
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the `MEW` arena icon now renders as a cat instead of reusing the generic token glyph.
+- Restyled the `MEW` card so its unselected state uses the same warm card treatment as the other arena options, while the icon medallion uses the requested blue tone `#85A1A5`.
+- Added the requested selected-state palette for `MEW`: blue background `#85A1A5`, blue outline `#3C5C5F`, and matching blue-toned highlight/shadow treatment.
+
+### The Reasoning
+- The earlier muted-gray treatment made `MEW` read as disabled at the card level, which conflicted with the newer requirement that it should still be clickable/selectable.
+- Giving `MEW` its own cat silhouette helps the card read as a distinct token/arena instead of a temporary placeholder.
+- Keeping the unselected card warm while only shifting the selected state to blue preserves consistency with the rest of the lobby list and makes the active choice stand out more clearly.
+
+### The Tech Debt
+- The `MEW` card styling is still bespoke inside `LobbySetup.tsx`; if more arena-specific themes arrive, we should move these visual tokens into shared config rather than branching inline.
+
+## 2026-05-09 - MEW Selected-State Gradient Tuning
+
+### The Change
+- Updated the selected `MEW` card in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so its outline now uses `#85A1A5` to match the requested selected-state color.
+- Reworked the selected `MEW` background from a flatter blue fill to a more dimensional blue gradient while keeping the same overall tone family.
+
+### The Reasoning
+- Matching the outline to the primary selected color makes the card feel cleaner and less split between two different blue accents.
+- Using a gradient instead of a flatter fill keeps the `MEW` selected state visually consistent with the other arena cards, which already use layered, beveled-looking surfaces.
+
+### The Tech Debt
+- The `MEW` visual tuning remains hand-authored inline in `LobbySetup.tsx`; if we keep iterating on per-arena themes, a shared tokenized styling layer would be easier to maintain.
+
+## 2026-05-09: MEW Arena UI Polish
+- **The Change**: Polished the MEW arena selection UI in `LobbySetup.tsx`. Simplified the MEW SVG icon to a silhouette and updated the selection button's background circle. Also fixed a TypeScript error by adding the missing `frame` property to the `mewArena` object.
+- **The Reasoning**: Improved icon abstraction and UI consistency. The `frame` property fix was required due to a recent update in the `Arena` type definition.
+- **The Tech Debt**: None.
+
+## 2026-05-09 - Lobby ER Recovery Guardrails
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to defer stale `depositing` room recovery behind a new `pendingErRecovery` state instead of immediately reopening the found-room flow from `cora:active-room`.
+- Added a full-screen "Confirming your match..." recovery screen that polls ER state every 2 seconds, auto-redirects to `/play` once the match becomes `playing`, and falls back to lobby setup with a toast after the room disappears, finishes, or fails confirmation repeatedly.
+- Added `erSettling` polling for the existing missing-context fallback card so its reset buttons stay disabled with an animated settling indicator while ER still reports the room as `depositing`.
+
+### The Reasoning
+- The broken loop came from trusting stale local storage before fresh ER state was available, so the safest fix was to gate that recovery path until the backend confirms whether the room is still live.
+- Keeping the user on an intermediate confirmation screen avoids bouncing them into `phase="found"` with incomplete hydrated context, which is what produced the "Match room context missing" dead end.
+- Locking the fallback-card buttons during active settlement preserves an escape hatch once ER resolves, without letting the user trigger state resets that would immediately be overwritten by the same stale snapshot.
+
+### The Tech Debt
+- The lobby now has two ER-related polling paths: one for recovery interception and one for the missing-context fallback lock. If this flow expands further, we should consider centralizing ER recovery/status polling into a dedicated hook to reduce duplication and edge-case drift.
+
+## 2026-05-10 - Match Session Folder Naming
+
+### The Change
+- Moved the match-session helper into [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) under a lowercase `session` lib folder, matching the surrounding folder-plus-descriptive-file convention.
+
+### The Reasoning
+- Keeping the helper in a one-word lowercase folder avoids a special-case `matchSession` directory while preserving a clear helper filename.
+
+### The Tech Debt
+- None for this move; backend wallet-authenticated websocket joins and on-chain deposit verification remain the real security work after this FE guardrail.
+
+## 2026-05-10 - Play Route Match Session Guard
+
+### The Change
+- Added [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) to centralize lobby draft state, active match session state, and tab-scoped deposit intent signatures.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to write active match sessions before entering `/play`, keep rejoin sessions intact, and stop putting token, wager, address, or deposit signatures into play URLs.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `/play` only opens the match socket when the stored active match session matches the URL `roomId` and the connected wallet, and so deposit confirmation is read from tab session storage instead of query params.
+
+### The Reasoning
+- This is frontend hardening only: URL params are now treated as routing/display hints, while room identity, wallet address, wager display, token display, and deposit signature source come from the local session created by the real lobby/deposit flow.
+- Blocking socket connection until the local session and wallet match reduces casual spoofing through copied or edited `/play` links without changing the existing backend protocol.
+
+### The Tech Debt
+- This does not replace backend security. The API still needs wallet-authenticated websocket joins and on-chain verification of `confirmDeposit` signatures before the match can be considered production-safe against custom clients.
+
+## 2026-05-09 - Lobby Deposit Flow Regression Guard
+
+### The Change
+- Tightened the `pendingErRecovery` trigger in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so stale `depositing` snapshots are only treated as ER-recovery when they are read from `phase === "setup"`.
+- Added a small safety-valve effect that clears `pendingErRecovery` if the lobby legitimately transitions into `phase === "found"`, ensuring the normal `OpponentFound` deposit UI stays visible.
+
+### The Reasoning
+- The previous ER guardrail fix correctly protected the “back from battle while settling” case, but it was too broad: the normal fresh match-found flow also writes a `depositing` snapshot, so later effect runs mistook that for recovery and hid the deposit screen.
+- Restricting the intercept to the actual lobby landing phase preserves the original loop fix while restoring the intended live deposit experience for newly matched players.
+
+### The Tech Debt
+- The recovery-vs-live-flow distinction still depends on a mix of `phase` state and local-storage snapshot status. If more recovery paths are added, we should consider recording an explicit snapshot origin or recovery mode to make this branching less implicit.
+
+## 2026-05-09 - Deposit Failure UX Hardening
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the deposit countdown now pauses while Phantom is open, deposit signing errors are classified into user-facing messages, and a new `insufficientFunds` state drives retry copy plus longer-lived insufficient-balance feedback.
+- Updated [depositTypes.ts](/d:/projects/Cora/apps/web/src/components/deposit/depositTypes.ts) to add the new `insufficient_funds` status metadata consumed by the existing deposit status UI.
+
+### The Reasoning
+- Players were losing deposit time while the wallet approval modal was open, so treating `signing` like the existing waiting states prevents Phantom latency from burning the match window.
+- Solana simulation and Phantom rejection errors are too raw for players, so the caller now translates common wallet, network, expiry, and insufficient-funds failures into concise guidance while capping unknown fallbacks.
+- Keeping insufficient-balance state separate from generic signing errors lets the status card and primary CTA explain the actual next step: top up and retry.
+
+### The Tech Debt
+- Error classification is still substring-based inside `OpponentFound.tsx`; if more wallet providers or on-chain programs join the flow, we should consider centralizing these mappings in a shared Solana UX error helper.
+
+## 2026-05-09 - Deposit Preflight Recovery And Typed Error Routing
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so deposit signing no longer skips preflight, stops retrying failed sends, and inspects wallet error logs to preserve `insufficient_balance` and RPC-style failures through `DepositIntentError`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to consume `DepositIntentError.code` directly, add a 45-second wallet-signing timeout safety net, and treat timeout plus typed insufficient-balance failures as the existing insufficient-funds UI state.
+
+### The Reasoning
+- The broken UX came from bypassing simulation: empty-wallet deposits sat in `signing` until on-chain confirmation failed, which hid the real cause and left the timer paused for far too long.
+- Reading `SendTransactionError.logs` inside the signer keeps the error typed at the source, which is more reliable than trying to reconstruct wallet intent from raw strings in the React layer.
+- Keeping a local timeout in the UI protects against wallet adapters that abandon the signing promise without resolving, so the player gets control back instead of silently hanging until the room expires.
+
+### The Tech Debt
+- The timeout heuristic currently treats `signing_timeout` as likely insufficient funds because that is the most harmful silent-failure case we know about. If we start seeing more timeout causes in production, we should split that into its own status or collect wallet-specific telemetry before tightening the UX copy further.
+
+## 2026-05-09 - Deposit Insufficient-Balance Copy Unification
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so failed `/api/actions/challenge` responses now classify backend insufficient-balance signals, including HTTP `402` and balance/fund wording in `error`, `message`, `reason`, or `code`, as `DepositIntentError("insufficient_balance", "Insufficient Balance")`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both typed and fallback insufficient-balance detection now surface the exact user-facing message `Insufficient Balance` while preserving the existing `insufficientFunds` status behavior.
+
+### The Reasoning
+- The deposit UI already had the right state transition for insufficient funds, but some backend and fallback error paths still leaked into generic retry copy or "unexpected" messaging.
+- Normalizing the copy at both the signer boundary and the React fallback layer gives us one stable message regardless of whether the failure comes from backend transaction construction, Solana preflight, or raw wallet error text.
+
+### The Tech Debt
+- Backend insufficient-balance detection is still keyword-based because the action endpoint does not yet expose a dedicated structured error enum. If that endpoint grows a stable machine-readable code, we should prefer that over substring matching.
+
+## 2026-05-09 - Deposit Pre-Send Simulation Guard
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so deposit transactions are simulated immediately after setting `recentBlockhash` and `feePayer`, before calling `wallet.sendTransaction`.
+- Preserved existing `DepositIntentError` instances inside `mapWalletError`, and added simulation-side insufficient-balance detection that promotes matching simulation failures to `DepositIntentError("insufficient_balance", "Insufficient Balance")` before the wallet adapter can collapse them into `WalletSendTransactionError: Unexpected error`.
+
+### The Reasoning
+- The latest failure report showed the real insufficient-balance signal was happening at `wallet.sendTransaction`, which meant the backend guard was too early and the wallet adapter was too lossy.
+- Simulating the fully prepared transaction ourselves lets us inspect both `simulation.value.err` and `simulation.value.logs` while they still contain the useful Solana failure details, so we can fail fast with the same typed insufficient-balance path the UI already understands.
+
+### The Tech Debt
+- Simulation-side insufficient-balance detection is still string-based across logs and serialized error payloads. If we later standardize the transaction program errors we expect here, we should tighten this into a smaller helper with explicit structured cases instead of broad keyword matching.
+
+## 2026-05-09 - Phantom Opening Timer Badge
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) and [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) to support an optional countdown-area slot rendered directly under the timer.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to show a pill-style `Opening Phantom...` badge beneath the frozen countdown while `signingState === "signing"`.
+
+### The Reasoning
+- Once the timer began freezing during wallet signing, there was no immediate visual cue telling players that the pause was intentional and that Phantom was being opened.
+- Placing the badge directly under the countdown keeps the explanation attached to the paused timer itself, which is clearer than repurposing the broader helper text or adding another top-level banner.
+
+### The Tech Debt
+- The countdown slot is intentionally generic, but it is still a one-off prop path through the deposit components. If we add more timer-adjacent states later, it may be worth consolidating this into a dedicated countdown presentation component.

@@ -5,11 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Arena, Scientist } from "./LobbyScreen";
-import { signDepositIntent } from "@/lib/solana/signDepositIntent";
+import { DepositIntentError, signDepositIntent } from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
+import { writeActiveDepositIntent, writeActiveMatchSession } from "@/lib/session/matchSession";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -25,6 +26,7 @@ type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
 const PHANTOM_SIGNING_WARNING_MS = 20_000;
+const SIGNING_TIMEOUT_MS = 45_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -56,6 +58,7 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [isRetryingConnection, setIsRetryingConnection] = useState(false);
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
   const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
@@ -115,22 +118,33 @@ export function OpponentFound({
 
   useEffect(() => {
     if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
-      const params = new URLSearchParams({
+      writeActiveMatchSession({
+        walletAddress,
+        address: walletAddress,
+        roomId,
+        role: effectiveRole ?? null,
+        arenaId: arena.id,
+        scientistId: myScientist.id,
+        status: "playing",
+        token: arena.token,
+        arenaToken: arena.token,
+        wagerUsd,
+      });
+      writeActiveDepositIntent({
         roomId,
         address: walletAddress,
+        signature: signedDepositSignature,
+      });
+      const params = new URLSearchParams({
+        roomId,
         arena: arena.id,
-        token: arena.token,
-        wager: wagerUsd,
         scientist: myScientist.id,
       });
-      if (signedDepositSignature) {
-        params.set("depositSig", signedDepositSignature);
-      }
       router.push(`/play?${params.toString()}`);
       return;
     }
 
-    if (isPlayerBWaitingUnlock || signingState === "waiting") return;
+    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -154,6 +168,7 @@ export function OpponentFound({
     signedDepositSignature,
     gameState?.status,
     isPlayerBWaitingUnlock,
+    effectiveRole,
   ]);
 
   useEffect(() => {
@@ -211,6 +226,82 @@ export function OpponentFound({
     return () => clearTimeout(timerId);
   }, [connectionState, isRetryingConnection]);
 
+  function isInsufficientFundsError(error: unknown) {
+    if (error instanceof DepositIntentError) {
+      return error.code === "insufficient_balance";
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const logs: string = (() => {
+      if (error && typeof error === "object" && "logs" in error) {
+        const value = (error as { logs?: unknown }).logs;
+        if (Array.isArray(value)) return value.join(" ").toLowerCase();
+      }
+      return "";
+    })();
+
+    return `${raw} ${logs}`.toLowerCase().includes("insufficient") || logs.includes("lamport") || logs.includes("0x1");
+  }
+
+  function classifyDepositError(error: unknown): string {
+    if (error instanceof DepositIntentError) {
+      switch (error.code) {
+        case "wallet_declined":
+          return "You cancelled the transaction in your wallet.";
+        case "insufficient_balance":
+          return "Insufficient Balance";
+        case "wallet_not_connected":
+          return "Wallet disconnected. Reconnect and retry.";
+        case "wallet_signing_not_supported":
+          return "Your wallet does not support transaction signing.";
+        case "rpc_error":
+          return "Transaction expired before it could be confirmed. Please retry.";
+        case "unknown":
+          if (error.message === "signing_timeout") {
+            return "Wallet approval timed out. If Phantom showed a warning, your balance may be too low. Retry or top up your wallet.";
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const logs: string = (() => {
+      if (error && typeof error === "object" && "logs" in error) {
+        const value = (error as { logs?: unknown }).logs;
+        if (Array.isArray(value)) return value.join(" ").toLowerCase();
+      }
+      return "";
+    })();
+    const combined = `${raw} ${logs}`.toLowerCase();
+
+    if (combined.includes("rejected") || combined.includes("cancel")) return "You cancelled the transaction in your wallet.";
+    if (
+      combined.includes("insufficient") ||
+      combined.includes("lamport") ||
+      logs.includes("0x1") ||
+      combined.includes('"custom":1') ||
+      combined.includes('"custom": 1') ||
+      combined.includes("instructionerror") ||
+      combined.includes("balance") ||
+      combined.includes("fund")
+    ) {
+      return "Insufficient Balance";
+    }
+    if (combined.includes("blockhash") || combined.includes("expired")) {
+      return "Transaction expired before it could be confirmed. Please retry.";
+    }
+    if (combined.includes("simulation failed")) {
+      return "Transaction simulation failed. This usually means insufficient funds or a network issue.";
+    }
+    if (combined.includes("network") || combined.includes("timeout")) {
+      return "Network error. Check your connection and retry.";
+    }
+
+    return raw.length > 120 ? `${raw.slice(0, 120)}...` : raw || "Deposit signing failed. Please retry.";
+  }
+
   // Show a timed top-center banner whenever the socket drops unexpectedly.
   useEffect(() => {
     if (connectionState === "connected") {
@@ -243,19 +334,26 @@ export function OpponentFound({
     });
     if (!canAttemptSign) return;
 
+    setInsufficientFunds(false);
     setErrorText(null);
     setErrorVisible(false);
     setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
     try {
-      const signature = await signDepositIntent({
-        connection,
-        wallet,
-        roomId,
-        token: arena.token,
-        wagerUsd,
-      });
+      const signingTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new DepositIntentError("unknown", "signing_timeout")), SIGNING_TIMEOUT_MS),
+      );
+      const signature = await Promise.race([
+        signDepositIntent({
+          connection,
+          wallet,
+          roomId,
+          token: arena.token,
+          wagerUsd,
+        }),
+        signingTimeout,
+      ]);
 
       if (!signature) {
         throw new Error("Missing transaction signature");
@@ -270,10 +368,16 @@ export function OpponentFound({
         connectionState,
         error,
       });
-      const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
+      const message = classifyDepositError(error);
+      const hasInsufficientFunds =
+        isInsufficientFundsError(error) ||
+        (error instanceof DepositIntentError && error.message === "signing_timeout");
       setSigningState("error");
       setErrorText(message);
       setErrorVisible(true);
+      if (hasInsufficientFunds) {
+        setInsufficientFunds(true);
+      }
     }
   }
 
@@ -295,19 +399,24 @@ export function OpponentFound({
 
   useEffect(() => {
     if (!errorVisible) return;
+    const duration = insufficientFunds ? 30_000 : 12_000;
     const timerId = setTimeout(() => {
       setErrorVisible(false);
       setErrorText(null);
       setSigningState("idle");
-    }, 12000);
+      setInsufficientFunds(false);
+    }, duration);
     return () => clearTimeout(timerId);
-  }, [errorVisible]);
+  }, [errorVisible, insufficientFunds]);
 
   function getDepositHint() {
     const isDisconnected = connectionState === "error" || connectionState === "disconnected";
     const isReconnecting = connectionState === "reconnecting";
     if (reassignedRoomId) {
       return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
+    }
+    if (insufficientFunds) {
+      return `Top up your ${arena.token} wallet to cover $${wagerUsd} wager + ~0.001 SOL in fees, then retry.`;
     }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (isPlayerBWaitingUnlock) {
@@ -338,6 +447,7 @@ export function OpponentFound({
   }
 
   function getDepositStatus(): DepositStatus {
+    if (insufficientFunds) return "insufficient_funds";
     if (opponentFailedDepositAt) return "opponent_failed";
     if (signingState === "error") return "error";
     if (!wallet.publicKey) return "wallet_required";
@@ -357,6 +467,7 @@ export function OpponentFound({
       return "Waiting For Player A...";
     }
     if (isPlayerAWaitingForPlayerB) return "Waiting For Player B...";
+    if (insufficientFunds) return "Retry After Top-Up";
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
@@ -432,6 +543,7 @@ export function OpponentFound({
                   setErrorVisible(false);
                   setErrorText(null);
                   setSigningState("idle");
+                  setInsufficientFunds(false);
                 }}
                 className="font-gabarito text-xs font-bold leading-none text-[var(--tone-bark)] opacity-60 hover:opacity-100"
                 aria-label="Close alert"
@@ -449,7 +561,7 @@ export function OpponentFound({
                   width: "100%",
                   background: "var(--tone-clay)",
                   animationName: "alertDrain",
-                  animationDuration: "12000ms",
+                  animationDuration: insufficientFunds ? "30000ms" : "12000ms",
                   animationTimingFunction: "linear",
                   animationFillMode: "forwards",
                 }}
@@ -640,6 +752,23 @@ export function OpponentFound({
             status={getDepositStatus()}
             helperText={getDepositHint()}
             countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
+            countdownSlot={
+              signingState === "signing" ? (
+                <div
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.26)",
+                    background: "linear-gradient(145deg, rgba(248,214,148,0.14), rgba(203,227,193,0.1))",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <span className="h-2 w-2 rounded-full bg-[#f8d694] animate-pulse" />
+                  <span className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[#f8d694]">
+                    Opening Phantom...
+                  </span>
+                </div>
+              ) : null
+            }
             signature={signedDepositSignature}
             canPrimaryAction={canAttemptSign}
             primaryActionLabel={getPrimaryButtonLabel()}

@@ -1,5 +1,6 @@
 export type DepositStatus =
   | "idle"
+  | "insufficient_funds"
   | "wallet_required"
   | "signing"
   | "submitted"
@@ -18,6 +19,10 @@ export const DEPOSIT_STATUS_META: Record<DepositStatus, DepositStatusMeta> = {
   idle: {
     label: "Sign Deposit",
     helper: "Ready to sign your wager intent.",
+  },
+  insufficient_funds: {
+    label: "Insufficient Balance",
+    helper: "Your wallet doesn't have enough funds to cover the wager and fees.",
   },
   wallet_required: {
     label: "Connect Wallet",
