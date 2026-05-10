@@ -13,6 +13,14 @@ pub fn handler(ctx: Context<ActivateSession>) -> Result<()> {
         session.status == BattleStatus::WaitingCards,
         BattleError::InvalidStatus
     );
+    require!(
+        session.manifest_committed_a && session.manifest_committed_b,
+        BattleError::ManifestNotCommitted
+    );
+    require!(
+        session.total_slots_a >= 1 && session.total_slots_b >= 1,
+        BattleError::InvalidManifest
+    );
 
     let now = Clock::get()?.unix_timestamp;
     let round_deadline = now
@@ -46,5 +54,5 @@ pub struct ActivateSession<'info> {
         seeds = [BATTLE_SEED, battle_session.match_id.as_ref()],
         bump = battle_session.bump,
     )]
-    pub battle_session: Account<'info, BattleSession>,
+    pub battle_session: Box<Account<'info, BattleSession>>,
 }

@@ -143,14 +143,14 @@ pub struct RegisterCard<'info> {
         constraint = battle_session.authority == authority.key()
             @ BattleError::UnauthorizedAuthority,
     )]
-    pub battle_session: Account<'info, BattleSession>,
+    pub battle_session: Box<Account<'info, BattleSession>>,
     #[account(
         init, payer = authority,
         space = RegisteredCard::LEN,
         seeds = [CARD_SEED, battle_session.key().as_ref(), card_id.as_ref()],
         bump,
     )]
-    pub registered_card: Account<'info, RegisteredCard>,
+    pub registered_card: Box<Account<'info, RegisteredCard>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -163,13 +163,13 @@ pub struct RegisterCardV2<'info> {
         constraint = battle_session.authority == authority.key()
             @ BattleError::UnauthorizedAuthority,
     )]
-    pub battle_session: Account<'info, BattleSession>,
+    pub battle_session: Box<Account<'info, BattleSession>>,
     #[account(
         init, payer = authority,
         space = RegisteredCard::LEN,
         seeds = [CARD_SEED, battle_session.key().as_ref(), card_id.as_ref()],
         bump,
     )]
-    pub registered_card: Account<'info, RegisteredCard>,
+    pub registered_card: Box<Account<'info, RegisteredCard>>,
     pub system_program: Program<'info, System>,
 }

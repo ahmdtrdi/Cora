@@ -749,3 +749,89 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 1. **Devnet parity requires Devnet testing.** The local validator is excellent for fast logic validation, but it doesn't simulate real-world conditions like MagicBlock's remote router latency, RPC rate limits, or actual network congestion. We needed a frictionless way to point the entire test suite to Devnet.
 2. **Airdrops fail in production-like environments.** Relying purely on `requestAirdrop` locally is fine, but Devnet public nodes frequently throttle or outright reject airdrop requests. Adding a transparent fallback to fund transient test accounts from the primary developer wallet (`~/.config/solana/id.json`) ensures the test suite doesn't crash intermittently during account initialization.
 3. **Remote routers have different identities.** The MagicBlock local stack readiness check specifically verified our local `mAGicPQY...` validator identity. When targeting Devnet, the router will naturally have a different public key. Loosening this constraint dynamically based on the URL allows the exact same test suite to run seamlessly on both Localnet and Devnet.
+
+---
+
+## Entry 23 — 2026-05-09: Inline Manifest Flow, Surrender Finalization, and Larger ER Session State
+
+### The Change
+
+**ER Smart Contract:**
+- `packages/battle-anchor-032/programs/cora-battle/src/state.rs` — Expanded `BattleSession` with inline manifest state: `total_slots_a/b`, `cards_used_a/b`, manifest committed flags, and packed `card_manifest_a/b`. Updated `BattleSession::LEN` from `267` to `1071`.
+- `packages/battle-anchor-032/programs/cora-battle/src/constants.rs` — Increased `MAX_EFFECT_VALUE` from `100` to `150`, added inline manifest constants (`MAX_CARD_SLOTS`, `MANIFEST_ENTRY_SIZE`, `INLINE_MANIFEST_LEN`, `MAX_SCORE_MULTIPLIER`), bumped `CURRENT_VERSION` to `5`, and introduced `END_REASON_SURRENDER`.
+- `packages/battle-anchor-032/programs/cora-battle/src/error.rs` — Added inline-manifest/surrender errors: `ManifestNotCommitted`, `InvalidManifest`, `SlotOutOfBounds`, `ScoreDeltaExceedsMultiplier`, and `InvalidSurrenderPlayer`.
+- `packages/battle-anchor-032/programs/cora-battle/src/events.rs` — Added `ManifestCommittedEvent`, `EffectAppliedEvent`, and `MatchSurrenderedEvent`.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/set_card_manifest.rs` — **NEW.** Authority-only manifest commit instruction for each player before activation.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/apply_effect.rs` — **NEW.** Single-account inline effect application with slot replay protection, packed-manifest decoding, dynamic score invariant, and KO round progression.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/surrender_match.rs` — **NEW.** Terminal surrender path that immediately marks the match `Finished`, writes the winner, and emits surrender/finalization events.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/activate_session.rs` — Now requires both manifests to be committed before the match can become active.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/*.rs` — Boxed `BattleSession` / `RegisteredCard` accounts across instruction account structs to avoid Solana SBF stack-frame overflow after the session account grew to 1071 bytes.
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` and `instructions/mod.rs` — Wired in `set_card_manifest`, `apply_effect`, and `surrender_match`.
+
+**TypeScript tests/helpers:**
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Added inline-manifest helpers (`packManifestSlot`, `packManifest`, `setCardManifest`, `applyInlineEffect`, `surrenderMatch`) and auto-commits a minimal manifest inside the legacy `activateSession()` helper so older test flows still activate cleanly.
+- `packages/battle-anchor-032/tests/helpers/magicblockFlowUtils.ts` — Added inline-manifest local-stack helpers for delegated session-only flows plus ER `apply_effect` / `surrender_match` helpers.
+- `packages/battle-anchor-032/tests/00-constants.test.ts`, `01-state-rules.test.ts`, `13-activate-session.test.ts` — Updated baseline assertions for the larger session layout and the new activation rules.
+- `packages/battle-anchor-032/tests/40-set-card-manifest.test.ts` — **NEW.**
+- `packages/battle-anchor-032/tests/42-apply-effect-inline-manifest.test.ts` — **NEW.**
+- `packages/battle-anchor-032/tests/43-surrender-match.test.ts` — **NEW.**
+- `packages/battle-anchor-032/tests/45-magicblock-inline-manifest-er.test.ts` and `46-magicblock-surrender-er.test.ts` — **NEW.** Added ER-local-stack coverage for delegated session-only inline-manifest flows.
+
+**Local program identity alignment:**
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs`
+- `packages/battle-anchor-032/Anchor.toml`
+- `packages/battle-anchor-032/package.json`
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts`
+- Synced the package-local declared program id and local scripts to the actual deploy keypair id `3FNDHzmJywwrBbhCX1UU1ZfPQVbwqdRTFBwERqxRFABS`, fixing the previous `DeclaredProgramIdMismatch` during local deploy / IDL initialization.
+
+### The Reasoning
+
+1. **The old `RegisteredCard`-per-PDA model was the real bottleneck.** It imposed `O(N)` registration, `O(N)` delegation, and `O(N)` undelegation. Inline manifest collapses this to a single session account for the hot gameplay path while preserving per-slot commitment and replay protection on-chain.
+2. **`MAX_EFFECT_VALUE=150` matches actual gameplay better than `100`.** The game engine can produce attack values above 100, so the smart contract needed to accept those values without forced backend capping in the common case.
+3. **Surrender should be a first-class terminal win, not a cancellation.** A player who surrenders creates an unambiguous winner immediately; encoding this as `Finished + END_REASON_SURRENDER` keeps settlement semantics clean.
+4. **Large session accounts require mechanical memory fixes.** Growing `BattleSession` to 1071 bytes pushed Anchor account parsing over Solana's 4096-byte stack frame limit. Boxing the large accounts keeps the architecture intact without fragmenting the state back into multiple PDAs.
+5. **Local deployment had a hidden program-id mismatch.** The repo was still declaring `3eMD...`, but the local deploy keypair was `3FND...`. Syncing those values was necessary for reliable local deploy/test cycles.
+
+### Verification
+
+- [x] `anchor build` succeeds after the inline manifest state expansion.
+- [x] Local deploy to a clean validator on `http://127.0.0.1:8897` succeeds with the synced program id.
+- [x] Targeted TypeScript local-validator subset passes:
+  - `tests/00-constants.test.ts`
+  - `tests/01-state-rules.test.ts`
+  - `tests/13-activate-session.test.ts`
+  - `tests/40-set-card-manifest.test.ts`
+  - `tests/42-apply-effect-inline-manifest.test.ts`
+  - `tests/43-surrender-match.test.ts`
+- [x] Result: `37 passing`, `1 pending` (`apply_effect` deadline test was skipped when warp/realtime timing could not be deterministically satisfied).
+
+### The Tech Debt
+
+- [ ] `apps/api` and `packages/solana-client` still need to be updated to consume the new inline-manifest instructions and the synced local program id. This session intentionally stopped at Web3-only scope.
+- [ ] The new MagicBlock local-stack tests for inline manifest (`45-*`, `46-*`) were added but not yet run end-to-end in this session.
+- [ ] The package name/path still uses `battle-anchor-032`. If we want a more industry-style package folder name, that should be handled as a follow-up refactor because it will ripple through workspace paths, scripts, and downstream imports.
+
+---
+
+## Entry 24 — 2026-05-09: Devnet Program-ID Re-Sync to `3eMD...` and Root-Cause Split
+
+### The Change
+
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` — Updated `declare_id!` to `3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8`.
+- `packages/battle-anchor-032/Anchor.toml` — Updated both `[programs.devnet]` and `[programs.localnet]` IDs to `3eMD...`.
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Updated `DECLARED_BATTLE_PROGRAM_ID` to `3eMD...`.
+- `packages/battle-anchor-032/package.json` — Updated `magicblock:base` `--bpf-program` ID to `3eMD...`.
+
+### The Reasoning
+
+1. The failing Devnet suite originally showed `DeclaredProgramIdMismatch`; that means runtime ID constants and deployed ID were out of sync.
+2. After the sync, `DeclaredProgramIdMismatch` disappeared from the run, confirming ID alignment was fixed.
+3. Remaining failures split into two independent buckets:
+   - **RPC reliability**: `fetch failed`, `ConnectTimeoutError`, and `TransactionExpiredTimeoutError`.
+   - **Program/IDL version drift**: `RangeError ... offset ... Received 259` when decoding `BattleSession`, indicating Devnet `3eMD...` likely still runs an older binary/layout than current tests expect.
+
+### The Tech Debt
+
+- [ ] Redeploy latest `cora_battle` binary to Devnet under `3eMD...` (same keypair) so account layout matches current IDL (`BattleSession::LEN = 1071`).
+- [ ] Refresh client IDL artifacts after deploy (`target/idl`, `packages/solana-client/src/cora_battle.json/.ts`) and re-run Devnet suite.
+- [ ] Stabilize Devnet RPC for CI-like runs (dedicated endpoint + tuned retry/confirm strategy), because public/shared RPC introduces non-deterministic timeouts for transaction-heavy integration tests.
