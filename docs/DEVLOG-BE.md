@@ -709,3 +709,27 @@
   after join). That workaround can remain as a harmless safety net but the
   root cause is now fixed on the backend.
 
+## 2026-05-11 - Blink URL Browser Redirect
+
+### The Change
+- Added browser detection to `GET /api/actions/challenge` via `Accept`
+  header content negotiation.
+- Normal browser requests (Accept: text/html) with a `roomId` now
+  redirect to `FE_BASE_URL/challenge/:roomId` (302).
+- Blink-compatible wallets (Accept: application/json) continue to
+  receive the JSON action payload unchanged.
+- Added `FE_BASE_URL` env var (default: `http://localhost:3000`).
+
+### The Reasoning
+- Sharing the raw Blink URL outside a wallet-aware app returned raw JSON,
+  making the link unusable for anyone without a Blink-compatible client.
+- Content negotiation is the standard Solana Actions pattern for this —
+  wallets send application/json, browsers send text/html.
+- Terminal states (EXPIRED, FORFEITED) correctly redirect to FE which
+  already handles the "Challenge Closed" UI via status polling.
+
+### The Tech Debt
+- [ ] The generic Blink endpoint (no roomId) does not redirect browsers.
+  If a creator shares the base Blink URL without a roomId, a browser
+  visitor still sees JSON. Low priority — the shareable link always
+  includes a roomId.
