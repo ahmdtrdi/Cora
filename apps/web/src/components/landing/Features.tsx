@@ -296,7 +296,7 @@ export function Features() {
   return (
     <section
       id="roster"
-      className="paper-grain relative overflow-hidden px-4 py-28 md:px-8"
+      className="paper-grain relative overflow-hidden px-4 py-16 md:px-8 md:py-28"
       style={{ background: "linear-gradient(180deg, var(--warm-bg) 0%, #f5edd8 100%)" }}
     >
       {/* decorative dots */}
@@ -312,14 +312,14 @@ export function Features() {
             whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             viewport={{ once: true, amount: 0.6 }}
             transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
-            className="font-caprasimo mt-4 text-4xl leading-tight text-[var(--warm-text)] md:text-6xl"
+            className="font-caprasimo mt-3 text-4xl leading-tight text-[var(--warm-text)] md:mt-4 md:text-6xl"
           >
             Every mind has a strategy.{" "}
             <span className="text-[var(--tone-clay)]">Every base has a weakness.</span>
           </motion.h2>
         </div>
 
-        <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 md:mt-14 lg:grid-cols-3">
           {LANDING_SCIENTISTS.map((scientist, index) => (
             <ScientistCard
               key={scientist.id}

@@ -750,7 +750,7 @@ export function OpponentFound({
 
 
   return (
-    <div className="mx-auto flex h-[100svh] w-full max-w-5xl flex-col overflow-hidden px-4 py-8 md:px-6">
+    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col overflow-x-hidden overflow-y-auto px-4 py-6 md:h-[100svh] md:overflow-hidden md:px-6 md:py-8">
       {/* Opponent failed to deposit popup */}
       {opponentFailedDepositAt && (
         <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
@@ -917,7 +917,7 @@ export function OpponentFound({
       </p>
       </div>
 
-      <div className="mt-8 grid w-full flex-shrink-0 grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+      <div className="mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div
           className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
@@ -965,8 +965,8 @@ export function OpponentFound({
           </div>
         </div>
 
-        <div className="grid place-items-center px-6">
-          <div className="animate-orb-breath font-caprasimo text-6xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)]" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+        <div className="grid place-items-center px-4 py-1 md:px-6">
+          <div className="animate-orb-breath font-caprasimo text-5xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)] md:text-6xl" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
             VS
           </div>
         </div>
@@ -1011,9 +1011,9 @@ export function OpponentFound({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto pb-4">
+      <div className="flex min-h-0 flex-1 flex-col justify-end overflow-visible pb-4 md:overflow-y-auto">
         <div
-          className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
+          className="mt-6 w-full rounded-2xl border p-4 shadow-xl md:mt-8 md:p-5"
           style={{
             borderColor: "rgba(248,214,148,0.35)",
             background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",

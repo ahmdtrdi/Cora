@@ -9,6 +9,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
+import { MobileLandscapeGate } from "./MobileLandscapeGate";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { GAME_AUDIO, playOneShotAudio, useLoopingAudio, usePreloadedAudio } from "@/lib/audio/gameAudio";
@@ -1553,6 +1554,8 @@ export function BattleScreen() {
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
+      <MobileLandscapeGate />
+
       <BattleScreenStatusLayer
         visibleAlerts={visibleAlerts}
         socketUrl={socketUrl}

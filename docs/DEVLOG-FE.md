@@ -5598,3 +5598,134 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The coin parallax direction is still configured per token object, which makes directional inconsistencies easy to introduce during visual tweaking. If the hero token system keeps evolving, shared directional presets would reduce that risk.
+
+## 2026-05-12 - Battle audio, orientation gate, and mobile landing flow tightened up
+
+### The Change
+- Added a shared client audio helper in [gameAudio.ts](/d:/projects/Cora/apps/web/src/lib/audio/gameAudio.ts) and wired battle/lobby audio into [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx), including match-found/countdown cues, low-volume looping battle music, answer feedback, attack/heal resolution SFX, Chrome-friendly audio unlock on deposit, and cached/preloaded endgame sounds.
+- Added [MobileLandscapeGate.tsx](/d:/projects/Cora/apps/web/src/components/play/MobileLandscapeGate.tsx) and mounted it only in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so portrait phones get a rotate prompt without touching landing, lobby, or desktop/tablet landscape layouts.
+- Updated landing responsiveness across [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx), [HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx), [TokenMarquee.tsx](/d:/projects/Cora/apps/web/src/components/landing/TokenMarquee.tsx), and [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to add a portrait-specific hero composition, smaller mobile marquee treatment, tap-to-advance mobile How It Works cards, and a burger menu with the CTA moved inside on mobile.
+
+### The Reasoning
+- Audio needed to feel attached to real battle state changes rather than just button taps, so the wiring was split between answer-result events and damage-resolution events. Caching and preloading the `HTMLAudioElement`s was the safer choice for Chrome because server-driven end states like surrender were too easy to lose when spawning a fresh `Audio` instance at the last second.
+- The landscape requirement was intentionally scoped to the actual battle surface instead of the whole app. The landing page, deposit flow, and challenge-entry screens still need to work in portrait, while the battle board is the one surface that truly depends on width.
+- The landing page mobile fixes intentionally branch at the component level instead of trying to coerce the desktop interaction model into a narrow viewport. The hero needed a different crop, How It Works needed a different interaction model, and the navbar needed a different information architecture, so mobile-specific paths were cleaner than stacking more breakpoint overrides onto the desktop behavior.
+
+### The Tech Debt
+- The result-share card still needs a follow-up pass for surrender-specific copy and card-title mapping. The current share-card pipeline still assumes a generic win-style title in some surrender paths, which can make the exported result card read incorrectly even when the overlay text is right.
+- Mobile landing behavior now has distinct interaction branches, but it has only been linted, not fully visually regression-tested across every tablet breakpoint. Small tablets in portrait are the most likely place where we may still want to retune the mobile/desktop cutoff after real-device testing.
+- The audio helper is now centralized, but mute/preferences are still implicit. If battle audio keeps growing, we should probably introduce an explicit user-facing audio state (music vs SFX, remembered mute, maybe per-surface toggles) instead of continuing to encode levels inline at call sites.
+
+## 2026-05-12 - Mobile hero logo enlarged and burger menu simplified
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the mobile `CORA` logo sits larger within the bookshelf-3 portrait composition.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) so the mobile burger sheet now only contains navigation links and no longer repeats the `Enter Arena` CTA inside the menu.
+
+### The Reasoning
+- The bookshelf-3 mobile crop had enough negative space to support a larger `CORA` mark, and the previous size still felt a little timid relative to the rest of the portrait composition.
+- The mobile menu was reading heavier than necessary once the burger interaction was in place. Removing the duplicated CTA keeps the sheet focused on navigation instead of turning it into a second action panel.
+
+### The Tech Debt
+- The mobile hero title scale is still tuned by eye inside the layer config. If we continue iterating on portrait hero variants, we may want to promote these mobile composition values into named presets instead of continuing to adjust frame geometry inline.
+
+## 2026-05-12 - Mobile navbar CTA restored into burger and hero title re-centered
+
+### The Change
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) so the mobile `Enter Arena` CTA lives inside the burger sheet again and no longer shows in the top bar beside the menu button.
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to move the large mobile `CORA` mark lower and more centrally within the bookshelf-3 portrait composition while nudging its scale up slightly again.
+
+### The Reasoning
+- The previous pass interpreted "hide the CTA inside the burger" too literally and removed it from the menu instead of tucking it away there. Restoring it inside the sheet keeps the top bar lighter while still preserving the primary mobile entry action.
+- The first portrait-logo enlargement made the mark bigger, but the actual visual center still felt too high in the shelf scene. Moving it deeper into the composition makes the mobile hero read more intentionally framed instead of top-heavy.
+
+### The Tech Debt
+- The portrait hero framing is still manually tuned by asset bounds and layer geometry. If we keep adjusting the mobile art direction, the title and shelf crop would benefit from a more explicit composition token set rather than repeated literal `top/width/scale` edits.
+
+## 2026-05-12 - Mobile hero logo given extra top spacing
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to push the large mobile `CORA` mark a bit lower in the portrait hero composition, effectively adding more top margin above it on phones.
+
+### The Reasoning
+- The previous re-centering improved the bookshelf composition, but the mark still felt a little tight against the upper part of the scene. Giving it more breathing room above helps the mobile hero feel less crowded.
+
+### The Tech Debt
+- This is another hand-tuned vertical offset inside the mobile hero layer config. If the portrait composition keeps being art-directed through micro-adjustments, we should eventually capture these spacing decisions as named mobile composition presets instead of raw percentages.
+
+## 2026-05-12 - Mobile hero tokens resized and re-scattered
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the mobile landing view now uses its own token layout instead of reusing the desktop positions.
+- Reduced mobile token sizes and scattered all six token assets into separate portrait-friendly positions so the full set can show up around the bookshelf scene instead of only `SOL` and `BONK` remaining visible.
+
+### The Reasoning
+- The desktop token coordinates were composed for a wide hero and did not survive the portrait crop well. A dedicated mobile token band is the cleaner fix because it lets the bookshelf-3 composition breathe while still showing the broader token ecosystem.
+
+### The Tech Debt
+- The mobile token arrangement is still hand-authored like the desktop token band. If we keep iterating on the landing art direction, we should consider promoting token layouts into named desktop/mobile presets or shared scene data instead of maintaining multiple raw placement arrays in the component.
+
+## 2026-05-12 - Mobile hero logo given additional vertical breathing room again
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to move the large mobile `CORA` mark farther down in the portrait hero composition for extra top margin.
+
+### The Reasoning
+- The previous spacing pass still left the logo reading a little too close to the upper shelf area. Pushing it farther down gives the portrait hero more visual air at the top and keeps the mark from feeling cramped against the navbar zone.
+
+### The Tech Debt
+- The portrait hero title placement is still being art-directed through raw positional percentages. If we keep iterating at this level, it would be cleaner to formalize a small mobile composition preset rather than continuing to stack manual `top` adjustments.
+
+## 2026-05-12 - Mobile Features section spacing tightened
+
+### The Change
+- Updated [Features.tsx](/d:/projects/Cora/apps/web/src/components/landing/Features.tsx) to reduce the top/bottom section padding and tighten the heading-to-card gap on mobile while preserving the existing desktop spacing.
+
+### The Reasoning
+- The landing flow had accumulated too much blank space before the roster section on phones, especially after the taller portrait hero adjustments. Tightening the mobile-only spacing keeps the page feeling more continuous without compressing the desktop layout.
+
+### The Tech Debt
+- The landing section spacing is still being tuned one component at a time. If we keep polishing mobile rhythm across the page, it may be worth defining a shared spacing system for mobile section transitions instead of continuing to patch individual `mt`/`py` values in place.
+
+## 2026-05-12 - Footer logo aligned with the shared warm landscape mark
+
+### The Change
+- Updated [Footer.tsx](/d:/projects/Cora/apps/web/src/components/landing/Footer.tsx) so the landing footer now uses the same `landscape_warm.png` logo asset as the rest of the landing experience instead of the previous text-and-initial mark.
+
+### The Reasoning
+- The footer was still carrying a simpler placeholder-style brand treatment while the rest of the landing page had already standardized on the warm landscape logo. Reusing the shared asset keeps the branding more visually consistent from hero to footer.
+
+### The Tech Debt
+- The footer still relies on a fixed logo box width. If we later introduce alternate footer layouts or responsive brand variations, it may be worth centralizing logo sizing rules instead of continuing to tune them locally per component.
+
+## 2026-05-12 - Mobile CTA banner content centered
+
+### The Change
+- Updated [CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the mobile-only version centers the text block and `Enter Arena` CTA while preserving the existing left-aligned desktop layout through `md:` overrides.
+
+### The Reasoning
+- Once the mobile banner hides the heavier right-side decorative content, the remaining copy-and-button stack reads more intentional when centered instead of still inheriting the desktop left alignment.
+
+### The Tech Debt
+- The CTA banner now has another mobile-specific presentation branch layered onto the desktop composition. If we keep refining the landing mobile layout, we may eventually want a more explicit shared mobile typography/alignment system instead of handling each section’s centering case individually.
+## 2026-05-12 - Mobile lobby character select now scrolls correctly
+
+### The Change
+- Updated [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) so the lobby setup shell allows vertical scrolling on mobile by switching the small-screen wrapper from fixed-height `overflow-hidden` to mobile `overflow-y-auto`, while preserving the existing desktop viewport lock with `md:` overrides.
+
+### The Reasoning
+- The real "can't scroll on mobile" issue was in the lobby character-select shell, not in the landing roster cards. The wrapper was clamping the whole setup screen to `overflow-hidden`, which prevented the scientist grid from extending naturally on phones. Letting the lobby phase scroll on small viewports fixes the actual problem at the right layer.
+
+### The Tech Debt
+- The room-phase setup flow now intentionally diverges between mobile and desktop overflow behavior. If more room-phase screens start carrying tall mobile content, it may be worth centralizing "mobile scroll / desktop viewport lock" behavior inside `RoomPhaseShell` instead of continuing to tune it per screen wrapper.
+
+## 2026-05-12 - Mobile OpponentFound stack no longer overlaps
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the mobile rival-found screen uses scrollable vertical flow instead of a fully locked viewport, and reduced a few small-screen gaps/sizes around the `VS` separator and deposit panel spacing.
+
+### The Reasoning
+- The rival cards, center `VS`, and deposit panel were all trying to fit inside a hard `100svh` mobile container while also refusing to shrink, which caused the middle and lower blocks to visually collide. Letting the mobile screen scroll and slightly tightening the vertical rhythm fixes the overlap at the layout level without disturbing the desktop three-column arrangement.
+
+### The Tech Debt
+- `OpponentFound` now has another mobile-vs-desktop overflow split similar to the lobby character screen. If more setup-phase screens keep hitting this issue, we should likely formalize a shared “scroll on mobile, lock on desktop” pattern for these full-screen pre-battle states instead of solving each one independently.
