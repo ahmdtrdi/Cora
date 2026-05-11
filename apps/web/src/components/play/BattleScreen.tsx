@@ -11,6 +11,7 @@ import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
+import { GAME_AUDIO, playOneShotAudio, useLoopingAudio, usePreloadedAudio } from "@/lib/audio/gameAudio";
 import { createBlinkChallengeSession } from "@/lib/challenge/createBlinkChallengeSession";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
@@ -73,6 +74,17 @@ const CARD_TRANSFORMS = [
   "-translate-y-1 rotate-0",
   "translate-y-0 rotate-3",
   "translate-y-2 rotate-6",
+] as const;
+
+const BATTLE_PRELOADED_AUDIO = [
+  GAME_AUDIO.battleMusic,
+  GAME_AUDIO.healing,
+  GAME_AUDIO.hitted,
+  GAME_AUDIO.hitting,
+  GAME_AUDIO.win,
+  GAME_AUDIO.lose,
+  GAME_AUDIO.right,
+  GAME_AUDIO.wrong,
 ] as const;
 
 function getCardTransform(index: number) {
@@ -340,6 +352,7 @@ export function BattleScreen() {
   const endgameTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const lastEndgameResultKeyRef = useRef<string | null>(null);
   const lastKnownCommittedRef = useRef(false);
+  const lastTerminalSoundKeyRef = useRef<string | null>(null);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
   const playerBaseControls = useAnimationControls();
@@ -428,6 +441,15 @@ export function BattleScreen() {
   const status = gameState?.status ?? "waiting";
   const player = gameState?.player;
   const opponent = gameState?.opponent;
+
+  usePreloadedAudio(BATTLE_PRELOADED_AUDIO);
+
+  useLoopingAudio(GAME_AUDIO.battleMusic, {
+    enabled: roomId.length > 0,
+    loop: true,
+    volume: 0.18,
+  });
+
   const activeCard = useMemo(
     () => (activeCardId ? activeQuestionCard ?? hand.find((card) => card.id === activeCardId) ?? null : null),
     [activeQuestionCard, hand, activeCardId],
@@ -446,6 +468,7 @@ export function BattleScreen() {
         at: lastCardExpired.at,
       },
     ]);
+    playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
     showGameNotice("No damage this turn.");
     if (answerFeedbackTimerRef.current) {
       clearTimeout(answerFeedbackTimerRef.current);
@@ -473,6 +496,9 @@ export function BattleScreen() {
         at: lastPlayResult.at,
       },
     ]);
+    playOneShotAudio(lastPlayResult.correct ? GAME_AUDIO.right : GAME_AUDIO.wrong, {
+      volume: lastPlayResult.correct ? 0.82 : 0.88,
+    });
     if (lastPlayResult.correct) {
       showReaction("player", "happy");
     }
@@ -538,6 +564,13 @@ export function BattleScreen() {
       setCharacterActionKind(null);
     }, 360);
     const projectileHitTimer = setTimeout(() => {
+      if (actionKind === "heal") {
+        playOneShotAudio(GAME_AUDIO.healing, { volume: 0.86 });
+      } else if (lastDamageEvent.damage > 0) {
+        playOneShotAudio(attackerSide === "player" ? GAME_AUDIO.hitting : GAME_AUDIO.hitted, {
+          volume: 0.88,
+        });
+      }
       setProjectile(null);
       if (targetSide === "player") {
         setPlayerBaseFx(actionKind === "heal" ? "heal" : "hit");
@@ -941,6 +974,16 @@ export function BattleScreen() {
     }
     lastEndgameResultKeyRef.current = endgameResultKey;
     clearEndgameTransitionTimers();
+
+    if (lastTerminalSoundKeyRef.current !== endgameResultKey) {
+      lastTerminalSoundKeyRef.current = endgameResultKey;
+      if (settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender") {
+        playOneShotAudio(GAME_AUDIO.win, { volume: 0.92 });
+      } else if (settlementOutcomeKind === "lose" || settlementOutcomeKind === "player_surrender") {
+        playOneShotAudio(GAME_AUDIO.lose, { volume: 0.92 });
+      }
+    }
+
     schedule(() => {
       setShowSettlementOverlay(false);
       setEndgameDefeatedSide(resultDefeatedSide);
@@ -997,6 +1040,7 @@ export function BattleScreen() {
     isMatchComplete,
     resetEndgameVisualState,
     resultDefeatedSide,
+    settlementOutcomeKind,
     showReaction,
   ]);
 
