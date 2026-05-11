@@ -68,13 +68,13 @@ export function CtaBanner() {
         ))}
       </div>
 
-      <div className="relative mx-auto flex max-w-7xl flex-col justify-between gap-10 md:flex-row md:items-end">
+      <div className="relative mx-auto flex max-w-7xl flex-col items-center justify-between gap-10 text-center md:flex-row md:items-end md:text-left">
         <motion.div
           initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
           whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          className="max-w-4xl text-left"
+          className="max-w-4xl text-center md:text-left"
         >
           <p className="font-gabarito text-xs font-bold uppercase tracking-widest opacity-60">
             The arena awaits
@@ -84,7 +84,7 @@ export function CtaBanner() {
             <br />
             <span style={{ color: "var(--tone-cream)" }}>impossible minds.</span>
           </h2>
-          <p className="font-gabarito mt-6 max-w-xl text-lg leading-relaxed text-[var(--color-muted)]">
+          <p className="font-gabarito mt-6 max-w-xl text-lg leading-relaxed text-[var(--color-muted)] md:max-w-xl">
             Pick your scientist. Outsmart your rival. Shatter their base first.
           </p>
         </motion.div>
@@ -94,6 +94,7 @@ export function CtaBanner() {
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true, amount: 0.35 }}
           transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="flex justify-center md:block"
         >
           <Link href="/connect" target="_blank" rel="noreferrer" className="btn-game btn-game-primary font-gabarito">
             <span className="relative z-10">Enter Arena</span>
