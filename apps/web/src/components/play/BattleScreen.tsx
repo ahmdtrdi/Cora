@@ -247,9 +247,7 @@ export function BattleScreen() {
   const canUseMatchSession = matchSessionHydrated && roomMatchesSession && walletMatchesSession;
   const roomId = canUseMatchSession ? activeMatchSession?.roomId ?? "" : "";
   const arenaId = canUseMatchSession ? activeMatchSession?.arenaId ?? arenaIdParam ?? "sol" : arenaIdParam ?? "sol";
-  const arenaToken = canUseMatchSession
-    ? getMatchSessionToken(activeMatchSession) ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL"
-    : ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const arenaToken = ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = canUseMatchSession ? activeMatchSession?.wagerUsd ?? FIXED_WAGER_USD : FIXED_WAGER_USD;
   const preSignedDepositSig = canUseMatchSession ? readActiveDepositIntent(roomId, address) : null;
   const requiresWalletConnect = !address;
@@ -877,7 +875,7 @@ export function BattleScreen() {
       ? "Syncing..."
       : "Unknown";
   const playerAddressLabel = address ? shortenAddress(address) : "Unknown";
-  const regularMatchShareTitle = "I just won in a CORA match";
+  const regularMatchShareTitle = didWin ? "I just won in a CORA match" : "I just battled in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
     : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
