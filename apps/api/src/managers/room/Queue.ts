@@ -8,13 +8,17 @@ interface QueueItem {
   ws?: RoomSocket;
   /** The /queue WebSocket (separate from room WS) — used for queue status events */
   queueWs?: RoomSocket;
+  connected: boolean;
   resolve: (roomId: string) => void;
   enqueuedAt: number;
   ttlHandle?: ReturnType<typeof setTimeout>;
+  graceHandle?: ReturnType<typeof setTimeout>;
 }
 
 export class Queue {
   private queue: QueueItem[] = [];
+  private readonly QUEUE_TTL_MS = 300_000;
+  private readonly RECONNECT_GRACE_MS = 30_000;
 
   constructor(private manager: RoomManager) {}
 
@@ -71,10 +75,10 @@ export class Queue {
       });
     }
 
-    const opponentIndex = this.queue.findIndex((item) => item.address !== address);
+    const opponentIndex = this.queue.findIndex((item) => item.address !== address && item.connected);
     if (opponentIndex !== -1) {
       const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
-      if (playerAEntry.ttlHandle) clearTimeout(playerAEntry.ttlHandle);
+      this.clearQueueTimers(playerAEntry);
 
       const roomId = this.createPublicRoomId();
       const room = this.manager.store.createRoom(roomId);
@@ -94,6 +98,7 @@ export class Queue {
     return new Promise((resolve) => {
       const queueItem: QueueItem = {
         address,
+        connected: true,
         resolve,
         enqueuedAt: Date.now(),
       };
@@ -101,7 +106,7 @@ export class Queue {
       queueItem.ttlHandle = setTimeout(() => {
         this.removeQueueItem(queueItem);
         this.printQueueState('TTL EXPIRED', `${this.shortAddr(address)} removed after 5m timeout`);
-      }, 300_000);
+      }, this.QUEUE_TTL_MS);
 
       this.queue.push(queueItem);
       this.bindAbort(signal, queueItem, address);
@@ -115,7 +120,7 @@ export class Queue {
    * this pushes real-time events (queueJoined, queueStatus, matchFound)
    * over the provided /queue WebSocket.
    */
-  public queueMatchWs(address: string, queueWs: RoomSocket, signal: AbortSignal): void {
+  public queueMatchWs(address: string, queueWs: RoomSocket): void {
     this.releaseUnfundedPublicDepositRoom(address);
 
     // Check for active room (reconnect)
@@ -135,17 +140,21 @@ export class Queue {
     const existing = this.queue.find((item) => item.address === address);
     if (existing) {
       existing.queueWs = queueWs;
+      existing.connected = true;
+      if (existing.graceHandle) {
+        clearTimeout(existing.graceHandle);
+        existing.graceHandle = undefined;
+      }
       this.sendQueueStatus(existing, 'queueJoined');
-      this.bindAbort(signal, existing, address);
       this.printQueueState('REATTACH (WS)', `${this.shortAddr(address)} WS attached to existing queue item`);
       return;
     }
 
     // Try instant match
-    const opponentIndex = this.queue.findIndex((item) => item.address !== address);
+    const opponentIndex = this.queue.findIndex((item) => item.address !== address && item.connected);
     if (opponentIndex !== -1) {
       const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
-      if (playerAEntry.ttlHandle) clearTimeout(playerAEntry.ttlHandle);
+      this.clearQueueTimers(playerAEntry);
 
       const roomId = this.createPublicRoomId();
       const room = this.manager.store.createRoom(roomId);
@@ -181,6 +190,7 @@ export class Queue {
     const queueItem: QueueItem = {
       address,
       queueWs,
+      connected: true,
       resolve: (roomId: string) => {
         // When matched via the HTTP path, also notify the queueWs.
         if (queueItem.queueWs) {
@@ -203,10 +213,9 @@ export class Queue {
       }
       this.broadcastQueuePositions();
       this.printQueueState('TTL EXPIRED (WS)', `${this.shortAddr(address)} removed after 5m timeout`);
-    }, 300_000);
+    }, this.QUEUE_TTL_MS);
 
     this.queue.push(queueItem);
-    this.bindAbort(signal, queueItem, address);
     this.sendQueueStatus(queueItem, 'queueJoined');
     this.broadcastQueuePositions();
     this.printQueueState('WAITING (WS)', `${this.shortAddr(address)} added to queue`);
@@ -216,10 +225,50 @@ export class Queue {
     return this.queue.some((item) => item.address === address);
   }
 
-  private bindAbort(signal: AbortSignal | undefined, queueItem: QueueItem, address: string): void {
+  public detachQueueWs(address: string, queueWs: RoomSocket): void {
+    const item = this.queue.find((candidate) => candidate.address === address && candidate.queueWs === queueWs);
+    if (!item) return;
+
+    item.queueWs = undefined;
+    item.connected = false;
+
+    if (item.graceHandle) clearTimeout(item.graceHandle);
+    item.graceHandle = setTimeout(() => {
+      if (item.connected) return;
+      this.clearQueueTimers(item);
+      if (this.removeQueueItem(item)) {
+        item.resolve('__aborted__');
+        this.printQueueState('WS GRACE EXPIRED', `${this.shortAddr(address)} left matchmaking`);
+      }
+    }, this.RECONNECT_GRACE_MS);
+
+    this.broadcastQueuePositions();
+    this.printQueueState('WS DETACHED', `${this.shortAddr(address)} can reconnect without losing queue`);
+  }
+
+  public cancelQueueWs(address: string, queueWs: RoomSocket): void {
+    const item = this.queue.find((candidate) => candidate.address === address && candidate.queueWs === queueWs);
+    if (!item) return;
+
+    this.manager.network.safeSend(queueWs, {
+      type: 'queueLeft',
+      payload: { reason: 'cancelled' },
+    } satisfies WsMessage);
+    this.clearQueueTimers(item);
+    if (this.removeQueueItem(item)) {
+      item.resolve('__aborted__');
+      this.printQueueState('CANCELLED (WS)', `${this.shortAddr(address)} left matchmaking`);
+    }
+  }
+
+  private bindAbort(
+    signal: AbortSignal | undefined,
+    queueItem: QueueItem,
+    address: string,
+  ): void {
     if (!signal) return;
     signal.addEventListener('abort', () => {
-      if (queueItem.ttlHandle) clearTimeout(queueItem.ttlHandle);
+      this.clearQueueTimers(queueItem);
       if (this.removeQueueItem(queueItem)) {
         queueItem.resolve('__aborted__');
         this.printQueueState('ABORTED', `${this.shortAddr(address)} left matchmaking`);
@@ -233,6 +282,17 @@ export class Queue {
     this.queue.splice(index, 1);
     this.broadcastQueuePositions();
     return true;
+  }
+
+  private clearQueueTimers(queueItem: QueueItem): void {
+    if (queueItem.ttlHandle) {
+      clearTimeout(queueItem.ttlHandle);
+      queueItem.ttlHandle = undefined;
+    }
+    if (queueItem.graceHandle) {
+      clearTimeout(queueItem.graceHandle);
+      queueItem.graceHandle = undefined;
+    }
   }
 
   public isZombieDepositRoom(room: Room): boolean {
