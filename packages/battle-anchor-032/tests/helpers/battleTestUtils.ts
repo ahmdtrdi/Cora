@@ -27,7 +27,7 @@ export const TEST_CONSTANTS = {
   roundDurationSeconds: 180,
   minDamage: 1,
   maxDamage: 100,
-  maxEffectValue: 150,
+  maxEffectValue: 30,
   maxScoreDelta: 10_000,
   maxCardSlots: 128,
   manifestEntrySize: 3,

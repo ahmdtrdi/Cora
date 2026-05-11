@@ -48,8 +48,8 @@ describe("constants spec alignment", () => {
   });
 
   it("max_effect_value_supports_game_attack_ceiling", () => {
-    expect(TEST_CONSTANTS.maxEffectValue).to.equal(150);
-    expect(TEST_CONSTANTS.maxEffectValue).to.be.at.least(TEST_CONSTANTS.maxDamage);
+    expect(TEST_CONSTANTS.maxEffectValue).to.equal(30);
+    expect(TEST_CONSTANTS.maxEffectValue).to.be.lessThan(TEST_CONSTANTS.maxDamage);
   });
 
   it("inline_manifest_limits_are_consistent", () => {

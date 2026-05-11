@@ -1,5 +1,5 @@
 import type { Question as SchemaQuestion } from '@shared/question';
-import { getSpecialtyMultiplier } from '@shared/characterStats';
+import { getSpecialtyMultiplier, MAX_SPECIALTY_MULTIPLIER } from '@shared/characterStats';
 import type {
   GameState,
   GamePhase,
@@ -39,12 +39,15 @@ export class GameEngine {
   static readonly MATCH_DURATION_MS = 180_000;          // 180 seconds
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
   static readonly ROUNDS_TO_WIN = 2;
-  static readonly BASE_DAMAGE = 50;
+  static readonly BASE_DAMAGE = 10;
   static readonly BASE_HEAL = 10;
   static readonly STARTING_HEALTH = 100;
   static readonly HAND_SIZE = 5;
   static readonly TICK_INTERVAL_MS = 1_000;             // 1 second
   static readonly EXTRA_POINT_MULTIPLIER = 2;
+  static readonly MAX_EFFECT_MULTIPLIER = GameEngine.EXTRA_POINT_MULTIPLIER * MAX_SPECIALTY_MULTIPLIER;
+  static readonly MAX_DAMAGE = GameEngine.BASE_DAMAGE * GameEngine.MAX_EFFECT_MULTIPLIER;
+  static readonly MAX_HEAL = GameEngine.BASE_HEAL * GameEngine.MAX_EFFECT_MULTIPLIER;
   static readonly DAMAGE_LOG_MAX = 20;
 
   // ─── State ────────────────────────────────────────────────────

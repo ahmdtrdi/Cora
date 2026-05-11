@@ -18,7 +18,7 @@ async function createSurrenderableBattle() {
   await setCardManifest({
     sessionPda: session.sessionPda,
     isPlayerA: true,
-    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: 150 }],
+    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
   });
   await setCardManifest({
     sessionPda: session.sessionPda,
@@ -80,7 +80,7 @@ describe("surrender_match", () => {
 
     await expectAnchorError(
       program.methods
-        .applyEffect(0, true, 50, 100)
+        .applyEffect(0, true, TEST_CONSTANTS.maxEffectValue, 100)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,

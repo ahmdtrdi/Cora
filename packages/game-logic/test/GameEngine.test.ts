@@ -180,8 +180,8 @@ describe('GameEngine', () => {
     
     // We need 2 rounds to win, so simulate winning the first
     internalPlayer1.roundsWon = 1;
-    // Bring player 2 health down to 50
-    internalPlayer2.health = 50;
+    // Bring player 2 health low enough for the next correct attack to end the match.
+    internalPlayer2.health = 1;
     
     internalPlayer1.hand[0].type = 'attack';
     const attackCard = internalPlayer1.hand[0];
