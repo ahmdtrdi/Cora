@@ -979,7 +979,7 @@ export function OpponentFound({
                 Character revealed when battle starts.
               </p>
               <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+                {opponentAddress ? shortWallet(opponentAddress) : "Syncing rival..."}
               </p>
             </div>
           </div>

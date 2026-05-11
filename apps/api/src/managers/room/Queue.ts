@@ -36,11 +36,14 @@ export class Queue {
 
     const playerMeta = activeRoom.playerMeta.get(address);
     const hasDeposited = playerMeta?.hasDeposited ?? false;
-    if (hasDeposited) return;
-
     const opponentAddress = address === activeRoom.playerA ? activeRoom.playerB : activeRoom.playerA;
-    console.warn(`[Queue] Releasing unfunded public deposit room ${activeRoom.id} for ${this.shortAddr(address)} before queue entry.`);
-    this.manager.lifecycle.cancelRoom(activeRoom.id, opponentAddress ?? undefined, {
+    const opponentMeta = opponentAddress ? activeRoom.playerMeta.get(opponentAddress) : null;
+    const opponentHasDeposited = opponentMeta?.hasDeposited ?? false;
+    if (hasDeposited && opponentHasDeposited) return;
+
+    const innocentAddress = hasDeposited ? undefined : opponentAddress ?? undefined;
+    console.warn(`[Queue] Releasing incomplete public deposit room ${activeRoom.id} for ${this.shortAddr(address)} before queue entry.`);
+    this.manager.lifecycle.cancelRoom(activeRoom.id, innocentAddress, {
       reason: 'player_cancelled',
       cancelledBy: address,
     });
@@ -73,7 +76,7 @@ export class Queue {
       const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
       if (playerAEntry.ttlHandle) clearTimeout(playerAEntry.ttlHandle);
 
-      const roomId = `room-${Date.now()}`;
+      const roomId = this.createPublicRoomId();
       const room = this.manager.store.createRoom(roomId);
       room.playerA = playerAEntry.address;
       room.playerB = address;
@@ -119,9 +122,10 @@ export class Queue {
     const activeRoom = this.findActiveRoomForAddress(address);
     if (activeRoom) {
       const role = activeRoom.playerA === address ? 'playerA' : 'playerB';
+      const opponentAddress = address === activeRoom.playerA ? activeRoom.playerB : activeRoom.playerA;
       this.manager.network.safeSend(queueWs, {
         type: 'matchFound',
-        payload: { roomId: activeRoom.id, role, opponentAddress: '' },
+        payload: { roomId: activeRoom.id, role, opponentAddress: opponentAddress ?? '' },
       } satisfies WsMessage);
       this.printQueueState('RECONNECT (WS)', `${this.shortAddr(address)} already in room ${activeRoom.id}`);
       return;
@@ -143,7 +147,7 @@ export class Queue {
       const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
       if (playerAEntry.ttlHandle) clearTimeout(playerAEntry.ttlHandle);
 
-      const roomId = `room-${Date.now()}`;
+      const roomId = this.createPublicRoomId();
       const room = this.manager.store.createRoom(roomId);
       room.playerA = playerAEntry.address;
       room.playerB = address;
@@ -182,7 +186,7 @@ export class Queue {
         if (queueItem.queueWs) {
           this.manager.network.safeSend(queueItem.queueWs, {
             type: 'matchFound',
-            payload: { roomId, role: 'playerA', opponentAddress: '' },
+            payload: { roomId, role: 'playerA', opponentAddress: address },
           } satisfies WsMessage);
         }
       },
@@ -247,6 +251,10 @@ export class Queue {
   private shortAddr(address: string): string {
     if (address.length <= 12) return address;
     return `${address.slice(0, 4)}..${address.slice(-4)}`;
+  }
+
+  private createPublicRoomId(): string {
+    return `room-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   private printQueueState(event: string, detail = ''): void {
