@@ -77,7 +77,7 @@ pub fn handler_v2(
     match effect_type {
         EFFECT_ATTACK | EFFECT_HEAL => {
             require!(
-                max_value >= MIN_DAMAGE && max_value <= MAX_EFFECT_VALUE,
+                max_value >= MIN_DAMAGE && max_value <= max_effect_value_for_type(effect_type),
                 BattleError::InvalidEffectValue
             );
         }

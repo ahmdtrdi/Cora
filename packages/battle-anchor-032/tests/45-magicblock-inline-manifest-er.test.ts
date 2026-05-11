@@ -32,12 +32,12 @@ describeMagicBlockLocalStack("magicblock apply_effect inline manifest on ER", fu
       sessionPda,
       slot: 0,
       actorIsA: true,
-      finalValue: 30,
+      finalValue: TEST_CONSTANTS.maxEffectValue,
       scoreDelta: 120,
     });
 
     const session = await ephemeralProgram.account.battleSession.fetch(sessionPda);
-    expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth - 30);
+    expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue);
     expect(session.gameScoreA).to.equal(120);
     expect(session.totalPlays).to.equal(1);
   });

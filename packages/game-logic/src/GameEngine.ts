@@ -27,7 +27,7 @@ import { AntiCheatAnalyzer } from './AntiCheatAnalyzer';
  * Responsibilities:
  *  - 5-minute match timer with 1-minute "extra point" phase (×2 multiplier)
  *  - Player health management (100 HP start)
- *  - Scoring: correct attack = 10 dmg (×2 extra), correct heal = 10 HP (×2 extra)
+ *  - Scoring: correct attack = 16 dmg, correct heal = 8 HP, with phase/specialty multipliers
  *  - Card dealing from a shuffled question pool (hand of 5, auto-refill)
  *  - Win condition evaluation (HP zero, timer expiry, surrender, draw)
  *
@@ -39,8 +39,8 @@ export class GameEngine {
   static readonly MATCH_DURATION_MS = 180_000;          // 180 seconds
   static readonly EXTRA_POINT_THRESHOLD_MS = 60_000;    // last 1 minute
   static readonly ROUNDS_TO_WIN = 2;
-  static readonly BASE_DAMAGE = 10;
-  static readonly BASE_HEAL = 10;
+  static readonly BASE_DAMAGE = 16;
+  static readonly BASE_HEAL = 8;
   static readonly STARTING_HEALTH = 100;
   static readonly HAND_SIZE = 5;
   static readonly TICK_INTERVAL_MS = 1_000;             // 1 second

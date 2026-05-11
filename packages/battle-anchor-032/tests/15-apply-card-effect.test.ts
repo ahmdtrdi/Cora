@@ -28,7 +28,7 @@ describe("apply_card_effect", () => {
     await activateSession(sessionPda);
 
     await program.methods
-      .applyCardEffect(30, 100)
+      .applyCardEffect(TEST_CONSTANTS.maxEffectValue, 100)
       .accounts({
         authority: authority.publicKey,
         battleSession: sessionPda,
@@ -37,8 +37,8 @@ describe("apply_card_effect", () => {
       .rpc();
 
     const session = await fetchSession(sessionPda);
-    expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth - 30);
-    expect(session.roundDamageA).to.equal(30);
+    expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue);
+    expect(session.roundDamageA).to.equal(TEST_CONSTANTS.maxEffectValue);
     expect(session.gameScoreA).to.equal(100);
     expect(session.totalPlays).to.equal(1);
   });
@@ -50,7 +50,7 @@ describe("apply_card_effect", () => {
       cardIndex: 0,
       owner: playerB.publicKey,
       effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 30,
+      maxValue: TEST_CONSTANTS.maxEffectValue,
     });
     const healCard = await registerEffectCard({
       sessionPda,
@@ -62,7 +62,7 @@ describe("apply_card_effect", () => {
     await activateSession(sessionPda);
 
     await program.methods
-      .applyCardEffect(30, 50)
+      .applyCardEffect(TEST_CONSTANTS.maxEffectValue, 50)
       .accounts({
         authority: authority.publicKey,
         battleSession: sessionPda,
@@ -80,7 +80,9 @@ describe("apply_card_effect", () => {
       .rpc();
 
     const session = await fetchSession(sessionPda);
-    expect(session.healthA).to.equal(TEST_CONSTANTS.initialHealth - 10);
+    expect(session.healthA).to.equal(
+      TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue + 20
+    );
     expect(session.gameScoreA).to.equal(25);
     expect(session.gameScoreB).to.equal(50);
   });
@@ -208,7 +210,7 @@ describe("apply_card_effect", () => {
       cardIndex: 4,
       owner: playerA.publicKey,
       effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 30,
+      maxValue: TEST_CONSTANTS.maxEffectValue,
     });
     await activateSession(sessionPda);
 
