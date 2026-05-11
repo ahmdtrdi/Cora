@@ -4740,3 +4740,74 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Terminal status strings are duplicated across `BlinkChallengeAccept.tsx` and `LobbyScreen.tsx`. These should eventually be centralized in a shared constants file or type definition.
 
+## 2026-05-11 - Landing roster copy aligned with character specialties
+
+**The Change:** Updated [apps/web/src/components/landing/content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts) so the scientist names and copy match the real character definitions in `packages/shared-types/src/characterStats.ts`. Removed invented mechanics like shields, healing, named abilities, and attack-card amplification from the landing roster text.
+
+**The Reasoning:** The shared character stats file is the gameplay source of truth. The landing page should still feel flavorful, but it should only describe supported concepts: specialty category, 1.5x specialty multiplier, and the existing extra-point stacking behavior.
+
+**The Tech Debt:** `content.ts` still duplicates some character presentation data that could drift again later. A follow-up could derive more of this landing copy directly from shared character metadata or add a stricter content contract around allowed mechanic claims.
+
+## 2026-05-11 - How-it-works stage markers use character expressions
+
+**The Change:** Updated [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) to replace the numeric and completed-state markers with character `happy` expression portraits. Steps 1-3 now use Turing, Curie, and Einstein, and step 4 renders a compact three-character triangle cluster. The stage card badge now mirrors the same active marker.
+
+**The Reasoning:** Character portraits make the progression feel more connected to the roster and give the section a stronger in-world identity than generic numbers and checkmarks. Reusing the existing `happy` expression assets keeps the visual language consistent with other parts of the app.
+
+**The Tech Debt:** The stage-to-character mapping is currently local to `HowItWorks.tsx`. If we want the landing flow to stay centrally configurable, that mapping should move into landing content metadata.
+
+## 2026-05-11 - How-it-works rail restored to numeric active steps
+
+**The Change:** Refined [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) so the top progress rail now keeps numeric `1-4` markers for current and upcoming steps, and only completed steps swap to character portraits. The three-character triangle remains only inside the active stage card for step 4.
+
+**The Reasoning:** This restores the clearer scan pattern from the original progress rail while still using character art as the visual reward for completed steps. It also avoids overloading the top rail with the step-4 triangle cluster.
+
+**The Tech Debt:** The rail marker and card marker now have intentionally different behaviors. If we keep iterating on this section, it may be worth formalizing those two display modes behind a shared marker config instead of branching inline.
+
+## 2026-05-11 - CTA floating cards use idle portraits
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the floating character cards now render each scientist's `idle` expression asset instead of the emoji inside a circular badge. Removed the extra secondary emoji line, leaving each floating card as portrait plus name.
+
+**The Reasoning:** The CTA section already leans on character presence, so using the real portrait assets makes the floating cards feel more integrated with the game world than decorative emoji. Removing the duplicate emoji also simplifies the composition and keeps the eye on the character art.
+
+**The Tech Debt:** `CtaBanner.tsx` now has its own small asset helper for idle portraits. If more landing sections keep reusing the same expression asset paths, we should centralize those helpers in shared landing utilities.
+
+## 2026-05-11 - CTA background reuses dim hero scene assets
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) to reuse right-side landing hero art as a low-opacity CTA background layer. Added dimmed `bookcase_3` and `objects` scene assets behind the floating cards, and switched the floating portrait helper to the shared `getScientistIdleExpressionSrc` utility from `heroAssets.ts`.
+
+**The Reasoning:** Reusing the landing hero scene keeps the CTA visually connected to the rest of the page without overpowering the call-to-action. Keeping the art right-aligned and very low opacity preserves contrast for the copy while adding texture to the dark section.
+
+**The Tech Debt:** The CTA now chooses a subset of hero scene layers inline. If we keep reusing the landing environment in multiple sections, we may want a shared scene-fragment config instead of selecting individual asset files in each component.
+
+## 2026-05-11 - CTA background composition rebalanced
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits dimly on the left side of the CTA background, while `bookcase_3.png` is enlarged and anchored more prominently on the right.
+
+**The Reasoning:** Separating the two layers gives the background a nicer spread and keeps the larger structural silhouette on the right where it can frame the floating cards without stacking every asset in the same zone.
+
+**The Tech Debt:** The CTA background layout is now hand-tuned with percentage positioning. If we keep iterating on this scene treatment, it may be worth extracting these art-direction values into named constants or shared landing scene presets.
+
+## 2026-05-11 - CTA objects moved to far-left corner
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits at the far-left bottom corner of the full CTA banner, on the green gradient itself, instead of inside the right-side hero-scene wrapper.
+
+**The Reasoning:** This better matches the intended composition: the objects act as a subtle counterweight on the opposite edge of the section, while the bookcase remains the dominant right-side backdrop.
+
+**The Tech Debt:** The left-corner placement is still tuned with section-relative percentages. If this CTA gets more responsive art direction later, these placements may need breakpoint-specific presets instead of one shared value set.
+
+## 2026-05-11 - CTA right-side objects enlarged
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the larger `objects.png` layer now lives on the right side of the CTA again, while keeping the bigger footprint from the previous size adjustment. The bookcase remains the primary right-edge backdrop behind it.
+
+**The Reasoning:** This keeps the stronger object scale that read well, while aligning the composition with the preferred direction of concentrating the scene dressing on the right rather than splitting it across the banner.
+
+**The Tech Debt:** The right-side object and bookcase layers now overlap through hand-tuned percentages. If we keep polishing this art direction, it may be worth extracting a shared CTA scene layout config instead of adjusting individual absolute positions inline.
+
+## 2026-05-11 - CTA right-side objects scaled up further
+
+**The Change:** Increased the size of the right-side `objects.png` layer in [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) again by expanding its width, height, minimum width, and responsive image sizing.
+
+**The Reasoning:** The previous right-side version had the correct placement but still read a little too quietly. Scaling it further makes the scene layer more legible without changing the overall CTA structure.
+
+**The Tech Debt:** The object scale is still managed with manual percentages and minimum widths. If we continue tuning this art direction, a shared set of responsive scene tokens would be easier to maintain than repeated inline values.

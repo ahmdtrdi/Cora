@@ -37,12 +37,12 @@ export type LandingTickerItem = {
 export const LANDING_SCIENTISTS: ScientistProfile[] = [
   {
     id: "einstein",
-    name: "Einstein",
-    short: "Logic Pressure and Conceptual Clarity",
+    name: "Albert Einstein",
+    short: "Math Specialty and High-Damage Timing",
     detail:
-      "Specializes in long-form logic chains. Correct answers build Relativity Charge, amplifying attack cards in later rounds.",
-    archetype: "Tactician",
-    baseConcept: "Relativity Lab",
+      "Specializes in math questions. Correct math answers trigger a 1.5x specialty multiplier, which can stack with the extra-point phase for up to 3x total power.",
+    archetype: "Mathematician",
+    baseConcept: "The Equation Board",
     baseEmoji: "🌀",
     emoji: "🧠",
     accent: "primary",
@@ -56,10 +56,10 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
   {
     id: "curie",
     name: "Marie Curie",
-    short: "Precision Recall and Durable Control",
+    short: "Logical Specialty and Reliable Pressure",
     detail:
-      "Excels in retention prompts. Radiation Shield softens incoming damage while enabling steady healing across rounds.",
-    archetype: "Defender",
+      "Specializes in logical questions. Correct logical answers trigger a 1.5x specialty multiplier, making her strongest when the category matches her specialty.",
+    archetype: "Logician",
     baseConcept: "Radium Reactor",
     baseEmoji: "☢️",
     emoji: "🧪",
@@ -74,11 +74,11 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
   {
     id: "turing",
     name: "Alan Turing",
-    short: "Pattern Decoding and Fast Adaptation",
+    short: "Sequence Specialty and Fast Conversion",
     detail:
-      "Reads puzzle rhythm quickly. Cipher Break streaks reward high-accuracy speed and unlock critical burst turns.",
-    archetype: "Striker",
-    baseConcept: "Cipher Engine",
+      "Specializes in sequence questions. Correct sequence answers trigger a 1.5x specialty multiplier, which can combine with the extra-point phase for bigger swings.",
+    archetype: "Pattern Runner",
+    baseConcept: "The Computer",
     baseEmoji: "💻",
     emoji: "⚡",
     accent: "primary",
