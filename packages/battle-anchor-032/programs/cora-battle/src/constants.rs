@@ -19,6 +19,12 @@ pub const ROUND_DURATION_SECONDS: i64 = 180;
 /// Maximum damage a single card can deal (prevents one-shot exploits)
 pub const MAX_DAMAGE: u16 = 100;
 
+/// Gameplay base attack damage before phase/specialty multipliers.
+pub const BASE_DAMAGE: u16 = 16;
+
+/// Gameplay base healing before phase/specialty multipliers.
+pub const BASE_HEAL: u16 = 8;
+
 /// Public effect type for a backend-authorized attack card.
 pub const EFFECT_ATTACK: u8 = 1;
 /// Public effect type for a backend-authorized heal card.
@@ -26,9 +32,26 @@ pub const EFFECT_HEAL: u8 = 2;
 /// Public effect type for a consume-only card with no HP mutation.
 pub const EFFECT_NONE: u8 = 3;
 
+/// Maximum gameplay multiplier expressed as 2x extra-point * 1.5x specialty.
+pub const MAX_EFFECT_MULTIPLIER: u16 = 3;
+
+/// Maximum final attack value the backend may authorize.
+pub const MAX_ATTACK_EFFECT_VALUE: u16 = BASE_DAMAGE * MAX_EFFECT_MULTIPLIER;
+
+/// Maximum final heal value the backend may authorize.
+pub const MAX_HEAL_EFFECT_VALUE: u16 = BASE_HEAL * MAX_EFFECT_MULTIPLIER;
+
 /// Maximum final effect value the backend may authorize for ATTACK/HEAL cards.
-/// Mirrors gameplay's current ceiling: base 10 * extra-point 2x * specialty 1.5x.
-pub const MAX_EFFECT_VALUE: u16 = 30;
+pub const MAX_EFFECT_VALUE: u16 = MAX_ATTACK_EFFECT_VALUE;
+
+pub const fn max_effect_value_for_type(effect_type: u8) -> u16 {
+    match effect_type {
+        EFFECT_ATTACK => MAX_ATTACK_EFFECT_VALUE,
+        EFFECT_HEAL => MAX_HEAL_EFFECT_VALUE,
+        EFFECT_NONE => 0,
+        _ => 0,
+    }
+}
 
 /// Maximum gameplay-score delta the backend may apply from one card resolution.
 pub const MAX_SCORE_DELTA: u32 = 10_000;

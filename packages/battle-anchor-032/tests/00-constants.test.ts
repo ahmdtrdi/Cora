@@ -48,7 +48,13 @@ describe("constants spec alignment", () => {
   });
 
   it("max_effect_value_supports_game_attack_ceiling", () => {
-    expect(TEST_CONSTANTS.maxEffectValue).to.equal(30);
+    expect(TEST_CONSTANTS.maxAttackEffectValue).to.equal(
+      TEST_CONSTANTS.baseDamage * TEST_CONSTANTS.maxEffectMultiplier
+    );
+    expect(TEST_CONSTANTS.maxHealEffectValue).to.equal(
+      TEST_CONSTANTS.baseHeal * TEST_CONSTANTS.maxEffectMultiplier
+    );
+    expect(TEST_CONSTANTS.maxEffectValue).to.equal(TEST_CONSTANTS.maxAttackEffectValue);
     expect(TEST_CONSTANTS.maxEffectValue).to.be.lessThan(TEST_CONSTANTS.maxDamage);
   });
 

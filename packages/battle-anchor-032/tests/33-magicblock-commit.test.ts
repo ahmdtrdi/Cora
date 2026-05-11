@@ -28,20 +28,25 @@ describeMagicBlockLocalStack("magicblock commit state to base", function () {
     const { sessionPda, cardId, cardPda } = await createMagicBlockBattleFixture();
     await delegateBattleSessionAndCard({ sessionPda, cardPda, cardId });
     await waitForDelegatedSessionAndCard({ sessionPda, cardPda });
-    await applyEffectOnErWithRetry({ sessionPda, cardPda, finalValue: 30, scoreDelta: 120 });
+    await applyEffectOnErWithRetry({
+      sessionPda,
+      cardPda,
+      finalValue: TEST_CONSTANTS.maxEffectValue,
+      scoreDelta: 120,
+    });
 
     await commitCardAndSession({ sessionPda, cardPda });
 
     await waitForCondition("committed battle session values on base", async () => {
       const baseSession = await fetchSession(sessionPda);
       return (
-        baseSession.healthB === TEST_CONSTANTS.initialHealth - 30 &&
+        baseSession.healthB === TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue &&
         baseSession.gameScoreA === 120 &&
         baseSession.totalPlays === 1
       );
     });
 
     const committed = await fetchSession(sessionPda);
-    expect(committed.healthB).to.equal(TEST_CONSTANTS.initialHealth - 30);
+    expect(committed.healthB).to.equal(TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue);
   });
 });

@@ -23,7 +23,7 @@ async function createSurrenderableBattle() {
   await setCardManifest({
     sessionPda: session.sessionPda,
     isPlayerA: false,
-    entries: [{ effectType: TEST_CONSTANTS.effectHeal, maxValue: TEST_CONSTANTS.maxEffectValue }],
+    entries: [{ effectType: TEST_CONSTANTS.effectHeal, maxValue: TEST_CONSTANTS.maxHealEffectValue }],
   });
   await activateSession(session.sessionPda);
   return session;

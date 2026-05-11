@@ -335,7 +335,9 @@ describe('GameEngine', () => {
     expect(result.correct).toBe(true);
     expect(result.multiplier).toBe(expectedMult);
     expect(result.heal).toBe(expectedHeal);
-    expect(engine.getHealth()['player1']).toBe(70 + expectedHeal);
+    expect(engine.getHealth()['player1']).toBe(
+      Math.min(GameEngine.STARTING_HEALTH, 70 + expectedHeal)
+    );
   });
 
   test('surrender via stop() emits gameOver with surrender reason', () => {

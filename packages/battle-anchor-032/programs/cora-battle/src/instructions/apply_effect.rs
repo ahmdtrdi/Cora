@@ -77,6 +77,10 @@ pub fn handler(
         BattleError::InvalidEffectType
     );
     require!(final_value <= max_value, BattleError::InvalidEffectValue);
+    require!(
+        final_value <= max_effect_value_for_type(effect_type),
+        BattleError::InvalidEffectValue
+    );
 
     match effect_type {
         EFFECT_ATTACK | EFFECT_HEAL => {

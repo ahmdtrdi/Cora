@@ -157,7 +157,7 @@ export async function applyEffectOnErWithRetry(params: {
   finalValue?: number;
   scoreDelta?: number;
 }) {
-  const finalValue = params.finalValue ?? 30;
+  const finalValue = params.finalValue ?? TEST_CONSTANTS.maxEffectValue;
   const scoreDelta = params.scoreDelta ?? 120;
 
   const builder = ephemeralProgram.methods
@@ -276,7 +276,7 @@ export async function applyInlineEffectOnErWithRetry(params: {
 }) {
   const slot = params.slot ?? 0;
   const actorIsA = params.actorIsA ?? true;
-  const finalValue = params.finalValue ?? 30;
+  const finalValue = params.finalValue ?? TEST_CONSTANTS.maxEffectValue;
   const scoreDelta = params.scoreDelta ?? 120;
 
   const builder = ephemeralProgram.methods

@@ -111,6 +111,30 @@ describe("register_card_v2", () => {
     );
   });
 
+  it("rejects heal cards above gameplay heal ceiling", async () => {
+    const { sessionPda, playerA } = await createSession();
+    const cardId = makeCardId(5);
+    const [cardPda] = findCardPda(sessionPda, cardId);
+
+    await expectAnchorError(
+      program.methods
+        .registerCardV2(
+          cardId,
+          playerA.publicKey,
+          TEST_CONSTANTS.effectHeal,
+          TEST_CONSTANTS.maxHealEffectValue + 1
+        )
+        .accounts({
+          authority: authority.publicKey,
+          battleSession: sessionPda,
+          registeredCard: cardPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc(),
+      "InvalidEffectValue"
+    );
+  });
+
   it("rejects effect_none cards with max value above protocol limit", async () => {
     const { sessionPda, playerA } = await createSession();
     const cardId = makeCardId(4);
