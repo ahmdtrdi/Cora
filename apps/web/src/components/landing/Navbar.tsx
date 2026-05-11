@@ -20,6 +20,7 @@ export function Navbar() {
   const { scrollY } = useScroll();
   const [solid, setSolid] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     setSolid(latest > 60);
@@ -77,17 +78,76 @@ export function Navbar() {
           ))}
         </div>
 
+        <button
+          type="button"
+          onClick={() => setMenuOpen((prev) => !prev)}
+          aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={menuOpen}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/14 bg-[rgba(18,29,23,0.62)] text-[#f4f0e6] shadow-[0_8px_24px_rgba(0,0,0,0.18)] transition hover:bg-[rgba(27,42,34,0.82)] md:hidden"
+        >
+          <span className="sr-only">Menu</span>
+          <div className="flex flex-col gap-1.5">
+            <span className={`block h-0.5 w-5 rounded-full bg-current transition ${menuOpen ? "translate-y-2 rotate-45" : ""}`} />
+            <span className={`block h-0.5 w-5 rounded-full bg-current transition ${menuOpen ? "opacity-0" : ""}`} />
+            <span className={`block h-0.5 w-5 rounded-full bg-current transition ${menuOpen ? "-translate-y-2 -rotate-45" : ""}`} />
+          </div>
+        </button>
+
         <Link
           href="/connect"
           target="_blank"
           rel="noreferrer"
-          className="btn-game btn-game-primary font-gabarito !px-5 !py-2 !text-sm"
-          style={{ borderWidth: "2px" }}
+          className="hidden md:inline-flex"
+          aria-hidden="true"
+          tabIndex={-1}
         >
-          <span className="relative z-10">Enter Arena</span>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="relative z-10"><path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <span
+            className="btn-game btn-game-primary font-gabarito !px-5 !py-2 !text-sm"
+            style={{ borderWidth: "2px" }}
+          >
+            <span className="relative z-10">Enter Arena</span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="relative z-10"><path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </span>
         </Link>
       </div>
+
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            className="mx-auto mt-3 max-w-7xl md:hidden"
+          >
+            <div className="frame-cut overflow-hidden border border-white/10 bg-[rgba(16,24,20,0.88)] p-3 shadow-[0_16px_40px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+              <div className="flex flex-col gap-1">
+                {links.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMenuOpen(false)}
+                    className="rounded-2xl px-4 py-3 font-gabarito text-sm font-bold uppercase tracking-[0.16em] text-[#f4f0e6] transition hover:bg-white/6"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+              <Link
+                href="/connect"
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMenuOpen(false)}
+                className="btn-game btn-game-primary mt-3 flex w-full justify-center !px-5 !py-3 !text-sm"
+                style={{ borderWidth: "2px" }}
+              >
+                <span className="relative z-10">Enter Arena</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="relative z-10"><path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.nav>
   );
 }

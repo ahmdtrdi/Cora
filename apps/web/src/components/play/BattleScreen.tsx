@@ -9,6 +9,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
+import { MobileLandscapeGate } from "./MobileLandscapeGate";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { GAME_AUDIO, playOneShotAudio, useLoopingAudio, usePreloadedAudio } from "@/lib/audio/gameAudio";
@@ -247,9 +248,7 @@ export function BattleScreen() {
   const canUseMatchSession = matchSessionHydrated && roomMatchesSession && walletMatchesSession;
   const roomId = canUseMatchSession ? activeMatchSession?.roomId ?? "" : "";
   const arenaId = canUseMatchSession ? activeMatchSession?.arenaId ?? arenaIdParam ?? "sol" : arenaIdParam ?? "sol";
-  const arenaToken = canUseMatchSession
-    ? getMatchSessionToken(activeMatchSession) ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL"
-    : ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const arenaToken = ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = canUseMatchSession ? activeMatchSession?.wagerUsd ?? FIXED_WAGER_USD : FIXED_WAGER_USD;
   const preSignedDepositSig = canUseMatchSession ? readActiveDepositIntent(roomId, address) : null;
   const requiresWalletConnect = !address;
@@ -877,7 +876,7 @@ export function BattleScreen() {
       ? "Syncing..."
       : "Unknown";
   const playerAddressLabel = address ? shortenAddress(address) : "Unknown";
-  const regularMatchShareTitle = "I just won in a CORA match";
+  const regularMatchShareTitle = didWin ? "I just won in a CORA match" : "I just battled in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
     : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
@@ -1553,6 +1552,8 @@ export function BattleScreen() {
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
+      <MobileLandscapeGate />
+
       <BattleScreenStatusLayer
         visibleAlerts={visibleAlerts}
         socketUrl={socketUrl}

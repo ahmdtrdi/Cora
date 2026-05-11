@@ -23,7 +23,7 @@ async function createInlineBattle() {
     isPlayerA: true,
     entries: [
       { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
-      { effectType: TEST_CONSTANTS.effectHeal, maxValue: TEST_CONSTANTS.maxEffectValue },
+      { effectType: TEST_CONSTANTS.effectHeal, maxValue: TEST_CONSTANTS.maxHealEffectValue },
       { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
       { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
       { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
@@ -92,12 +92,14 @@ describe("apply_effect", () => {
       sessionPda,
       slot: 1,
       actorIsA: true,
-      finalValue: TEST_CONSTANTS.maxEffectValue,
+      finalValue: TEST_CONSTANTS.maxHealEffectValue,
       scoreDelta: 75,
     });
 
     const session = await fetchSession(sessionPda);
-    expect(session.healthA).to.equal(TEST_CONSTANTS.initialHealth);
+    expect(session.healthA).to.equal(
+      TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue + TEST_CONSTANTS.maxHealEffectValue
+    );
     expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth);
     expect(session.gameScoreA).to.equal(75);
     expect(session.gameScoreB).to.equal(100);

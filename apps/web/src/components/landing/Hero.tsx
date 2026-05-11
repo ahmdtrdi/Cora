@@ -247,6 +247,155 @@ const HERO_LAYERS: HeroLayer[] = [
   },
 ];
 
+const HERO_MOBILE_TOKENS: HeroToken[] = [
+  {
+    src: "/assets/tokens/sol.png",
+    left: "18%",
+    top: "18%",
+    width: "clamp(42px, 11vw, 60px)",
+    depth: 9,
+    movement: 6,
+    direction: 1,
+    rotation: -12,
+    driftY: -8,
+    driftX: 6,
+    delay: 0.2,
+    duration: 6.2,
+    opacity: 0.96,
+  },
+  {
+    src: "/assets/tokens/bonk.png",
+    left: "69%",
+    top: "13%",
+    width: "clamp(34px, 9vw, 50px)",
+    depth: 8,
+    movement: 6,
+    direction: 1,
+    rotation: 10,
+    driftY: -8,
+    driftX: -5,
+    delay: 0.7,
+    duration: 5.8,
+    opacity: 0.88,
+  },
+  {
+    src: "/assets/tokens/mew.png",
+    left: "10%",
+    top: "41%",
+    width: "clamp(28px, 7.5vw, 42px)",
+    depth: 8,
+    movement: 5,
+    direction: 1,
+    rotation: 12,
+    driftY: -7,
+    driftX: 5,
+    delay: 1.1,
+    duration: 6.6,
+    opacity: 0.8,
+  },
+  {
+    src: "/assets/tokens/pepe.png",
+    left: "78%",
+    top: "39%",
+    width: "clamp(26px, 7vw, 40px)",
+    depth: 8,
+    movement: 5,
+    direction: 1,
+    rotation: -14,
+    driftY: -6,
+    driftX: -4,
+    delay: 1.5,
+    duration: 5.6,
+    opacity: 0.74,
+  },
+  {
+    src: "/assets/tokens/pengu.png",
+    left: "20%",
+    top: "63%",
+    width: "clamp(24px, 6.5vw, 36px)",
+    depth: 8,
+    movement: 4,
+    direction: 1,
+    rotation: -8,
+    driftY: -5,
+    driftX: 4,
+    delay: 1.9,
+    duration: 6.1,
+    opacity: 0.68,
+  },
+  {
+    src: "/assets/tokens/usdc.png",
+    left: "73%",
+    top: "61%",
+    width: "clamp(24px, 6.5vw, 36px)",
+    depth: 8,
+    movement: 4,
+    direction: 1,
+    rotation: 14,
+    driftY: -5,
+    driftX: -4,
+    delay: 2.2,
+    duration: 5.9,
+    opacity: 0.68,
+  },
+] as const;
+
+const HERO_MOBILE_LAYERS: HeroLayer[] = [
+  {
+    type: "image",
+    name: "bookcase-3-mobile",
+    src: "/assets/landing/bookcase_3.png",
+    movement: 0,
+    direction: 0,
+    depth: 0,
+    delay: 0.05,
+    entrance: "fade-rise",
+    imageClassName: "object-cover",
+    objectPosition: "center 18%",
+    scale: 1.38,
+  },
+  {
+    type: "image",
+    name: "title-mobile",
+    src: "/assets/logo/landscape_warm.png",
+    movement: 4,
+    direction: 0.25,
+    depth: 4,
+    delay: 0.2,
+    entrance: "fade-up",
+    frameClassName: "left-1/2 top-[42%] h-[26%] w-[94%] -translate-x-1/2 -translate-y-1/2",
+    imageClassName: "object-contain",
+    objectPosition: "center center",
+    scale: 1.12,
+  },
+  {
+    type: "image",
+    name: "table-mobile",
+    src: "/assets/landing/table.png",
+    movement: 5,
+    direction: 0.6,
+    depth: 6,
+    delay: 0.34,
+    entrance: "rise",
+    imageClassName: "object-cover",
+    objectPosition: "center bottom",
+    scale: 1.24,
+  },
+  {
+    type: "image",
+    name: "objects-mobile",
+    src: "/assets/landing/objects.png",
+    movement: 7,
+    direction: 0.8,
+    depth: 7,
+    delay: 0.46,
+    entrance: "pop",
+    imageClassName: "object-cover",
+    objectPosition: "center bottom",
+    scale: 1.18,
+  },
+] as const;
+
 const layerInitialByEntrance: Record<
   HeroLayerEntrance,
   { opacity: number; y?: number; scale?: number }
@@ -275,6 +424,20 @@ function useResponsiveMotionScale() {
   }, []);
 
   return scale;
+}
+
+function useIsMobileLanding() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsMobile(mediaQuery.matches);
+    sync();
+    mediaQuery.addEventListener("change", sync);
+    return () => mediaQuery.removeEventListener("change", sync);
+  }, []);
+
+  return isMobile;
 }
 
 function HeroLayerView({
@@ -471,15 +634,18 @@ function HeroTokenView({
 export function Hero() {
   const [ready, setReady] = useState(false);
   const motionScale = useResponsiveMotionScale();
+  const isMobile = useIsMobileLanding();
   const prefersReducedMotion = useReducedMotion();
   const shouldReduceMotion = !!prefersReducedMotion;
   const sectionRef = useRef<HTMLElement | null>(null);
   const rawX = useMotionValue(0.5);
   const rawY = useMotionValue(0.5);
-  const baseLayer = HERO_LAYERS.find(
+  const activeLayers = isMobile ? HERO_MOBILE_LAYERS : HERO_LAYERS;
+  const baseLayer = activeLayers.find(
     (layer): layer is HeroImageLayer => layer.name === "base" && isImageLayer(layer)
   );
-  const interactiveLayers = HERO_LAYERS.filter((layer) => layer.name !== "base");
+  const interactiveLayers = activeLayers.filter((layer) => layer.name !== "base");
+  const visibleTokens = isMobile ? HERO_MOBILE_TOKENS : HERO_TOKENS;
   const pointerX = rawX;
   const pointerY = rawY;
 
@@ -532,7 +698,7 @@ export function Hero() {
       ref={sectionRef}
       className="relative isolate overflow-hidden bg-[#090f0d]"
     >
-      <div className="relative left-1/2 mx-auto aspect-[4096/2589] w-screen -translate-x-1/2 overflow-visible">
+      <div className={`relative left-1/2 mx-auto w-screen -translate-x-1/2 overflow-visible ${isMobile ? "aspect-[4/5]" : "aspect-[4096/2589]"}`}>
         {baseLayer && (
           <motion.div
             initial={{
@@ -662,7 +828,7 @@ export function Hero() {
           />
         ))}
 
-        {HERO_TOKENS.map((token) => (
+        {visibleTokens.map((token) => (
           <HeroTokenView
             key={`${token.src}-${token.left}-${token.top}`}
             token={token}

@@ -41,6 +41,10 @@ pub fn handler(ctx: Context<ApplyCardEffect>, final_value: u16, score_delta: u32
         BattleError::InvalidEffectType
     );
     require!(final_value <= card.max_value, BattleError::InvalidEffectValue);
+    require!(
+        final_value <= max_effect_value_for_type(card.effect_type),
+        BattleError::InvalidEffectValue
+    );
     require!(score_delta <= MAX_SCORE_DELTA, BattleError::InvalidScoreDelta);
 
     if card.effect_type == EFFECT_ATTACK || card.effect_type == EFFECT_HEAL {

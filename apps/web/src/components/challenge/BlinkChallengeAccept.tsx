@@ -25,17 +25,18 @@ type BlinkChallengeAcceptProps = {
 
 type AcceptState = "idle" | "loading" | "signing" | "accepted" | "error";
 const FIXED_WAGER_USD = "1.00";
-const SOL_WRAPPED_MINT = "SO11111111111111111111111111111111111111112";
+const SOL_WRAPPED_MINT = "So11111111111111111111111111111111111111112";
 const BLINK_TERMINAL_STATUSES = new Set(["EXPIRED", "FORFEITED", "COMPLETED"]);
 
 function getTokenLabel(tokenMint: string | null | undefined) {
-  const token = (tokenMint || "SOL").toUpperCase();
+  const token = (tokenMint || "SOL");
   if (token === SOL_WRAPPED_MINT) return "SOL";
   return token;
 }
 
 function getArenaLabel(tokenMint: string | null | undefined) {
   const token = getTokenLabel(tokenMint);
+  if (token === SOL_WRAPPED_MINT) return "SOL";
   if (token === "SOL") return "SOL Arena";
   if (token === "BONK") return "BONK Arena";
   if (token === "MEW") return "MEW Arena";

@@ -2,6 +2,7 @@
 import { expect } from "chai";
 
 import {
+  TEST_CONSTANTS,
   assertMagicBlockLocalStackEnv,
   baseProgram,
   describeMagicBlockLocalStack,
@@ -30,7 +31,12 @@ describeMagicBlockLocalStack("magicblock undelegate lifecycle", function () {
     const { sessionPda, cardId, cardPda } = await createMagicBlockBattleFixture();
     await delegateBattleSessionAndCard({ sessionPda, cardPda, cardId });
     await waitForDelegatedSessionAndCard({ sessionPda, cardPda });
-    await applyEffectOnErWithRetry({ sessionPda, cardPda, finalValue: 30, scoreDelta: 120 });
+    await applyEffectOnErWithRetry({
+      sessionPda,
+      cardPda,
+      finalValue: TEST_CONSTANTS.maxEffectValue,
+      scoreDelta: 120,
+    });
     await commitCardAndSession({ sessionPda, cardPda });
 
     await undelegateCardAndSession({ sessionPda, cardPda });

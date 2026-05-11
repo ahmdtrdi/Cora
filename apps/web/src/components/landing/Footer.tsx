@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 
 export function Footer() {
@@ -14,11 +15,14 @@ export function Footer() {
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="frame-cut frame-cut-sm grid h-8 w-8 place-items-center border border-[var(--color-border)] text-xs font-black text-[var(--accent-primary)]">
-              C
-            </span>
-            <span className="font-caprasimo text-xl leading-none">CORA</span>
+          <div className="relative h-10 w-[140px]">
+            <Image
+              src="/assets/logo/landscape_warm.png"
+              alt="Cora"
+              fill
+              sizes="140px"
+              className="object-contain object-left"
+            />
           </div>
           <p className="font-gabarito mt-2 text-sm text-[var(--color-muted)]">
             © 2026 Cora. Cognitive arena.
