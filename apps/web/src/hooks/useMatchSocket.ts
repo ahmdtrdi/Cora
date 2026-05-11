@@ -52,7 +52,8 @@ function trimTrailingSlash(input: string) {
 }
 
 const MATCH_SOCKET_OPEN_TIMEOUT_MS = 6_000;
-const MATCH_SOCKET_SNAPSHOT_TIMEOUT_MS = 5_000;
+const MATCH_SOCKET_SNAPSHOT_TIMEOUT_MS = 10_000;
+const MATCH_SOCKET_SNAPSHOT_RETRY_MS = 1_000;
 const MATCH_SOCKET_RECONNECT_DELAY_MS = 350;
 const MATCH_SOCKET_MAX_AUTO_RECONNECTS = 4;
 
@@ -114,10 +115,21 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     let isCleaningUp = false;
     let hasReceivedGameState = false;
     let snapshotTimerId: ReturnType<typeof setTimeout> | null = null;
+    let snapshotRetryTimerId: ReturnType<typeof setInterval> | null = null;
     let reconnectTimerId: ReturnType<typeof setTimeout> | null = null;
     let reconnectQueued = false;
     const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
+    const clearSnapshotTimers = () => {
+      if (snapshotTimerId) {
+        clearTimeout(snapshotTimerId);
+        snapshotTimerId = null;
+      }
+      if (snapshotRetryTimerId) {
+        clearInterval(snapshotRetryTimerId);
+        snapshotRetryTimerId = null;
+      }
+    };
     const reconnectSocket = (reason: string) => {
       if (isCleaningUp || socketRef.current !== ws || reconnectQueued) return;
       if (reconnectNonce >= MATCH_SOCKET_MAX_AUTO_RECONNECTS) {
@@ -142,10 +154,7 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
         reason,
         wasClean: false,
       });
-      if (snapshotTimerId) {
-        clearTimeout(snapshotTimerId);
-        snapshotTimerId = null;
-      }
+      clearSnapshotTimers();
       try {
         ws.close();
       } catch {
@@ -155,6 +164,15 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
         if (isCleaningUp || socketRef.current !== ws) return;
         setReconnectNonce((prev) => prev + 1);
       }, MATCH_SOCKET_RECONNECT_DELAY_MS);
+    };
+    const requestSnapshot = () => {
+      if (isCleaningUp || socketRef.current !== ws || hasReceivedGameState) return;
+      if (ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'requestSnapshot', payload: {} }));
+      } catch {
+        reconnectSocket('Match room snapshot request failed');
+      }
     };
     const openTimerId = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
@@ -177,7 +195,8 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
       setLastSocketError(null);
       setLastSocketCloseInfo(null);
       setLastSocketIssueAt(null);
-      ws.send(JSON.stringify({ type: 'requestSnapshot', payload: {} }));
+      requestSnapshot();
+      snapshotRetryTimerId = setInterval(requestSnapshot, MATCH_SOCKET_SNAPSHOT_RETRY_MS);
       snapshotTimerId = setTimeout(() => {
         if (!hasReceivedGameState) {
           reconnectSocket('Match room snapshot timed out');
@@ -186,16 +205,18 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     };
 
     ws.onmessage = (event) => {
+      if (isCleaningUp || socketRef.current !== ws) return;
       try {
         const message: WsMessage = JSON.parse(event.data);
 
         switch (message.type) {
           case 'gameStateUpdate':
             hasReceivedGameState = true;
-            if (snapshotTimerId) {
-              clearTimeout(snapshotTimerId);
-              snapshotTimerId = null;
-            }
+            clearSnapshotTimers();
+            setConnectionState('connected');
+            setLastSocketError(null);
+            setLastSocketCloseInfo(null);
+            setLastSocketIssueAt(null);
             setGameState(message.payload as GameState);
             break;
 
@@ -311,6 +332,7 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
     ws.onclose = (event) => {
       if (isCleaningUp || socketRef.current !== ws) return;
+      clearSnapshotTimers();
       if (!event.wasClean && event.code !== 1000) {
         reconnectSocket(`Match socket closed unexpectedly (${event.code})`);
         return;
@@ -333,9 +355,7 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     return () => {
       isCleaningUp = true;
       clearTimeout(openTimerId);
-      if (snapshotTimerId) {
-        clearTimeout(snapshotTimerId);
-      }
+      clearSnapshotTimers();
       if (reconnectTimerId) {
         clearTimeout(reconnectTimerId);
       }
