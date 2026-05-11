@@ -3,7 +3,9 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { ChallengeShareActions, ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { MatchResultShareCard } from "@/components/play/MatchResultShareCard";
+import type { ActiveBlinkChallengeSession } from "@/lib/session/matchSession";
 
 type SettlementPayload = {
   matchId: string;
@@ -78,9 +80,18 @@ type BattleScreenOverlaysProps = {
   arenaLabel: string;
   arenaToken: string;
   wagerUsd: string;
-  challengeLink: string | null;
-  challengeDescription: string;
+  regularMatchShareTitle: string;
+  playerCharacterName: string;
+  opponentCharacterName: string;
+  playerResultExpressionSrc: string | null;
+  opponentResultExpressionSrc: string | null;
+  challengeShareTitle: string;
   challengeStatusLabel: string;
+  challengeCharacterExpressionSrc: string | null;
+  createdBlinkChallenge: ActiveBlinkChallengeSession | null;
+  createBlinkBusy: boolean;
+  onSaveMatchResultPng: () => Promise<void>;
+  onCreateBlinkFromResult: () => Promise<void>;
   onCopyChallengeLink: () => Promise<void>;
   onSaveChallengeJpg: () => Promise<void>;
   onShareChallengeToX: () => Promise<void>;
@@ -127,9 +138,18 @@ export function BattleScreenOverlays({
   arenaLabel,
   arenaToken,
   wagerUsd,
-  challengeLink,
-  challengeDescription,
+  regularMatchShareTitle,
+  playerCharacterName,
+  opponentCharacterName,
+  playerResultExpressionSrc,
+  opponentResultExpressionSrc,
+  challengeShareTitle,
   challengeStatusLabel,
+  challengeCharacterExpressionSrc,
+  createdBlinkChallenge,
+  createBlinkBusy,
+  onSaveMatchResultPng,
+  onCreateBlinkFromResult,
   onCopyChallengeLink,
   onSaveChallengeJpg,
   onShareChallengeToX,
@@ -187,6 +207,10 @@ export function BattleScreenOverlays({
   function onOpenDeviceConnectionSettings() {
     if (!isDeviceOffline || !isMobileDevice || typeof window === "undefined") return;
     window.location.href = "app-settings:";
+  }
+
+  function resetShareView() {
+    onCloseShareModal();
   }
 
   return (
@@ -503,10 +527,12 @@ export function BattleScreenOverlays({
               <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
-                  onClick={onOpenShareModal}
+                  onClick={() => {
+                    onOpenShareModal();
+                  }}
                   className="btn-game btn-game-primary min-w-[146px] px-4 py-2 text-xs shadow-xl"
                 >
-                  Blink Share
+                  Share Match
                 </button>
                 <Link
                   href="/lobby"
@@ -585,30 +611,103 @@ export function BattleScreenOverlays({
           <div className="relative w-full max-w-3xl">
             <button
               type="button"
-              onClick={onCloseShareModal}
+              onClick={resetShareView}
               className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
             >
               Close
             </button>
-            <ChallengeShareCard
-              title="Challenge Me"
-              challengerName="You"
-              challengerAddress={address}
-              arenaLabel={arenaLabel}
-              token={arenaToken}
-              wagerUsd={wagerUsd}
-              challengeLink={challengeLink}
-              description={challengeDescription}
-              statusLabel={challengeStatusLabel}
-              onCopy={onCopyChallengeLink}
-              onSaveJpg={onSaveChallengeJpg}
-              onShareX={onShareChallengeToX}
-              notice={shareNotice}
-            />
+            {!createdBlinkChallenge && (
+              <div className="space-y-4">
+                <p className="px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
+                  Save the finished match as a result poster, or turn this win into a rematch Blink.
+                </p>
+                <MatchResultShareCard
+                  title={regularMatchShareTitle}
+                  arenaLabel={arenaLabel}
+                  wagerUsd={wagerUsd}
+                  playerCharacterName={playerCharacterName}
+                  opponentCharacterName={opponentCharacterName}
+                  playerExpressionSrc={playerResultExpressionSrc}
+                  opponentExpressionSrc={opponentResultExpressionSrc}
+                  roundsLabel={`${playerRoundsWon}-${opponentRoundsWon}`}
+                  correctCount={correctCount}
+                  wrongCount={wrongCount}
+                  timeoutCount={timeoutCount}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void onSaveMatchResultPng()}
+                    className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5"
+                    style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
+                  >
+                    Save As PNG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onCreateBlinkFromResult()}
+                    disabled={createBlinkBusy}
+                    className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                    style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
+                  >
+                    {createBlinkBusy ? "Opening Phantom..." : "Create Blink"}
+                  </button>
+                </div>
+                {createBlinkBusy && (
+                  <div
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+                    style={{
+                      border: "1px solid rgba(248,214,148,0.26)",
+                      background: "linear-gradient(145deg, rgba(248,214,148,0.14), rgba(203,227,193,0.1))",
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    <span className="h-2 w-2 rounded-full bg-[#f8d694] animate-pulse" />
+                    <span className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[#f8d694]">
+                      Opening Phantom...
+                    </span>
+                  </div>
+                )}
+                {shareNotice && (
+                  <p className="font-gabarito text-xs" style={{ color: shareNotice.tone === "success" ? "#2f6249" : "#8a3f2b" }}>
+                    {shareNotice.text}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {createdBlinkChallenge && (
+              <div className="space-y-3">
+                <p className="px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
+                  Share the Blink URL to open the challenge in supported apps or the browser challenge page.
+                </p>
+                <ChallengeShareCard
+                  title={challengeShareTitle}
+                  challengerAddress={address}
+                  arenaLabel={arenaLabel}
+                  token={arenaToken}
+                  wagerUsd={wagerUsd}
+                  challengeLink={createdBlinkChallenge.blinkUrl}
+                  description={null}
+                  statusLabel={challengeStatusLabel}
+                  characterExpressionSrc={challengeCharacterExpressionSrc}
+                  characterExpressionAlt="Your scientist expression"
+                />
+                <ChallengeShareActions
+                  challengeLink={createdBlinkChallenge.blinkUrl}
+                  notice={shareNotice}
+                  actionCopyLabel="Copy Blink URL"
+                  onCopy={onCopyChallengeLink}
+                  onSaveJpg={onSaveChallengeJpg}
+                  onShareX={onShareChallengeToX}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
     </>
   );
 }
+

@@ -77,7 +77,15 @@ export function BlinkChallengeAccept({ roomId }: BlinkChallengeAcceptProps) {
   const arenaLabel = useMemo(() => getArenaLabel(challenge?.tokenMint), [challenge?.tokenMint]);
   const characterOptions = useMemo(() => SCIENTISTS.map((scientist) => ({ ...scientist })), []);
   const joinSignature = acceptedSignature ?? (walletAddress ? readActiveDepositIntent(roomId, walletAddress) : null);
-  const hasAcceptedContext = Boolean(walletAddress && isAcceptedByWallet && !isTerminalChallenge && (state === "accepted" || joinSignature));
+  const hasAcceptedContext = Boolean(
+    walletAddress &&
+    !isCreator &&
+    !isTerminalChallenge &&
+    (
+      state === "accepted" ||
+      Boolean(joinSignature && isAcceptedByWallet)
+    ),
+  );
   const recoveredMatchSnapshot = useMemo(() => {
     if (!walletAddress) return null;
     const snapshot = readActiveMatchSession();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { ChallengeShareActions, ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
 import { createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import type { ActiveBlinkChallengeSession } from "@/lib/session/matchSession";
@@ -11,8 +11,10 @@ type BlinkChallengePanelProps = {
   arenaLabel: string;
   statusLabel: string;
   waitingLabel: string;
+  notificationPermission?: NotificationPermission | "unsupported";
   notice?: { text: string; tone: "success" | "error" } | null;
   canClear?: boolean;
+  onEnableNotifications?: () => void;
   onClose: () => void;
   onClear: () => void;
 };
@@ -40,22 +42,23 @@ export function BlinkChallengePanel({
   arenaLabel,
   statusLabel,
   waitingLabel,
+  notificationPermission = "unsupported",
   notice,
   canClear = false,
+  onEnableNotifications,
   onClose,
   onClear,
 }: BlinkChallengePanelProps) {
   const [localNotice, setLocalNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const shareLink = challenge.blinkUrl;
-  const browserLink = challenge.webChallengeUrl ?? null;
   const token = challenge.token ?? "SOL";
   const wagerUsd = challenge.wagerUsd ?? "1.00";
   const expiresAt = formatTime(challenge.expiresAt);
   const joinDeadline = formatTime(challenge.joinDeadline);
+  const shareTitle = "Do you think you can beat me?";
+  const helperCopy = "Share the Blink URL to open the challenge in supported apps or the browser challenge page.";
   const description =
-    challenge.status === "CHALLENGED"
-      ? "A rival accepted. Join the room before the response window closes."
-      : "Share the Blink URL for supported apps, or the browser link for the temporary web accept flow.";
+    challenge.status === "CHALLENGED" ? "A rival accepted. Join the room before the response window closes." : null;
   const displayNotice = notice ?? localNotice;
 
   useEffect(() => {
@@ -76,8 +79,7 @@ export function BlinkChallengePanel({
   async function buildShareImageFile() {
     try {
       const input = {
-        title: "CORA Blink Challenge",
-        challengerName: "You",
+        title: shareTitle,
         challengerAddress: challenge.walletAddress,
         statusLabel,
         description,
@@ -85,6 +87,7 @@ export function BlinkChallengePanel({
         wagerUsd,
         arenaLabel,
         challengeLink: shareLink,
+        showCharacterPortrait: false,
       };
       const blob = await renderChallengeCardJpg(input);
       return new File([blob], createChallengeCardFileName(input), { type: "image/jpeg" });
@@ -147,15 +150,25 @@ export function BlinkChallengePanel({
             {joinDeadline ? `Join deadline ${joinDeadline}. ` : ""}
             Normal matchmaking is paused until this challenge resolves.
           </p>
-          {browserLink && (
-            <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.66)]">
-              Temporary: use the browser link outside Blink-supported apps until the backend redirects browser requests.
-            </p>
+          {notificationPermission === "default" && onEnableNotifications && (
+            <div className="mt-3">
+              <p className="font-gabarito text-xs text-[rgba(244,240,230,0.72)]">
+                Enable browser notifications so CORA can alert you when a rival accepts.
+              </p>
+              <button
+                type="button"
+                onClick={onEnableNotifications}
+                className="mt-2 rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5"
+                style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
+              >
+                Enable Notifications
+              </button>
+            </div>
           )}
         </div>
+        <p className="mb-3 px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">{helperCopy}</p>
         <ChallengeShareCard
-          title="CORA Blink Challenge"
-          challengerName="You"
+          title={shareTitle}
           challengerAddress={challenge.walletAddress}
           arenaLabel={arenaLabel}
           token={token}
@@ -163,13 +176,15 @@ export function BlinkChallengePanel({
           challengeLink={shareLink}
           description={description}
           statusLabel={statusLabel}
+          showCharacterPortrait={false}
+        />
+        <ChallengeShareActions
+          challengeLink={shareLink}
+          notice={displayNotice}
           actionCopyLabel="Copy Blink URL"
-          actionSecondaryCopyLabel={browserLink ? "Copy Browser Link" : undefined}
           onCopy={() => copyText(challenge.blinkUrl, "Blink URL")}
-          onSecondaryCopy={browserLink ? () => copyText(browserLink, "Browser link") : undefined}
           onSaveJpg={onSaveJpg}
           onShareX={onShareX}
-          notice={displayNotice}
         />
       </div>
     </div>
