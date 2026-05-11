@@ -269,24 +269,12 @@ export function Hero() {
   });
 
   useEffect(() => {
-    let cancelled = false;
-    const imageSources = HERO_LAYERS.flatMap((layer) => (isImageLayer(layer) ? [layer.src] : []));
-    const preload = (src: string) =>
-      new Promise<void>((resolve) => {
-        const image = new window.Image();
-        image.onload = () => resolve();
-        image.onerror = () => resolve();
-        image.src = src;
-      });
-
-    Promise.all(imageSources.map(preload)).then(() => {
-      if (!cancelled) {
-        setReady(true);
-      }
-    });
+    const activateTimer = window.setTimeout(() => {
+      setReady(true);
+    }, 24);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(activateTimer);
     };
   }, []);
 

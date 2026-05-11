@@ -23,7 +23,7 @@ export function getLandingAccentStyle(accent: LandingAccent): LandingAccentStyle
 }
 
 export const LANDING_TICKER_ACCENT_COLOR = {
-  primary: "var(--accent-primary)",
-  secondary: "var(--accent-secondary)",
-  neutral: "var(--tone-bark)",
+  primary:   "#f8d694",
+  secondary: "#fcd8c0",
+  neutral:   "#dbb98b",
 } as const;

@@ -26,9 +26,9 @@ export function Navbar() {
 
   return (
     <motion.nav
-      initial={{ y: -20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+      initial={{ opacity: 0, filter: "blur(8px)" }}
+      animate={{ opacity: 1, filter: "blur(0px)" }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className={`fixed left-0 right-0 top-0 z-50 px-4 py-3 transition-all duration-500 md:px-6 ${solid
         ? "border-b border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.18)]"
         : "border-b border-transparent"

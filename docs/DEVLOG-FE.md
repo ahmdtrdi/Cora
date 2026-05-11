@@ -4348,3 +4348,25 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The hero layer config is still a fairly compact union living in one file. If we keep extending the scene schema, it may be worth extracting the layer types and helpers so the rendering logic stays easy to scan.
+
+## 2026-05-11 - Hero Loading Expression Overlay
+
+### The Change
+- Added [LandingIntroLoader.tsx](/d:/projects/Cora/apps/web/src/components/landing/LandingIntroLoader.tsx) as a dedicated full-viewport intro screen that renders before the landing page itself.
+- Added [heroAssets.ts](/d:/projects/Cora/apps/web/src/components/landing/heroAssets.ts) to share the landing preload source list and scientist idle-expression asset helper.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) to hold back the navbar, hero, and rest of the landing page until the intro loader finishes.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) again to mount the navbar on a short follow-up timer after the hero begins revealing, instead of only delaying the navbar animation.
+- Simplified [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so it only handles the room scene entrance now that asset preloading and the intro screen live outside it.
+- The intro uses each scientist's idle expression art as the sole loading indicator, with a subtle staggered bounce and a 1.5 second minimum hold.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to use a fade-and-deblur entrance instead of a vertical slide, avoiding the fixed-nav top-position flash on mount.
+
+### The Reasoning
+- The hero-box loader was never truly centered in the viewport because it still lived inside the hero's aspect-ratio stage rather than owning the whole screen.
+- Rendering the intro first at the page level prevents the navbar and other landing chrome from appearing before the entrance beat has completed.
+- Mounting the navbar later at the page level works better than a Framer delay on the nav itself, because the nav is truly absent during the hero's first frames instead of existing offscreen and then animating in.
+- Reusing the real scientist expression assets keeps the wait state grounded in the game's visual language instead of falling back to generic UI loading patterns.
+- Letting the hero reveal start before the navbar mounts keeps the first frame from feeling crowded and lets the room establish itself before navigation competes for attention.
+- For a fixed navbar, a pure opacity/blur reveal is more reliable than animating vertical position on first mount, because there is no one-frame snap between the browser's pinned layout position and Framer's transform state.
+
+### The Tech Debt
+- The landing intro currently blocks the entire page until its preload list resolves. If we later add heavier media to the first viewport, we may want a more selective preload strategy so the entrance beat stays crisp.
