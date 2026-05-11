@@ -17,9 +17,10 @@ import { deriveQuestionHash } from '../../utils/questionHash';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
 import type { MatchResult, WsMessage } from '@shared/websocket';
+import { GameEngine } from '@cora/game-logic';
 
-const GAMEPLAY_MAX_ATTACK_EFFECT_VALUE = 150;
-const GAMEPLAY_MAX_HEAL_EFFECT_VALUE = 30;
+const GAMEPLAY_MAX_ATTACK_EFFECT_VALUE = GameEngine.MAX_DAMAGE;
+const GAMEPLAY_MAX_HEAL_EFFECT_VALUE = GameEngine.MAX_HEAL;
 const DEPLOYED_MAX_EFFECT_VALUE = Number(process.env.CORA_BATTLE_MAX_EFFECT_VALUE ?? 100);
 const REGISTERED_MAX_ATTACK_EFFECT_VALUE = Math.min(GAMEPLAY_MAX_ATTACK_EFFECT_VALUE, DEPLOYED_MAX_EFFECT_VALUE);
 const REGISTERED_MAX_HEAL_EFFECT_VALUE = Math.min(GAMEPLAY_MAX_HEAL_EFFECT_VALUE, DEPLOYED_MAX_EFFECT_VALUE);

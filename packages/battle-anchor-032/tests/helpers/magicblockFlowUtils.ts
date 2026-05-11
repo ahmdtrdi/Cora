@@ -27,7 +27,7 @@ export async function createMagicBlockBattleFixture() {
     cardIndex: 0,
     owner: playerA.publicKey,
     effectType: TEST_CONSTANTS.effectAttack,
-    maxValue: 35,
+    maxValue: TEST_CONSTANTS.maxEffectValue,
   });
 
   await activateSession(sessionPda);
@@ -39,7 +39,7 @@ export async function createInlineManifestMagicBlockFixture() {
   await setCardManifest({
     sessionPda: session.sessionPda,
     isPlayerA: true,
-    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: 150 }],
+    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
   });
   await setCardManifest({
     sessionPda: session.sessionPda,

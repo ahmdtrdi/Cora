@@ -27,7 +27,8 @@ pub const EFFECT_HEAL: u8 = 2;
 pub const EFFECT_NONE: u8 = 3;
 
 /// Maximum final effect value the backend may authorize for ATTACK/HEAL cards.
-pub const MAX_EFFECT_VALUE: u16 = 150;
+/// Mirrors gameplay's current ceiling: base 10 * extra-point 2x * specialty 1.5x.
+pub const MAX_EFFECT_VALUE: u16 = 30;
 
 /// Maximum gameplay-score delta the backend may apply from one card resolution.
 pub const MAX_SCORE_DELTA: u32 = 10_000;

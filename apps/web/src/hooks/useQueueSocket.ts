@@ -29,7 +29,7 @@ function trimTrailingSlash(input: string) {
 }
 
 const MAX_RECONNECT_ATTEMPTS = 3;
-const RECONNECT_DELAY_MS = 2000;
+const RECONNECT_DELAY_MS = 500;
 
 /**
  * React hook for WebSocket-based matchmaking queue.

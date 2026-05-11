@@ -20,7 +20,7 @@ describe("set_card_manifest", () => {
       sessionPda,
       isPlayerA: true,
       entries: [
-        { effectType: TEST_CONSTANTS.effectAttack, maxValue: 150 },
+        { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
         { effectType: TEST_CONSTANTS.effectHeal, maxValue: 30 },
       ],
     });
@@ -37,7 +37,7 @@ describe("set_card_manifest", () => {
     expect(session.manifestCommittedB).to.equal(true);
     expect(Array.from(session.cardManifestA.slice(0, 6))).to.deep.equal(
       packManifest([
-        { effectType: TEST_CONSTANTS.effectAttack, maxValue: 150 },
+        { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
         { effectType: TEST_CONSTANTS.effectHeal, maxValue: 30 },
       ])
     );
@@ -52,7 +52,7 @@ describe("set_card_manifest", () => {
     await setCardManifest({
       sessionPda,
       isPlayerA: true,
-      entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: 50 }],
+      entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
     });
 
     await expectAnchorError(
@@ -81,7 +81,7 @@ describe("set_card_manifest", () => {
         .setCardManifest(
           true,
           1,
-          Buffer.from([TEST_CONSTANTS.effectAttack, 150, 0])
+          Buffer.from([TEST_CONSTANTS.effectAttack, TEST_CONSTANTS.maxEffectValue])
         )
         .accounts({
           authority: authority.publicKey,

@@ -652,3 +652,21 @@ Replaced the public matchmaking long-poll flow with a dedicated `/queue` WebSock
 - The old HTTP `/match` path still exists for compatibility. The queue is now websocket-native, but matchmaking entrypoints are temporarily split across both styles.
 - `RoomManager` lifecycle, reconnect, and cancellation logic is becoming state-machine-shaped. It works, but the branching surface is large enough that a formal statechart would reduce future regressions.
 - The RoomManager test suite still touches dependencies that expect external credentials. Those boundaries should be isolated so room lifecycle tests can run fully offline.
+
+---
+
+## 21. Base Damage Rebalance (2026-05-11)
+
+**The Change:**
+
+_Files touched:_ `packages/game-logic/src/GameEngine.ts`, `packages/shared-types/src/characterStats.ts`, `apps/api/src/managers/room/Blockchain.ts`, `packages/battle-anchor-032/programs/cora-battle/src/constants.rs`, `packages/battle-anchor-032/tests/*`, `packages/game-logic/test/GameEngine.test.ts`
+
+- Reduced `GameEngine.BASE_DAMAGE` from `50` to `10`.
+- Added derived max-effect constants in `GameEngine` so balance limits are computed from base damage/heal plus the max phase/specialty multiplier.
+- Exposed `MAX_SPECIALTY_MULTIPLIER` from shared character stats instead of duplicating the `1.5x` assumption elsewhere.
+- Updated MagicBlock manifest registration to use `GameEngine.MAX_DAMAGE` and `GameEngine.MAX_HEAL`, keeping ER card limits aligned with gameplay balance.
+- Lowered the ER program's `MAX_EFFECT_VALUE` from `150` to `30` so the on-chain manifest envelope matches the new gameplay ceiling.
+
+**The Reasoning:**
+
+- Damage balance should have one source of truth. Lowering base attack damage without updating ER manifests or the program ceiling would keep oversized attack slots registered on-chain and make future balance changes easier to miss.

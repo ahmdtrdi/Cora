@@ -22,14 +22,14 @@ describe("register_card_v2", () => {
       cardIndex: 0,
       owner: playerA.publicKey,
       effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 50,
+      maxValue: TEST_CONSTANTS.maxEffectValue,
     });
 
     const card = await fetchCard(cardPda);
     expect(card.owner.toBase58()).to.equal(playerA.publicKey.toBase58());
     expect(card.effectType).to.equal(TEST_CONSTANTS.effectAttack);
-    expect(card.maxValue).to.equal(50);
-    expect(card.damage).to.equal(50);
+    expect(card.maxValue).to.equal(TEST_CONSTANTS.maxEffectValue);
+    expect(card.damage).to.equal(TEST_CONSTANTS.maxEffectValue);
   });
 
   it("registers a heal card with zero legacy damage", async () => {
@@ -60,7 +60,7 @@ describe("register_card_v2", () => {
           cardId,
           Keypair.generate().publicKey,
           TEST_CONSTANTS.effectAttack,
-          50
+          TEST_CONSTANTS.maxEffectValue
         )
         .accounts({
           authority: authority.publicKey,
@@ -80,7 +80,7 @@ describe("register_card_v2", () => {
 
     await expectAnchorError(
       program.methods
-        .registerCardV2(cardId, playerA.publicKey, 99, 50)
+        .registerCardV2(cardId, playerA.publicKey, 99, TEST_CONSTANTS.maxEffectValue)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,

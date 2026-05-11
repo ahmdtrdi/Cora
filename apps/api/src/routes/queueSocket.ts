@@ -22,7 +22,8 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
       };
     }
 
-    let abortController: AbortController | null = null;
+    let queued = false;
+    let cancelled = false;
 
     return {
       onOpen(_event, ws) {
@@ -47,8 +48,8 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
         }
 
         // Enter queue via WebSocket
-        abortController = new AbortController();
-        roomManager.queue.queueMatchWs(address, ws, abortController.signal);
+        queued = true;
+        roomManager.queue.queueMatchWs(address, ws);
       },
 
       onMessage(event, ws) {
@@ -59,8 +60,8 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
 
           if (msg.type === 'cancelQueue') {
             console.log(`[QueueWS] ${address.slice(0, 6)}.. sent cancelQueue`);
-            abortController?.abort();
-            abortController = null;
+            cancelled = true;
+            roomManager.queue.cancelQueueWs(address, ws);
             ws.close(1000, 'Queue cancelled by client');
           }
         } catch {
@@ -68,10 +69,9 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
         }
       },
 
-      onClose() {
-        if (abortController) {
-          abortController.abort();
-          abortController = null;
+      onClose(_event, ws) {
+        if (queued && !cancelled) {
+          roomManager.queue.detachQueueWs(address, ws);
         }
       },
     };

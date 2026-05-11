@@ -59,7 +59,7 @@ describe("activate_session", () => {
     await setCardManifest({
       sessionPda,
       isPlayerA: true,
-      entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: 50 }],
+      entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
     });
 
     await expectAnchorError(

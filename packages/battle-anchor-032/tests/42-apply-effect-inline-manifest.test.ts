@@ -22,15 +22,17 @@ async function createInlineBattle() {
     sessionPda: session.sessionPda,
     isPlayerA: true,
     entries: [
-      { effectType: TEST_CONSTANTS.effectAttack, maxValue: 150 },
+      { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
       { effectType: TEST_CONSTANTS.effectHeal, maxValue: 30 },
-      { effectType: TEST_CONSTANTS.effectAttack, maxValue: 50 },
+      { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
+      { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
+      { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
     ],
   });
   await setCardManifest({
     sessionPda: session.sessionPda,
     isPlayerA: false,
-    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: 40 }],
+    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
   });
   await activateSession(session.sessionPda);
   return session;
@@ -44,13 +46,13 @@ describe("apply_effect", () => {
       sessionPda,
       slot: 0,
       actorIsA: true,
-      finalValue: 90,
+      finalValue: TEST_CONSTANTS.maxEffectValue,
       scoreDelta: 500,
     });
 
     const session = await fetchSession(sessionPda);
-    expect(session.healthB).to.equal(10);
-    expect(session.roundDamageA).to.equal(90);
+    expect(session.healthB).to.equal(TEST_CONSTANTS.initialHealth - TEST_CONSTANTS.maxEffectValue);
+    expect(session.roundDamageA).to.equal(TEST_CONSTANTS.maxEffectValue);
     expect(session.gameScoreA).to.equal(500);
     expect(session.totalPlays).to.equal(1);
     expect(session.cardsUsedA.toString()).to.equal("1");
@@ -104,13 +106,15 @@ describe("apply_effect", () => {
   it("awards the round after an inline KO", async () => {
     const { sessionPda } = await createInlineBattle();
 
-    await applyInlineEffect({
-      sessionPda,
-      slot: 0,
-      actorIsA: true,
-      finalValue: 150,
-      scoreDelta: 1_000,
-    });
+    for (const slot of [0, 2, 3, 4]) {
+      await applyInlineEffect({
+        sessionPda,
+        slot,
+        actorIsA: true,
+        finalValue: TEST_CONSTANTS.maxEffectValue,
+        scoreDelta: 1_000,
+      });
+    }
 
     const session = await fetchSession(sessionPda);
     expect(session.scoreA).to.equal(1);
@@ -127,13 +131,13 @@ describe("apply_effect", () => {
       sessionPda,
       slot: 0,
       actorIsA: true,
-      finalValue: 50,
+      finalValue: TEST_CONSTANTS.maxEffectValue,
       scoreDelta: 150,
     });
 
     await expectAnchorError(
       program.methods
-        .applyEffect(0, true, 50, 150)
+        .applyEffect(0, true, TEST_CONSTANTS.maxEffectValue, 150)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,
@@ -144,7 +148,7 @@ describe("apply_effect", () => {
 
     await expectAnchorError(
       program.methods
-        .applyEffect(9, true, 50, 150)
+        .applyEffect(9, true, TEST_CONSTANTS.maxEffectValue, 150)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,
@@ -159,7 +163,7 @@ describe("apply_effect", () => {
 
     await expectAnchorError(
       program.methods
-        .applyEffect(0, true, 151, 100)
+        .applyEffect(0, true, TEST_CONSTANTS.maxEffectValue + 1, 100)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,
@@ -170,7 +174,7 @@ describe("apply_effect", () => {
 
     await expectAnchorError(
       program.methods
-        .applyEffect(0, true, 150, 15_001)
+        .applyEffect(0, true, TEST_CONSTANTS.maxEffectValue, TEST_CONSTANTS.maxEffectValue * TEST_CONSTANTS.maxScoreMultiplier + 1)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,
@@ -204,7 +208,7 @@ describe("apply_effect", () => {
 
     await expectAnchorError(
       program.methods
-        .applyEffect(0, true, 50, 150)
+        .applyEffect(0, true, TEST_CONSTANTS.maxEffectValue, 150)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,
