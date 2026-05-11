@@ -6,6 +6,7 @@ import { submitSettlementTransaction } from '../../utils/settlement';
 
 export class Lifecycle {
   private DEPOSIT_TIMEOUT_MS = 30_000;
+  private startingRooms = new Set<string>();
 
   constructor(private manager: RoomManager) {}
 
@@ -105,9 +106,8 @@ export class Lifecycle {
       if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false) && playerAConnected && playerBConnected) {
         for (const t of room.depositTimeouts.values()) clearTimeout(t);
         room.depositTimeouts.clear();
-        room.status = 'playing';
         console.log(`Room ${roomId}: Late join triggered game start — both already deposited!`);
-        this.manager.engine.initializeEngine(room);
+        this.startGameWhenReady(room);
         return;
       }
     }
@@ -275,10 +275,20 @@ export class Lifecycle {
         return;
       }
 
-      room.status = 'playing';
       console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
-      this.manager.engine.initializeEngine(room);
+      this.startGameWhenReady(room);
     }
+  }
+
+  private startGameWhenReady(room: Room): void {
+    if (room.engine || this.startingRooms.has(room.id)) return;
+
+    this.startingRooms.add(room.id);
+    void this.manager.engine.initializeEngine(room).catch((err) => {
+      console.error(`[RoomLifecycle] Failed to initialize game engine for room ${room.id}:`, err);
+    }).finally(() => {
+      this.startingRooms.delete(room.id);
+    });
   }
 
   public armDepositTimeout(room: Room, address: string): void {

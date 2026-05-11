@@ -53,6 +53,8 @@ function trimTrailingSlash(input: string) {
 
 const MATCH_SOCKET_OPEN_TIMEOUT_MS = 6_000;
 const MATCH_SOCKET_SNAPSHOT_TIMEOUT_MS = 5_000;
+const MATCH_SOCKET_RECONNECT_DELAY_MS = 350;
+const MATCH_SOCKET_MAX_AUTO_RECONNECTS = 4;
 
 function isSettlementPayload(value: unknown): value is MatchResultPayload {
   if (!value || typeof value !== 'object') return false;
@@ -112,24 +114,47 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     let isCleaningUp = false;
     let hasReceivedGameState = false;
     let snapshotTimerId: ReturnType<typeof setTimeout> | null = null;
+    let reconnectTimerId: ReturnType<typeof setTimeout> | null = null;
+    let reconnectQueued = false;
     const ws = new WebSocket(socketUrl);
     socketRef.current = ws;
     const reconnectSocket = (reason: string) => {
-      if (isCleaningUp || socketRef.current !== ws) return;
+      if (isCleaningUp || socketRef.current !== ws || reconnectQueued) return;
+      if (reconnectNonce >= MATCH_SOCKET_MAX_AUTO_RECONNECTS) {
+        setConnectionState('error');
+        setLastSocketIssueAt(Date.now());
+        setLastSocketError(`${reason}. Rejoin the room to continue.`);
+        setLastSocketCloseInfo({
+          code: 0,
+          reason,
+          wasClean: false,
+        });
+        return;
+      }
+
+      reconnectQueued = true;
       console.warn(`[useMatchSocket] ${reason}; reconnecting.`);
       setConnectionState('reconnecting');
       setLastSocketIssueAt(Date.now());
+      setLastSocketError(null);
       setLastSocketCloseInfo({
         code: 0,
         reason,
         wasClean: false,
       });
+      if (snapshotTimerId) {
+        clearTimeout(snapshotTimerId);
+        snapshotTimerId = null;
+      }
       try {
         ws.close();
       } catch {
         // Ignore close failures during reconnect.
       }
-      setReconnectNonce((prev) => prev + 1);
+      reconnectTimerId = setTimeout(() => {
+        if (isCleaningUp || socketRef.current !== ws) return;
+        setReconnectNonce((prev) => prev + 1);
+      }, MATCH_SOCKET_RECONNECT_DELAY_MS);
     };
     const openTimerId = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
@@ -286,6 +311,10 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
     ws.onclose = (event) => {
       if (isCleaningUp || socketRef.current !== ws) return;
+      if (!event.wasClean && event.code !== 1000) {
+        reconnectSocket(`Match socket closed unexpectedly (${event.code})`);
+        return;
+      }
       setConnectionState('disconnected');
       setLastSocketIssueAt(Date.now());
       setLastSocketCloseInfo({
@@ -297,10 +326,8 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
 
     ws.onerror = (error) => {
       if (isCleaningUp || socketRef.current !== ws) return;
-      setConnectionState('error');
-      setLastSocketIssueAt(Date.now());
-      setLastSocketError('Socket connection failed. Check API server and room join.');
-      console.error('WebSocket error:', error);
+      console.warn('WebSocket error; retrying match socket.', error);
+      reconnectSocket('Match socket error');
     };
 
     return () => {
@@ -308,6 +335,9 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
       clearTimeout(openTimerId);
       if (snapshotTimerId) {
         clearTimeout(snapshotTimerId);
+      }
+      if (reconnectTimerId) {
+        clearTimeout(reconnectTimerId);
       }
       ws.close();
       if (socketRef.current === ws) {

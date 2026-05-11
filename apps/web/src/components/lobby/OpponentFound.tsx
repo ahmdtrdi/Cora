@@ -71,6 +71,7 @@ export function OpponentFound({
   const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
+  const [battleLaunchCountdown, setBattleLaunchCountdown] = useState<number | null>(null);
   const hasConnectedOnceRef = useRef(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
@@ -103,6 +104,7 @@ export function OpponentFound({
     address: walletAddress,
     characterId: myScientist.id,
   });
+  const isBattleSnapshotReady = gameState?.status === "playing" && (gameState.hand?.length ?? 0) > 0;
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
   const socketRole =
@@ -152,7 +154,17 @@ export function OpponentFound({
     Boolean(signedDepositSignature) &&
     !isPlayerBWaitingUnlock;
   const displayedMagicBlockUi =
-    playerHasSignedDeposit && !hasArenaPreparationSignal
+    battleLaunchCountdown !== null
+      ? {
+          ...magicBlockUi,
+          tone: "magicblock" as const,
+          badgeLabel: "Battle Ready",
+          title: `Starting in ${battleLaunchCountdown}`,
+          detail: "Final room sync complete. Keep this window open.",
+          progress: 100,
+          showPulse: false,
+        }
+      : playerHasSignedDeposit && !hasArenaPreparationSignal
       ? {
           ...magicBlockUi,
           tone: "standard" as const,
@@ -165,7 +177,7 @@ export function OpponentFound({
           showPulse: true,
         }
       : magicBlockUi;
-  const showArenaStatusStrip = playerHasSignedDeposit;
+  const showArenaStatusStrip = playerHasSignedDeposit || battleLaunchCountdown !== null;
   const isMagicBlockArenaLoading = displayedMagicBlockUi.tone === "magicblock";
   const isArenaProcessing = displayedMagicBlockUi.tone === "magicblock" || displayedMagicBlockUi.showPulse;
 
@@ -236,7 +248,17 @@ export function OpponentFound({
   }, [arena.token, depositPreparationKey, effectiveRole, roomId, wagerUsd]);
 
   useEffect(() => {
-    if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
+    if (!(signingState === "waiting" && isBattleSnapshotReady && signedDepositSignature)) {
+      const resetTimer = window.setTimeout(() => setBattleLaunchCountdown(null), 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+
+    const countdownTimers = [
+      window.setTimeout(() => setBattleLaunchCountdown(3), 0),
+      window.setTimeout(() => setBattleLaunchCountdown(2), 1000),
+      window.setTimeout(() => setBattleLaunchCountdown(1), 2000),
+    ];
+    const launchTimer = window.setTimeout(() => {
       writeActiveMatchSession({
         walletAddress,
         address: walletAddress,
@@ -260,9 +282,29 @@ export function OpponentFound({
         scientist: myScientist.id,
       });
       router.push(`/play?${params.toString()}`);
-      return;
-    }
+    }, 3000);
 
+    return () => {
+      for (const timerId of countdownTimers) {
+        window.clearTimeout(timerId);
+      }
+      window.clearTimeout(launchTimer);
+    };
+  }, [
+    signingState,
+    router,
+    walletAddress,
+    roomId,
+    arena.id,
+    arena.token,
+    wagerUsd,
+    myScientist.id,
+    signedDepositSignature,
+    isBattleSnapshotReady,
+    effectiveRole,
+  ]);
+
+  useEffect(() => {
     if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
 
     if (secondsLeft <= 0) {
@@ -284,10 +326,7 @@ export function OpponentFound({
     arena.token,
     wagerUsd,
     myScientist.id,
-    signedDepositSignature,
-    gameState?.status,
     isPlayerBWaitingUnlock,
-    effectiveRole,
   ]);
 
   useEffect(() => {
@@ -642,6 +681,7 @@ export function OpponentFound({
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
     if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
+    if (battleLaunchCountdown !== null) return `Battle starts in ${battleLaunchCountdown}...`;
     if (walletApprovalTakingLong) {
       return "Phantom approval has been open for a while. Close the old prompt if needed, then retry for a fresh transaction.";
     }
@@ -659,7 +699,8 @@ export function OpponentFound({
     if (signingState === "error") return "error";
     if (!wallet.publicKey) return "wallet_required";
     if (signingState === "signing") return "signing";
-    if (gameState?.status === "playing" && signedDepositSignature) return "confirmed";
+    if (battleLaunchCountdown !== null) return "confirmed";
+    if (isBattleSnapshotReady && signedDepositSignature) return "confirmed";
     if (signingState === "waiting") return "waiting_opponent";
     if (signedDepositSignature) return "submitted";
     return "idle";
