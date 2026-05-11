@@ -618,3 +618,74 @@
 - During `PENDING`, Player A has no funds at risk; if Player A flakes after Player B accepts, Player B can only reclaim/refund their own deposit with today's contract.
 - Current on-chain timeout constants may not align with the backend's 15-minute accept window and 3-minute creator response window.
 - Full `bun test` and `bun run lint` still hit pre-existing repo harness/lint issues; focused Blink tests and API typecheck pass.
+
+## 2026-05-10 - Blink True Flow Backend Cutover (Soft → True Commitment)
+
+### The Change
+
+**`apps/api/src/config/solana.ts` (discriminators):**
+- Added `createOpenChallenge`, `acceptChallenge`, `reclaimChallenge` discriminators from the deployed IDL (Entry 26 in DEVLOG-WEB3). These are required by the new transaction builders.
+
+**`apps/api/src/services/BlinkTransactionBuilder.ts` (2 new methods):**
+- Added `buildCreateOpenChallengeTransaction(account, matchIdBytes, tokenMint, wagerAmount)`:
+  - Derives `challenge_state` and `challenge_vault` PDAs from `CHALLENGE_SEED` / `CHALLENGE_VAULT_SEED` + match_id.
+  - Creator is signer/funder. Includes wSOL wrap for native SOL.
+  - Returns unsigned base64 serialized transaction.
+- Added `buildAcceptChallengeTransaction(account, matchIdBytes, tokenMint, creatorPubkey)`:
+  - Derives both challenge PDAs (closed by accept_challenge) and final escrow PDAs (created by accept_challenge).
+  - `creatorPubkey` is read from the DB row (`creator_wallet`) at the time challenger hits `POST /api/actions/challenge`.
+  - Challenger is signer. Creator receives rent from closed challenge accounts.
+  - Returns unsigned base64 serialized transaction.
+- Kept existing `buildDepositTransaction` for public FIFO matchmaking (untouched).
+
+**`apps/api/src/routes/match.ts` (Change 1 — creator flow):**
+- `POST /match/private` no longer writes a DB row immediately. Instead:
+  1. Generates `roomId` (UUID) and derives `matchIdBytes`.
+  2. Builds unsigned `create_open_challenge` transaction.
+  3. Returns `{ roomId, blinkUrl, transaction }`.
+- `POST /match/private/confirm` (NEW endpoint):
+  - Accepts `{ roomId, address, signature, tokenMint, wagerAmount }`.
+  - Verifies on-chain confirmation with `connection.confirmTransaction(sig, 'confirmed')` and 30s timeout.
+  - On success: writes DB row via `blinkMatches.createPending()` with the pre-determined `roomId`. Returns `{ status: 'PENDING' }`.
+  - On timeout: returns **408 Request Timeout**, does NOT write DB row.
+  - On tx failure: returns 400 with error message.
+
+**`apps/api/src/routes/actions.ts` (Change 2 — challenger flow):**
+- PENDING path now builds `accept_challenge` transaction (was `initialize_match + deposit_wager`).
+- Removed CHALLENGED creator deposit path entirely — after `accept_challenge`, both wagers are locked on-chain. Creator only needs to join WebSocket.
+- Non-PENDING requests return 409 with "Challenge already accepted. Join the match via WebSocket."
+
+**`apps/api/src/managers/RoomManager.ts` (Change 3 — FORFEITED settlement + hydration):**
+- `createPrivateRoom()` returns `{ roomId, transaction }` instead of just `roomId`.
+- `confirmPrivateRoom()` (NEW) verifies on-chain, then writes DB with pre-determined ID.
+- Janitor `runBlinkJanitorOnce()`: FORFEITED matches now trigger `submitSettlementTransaction(action=0, target=challengerWallet)`.
+  - On success: marks DB `COMPLETED`.
+  - On failure: keeps DB as `FORFEITED`, logs `match_id` and `challenger_wallet` explicitly. **Never silently swallows.**
+- `hydrateBlinkRoomInternal()`: both players now marked `hasDeposited: true` (was `false` for creator in soft flow).
+
+**`apps/api/src/managers/room/Lifecycle.ts` (Change 3 — deadline settlement):**
+- Creator deadline miss now also triggers `submitSettlementTransaction(action=0, target=challengerWallet)` with same success/failure handling as janitor.
+
+**`apps/api/src/services/blinkMatches.ts` (timeout alignment):**
+- `JOIN_WINDOW_MS` changed from `3 * 60 * 1000` (180s) to `ESCROW_CONSTANTS.DEPOSIT_TIMEOUT_SECONDS * 1000` (30s) — matches on-chain timeout.
+- `PENDING_TTL_MS` changed from hardcoded `15 * 60 * 1000` to `ESCROW_CONSTANTS.CHALLENGE_EXPIRY_SECONDS * 1000` (900s).
+- `CreateBlinkMatchInput` now accepts optional `id` for pre-determined PDA derivation.
+
+**`apps/api/test/blinkMatches.test.ts` (3 new tests):**
+- Pre-determined ID support: verifies `createPending({ id: 'custom-id' })` uses the given ID.
+- 30s window boundary: verifies `joinDeadline` is ~30s from acceptance.
+- Creator self-accept rejection: verifies `acceptPending(id, CREATOR)` returns `creator_cannot_accept`.
+
+### The Reasoning
+
+1. **True on-chain commitment:** The soft flow was a workaround because the contract couldn't accept a creator-pays-first model. Now that `create_open_challenge` and `accept_challenge` are deployed (DEVLOG-WEB3 Entry 26), we can implement the intended flow where Player A funds the escrow *before* sharing the Blink link.
+2. **Two-step creation:** `POST /match/private` returns the unsigned tx; `POST /match/private/confirm` verifies on-chain before writing DB. This avoids blocking the HTTP connection and prevents orphaned DB rows if the creator never signs.
+3. **FORFEITED settlement on-chain:** Previously, a FORFEITED match only cancelled the room locally. Now the janitor and lifecycle both trigger `settle_match(action=0, target=challenger)`, ensuring the challenger receives the escrowed wagers automatically. Failure handling is explicit — DB stays `FORFEITED` with loud logging.
+4. **Timeout alignment (180s → 30s):** The smart contract's `DEPOSIT_TIMEOUT_SECONDS = 30` was mismatched with the backend's 3-minute join window. Corrected to import from `@shared/escrow` to prevent future drift.
+5. **Both players deposited:** After `accept_challenge`, both wagers are locked on-chain. The room hydration now reflects this — creator only needs to join via WebSocket, not sign another transaction.
+
+### The Tech Debt
+
+- [ ] **confirmTransaction timeout:** `connection.confirmTransaction` uses the default timeout (~30s). For production, consider using `confirmTransaction` with `lastValidBlockHeight` for more reliable timeout behavior.
+- [ ] **Pre-existing test failures:** 8 `RoomManager.test.ts` failures remain (engine is null due to missing questions API in test environment). These predate this change.
+- [ ] **Reclaim challenge:** The `reclaim_challenge` instruction is supported by the contract but not yet wired in the backend. If a creator's challenge expires on-chain before anyone accepts, the creator can reclaim via a frontend-only flow.

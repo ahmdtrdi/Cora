@@ -33,8 +33,6 @@ export class Store {
       erCardRegistry: new Map(),
       erNextCardNonce: 0,
       erProofMeta: null,
-      erNextSlotA: 0,
-      erNextSlotB: 0,
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;

@@ -4370,3 +4370,373 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The landing intro currently blocks the entire page until its preload list resolves. If we later add heavier media to the first viewport, we may want a more selective preload strategy so the entrance beat stays crisp.
+## 2026-05-10 - MagicBlock UI Enhancement Layer
+
+### The Change
+- Added [magicblockUi.ts](/d:/projects/Cora/apps/web/src/lib/magicblock/magicblockUi.ts) to translate MagicBlock/ER lifecycle states into player-facing badge labels, short copy, progress values, and pulse behavior for deposit and settlement surfaces.
+- Updated [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) with an optional `statusStripSlot`, then wired [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to render a compact `Fast Arena` / `Standard Arena` status strip inside the existing deposit panel.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to show the same style of support strip inside the existing settlement result overlay without changing the primary outcome copy.
+
+### The Reasoning
+- We wanted to support MagicBlock delays as a presentation enhancement, not as a separate screen or layout branch. Keeping the enhancement inside existing deposit and settlement slots avoids layout jumps and keeps fallback to standard mode feeling intentional.
+- The result overlay keeps player-centered copy like `You Win` / `You Lose`, while the new strip explains what the arena/proof layer is doing underneath. This protects the emotional result moment while still making ER settlement progress legible.
+- Centralizing the ER-to-UI mapping keeps raw lifecycle labels such as `creating`, `delegating`, and `committing` out of component markup and makes it easier to tune copy later.
+
+### The Tech Debt
+- The status strips are currently local JSX in `OpponentFound` and `BattleScreenOverlays`; if more screens need the same treatment, extract a shared `ArenaStatusStrip` component.
+- Production build verification was blocked by a local `.next` file lock (`EPERM unlink ... .next/build/chunks/...`) after Google Fonts access was allowed. Lint and TypeScript checks passed, but the build should be rerun after clearing the locked build artifact or stopping the process holding it.
+
+## 2026-05-10 - MagicBlock Enhancement Timing And Fallback Result Copy
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the arena/proof status strip only appears after the player has signed and the room has an actual preparation signal (`erStatus`, `playing`, or `settling`). Player A waiting for Player B and Player B waiting for unlock now stay on the normal deposit UI.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `server_error` fallback match results are classified as finalized standard fallback instead of unresolved pending settlement.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so `server_error` outcomes show clear fallback payout copy instead of `Settlement is still being finalized`.
+
+### The Reasoning
+- The MagicBlock strip should communicate post-deposit loading, not appear as a default decoration from the start of the opponent-found screen.
+- When ER card play fails and the backend emits local `server_error` finalization, the FE receives a terminal `matchResult` without a settlement authorization. Treating that as `Pending` made a completed fallback path look stuck.
+- Forcing the settlement support UI into standard mode on `server_error` prevents stale pre-fallback `gameState.erEnabled` / `erStatus` snapshots from briefly showing a MagicBlock proof state after fallback has already won.
+
+### The Tech Debt
+- The FE still depends on `server_error` as the fallback signal. If the backend later emits a more specific ER fallback reason or status enum, the settlement copy should switch to that structured signal.
+
+## 2026-05-10 - Player-B MagicBlock Loading Color Timing
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the MagicBlock status strip can show an orange `Fast Arena` loading state immediately after Player B signs the second deposit.
+- Kept the green state tied to the existing server-provided preparation signal (`erStatus` / `playing` / `settling`), so the strip now visually moves from local post-deposit loading to server-confirmed fast-arena readiness.
+
+### The Reasoning
+- The frontend cannot infer Player B completion from Player A's side without a new backend event, but Player B's client knows it was unlocked and just signed. Using that local fact lets us show the intended yellow/orange loading phase without touching backend code.
+- Keeping Player A on the normal waiting UI avoids pretending both deposits are done before the frontend has a reliable signal.
+
+### The Tech Debt
+- This is intentionally asymmetric until the backend emits a dedicated `bothDeposited` / `erSetupStarted` event or broadcasts ER lifecycle changes during setup. If that signal becomes available later, Player A can show the same orange loading phase too.
+
+## 2026-05-10 - Shared Post-Sign Fast Arena Loading State
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both players now see the Fast Arena strip after their own deposit signature is captured.
+- Player A sees an orange `Fast Arena queued` state while waiting for Player B's wager, and Player B sees an orange `Syncing MagicBlock` state after signing the second deposit.
+- Existing server-provided `erStatus` / `playing` / `settling` signals still drive the green ready state when the room snapshot catches up.
+
+### The Reasoning
+- This keeps the UX fair: both players get an immediate post-sign loading state without requiring backend changes.
+- Player A cannot know from frontend-only state that Player B has signed, so the copy stays honest by saying the fast arena is queued rather than claiming setup has started.
+
+### The Tech Debt
+- The orange-to-green transition is still partly local/optimistic because the frontend does not receive a dedicated `bothDeposited` or `erSetupStarted` event. If backend events are added later, this can become fully authoritative for both players.
+
+## 2026-05-10 - Settlement Overlay Pending Bar Simplification
+
+### The Change
+- Removed the arena/proof support strip from [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so settlement results no longer show internal copy like `Standard Arena`, `Result secured`, or `Match outcome is finalized`.
+- Added a slim bottom shimmer bar to the settlement overlay only when `settlementStatus === "Pending"`.
+- Removed now-unused settlement support prop plumbing from [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+
+### The Reasoning
+- The settlement result overlay should stay outcome-focused. Showing standard/proof state text inside the card felt too implementation-facing and competed with the actual result.
+- Pending still needs motion feedback, but a bottom loading rail is enough to communicate that the app is waiting without adding more copy or shifting the layout.
+
+### The Tech Debt
+- The bottom rail currently keys off the display string `Pending`. If settlement states become richer later, this should switch to a boolean derived in `BattleScreen` instead of comparing UI copy.
+
+## 2026-05-10 - Settlement Fallback Copy Softening
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so `server_error` fallback copy now reads `Match closed safely. No winner payout was awarded`.
+
+### The Reasoning
+- The previous wording (`Standard fallback finalized`) sounded too implementation-facing for a player result overlay.
+- The new copy keeps the important payout expectation clear while sounding more like product language and less like a backend state.
+
+### The Tech Debt
+- `server_error` still covers multiple fallback causes. If backend eventually distinguishes ER failure, refund-gated draw, or settlement-service issues, these should get more specific result copy.
+
+## 2026-05-10 - Settlement Review Copy For ER Failure
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `server_error` match results show a `Review` settlement status instead of `Finalized`.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so ER failure fallback copy says `Match closed safely. Wager resolution is pending review`.
+- Softened the standard loss payout line from `No winner payout was awarded to you for this match` to `Rival secured the wager for this match`.
+
+### The Reasoning
+- The MagicBlock failure log shows local `server_error` finalization after a delegated ER transaction failure, not the normal winner-payout settlement path.
+- The UI should not imply the match had no winner or that players had no reason to play. It should communicate that the room was closed safely and wager handling needs a review/resolution path.
+
+### The Tech Debt
+- This remains frontend wording over a broad backend `server_error` reason. A dedicated escrow review/refund/winner-settlement status would let the UI be more precise later.
+
+## 2026-05-10 - Opponent Found Green Loading Rail
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so confirmed green MagicBlock states use a continuous full-width loading rail instead of a fixed progress width.
+
+### The Reasoning
+- Once the UI turns green, the player should read it as server-confirmed Fast Arena preparation, not as a precise percentage countdown. The moving rail keeps the wait feeling alive without implying exact backend progress.
+
+### The Tech Debt
+- Orange local states still use optimistic progress values because the frontend does not receive authoritative phase progress before the server snapshot catches up.
+
+## 2026-05-10 - Endgame Notice And Processing Rails
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both orange post-sign Fast Arena states use a full-width left-to-right infinite loading rail.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so terminal results show as a small in-game battle notice while cards are locked and the base destruction/result sequence resolves.
+- Updated the card helper text to say `Match locked. Resolving final sequence.` when a terminal result has arrived.
+
+### The Reasoning
+- Orange should communicate active processing for both players, not a static/progress estimate.
+- The final win/loss overlay should be the only big result popup. The earlier match-finished moment now reads as an in-game transition while the base animation completes.
+
+### The Tech Debt
+- The endgame notice reuses the existing battle notice layer. If more transition states are added, that notice model may need explicit variants instead of overloading the `phase` tone.
+
+## 2026-05-10 - Match Finished Notice Gate
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so raw `status === "finished"` no longer opens the large settlement/result overlay by itself.
+- Generic finished state now stays in the in-game notice bar as `Match finished. Cards locked while result syncs.`
+- The large result overlay is reserved for resolved outcomes from `settlementResult`, `matchResult`, invalidation, or room cancellation.
+
+### The Reasoning
+- `Match Finished` is a transition state, not an emotional result. Keeping it in the battle notice bar avoids showing two similar popup moments before the base-destroyed sequence and final result.
+
+### The Tech Debt
+- This still depends on the existing socket result payloads arriving after `finished`. If backend ever emits a dedicated `result_syncing` status, the FE should key the notice from that explicit state.
+
+## 2026-05-10 - Endgame Base Notice Removal
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so resolved endgame/base-destruction sequences no longer show `Final impact registered. Cards locked while the base resolves.`
+- Kept the generic `Match finished. Cards locked while result syncs.` notice only for unresolved raw `finished` status.
+
+### The Reasoning
+- The base destruction animation is already the transition moment. Removing extra copy lets the final result popup land cleaner.
+
+### The Tech Debt
+- If the result-sync delay becomes long, we may want a quieter visual-only lock indicator instead of text.
+
+## 2026-05-10 - Terminal Card Lock Tightening
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so answer clicks are ignored once `isMatchComplete` is true.
+- Marked answer options disabled during match completion using the derived terminal lock state.
+- Removed the active-card glow from hand cards during terminal lock so the played card no longer looks interactable while the result sequence resolves.
+
+### The Reasoning
+- Hand cards were technically disabled by `isMatchComplete`, but the active card could still look selected/available because active styling overrode the locked opacity.
+- The open answer panel already unmounts on match completion, but guarding `onAnswer` closes the small race window between terminal socket updates and React render.
+
+### The Tech Debt
+- If we add a dedicated “locked card” visual later, replace the generic disabled opacity with a clearer final-turn lock treatment.
+
+## 2026-05-10 - Blink Challenge Creator Path And Temporary Browser Link
+
+### The Change
+- Added [privateChallenge.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/privateChallenge.ts) for the FE private-match contract: create challenge, confirm creator funding, poll challenge status, resolve API base URL, and derive a temporary web challenge URL.
+- Added [signBackendTransaction.ts](/d:/projects/Cora/apps/web/src/lib/solana/signBackendTransaction.ts) so the creator can sign the backend-provided `create_open_challenge` transaction before calling `/match/private/confirm`.
+- Added creator/challenger Blink UI pieces: [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx), [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx), [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx), and [page.tsx](/d:/projects/Cora/apps/web/src/app/challenge/[roomId]/page.tsx).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx), and [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so active Blink challenges are persisted, normal queueing is blocked while a creator challenge is live, challenge status is polled, and the creator auto-joins when a rival accepts.
+- The creator panel now exposes both `Copy Blink URL` and `Copy Browser Link`: the Blink URL remains the primary share target for Blink-supported apps, while the browser link is a temporary direct route to `/challenge/:roomId`.
+
+### The Reasoning
+- Backend now owns the true Blink escrow transaction flow, so FE should sign and confirm the backend-provided transaction instead of inventing or changing API behavior.
+- A creator with an unresolved Blink challenge must be kept out of normal matchmaking to avoid a shared-link accept racing against a regular queue match.
+- The Blink URL and browser challenge page are not currently the same thing: opening the raw Blink URL in a normal browser returns the backend action payload unless backend later adds browser redirect/content negotiation. Keeping two explicit copy actions is the honest temporary UX while preserving the desired future direction.
+
+### The Tech Debt
+- Backend should eventually redirect normal browser requests from the Blink action URL to the FE `/challenge/:roomId` page so the product can return to a single canonical share link.
+- The browser accept page currently relies on challenge room lookup and default FE arena/scientist context because the backend Blink URL does not carry frontend presentation metadata.
+- Active Blink challenge cleanup is local for terminal states; if backend adds richer cancellation/expiry events, the lobby can switch from polling to a more authoritative push-driven state.
+
+## 2026-05-10 - Blink Share Actions Consolidated Into Card
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to support an optional secondary copy action.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the top active-challenge banner is informational only.
+- Moved the temporary browser-link copy action into the share card alongside `Copy Blink URL`, `Save As JPG`, and `Share On X`.
+- Replaced the framed `Close` control with a plain corner `x` to keep the overlay chrome quieter.
+
+### The Reasoning
+- The previous overlay duplicated CTAs between the banner and card, making the hierarchy noisy.
+- Keeping all share/export actions in the card makes the banner read as status context and the card read as the action surface.
+- A lightweight `x` is enough for dismissing the panel and avoids competing with the share actions.
+
+### The Tech Debt
+- The card now has two explicit copy actions because the raw Blink URL and temporary browser accept URL are still separate. Once backend browser redirect support lands, the secondary browser-copy action should be removed.
+
+## 2026-05-10 - Blink Acceptance Notification And Challenger Page Polish
+
+### The Change
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) with a compact notification variant that still mounts the match socket and sends creator `confirmDeposit`.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `Rival Accepted` no longer replaces the whole lobby; it appears as a notification while presence confirmation runs in the background.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger page shows arena, token, and `$1.00` wager copy, uses the green page background with a light content section, and makes `Back To Lobby` readable with dark text.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) so socket close `1008` with `Room not found or already finished` is treated as a terminal closed-room state: local active match state is cleared, retry is hidden, and `Back To Lobby` is always available.
+- Reused the shared `btn-game btn-game-secondary` style for the challenger page `Back To Lobby` action so it matches the primary accept button system, with local matching text/border color overrides for readability on the light panel.
+- Normalized the wrapped SOL mint display to `SOL` on the challenger page while keeping the raw mint for signing/API calls.
+- Changed creator-side Blink acceptance sequencing so `Rival Accepted` is a passive notification first; clicking `View Challenge` opens the full `Confirming your match...` screen and mounts the websocket confirmer.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) and [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger sends its accepted transaction signature through the existing `confirmDeposit` websocket event after signing.
+
+### The Reasoning
+- `Rival Accepted` is a transient state, not a full page destination. The FE still needs the socket mounted to confirm creator presence, but the user should not feel trapped on an interstitial if the backend takes time to advance the room to `playing`.
+- Challenger-side challenge details should match the lobby product framing: token arena plus fixed `$1.00` wager, not raw base-unit wording.
+- Display should use player-facing token symbols instead of raw mint addresses; signing still needs the backend-provided mint value.
+- The previous back button inherited light text against a light section, so the button needed local contrast styling instead of the generic dark-surface button class.
+- Expired private rooms can disappear before the challenger reconnects, and retrying that socket cannot succeed. FE should surface that as a closed challenge and let the player leave cleanly.
+- Reusing the shared button classes keeps the action row visually consistent, while local color overrides avoid the washed-out white-on-light button state.
+- The previous creator flow stacked a notification and the recovery/confirming page because the background joiner wrote an active `depositing` match session. The new flow avoids that automatic write until the user intentionally opens the confirming screen.
+- Current backend hydration marks both private-room players deposited, but `joinRoom` overwrites the joining player's `hasDeposited` flag back to `false`. Sending the challenger signature over the already-supported socket event is a frontend-side compatibility fix so both player metas become deposited and the room can transition to `playing`.
+
+### The Tech Debt
+- If the creator notification remains visible forever after `confirmDeposit`, FE has done its part and is waiting for the backend/socket to emit a `playing` game state or equivalent room-ready event. A dedicated private-challenge presence/ready event would make this transition easier to diagnose.
+- Terminal socket-close detection is still based on close code/reason text. If the backend adds a structured close reason or REST status for accepted-but-expired rooms, switch to that instead of parsing text.
+- Backend should preserve hydrated private-room `hasDeposited: true` metadata on websocket join instead of requiring FE to re-confirm the challenger deposit signature after `accept_challenge`.
+
+## 2026-05-10 - Blink Character Gate Before Websocket Join
+
+### The Change
+- Added [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), a shared Blink-only post-deposit character selection surface built on the existing character roster component.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `View Challenge` opens character selection first, then mounts [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) only after `Confirm Scientist`.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challengers see the same character gate after accepting/signing the Blink challenge and before joining the websocket room.
+- Passed the selected character ID into the existing `useMatchSocket` join URL via `BlinkRoomJoiner`, so the backend receives the picked scientist through the currently-supported `characterId` query parameter.
+- Adjusted the challenger accept action row so `Back To Lobby` sits directly to the left of the right-aligned `Accept & Lock Wager` button.
+
+### The Reasoning
+- Backend does not currently expose a real post-deposit `selecting_character` phase or character-lock websocket event for Blink rooms.
+- Delaying websocket join is the FE-only way to support `deposit -> select character -> play` without backend changes, because backend reads the character from the websocket join request before the engine initializes.
+- This keeps normal matchmaking unchanged while giving Blink matches a scientist pick step instead of silently defaulting both players to Einstein.
+
+### The Tech Debt
+- If a user refreshes after accepting a Blink challenge but before joining, FE can only re-confirm through websocket if the accepted signature is still available in session storage. Backend preserving hydrated private-room deposit metadata would make this more robust.
+- A proper backend character-lock phase would allow both players to connect first, show opponent selection state, enforce a timer, and auto-assign characters server-side.
+
+## 2026-05-10 - Blink Character Gate CTA And Surrender Confirmation
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so all scientist cards are neutral `Tap To Select` choices, with no Einstein `Balanced Default` label in the Blink post-deposit flow.
+- Moved the Blink gate action row below the scientist roster so the page reads as `choose first, then confirm`.
+- Replaced the gate `Back` action with `Surrender`, guarded by a confirmation popup that warns the wager is already locked.
+- Added [BlinkSurrenderBridge.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkSurrenderBridge.tsx), a frontend-only bridge that connects to the existing match websocket, replays the stored deposit confirmation signature when available, sends the existing `surrender` event, and clears local match state.
+- Wired creator-side surrender from [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and challenger-side surrender from [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- After deposit, leaving is no longer a harmless navigation event. The UI should say `Surrender` and require confirmation because the backend treats that as forfeiting the locked wager.
+- Blink still delays websocket join until after character selection, so surrender from the character gate needs a tiny temporary socket bridge rather than changing backend APIs.
+- Removing the neutral default label prevents the Blink flow from nudging players back toward Einstein after we added explicit character selection.
+
+### The Tech Debt
+- The bridge currently treats successful websocket submission/terminal close as enough to clear local state, matching the existing active-match surrender behavior. A dedicated backend private-challenge surrender endpoint or acknowledgement event would make this more authoritative.
+
+## 2026-05-10 - Blink Pre-Character Recovery Escape
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so accepting a Blink challenge stores only the deposit signature before character selection, not a generic active match session.
+- Added [clearActiveMatchRoomSession](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so FE can clear stale active-room localStorage without deleting the accepted Blink deposit signature from sessionStorage.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so `private + depositing` active rooms are treated as Blink pre-character rooms instead of normal escrow-settlement recovery.
+- Creator recovery now reopens the Blink accepted path when the active private room matches the locally stored Blink challenge.
+- Challenger recovery now routes back to `/challenge/:roomId` so the player can pick a scientist and join through the Blink flow.
+- Added a `Back To Lobby` escape button to the generic `Escrow resolver is settling` screen for stale local recovery cases.
+
+### The Reasoning
+- The previous challenger accept flow wrote `status: depositing` into the generic active-room store before the Blink websocket had joined. If the player hit browser back before choosing a scientist, lobby recovery interpreted that stale local marker as a normal match settlement and got stuck waiting.
+- Blink pre-character state is not equivalent to normal ER settlement. It needs to return to the Blink challenge path, preserving the deposit signature so websocket `confirmDeposit` can still be replayed later.
+
+### The Tech Debt
+- This is still a frontend classification fix based on `roomType: private` and `status: depositing`. A backend-owned Blink room phase like `awaiting_character` would make recovery clearer and remove the need for FE inference.
+
+## 2026-05-10 - Blink Character Gate Label Cleanup
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to hide the reusable roster/status pills in the Blink post-deposit character picker.
+- Restyled the `Surrender` button with the same readable light-panel secondary treatment used by `Back To Lobby` on the challenge accept page.
+
+### The Reasoning
+- The Blink page already has enough heading/subtitle context, so the extra `Roster` and `Pick your scientist to continue` pills were redundant visual noise.
+- The shared secondary button style defaults to light text, which becomes unreadable on the cream Blink card without local color overrides.
+
+### The Tech Debt
+- These local button overrides should eventually become a named light-surface secondary button variant if more light-card flows need the same treatment.
+
+## 2026-05-10 - Compact Blink Character Cards
+
+### The Change
+- Added a `compactCards` option to [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) and [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx).
+- Enabled compact cards in [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), reducing card min-height, portrait size, and the internal gap above each card CTA.
+- Pulled the Blink gate action row closer to the roster.
+
+### The Reasoning
+- The shared character card uses `mt-auto` to create a roomy draft-card layout, but on the Blink cream panel that left too much empty vertical space between character details and `Tap To Select`.
+- A prop keeps the tighter Blink treatment local instead of changing normal matchmaking character select.
+
+### The Tech Debt
+- If more compact selection surfaces appear, the card sizing should move from a boolean prop to a named density variant.
+
+## 2026-05-10 - Blink Character Card Stretch Removal
+
+### The Change
+- Updated compact mode in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) so Blink character cards no longer stretch vertically to fill the parent panel.
+- Compact mode now removes the selector/grid `flex-1` stretch and aligns cards to the top of the grid.
+
+### The Reasoning
+- The remaining bottom gap was caused by the grid stretching each card row, not by internal card spacing.
+- Blink character selection should be allowed to produce a shorter overall section instead of forcing draft cards to fill the available cream-panel height.
+
+### The Tech Debt
+- The compact layout is still a boolean mode. If the character selector accumulates more layout variants, replace it with explicit density/layout tokens.
+
+## 2026-05-10 - Blink Character Panel Height Shrink
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to remove the forced viewport-height minimum from the cream character selection panel.
+
+### The Reasoning
+- After compacting the character cards, the remaining lower gap came from the outer panel still being forced to nearly full screen height.
+- The Blink character selection surface is allowed to be shorter overall, so the panel should wrap its content instead of reserving empty vertical space.
+
+### The Tech Debt
+- If we need more precise vertical rhythm across Blink pages, define shared panel sizing tokens instead of per-component height overrides.
+
+## 2026-05-10 - Blink Character Gate Vertical Centering
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so the full character selection section is vertically centered within the viewport instead of sitting at the top.
+
+### The Reasoning
+- Once the Blink panel height was reduced, the remaining layout issue was placement rather than size. The screen reads better when the compact cream panel is framed in the middle of the dark background.
+
+### The Tech Debt
+- If Blink gets more page states with different heights, it may be worth standardizing per-state vertical alignment rules instead of setting them one component at a time.
+
+## 2026-05-10 - Blink Refresh And Surrender Recovery Corrections
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side Blink status polling no longer demotes an in-progress room recovery back into the lower-priority notification state.
+- Added presentation-aware Blink recovery in the lobby: creator-side private `depositing` rooms now resume directly into `Confirming your match...` when a scientist was already locked, otherwise they reopen character select.
+- Prevented the floating `Rival Accepted` notification from stacking on top of the Blink character gate.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challenger-side resume only happens when real local accepted context still exists, using the stored deposit signature instead of only `opponentWallet` ownership.
+- Added render-time recovery from the stored active match snapshot on the challenge page, so a challenger refresh after already locking a scientist resumes straight back into the joiner instead of dropping to character select.
+
+### The Reasoning
+- Two FE recovery rules were fighting each other. Lobby refresh recovery could correctly detect a creator still in a private `depositing` room, but the Blink status poll would immediately reopen the weaker notification state and kick the creator back out of the join flow.
+- Challenger recovery was too optimistic: if the backend row still said the wallet had accepted the Blink, FE would reopen the character gate even after local surrender/cleanup had already cleared the real resume context.
+
+### The Tech Debt
+- FE still infers Blink recovery mode from a mix of local storage, websocket stage, and backend room/challenge status. A backend-owned private-room phase model would remove a lot of this recovery branching.
+
+## 2026-05-10 - Fix Blink challenge terminal-state loop
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) to detect terminal statuses (`FORFEITED`, `EXPIRED`, `COMPLETED`) and clear stale local session state (`cora:active-room`, `cora:active-deposit-intent`).
+- Replaced the plain `<a>` tag for "Back To Lobby" in [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) with a button that explicitly clears local state before navigating.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) recovery logic to check for terminal match statuses and clear stale recovery state instead of redirecting the challenger back to the challenge page.
+- Added a "Challenge Closed" UI state to [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) for terminal challenges.
+
+### The Reasoning
+- Challengers were getting stuck on the challenge accept screen or redirected back to it even after a challenge was forfeited or expired because the frontend wasn't consistently clearing local recovery state or checking the challenge status during lobby recovery.
+- A plain link doesn't allow for the necessary side effects (clearing local storage) before navigation.
+
+### The Tech Debt
+- Terminal status strings are duplicated across `BlinkChallengeAccept.tsx` and `LobbyScreen.tsx`. These should eventually be centralized in a shared constants file or type definition.
+

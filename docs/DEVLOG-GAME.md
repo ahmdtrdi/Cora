@@ -565,3 +565,27 @@ Migrated to the **Inline Manifest** ER architecture to solve severe performance 
 
 - The legacy logic (registered card PDA loops) is deprecated but remains theoretically supported by raw functions in `magicblock.ts` for backwards compatibility during migration cutoff. It should be completely pruned once version stability is locked.
 - Currently waiting on client-side IDL synchronization for final verification since instructions must perfectly match the new program schema.
+
+---
+
+## 19. Bugfix — InvalidEffectValue (0x1779) Slot Synchronization (2026-05-10)
+
+**The Bug:**
+The `cora-battle` Solana program consistently threw a `0x1779 InvalidEffectValue` error during MagicBlock ER card plays. This usually surfaced when a player chose to play an Attack card (value 50) while the smart contract expected a Heal card limit (max 30) for that slot.
+
+**Root Cause:**
+The backend `applyErCardEffect` was tracking `erNextSlotA` and `erNextSlotB` as blind, sequential increments (`0, 1, 2...`). However, the player's Hand gives them 3 cards, allowing them to play cards out of order relative to the generated manifest queue. If the manifest had Heal on Slot 0 and Attack on Slot 1, and the player played the Attack card first, the backend incorrectly submitted Slot 0 to the contract, causing a metadata mismatch and triggering the strict validation limit in the Solana program.
+
+**The Fix:**
+_Files touched:_ `apps/api/src/managers/room/Blockchain.ts`, `apps/api/src/managers/room/Engine.ts`, `apps/api/src/managers/room/types.ts`, `apps/api/src/managers/room/Store.ts`
+
+- **Removed blind increment state:** Deleted `erNextSlotA` and `erNextSlotB` from tracking entirely.
+- **Dynamic index lookup:** Updated `applyErCardEffect` to dynamically find the exact underlying manifest index using `findIndex` on the unmutated `matchQueue`:
+  `const slot = room.engine.getMatchQueue().findIndex(c => c.id === params.cardId);`
+- **Invalidation sync:** Updated `consumeErSlotEmpty` to accept the actual `cardId` meant to be consumed for timeouts or wrong answers, keeping backend/on-chain states locked to the specific card instance.
+
+**The Reasoning:**
+- The on-chain manifest tracks usage via an independent bitmask (`cards_used_a & bit`). It was explicitly designed by the smart contract engineers to support out-of-order execution safely. Replacing the rigid backend integer with a dynamic index search correctly honors the bitmask design without adding local lag (`O(N)` on ~100 array items runs in < 0.01ms).
+
+**Tech Debt:**
+- None. Logic is fully stateless and aligns execution with the Solana contract's bitmask design.

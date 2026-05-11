@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ESCROW_CONSTANTS } from '@shared/escrow';
 
 export type BlinkMatchStatus =
   | 'PENDING'
@@ -28,6 +29,8 @@ export type AcceptBlinkMatchResult =
   | { ok: false; reason: 'not_found' | 'expired' | 'already_accepted' | 'creator_cannot_accept' | 'invalid_status' };
 
 export interface CreateBlinkMatchInput {
+  /** Pre-determined ID for PDA derivation. If omitted, a random UUID is generated. */
+  id?: string;
   creatorWallet: string;
   tokenMint: string;
   wagerAmount: bigint;
@@ -44,8 +47,8 @@ export interface BlinkMatchStore {
   sweepExpired(now?: Date): Promise<Array<{ id: string; status: Extract<BlinkMatchStatus, 'EXPIRED' | 'FORFEITED'> }>>;
 }
 
-const PENDING_TTL_MS = 15 * 60 * 1000;
-const JOIN_WINDOW_MS = 3 * 60 * 1000;
+const PENDING_TTL_MS = ESCROW_CONSTANTS.CHALLENGE_EXPIRY_SECONDS * 1000; // 900s
+const JOIN_WINDOW_MS = ESCROW_CONSTANTS.DEPOSIT_TIMEOUT_SECONDS * 1000;  // 30s — matches on-chain timeout
 
 type MatchRow = {
   id: string;
@@ -83,7 +86,7 @@ export class MemoryBlinkMatchStore implements BlinkMatchStore {
   public async createPending(input: CreateBlinkMatchInput): Promise<BlinkMatch> {
     const now = new Date();
     const match: BlinkMatch = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       creatorWallet: input.creatorWallet,
       opponentWallet: null,
       tokenMint: input.tokenMint,
@@ -193,7 +196,7 @@ class SupabaseBlinkMatchStore implements BlinkMatchStore {
   public async createPending(input: CreateBlinkMatchInput): Promise<BlinkMatch> {
     const now = new Date();
     const row = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       creator_wallet: input.creatorWallet,
       opponent_wallet: null,
       token_mint: input.tokenMint,

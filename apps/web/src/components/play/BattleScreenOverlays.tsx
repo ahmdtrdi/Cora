@@ -34,6 +34,7 @@ type SettlementOutcomeKind =
   | "draw"
   | "invalidated"
   | "cancelled"
+  | "server_error"
   | "pending";
 
 type BattleScreenOverlaysProps = {
@@ -162,7 +163,7 @@ export function BattleScreenOverlays({
         ? `You win the ${payoutUsdDisplay} wager in ${tokenLabel}`
         : `You win the ${tokenLabel} wager`
       : settlementOutcomeKind === "lose"
-      ? "No winner payout was awarded to you for this match"
+      ? "Rival secured the wager for this match"
       : settlementOutcomeKind === "player_surrender"
       ? wagerUsdDisplay
         ? `You surrendered and forfeited your ${wagerUsdDisplay} wager`
@@ -173,6 +174,8 @@ export function BattleScreenOverlays({
       ? "Match invalidated: payout is pending the invalidation outcome"
       : settlementOutcomeKind === "cancelled"
       ? "Room cancelled before a final winner payout"
+      : settlementOutcomeKind === "server_error"
+      ? "Match closed safely. Wager resolution is pending review"
       : "Settlement is still being finalized";
 
   const isWinPayoutHighlight = settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender";
@@ -330,7 +333,7 @@ export function BattleScreenOverlays({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
               transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="frame-cut w-full max-w-2xl p-4 md:p-5"
+              className="frame-cut relative w-full max-w-2xl overflow-hidden p-4 md:p-5"
               style={{
                 border: "1px solid rgba(248,214,148,0.42)",
                 background:
@@ -565,6 +568,11 @@ export function BattleScreenOverlays({
                       </p>
                     </>
                   )}
+                </div>
+              )}
+              {settlementStatus === "Pending" && (
+                <div className="absolute inset-x-0 bottom-0 h-1 bg-[rgba(39,65,55,0.08)]">
+                  <div className="shimmer-bar h-full w-full" />
                 </div>
               )}
             </motion.div>

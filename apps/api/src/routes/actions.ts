@@ -194,11 +194,10 @@ export function createActionsRouter(roomManager: RoomManager) {
       }
 
       let acceptedMatch: BlinkMatch = match;
-      let initializeMatch = false;
-      let initializeOpponent: string | undefined;
-      let message = 'Sign to deposit your wager and join the CORA battle!';
+      let message = '';
 
       if (match.status === 'PENDING') {
+        // True flow: challenger accepts the open challenge
         const acceptResult = await roomManager.blinkMatches.acceptPending(roomId, account);
         if (!acceptResult.ok) {
           return c.json(
@@ -208,36 +207,33 @@ export function createActionsRouter(roomManager: RoomManager) {
         }
 
         acceptedMatch = acceptResult.match;
-        initializeMatch = true;
-        initializeOpponent = acceptedMatch.creatorWallet;
-        message = 'Challenge accepted. Sign to initialize escrow and deposit your wager first.';
+        message = 'Challenge accepted! Sign to lock your wager and start the match.';
         await roomManager.hydrateBlinkRoom(acceptedMatch);
-      } else if (match.status === 'CHALLENGED') {
-        if (account === match.creatorWallet) {
-          message = 'Challenge accepted. Sign your deposit within the response window to start the game.';
-          await roomManager.hydrateBlinkRoom(match);
-        } else if (account === match.opponentWallet) {
-          initializeMatch = true;
-          initializeOpponent = match.creatorWallet;
-          message = 'Re-sign to initialize escrow and deposit your wager.';
-          await roomManager.hydrateBlinkRoom(match);
-        } else {
-          return c.json({ message: 'Challenge already accepted - this match is full.' } satisfies ActionError, 409);
-        }
-      } else {
-        return c.json({ message: 'Challenge is no longer accepting deposits.' } satisfies ActionError, 409);
+
+        // Build accept_challenge transaction using creator wallet from DB row
+        const matchIdBytes = deriveMatchId(roomId);
+        const base64 = await BlinkTransactionBuilder.buildAcceptChallengeTransaction(
+          account,
+          matchIdBytes,
+          acceptedMatch.tokenMint,
+          acceptedMatch.creatorWallet,
+          BigInt(acceptedMatch.wagerAmount)
+        );
+
+        return c.json({
+          transaction: base64,
+          message,
+        });
       }
 
-      const base64 = await BlinkTransactionBuilder.buildDepositTransaction(
-        account,
-        roomLikeFromBlinkMatch(acceptedMatch),
-        { initializeMatch, initializeOpponent },
+      // CHALLENGED or any other non-PENDING status:
+      // Creator no longer has a second deposit transaction in the true flow.
+      // After accept_challenge, both wagers are locked on-chain.
+      // Creator only needs to join the WebSocket room before join_deadline.
+      return c.json(
+        { message: 'Challenge already accepted. Join the match via WebSocket.' } satisfies ActionError,
+        409,
       );
-
-      return c.json({
-        transaction: base64,
-        message,
-      });
     } catch (err) {
       console.error('[actions/challenge POST] Failed to build transaction', err);
       return c.json(
@@ -252,16 +248,6 @@ export function createActionsRouter(roomManager: RoomManager) {
 
 interface ActionError {
   message: string;
-}
-
-function roomLikeFromBlinkMatch(match: BlinkMatch) {
-  return {
-    id: match.id,
-    matchIdBytes: deriveMatchId(match.id),
-    tokenMint: match.tokenMint,
-    wagerAmount: BigInt(match.wagerAmount),
-    playerB: match.opponentWallet,
-  };
 }
 
 function actionErrorForAcceptReason(reason: string): string {

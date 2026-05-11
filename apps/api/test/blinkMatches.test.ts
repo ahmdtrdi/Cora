@@ -81,4 +81,55 @@ describe('MemoryBlinkMatchStore', () => {
     expect(active?.status).toBe('ACTIVE');
     expect(active?.creatorDepositSignature).toBe('sig-creator');
   });
+
+  test('uses pre-determined id when provided', async () => {
+    const store = new MemoryBlinkMatchStore();
+    const customId = 'my-custom-room-id-for-pda';
+    const pending = await store.createPending({
+      id: customId,
+      creatorWallet: CREATOR,
+      tokenMint: USDC_MINT,
+      wagerAmount: 1_000_000n,
+    });
+
+    expect(pending.id).toBe(customId);
+    expect(await store.get(customId)).not.toBeNull();
+  });
+
+  test('join window is ~30s (matches on-chain DEPOSIT_TIMEOUT_SECONDS)', async () => {
+    const store = new MemoryBlinkMatchStore();
+    const pending = await store.createPending({
+      creatorWallet: CREATOR,
+      tokenMint: USDC_MINT,
+      wagerAmount: 1_000_000n,
+    });
+
+    const accepted = await store.acceptPending(pending.id, CHALLENGER);
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) return;
+
+    // Deadline should be ~30s from now
+    const deadline = Date.parse(accepted.match.joinDeadline!);
+    const now = Date.now();
+    const diffMs = deadline - now;
+    expect(diffMs).toBeGreaterThan(25_000);
+    expect(diffMs).toBeLessThan(35_000);
+
+    // Just before deadline: markActive should succeed
+    const justBefore = new Date(deadline - 1000);
+    const active = await store.markActive(pending.id, CREATOR, 'sig', justBefore);
+    expect(active?.status).toBe('ACTIVE');
+  });
+
+  test('creator cannot accept their own challenge', async () => {
+    const store = new MemoryBlinkMatchStore();
+    const pending = await store.createPending({
+      creatorWallet: CREATOR,
+      tokenMint: USDC_MINT,
+      wagerAmount: 1_000_000n,
+    });
+
+    const result = await store.acceptPending(pending.id, CREATOR);
+    expect(result).toEqual({ ok: false, reason: 'creator_cannot_accept' });
+  });
 });
