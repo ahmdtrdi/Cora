@@ -10,8 +10,6 @@ import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
 import { getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
 import {
-  confirmPrivateChallenge,
-  createPrivateChallenge,
   getPrivateChallenge,
   getWebChallengeUrl,
   type PrivateChallengeStatus,
@@ -24,6 +22,7 @@ import { BlinkSurrenderBridge } from "@/components/challenge/BlinkSurrenderBridg
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
+import { createBlinkChallengeSession } from "@/lib/challenge/createBlinkChallengeSession";
 import {
   readActiveBlinkChallengeSession,
   getMatchSessionAddress,
@@ -40,7 +39,6 @@ import {
   type LobbyDraftSnapshot,
 } from "@/lib/session/matchSession";
 import { DepositIntentError } from "@/lib/solana/signDepositIntent";
-import { signBackendTransaction } from "@/lib/solana/signBackendTransaction";
 import type {
   CharacterOption,
   CharacterSelectionState,
@@ -219,6 +217,11 @@ export function LobbyScreen() {
   const [blinkChallengePanelOpen, setBlinkChallengePanelOpen] = useState(false);
   const [blinkChallengeBusy, setBlinkChallengeBusy] = useState(false);
   const [blinkChallengeNotice, setBlinkChallengeNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [blinkCreateConfirmOpen, setBlinkCreateConfirmOpen] = useState(false);
+  const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission | "unsupported">(() => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") return "unsupported";
+    return Notification.permission;
+  });
   const [blinkJoinSnapshot, setBlinkJoinSnapshot] = useState<ActiveBlinkChallengeSession | null>(null);
   const [blinkCharacterSelectOpen, setBlinkCharacterSelectOpen] = useState(false);
   const [blinkConfirmingOpen, setBlinkConfirmingOpen] = useState(false);
@@ -236,6 +239,7 @@ export function LobbyScreen() {
   const activeRoomLookupAbortRef = useRef<AbortController | null>(null);
   const blinkChallengeHydratedRef = useRef(false);
   const activeBlinkChallengeRef = useRef<ActiveBlinkChallengeSession | null>(null);
+  const lastBlinkBrowserNoticeRoomRef = useRef<string | null>(null);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -488,7 +492,51 @@ export function LobbyScreen() {
     setSelectedScientist,
   ]);
 
-  const handleCreateBlinkChallenge = useCallback(async () => {
+  const maybeNotifyBlinkAccepted = useCallback((challenge: ActiveBlinkChallengeSession) => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    if (lastBlinkBrowserNoticeRoomRef.current === challenge.roomId) return;
+
+    lastBlinkBrowserNoticeRoomRef.current = challenge.roomId;
+    const notification = new Notification("CORA Blink Challenge Accepted", {
+      body: "A rival accepted your Blink challenge. Open the lobby to confirm your presence and enter the match.",
+      tag: `cora-blink-${challenge.roomId}`,
+    });
+
+    notification.onclick = () => {
+      window.focus();
+      setPendingErRecovery(false);
+      setBlinkCharacterSelectOpen(true);
+      setBlinkConfirmingOpen(false);
+      notification.close();
+    };
+  }, [setBlinkCharacterSelectOpen, setBlinkConfirmingOpen, setPendingErRecovery]);
+
+  const enableBlinkBrowserNotifications = useCallback(async () => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") {
+      setBlinkChallengeNotice({ text: "Browser notifications are not supported here.", tone: "error" });
+      setBrowserNotificationPermission("unsupported");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setBrowserNotificationPermission(permission);
+      setBlinkChallengeNotice({
+        text:
+          permission === "granted"
+            ? "Browser notifications enabled."
+            : permission === "denied"
+              ? "Browser notifications were blocked."
+              : "Browser notifications were dismissed.",
+        tone: permission === "granted" ? "success" : "error",
+      });
+    } catch {
+      setBlinkChallengeNotice({ text: "Could not enable browser notifications.", tone: "error" });
+    }
+  }, []);
+
+  const commitCreateBlinkChallenge = useCallback(async () => {
     if (!walletAddress || !selectedArena) {
       setBlinkChallengeNotice({ text: "Connect wallet and select an arena first.", tone: "error" });
       return;
@@ -505,42 +553,21 @@ export function LobbyScreen() {
     }
 
     setBlinkChallengeBusy(true);
+    setBlinkChallengeNotice({ text: "Opening Phantom. Please sign to fund the challenge...", tone: "success" });
+    setBlinkCreateConfirmOpen(false);
     setBlinkChallengeNotice(null);
     try {
-      const created = await createPrivateChallenge({
-        address: walletAddress,
-        tokenMint: selectedArena.token,
-        wagerAmount,
-      });
-      const signature = await signBackendTransaction({
+      const snapshot = await createBlinkChallengeSession({
         connection,
         wallet,
-        base64Transaction: created.transaction,
-      });
-      const confirmed = await confirmPrivateChallenge({
-        roomId: created.roomId,
-        address: walletAddress,
-        signature,
+        walletAddress,
         tokenMint: selectedArena.token,
         wagerAmount,
-      });
-      const webChallengeUrl =
-        typeof window === "undefined" ? null : getWebChallengeUrl(window.location.origin, created.roomId);
-      const snapshot: ActiveBlinkChallengeSession = {
-        walletAddress,
-        roomId: created.roomId,
-        blinkUrl: created.blinkUrl,
-        webChallengeUrl,
-        createSignature: signature,
-        role: "playerA",
+        wagerUsd: FIXED_WAGER_USD,
         arenaId: selectedArena.id,
         scientistId: selectedScientist?.id ?? null,
-        token: selectedArena.token,
-        wagerUsd: FIXED_WAGER_USD,
-        wagerAmount,
-        status: confirmed.status,
-        createdAt: new Date().toISOString(),
-      };
+        origin: typeof window === "undefined" ? null : window.location.origin,
+      });
       writeActiveBlinkChallengeSession(snapshot);
       setActiveBlinkChallenge(snapshot);
       setBlinkChallengePanelOpen(true);
@@ -570,6 +597,18 @@ export function LobbyScreen() {
     wallet,
     walletAddress,
   ]);
+
+  const handleCreateBlinkChallenge = useCallback(() => {
+    if (!walletAddress || !selectedArena) {
+      setBlinkChallengeNotice({ text: "Connect wallet and select an arena first.", tone: "error" });
+      return;
+    }
+    if (hasBlockingBlinkChallenge) {
+      setBlinkChallengePanelOpen(true);
+      return;
+    }
+    setBlinkCreateConfirmOpen(true);
+  }, [hasBlockingBlinkChallenge, selectedArena, walletAddress]);
 
   const handleRejoinActiveMatch = useCallback(() => {
     if (!activeMatchBannerSnapshot?.roomId) return;
@@ -832,6 +871,9 @@ export function LobbyScreen() {
         if (latest.status === "CHALLENGED" || latest.status === "ACTIVE") {
           writeActiveBlinkChallengeSession(next);
           setActiveBlinkChallenge(next);
+          if (latest.status === "CHALLENGED") {
+            maybeNotifyBlinkAccepted(next);
+          }
           const alreadyHandlingRoom =
             blinkJoinSnapshot?.roomId === next.roomId && (blinkCharacterSelectOpen || blinkConfirmingOpen);
           if (!alreadyHandlingRoom) {
@@ -876,6 +918,7 @@ export function LobbyScreen() {
     blinkCharacterSelectOpen,
     blinkConfirmingOpen,
     blinkJoinSnapshot?.roomId,
+    maybeNotifyBlinkAccepted,
     walletAddress,
     openBlinkJoin,
     clearActiveBlinkChallenge,
@@ -1375,40 +1418,108 @@ export function LobbyScreen() {
           </div>
         </div>
       )}
+      {blinkCreateConfirmOpen && selectedArena && (
+        <div className="fixed inset-0 z-[84] grid place-items-center bg-[rgba(7,12,10,0.78)] p-4">
+          <div
+            className="frame-cut w-full max-w-lg p-5 md:p-6"
+            style={{
+              border: "1px solid rgba(248,214,148,0.42)",
+              background: "linear-gradient(145deg, rgba(255,248,236,0.98) 0%, rgba(243,232,206,0.98) 100%)",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.38)",
+            }}
+          >
+            <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.22em] text-[rgba(111,58,40,0.72)]">
+              Blink Confirmation
+            </p>
+            <p className="mt-2 font-caprasimo text-4xl leading-none text-[#4d2a18]">Create Blink challenge?</p>
+            <p className="mt-3 font-gabarito text-sm text-[rgba(58,37,24,0.86)]">
+              CORA will open Phantom next so you can fund the Blink challenge. Confirm the setup first to avoid the wallet popup feeling abrupt.
+            </p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-2xl border border-[rgba(111,58,40,0.18)] bg-[rgba(255,255,255,0.74)] px-3 py-2">
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.14em] text-[rgba(111,58,40,0.62)]">Arena</p>
+                <p className="mt-1 font-gabarito text-sm font-black text-[#1f1b18]">{selectedArena.label}</p>
+              </div>
+              <div className="rounded-2xl border border-[rgba(111,58,40,0.18)] bg-[rgba(255,255,255,0.74)] px-3 py-2">
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.14em] text-[rgba(111,58,40,0.62)]">Wager</p>
+                <p className="mt-1 font-gabarito text-sm font-black text-[#1f1b18]">${FIXED_WAGER_USD}</p>
+              </div>
+              <div className="rounded-2xl border border-[rgba(111,58,40,0.18)] bg-[rgba(255,255,255,0.74)] px-3 py-2">
+                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.14em] text-[rgba(111,58,40,0.62)]">Scientist</p>
+                <p className="mt-1 truncate font-gabarito text-sm font-black text-[#1f1b18]">
+                  {selectedScientist?.name ?? "Choose later"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBlinkCreateConfirmOpen(false)}
+                className="btn-game btn-game-secondary px-5 py-3 text-xs"
+                style={{
+                  borderColor: "rgba(111,58,40,0.42)",
+                  boxShadow: "0 4px 0 rgba(111,58,40,0.22)",
+                  color: "rgba(111,58,40,0.42)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void commitCreateBlinkChallenge()}
+                disabled={blinkChallengeBusy}
+                className="btn-game btn-game-primary px-4 py-2 text-xs disabled:opacity-60"
+              >
+                {blinkChallengeBusy ? (
+  <span className="flex items-center gap-2">
+    <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+    Opening Phantom...
+  </span>
+) : "Confirm And Open Phantom"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {blinkChallengePanelOpen && activeBlinkChallenge && (
         <BlinkChallengePanel
           challenge={activeBlinkChallenge}
           arenaLabel={activeBlinkArenaLabel}
           statusLabel={activeBlinkStatusLabel}
           waitingLabel={activeBlinkWaitingLabel}
+          notificationPermission={browserNotificationPermission}
           notice={blinkChallengeNotice}
           canClear={Boolean(activeBlinkStatus && BLINK_TERMINAL_STATUSES.has(activeBlinkStatus))}
+          onEnableNotifications={enableBlinkBrowserNotifications}
           onClose={() => setBlinkChallengePanelOpen(false)}
           onClear={() => clearActiveBlinkChallenge("Blink challenge cleared locally.", "success")}
         />
       )}
       {blinkJoinSnapshot && !blinkConfirmingOpen && !blinkCharacterSelectOpen && (
-        <div className="fixed right-4 top-4 z-[88] w-[calc(100%-2rem)] max-w-md md:right-6 md:top-6">
+        <div className="fixed inset-x-0 top-0 z-[88] p-3 md:p-4">
           <div
-            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
-            style={{ border: "2px solid rgba(248,214,148,0.42)", background: "linear-gradient(145deg, #10231b 0%, #18392d 100%)" }}
+            className="mx-auto w-full max-w-5xl frame-cut px-4 py-3 shadow-2xl md:px-5"
+            style={{
+              border: "1px solid rgba(248,214,148,0.36)",
+              background:
+                "linear-gradient(140deg, rgba(12,21,17,0.97) 0%, rgba(18,31,25,0.97) 52%, rgba(28,45,37,0.97) 100%)",
+            }}
           >
-            <div className="flex items-start gap-3">
-              <div className="mt-1 h-3 w-3 shrink-0 animate-pulse rounded-full bg-[var(--tone-cream)]" />
-              <div className="min-w-0 flex-1">
-                <p className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em] text-[var(--tone-mint)]">
-                  Rival Accepted
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.2em] text-[rgba(248,214,148,0.82)]">
+                  {"\u2694"} Rival Accepted
                 </p>
-                <p className="mt-1 font-gabarito text-sm font-bold text-[var(--tone-cream)]">
-                  A rival accepted your Blink challenge.
-                </p>
-                <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.72)]">
-                  View the challenge to confirm your presence and enter the match.
+                <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+                  A rival accepted your Blink challenge. Open the challenge to choose your scientist and confirm your presence.
                 </p>
                 <p className="mt-2 truncate font-mono text-[11px] text-[rgba(244,240,230,0.58)]">
                   Room {blinkJoinSnapshot.roomId} - {shortenAddress(blinkJoinSnapshot.walletAddress)}
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+              </div>
+              <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1420,7 +1531,6 @@ export function LobbyScreen() {
                   >
                     View Challenge
                   </button>
-                </div>
               </div>
             </div>
           </div>
