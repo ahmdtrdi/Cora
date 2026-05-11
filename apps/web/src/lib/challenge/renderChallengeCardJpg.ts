@@ -264,11 +264,11 @@ export async function renderChallengeCardJpg(input: ChallengeCardRenderInput): P
   }
 
   drawRoundedRect(ctx, { x: 996, y: 136 }, { width: 486, height: 334 }, 14, "rgba(255,255,255,0.74)", "#6a6a6a");
-  drawRoundedRect(ctx, { x: 1097, y: 180 }, { width: 284, height: 246 }, 10, "#f3ebdc", "#8d8376");
+  drawRoundedRect(ctx, { x: 1097, y: 162 }, { width: 284, height: 282 }, 10, "#f3ebdc", "#8d8376");
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=246x246&margin=0&data=${encodeURIComponent(input.challengeLink)}`;
   try {
     const qrImage = await loadImage(qrUrl);
-    ctx.drawImage(qrImage, 1116, 199, 246, 246);
+    ctx.drawImage(qrImage, 1116, 180, 246, 246);
   } catch {
     ctx.fillStyle = "rgba(44,39,36,0.62)";
     ctx.font = `600 26px ${fonts.body}`;
@@ -282,16 +282,20 @@ export async function renderChallengeCardJpg(input: ChallengeCardRenderInput): P
   ];
   metrics.forEach((metric, index) => {
     const boxY = 500 + index * 86;
-    drawRoundedRect(ctx, { x: 996, y: boxY }, { width: 486, height: 72 }, 10, "rgba(255,255,255,0.72)", "#7a7065");
+    const boxHeight = 72;
+    const boxCenterY = boxY + boxHeight / 2;
+    drawRoundedRect(ctx, { x: 996, y: boxY }, { width: 486, height: boxHeight }, 10, "rgba(255,255,255,0.72)", "#7a7065");
     ctx.fillStyle = "rgba(48,42,37,0.7)";
     ctx.font = `700 22px ${fonts.body}`;
-    ctx.fillText(metric.label, 1020, boxY + 28);
+    ctx.textBaseline = "middle";
+    ctx.fillText(metric.label, 1020, boxCenterY);
     ctx.fillStyle = "#1f1b18";
     const metricFontSize = fitText(ctx, metric.value, 286, metric.label === "ARENA" ? 28 : 30, fonts.body, 20);
     ctx.font = `700 ${metricFontSize}px ${fonts.body}`;
     ctx.textAlign = "right";
-    ctx.fillText(metric.value, 996 + 486 - 24, boxY + 47);
+    ctx.fillText(metric.value, 996 + 486 - 24, boxCenterY);
     ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
   });
 
   drawRoundedRect(ctx, { x: 84, y: 790 }, { width: 1434, height: 40 }, 10, "rgba(255,255,255,0.68)", "#7d7368");

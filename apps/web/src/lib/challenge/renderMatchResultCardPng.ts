@@ -4,6 +4,8 @@ export type MatchResultCardRenderInput = {
   wagerUsd: string;
   playerCharacterName: string;
   opponentCharacterName: string;
+  playerAddressLabel: string;
+  opponentAddressLabel: string;
   playerExpressionSrc?: string | null;
   opponentExpressionSrc?: string | null;
   roundsLabel: string;
@@ -135,6 +137,7 @@ async function drawPortrait(
   y: number,
   label: string,
   name: string,
+  addressLabel: string,
   src: string | null | undefined,
   fallback: string,
   fonts: { display: string; body: string },
@@ -167,7 +170,10 @@ async function drawPortrait(
 
   ctx.fillStyle = "#1f1b18";
   ctx.font = `700 42px ${fonts.display}`;
-  wrapText(ctx, name, x + 194, y + 110, 406, 46, 2);
+  wrapText(ctx, name, x + 194, y + 104, 406, 42, 2);
+  ctx.fillStyle = "rgba(44,39,36,0.68)";
+  ctx.font = `700 18px ${fonts.body}`;
+  ctx.fillText(addressLabel, x + 194, y + 170);
 }
 
 export async function renderMatchResultCardPng(input: MatchResultCardRenderInput): Promise<Blob> {
@@ -195,8 +201,8 @@ export async function renderMatchResultCardPng(input: MatchResultCardRenderInput
   ctx.fillText("CORA MATCH RESULT", 126, 140);
 
   ctx.fillStyle = "#1f1b18";
-  ctx.font = `700 76px ${fonts.display}`;
-  wrapText(ctx, input.title, 126, 232, 960, 82, 2);
+  ctx.font = `700 72px ${fonts.display}`;
+  wrapText(ctx, input.title, 126, 228, 1220, 78, 2);
 
   await drawPortrait(
     ctx,
@@ -204,6 +210,7 @@ export async function renderMatchResultCardPng(input: MatchResultCardRenderInput
     306,
     "Your Scientist",
     input.playerCharacterName,
+    input.playerAddressLabel,
     input.playerExpressionSrc,
     input.playerCharacterName.slice(0, 1),
     fonts,
@@ -214,6 +221,7 @@ export async function renderMatchResultCardPng(input: MatchResultCardRenderInput
     306,
     "Rival Scientist",
     input.opponentCharacterName,
+    input.opponentAddressLabel,
     input.opponentExpressionSrc,
     input.opponentCharacterName.slice(0, 1),
     fonts,

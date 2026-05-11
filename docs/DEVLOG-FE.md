@@ -5078,3 +5078,523 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The export renderer now has more explicit alignment state management (`textBaseline` / `textAlign` resets), but it is still a hand-built canvas layout. A shared layout abstraction would make future visual changes less fragile.
+
+## 2026-05-11 - Landing navbar brand replaced with logo image
+
+### The Change
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) so the landing-page brand now renders only [landscape_white.png](/d:/projects/Cora/apps/web/public/assets/logo/landscape_white.png) via `next/image`.
+- Removed the old boxed `C` mark and separate `CORA` wordmark text from the navbar brand link.
+
+### The Reasoning
+- The user added a finished horizontal logo asset and wanted the navbar to use that single brand image instead of the previous temporary badge-plus-text treatment.
+- Rendering the full mark directly keeps the header closer to the intended brand presentation and avoids duplicating branding with separate icon/text elements.
+
+### The Tech Debt
+- The navbar logo height is currently tuned inline for the existing header spacing. If the final brand system introduces alternate marks or breakpoint-specific lockups, this sizing may need to move into shared brand constants.
+
+## 2026-05-11 - Browser tab icon replaced with rounded brand icon
+
+### The Change
+- Added [icon.png](/d:/projects/Cora/apps/web/src/app/icon.png) as the app router browser icon asset, generated from [apps/web/public/assets/logo/icon.png](/d:/projects/Cora/apps/web/public/assets/logo/icon.png).
+- Applied rounded corners directly into the generated PNG so the browser tab icon displays with softened corners instead of a sharp square.
+
+### The Reasoning
+- The project was still falling back to the default browser icon path, so adding an app-level `icon.png` gives Next.js a brand-specific tab icon source.
+- Favicons cannot be styled with CSS `border-radius`, so the corner radius needed to be baked into the image itself.
+
+### The Tech Debt
+- [favicon.ico](/d:/projects/Cora/apps/web/src/app/favicon.ico) still exists alongside the new PNG icon, which can make browser caching behavior harder to reason about during local verification.
+- The rounded icon asset is currently a generated derivative with fixed radius values. If brand guidelines change, it would be better to standardize favicon exports from a documented source asset pipeline.
+
+## 2026-05-12 - Battle hand cards switched to illustration art
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so playable hand cards now render the new [heal.png](/d:/projects/Cora/apps/web/public/assets/cards/heal.png) and [attack.png](/d:/projects/Cora/apps/web/public/assets/cards/attack.png) assets directly inside the existing card shell.
+- Removed the overlaid `Heal` / `Attack` label chip and the centered `?` glyph from real cards so no text sits on top of the illustration art.
+
+### The Reasoning
+- The new card backs already communicate the card type visually, so keeping text on top would fight the artwork and make the cards feel busier than intended.
+- Reusing the existing card button shell preserved current selection, hover, disabled, and spacing behavior while letting the illustrations become the visible card face.
+
+### The Tech Debt
+- The battle screen now maps card types directly to local art paths. If more card types or variants are introduced later, this should move into a shared card-asset config instead of growing inline in the screen component.
+- Placeholder empty slots still use the older generic card shell treatment. If the hand UI gets a broader visual pass, those placeholders may need a matching empty-state design.
+
+## 2026-05-12 - Lobby hero copy readability increased
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add stronger text-shadow styling to the `Pre-Match Lobby`, `Choose Your Arena`, and `Selected: ...` copy in the arena selection hero block.
+
+### The Reasoning
+- Those lines sit over atmospheric background art and gradients, so the previous light shadow treatment could get washed out depending on the selected arena and viewport. Giving the title and supporting copy slightly stronger shadows improves readability without changing the typography itself.
+
+### The Tech Debt
+- The shadow values are still inline on individual text elements. If more lobby/hero copy needs the same treatment, it would be cleaner to promote these to shared utility classes or named text styles.
+
+## 2026-05-12 - Battle card type backgrounds color-matched
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so illustrated hand cards now use `#738b6c` as the heal card background and `#8a5633` as the attack card background.
+
+### The Reasoning
+- Even with dedicated card art, giving each card type a distinct shell color makes heal and attack easier to differentiate at a glance and helps the illustration feel grounded in a matching frame.
+
+### The Tech Debt
+- These card colors are still defined locally in the battle screen. If card visuals continue to evolve, the type-to-color mapping should likely live beside shared card asset/config data rather than staying inline in the screen component.
+
+## 2026-05-12 - Arena background refresh unblocked
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the lobby arena backgrounds now request `null.png`, `sol.png`, `bonk.png`, and `mew.png` with a versioned query suffix.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so in-match arena backgrounds also use versioned arena asset URLs and now include the missing `mew` image mapping.
+
+### The Reasoning
+- The arena images were being loaded from stable public paths, so replacing the files at the same URLs could leave the old artwork visible due to browser caching.
+- The battle screen also only handled `sol` and `bonk`, which meant `mew` could never resolve to its own background there.
+
+### The Tech Debt
+- The cache-busting suffix is a manual version string in each component. If arena art changes frequently, this should move into a shared asset-version helper or a more centralized asset manifest to avoid drift.
+
+## 2026-05-12 - Battle arena image query-string rollback
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to remove the arena-image query-string suffix from the in-match `<Image>` sources while keeping the `mew` arena mapping.
+
+### The Reasoning
+- The battle scene uses Next.js `<Image>`, and local image URLs with a search string were rejected by the current image configuration (`images.localPatterns`), causing a runtime error. The lobby cache-busting fix was still valid because that surface uses CSS `background-image` rather than `<Image>`.
+
+### The Tech Debt
+- Arena cache-busting is now handled differently in lobby and battle surfaces. If we want consistent asset-refresh behavior across both, we should either update Next image config to allow these local query strings or centralize arena rendering around one approach.
+
+## 2026-05-12 - Battle card-pick prompt restyled
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so the `Pick a card from your hand.` helper now renders as a centered pill-style HUD prompt during the playable card-selection state.
+
+### The Reasoning
+- The previous plain helper line was functionally clear but visually weak compared with the rest of the battle interface. Promoting the card-pick state into a styled prompt makes the next action easier to notice and keeps the HUD feeling more intentional.
+
+### The Tech Debt
+- The prompt styling is currently embedded inline in the battle screen and branches on UI state locally. If more battle helper prompts get richer treatments, this should likely become a shared battle status/prompt primitive instead of growing ad hoc.
+
+## 2026-05-12 - Battle prompt spacing relaxed
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add a little more bottom margin under the card-pick prompt above the hand row.
+
+### The Reasoning
+- After styling the prompt as a pill, the spacing underneath felt a bit tight against the cards. A small margin increase gives the prompt room to breathe and keeps the lower HUD from feeling cramped.
+
+### The Tech Debt
+- Prompt spacing is still tuned inline in the battle screen. If this HUD keeps evolving, vertical rhythm values should probably be normalized into shared spacing tokens or a small battle layout config.
+
+## 2026-05-12 - Battle hand cards given hover motion
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so enabled hand cards now animate upward slightly and scale up a touch on hover.
+
+### The Reasoning
+- The battle hand already had a strong visual layout, but the cards still felt a bit static. A small hover lift makes the cards read as interactive choices without disrupting the fanned composition or the active-card state.
+
+### The Tech Debt
+- The hover motion is still authored inline on the button class list. If the hand interaction language keeps growing, it may be worth extracting a shared card-interaction style so hover, active, and disabled motion stay coordinated.
+
+## 2026-05-12 - Battle arena background scaled down
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so the in-match arena background now uses a scaled-down `object-contain` presentation instead of the previous `object-cover` fill behavior.
+
+### The Reasoning
+- The arena layer was effectively zoomed in by the cover behavior, which cropped too much of the refreshed art. Scaling it down lets more of the arena illustration read inside the battle scene.
+
+### The Tech Debt
+- Arena framing is still hand-tuned in the battle screen. Different arena images may eventually want slightly different crop/scale behavior, so a per-arena presentation config may be cleaner than one shared value.
+
+## 2026-05-12 - Battle arena background widened with mirrored side fills
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so the in-match arena backdrop now renders as three copies of the arena art: a centered original plus mirrored left and right side fills.
+
+### The Reasoning
+- The previous scaled-down single image showed more of the art, but it left too much empty width. Using mirrored side fills lets the arena span from left to right while preserving a more readable center composition than the original cropped cover treatment.
+
+### The Tech Debt
+- The three-panel arena spread is still tuned with hardcoded widths and offsets inside the battle screen. If arena backdrops keep evolving, those composition values should move into shared presentation config and may need per-arena tuning.
+
+## 2026-05-12 - Battle arena triptych vertically aligned
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so the three arena background copies now render inside one shared centered row with the same height, keeping the left, center, and right images aligned vertically.
+
+### The Reasoning
+- The earlier mirrored side-fill version used separate absolute boxes, which let the three copies drift visually even though they shared the same source art. Anchoring them to one common alignment container keeps the triptych reading as one intentional spread.
+
+### The Tech Debt
+- The arena triptych is still manually composed with hardcoded widths and overlap offsets. If we keep iterating on this scene treatment, those values should move into a shared arena presentation config and may still need per-arena tuning.
+
+## 2026-05-12 - Battle screen switched to wide arena assets
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so the in-match arena backdrop now uses `sol_wide.png`, `bonk_wide.png`, and `mew_wide.png`.
+- Removed the temporary mirrored triptych treatment and returned the battle backdrop to a single full-scene arena image.
+
+### The Reasoning
+- The new `3840x1080` wide arena assets are specifically shaped for the battle scene, so the earlier workaround of duplicating the original arena art across three panels is no longer needed.
+- Keeping the lobby on the original arena assets while switching only the battle screen to the wide variants matches the intended separation of responsibilities between those two surfaces.
+
+### The Tech Debt
+- Battle and lobby now intentionally use different arena asset variants. If arena art direction keeps evolving, we may want a shared arena asset manifest so each surface can declare which variant it uses without hardcoding filenames inline.
+
+## 2026-05-12 - Lobby hero text shadow strengthened
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to strengthen the text-shadow treatment on `Pre-Match Lobby`, `Choose Your Arena`, and the supporting `Pick SOL, BONK, or MEW, lock the wager, then draft your scientist.` line.
+
+### The Reasoning
+- The earlier shadow pass was still too subtle against the updated arena art, especially on the fallback supporting sentence. Increasing the shadow depth makes the hero copy more readable without changing the copy, layout, or color palette.
+
+### The Tech Debt
+- These shadow values are still hand-tuned inline on each text element. If the lobby hero continues evolving, it would be cleaner to centralize this as a shared text treatment rather than repeating literal shadow values.
+
+## 2026-05-12 - Lobby hero text shadow increased again
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to deepen the text-shadow values again on the same lobby hero copy stack for stronger separation from the background art.
+
+### The Reasoning
+- After the first shadow pass, the copy was still getting lost in brighter areas of the arena image. Increasing both blur and opacity gives the text a firmer silhouette without adding a visible backing panel.
+
+### The Tech Debt
+- The lobby hero readability fix is still being tuned by stacking stronger inline shadow values. If this area keeps needing adjustment, a dedicated backdrop treatment or reusable text style may be more maintainable than continuing to deepen shadows manually.
+
+## 2026-05-12 - MEW selected coin background matched to card gradient
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the MEW coin/circle uses the same selected-state gradient as the MEW selected card background, instead of always using the preview background.
+
+### The Reasoning
+- BONK already reads more cohesive because its selected coin treatment feels visually tied to its selected card surface. Matching the MEW coin to the same selected gradient gives that option the same unified feel.
+
+### The Tech Debt
+- Selected-state gradients are still repeated inline between the card shell and inner coin treatment. If more arena-specific styling tweaks appear, these values should probably live in shared arena presentation data rather than being duplicated in component logic.
+
+## 2026-05-12 - SOL arena icon shifted to green tones
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the SOL arena SVG now uses dedicated green-toned colors for both its default and selected states instead of inheriting the browner shared fallback.
+
+### The Reasoning
+- The previous shared icon color made SOL read too close to the warmer BONK palette. Giving SOL its own green treatment better matches the arena identity and keeps the token options more distinct at a glance.
+
+### The Tech Debt
+- Arena icon colors are still partly hardcoded inside `ArenaIcon`. If we keep refining per-arena visual identity, these colors should likely move into shared arena presentation data alongside the other token-specific styling values.
+
+## 2026-05-12 - Challenge JPG QR and stat rows re-centered
+
+### The Change
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so the QR image is centered properly inside its right-column frame.
+- Updated the exported `TOKEN`, `WAGER`, and `ARENA` rows so both labels and values are vertically centered within each stat box instead of reading top-heavy.
+
+### The Reasoning
+- The exported challenge/share JPG had a visibly low QR placement and the right-column stat text was sitting too high inside the boxes. Centering those elements makes the right rail feel more intentional and visually balanced.
+
+### The Tech Debt
+- The challenge JPG layout is still hand-positioned with explicit pixel geometry. If we keep art-directing this export surface, it would be safer to move repeated box/frame alignment rules into shared layout constants rather than adjusting raw coordinates ad hoc.
+
+## 2026-05-12 - Match result share card copy simplified and address lines added
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so the regular after-match share title is now the fixed line `I just won in a CORA match`.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx), [MatchResultShareCard.tsx](/d:/projects/Cora/apps/web/src/components/play/MatchResultShareCard.tsx), and [renderMatchResultCardPng.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderMatchResultCardPng.ts) so player and rival wallet address labels render under each scientist name in both the on-screen share card and exported PNG.
+
+### The Reasoning
+- The previous title was too dependent on the rival address and made the headline read noisy. A fixed match-win line keeps the title cleaner, while moving addresses into the scientist panels preserves the identity/context in a more structured place.
+
+### The Tech Debt
+- The match result share card now carries separate name and address lines in two rendering paths (React and canvas). If this layout keeps evolving, shared card-layout config would reduce the risk of those two versions drifting apart.
+
+## 2026-05-12 - Match result title allowed to span wider
+
+### The Change
+- Updated [MatchResultShareCard.tsx](/d:/projects/Cora/apps/web/src/components/play/MatchResultShareCard.tsx) and [renderMatchResultCardPng.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderMatchResultCardPng.ts) so the after-match title can span farther to the right before wrapping.
+
+### The Reasoning
+- The fixed headline copy was short enough to use more horizontal space, but the export renderer was still wrapping it too early because of an overly narrow title width. Widening that title region keeps the headline cleaner and better balanced over the two portrait cards.
+
+### The Tech Debt
+- The match result title sizing and wrap width are still hand-tuned separately in React and canvas. If we keep adjusting this poster layout, shared typography/layout constants would make those two paths easier to keep in sync.
+
+## 2026-05-12 - Share modal close button moved into top-right chrome
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the share modal `Close` button now sits inset at the top-right corner of the modal container.
+
+### The Reasoning
+- The previous position was technically absolute, but it visually read as floating too close to the outer edge and disconnected from the modal surface. Moving it inward makes it feel like part of the modal chrome instead of a stray badge.
+
+### The Tech Debt
+- The close control still uses hand-tuned absolute offsets tied to the current modal padding. If the share modal layout changes significantly later, those offsets may need to be normalized with a shared modal header/chrome pattern.
+
+## 2026-05-12 - Share modal close button moved above card edge
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the share modal `Close` button now sits above the card and aligns to the modal content block’s top-right edge.
+
+### The Reasoning
+- The previous top-right change still placed the button inside the card region, which was not the intended chrome position. Offsetting it upward while keeping it right-aligned makes it read as a true close control for the card stack.
+
+### The Tech Debt
+- The button position still depends on absolute offsets and transform-based placement relative to the current share modal wrapper. If this share surface gets a more formal header or top action row later, the close control should move into that structure instead of staying free-positioned.
+
+## 2026-05-12 - Share modal close button switched to top-right row layout
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the share modal `Close` button now lives in a dedicated flex row above the card content and is right-aligned there.
+
+### The Reasoning
+- The absolute-position approach still produced an incorrect visual placement. Using a normal top row with `justify-end` is simpler and more reliable for keeping the control actually at the top-right above the card.
+
+### The Tech Debt
+- The close button now sits in flow above the share content, which is more stable, but the share surface still lacks a formal reusable modal header pattern. If more controls appear up there later, it may be worth turning that top row into a shared modal chrome component.
+
+## 2026-05-12 - Share modal helper copy removed from header
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to remove the helper sentences above the share cards, leaving only the right-aligned `Close` button in the header row.
+
+### The Reasoning
+- The helper copy was competing with the poster itself and making the header area feel busier than necessary. Keeping only the close control gives the share modal a cleaner top edge and lets the card content lead.
+
+### The Tech Debt
+- The share modal header is now intentionally minimal. If we later need explanatory copy again, it may be better placed below the card or integrated into a more deliberate modal header layout rather than reintroducing an ad hoc text row.
+
+## 2026-05-12 - Hero parallax depth polarity corrected
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the rear hero layers now drift opposite the cursor while the foreground layers and logo move with it.
+
+### The Reasoning
+- The previous hero setup had the depth relationship reading backward, with background shelves following the pointer and front layers resisting it. Flipping that polarity makes the scene feel more natural and gives the cursor interaction clearer depth.
+
+### The Tech Debt
+- Hero parallax direction and intensity are still tuned layer-by-layer inline in the component. If we keep polishing this scene, it may be worth introducing small shared layer metadata conventions for `front`, `mid`, and `back` motion behavior rather than hand-tuning each direction scalar.
+
+## 2026-05-12 - Hero cursor lag removed
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to remove spring-smoothing from the cursor-following motion values, so hero layers now track the pointer directly.
+
+### The Reasoning
+- The hero felt delayed because pointer movement was being eased through a spring before driving the parallax transforms. That smoothing added visual lag and made the cursor response feel less direct than intended.
+
+### The Tech Debt
+- Direct pointer tracking feels more immediate, but it also removes the soft settle that springs can provide. If we later want a tiny amount of polish without reintroducing obvious lag, we may want a lighter-weight smoothing approach or more selective easing per layer.
+
+## 2026-05-12 - Hero cursor sensitivity reduced slightly
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to apply a shared pointer-sensitivity multiplier, slightly reducing overall parallax travel without changing the front/back direction logic.
+
+### The Reasoning
+- Once the cursor lag was removed, the hero became more immediate but also a little more sensitive. A small global reduction keeps the response smooth and readable without making the scene feel sluggish again.
+
+### The Tech Debt
+- Hero sensitivity is now controlled by a single top-level multiplier, which is a good start, but the layer movement values are still hand-tuned individually. If we keep iterating, we may want to separate global sensitivity from per-depth movement presets more explicitly.
+
+## 2026-05-12 - Hero parallax now tracks through navbar hover
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so cursor tracking now listens at the window level and normalizes against the hero section bounds, instead of relying on pointer events only from the hero section itself.
+
+### The Reasoning
+- The fixed navbar sits above the hero in the pointer event stack, which meant hero parallax stopped updating whenever the cursor moved over the navbar. Window-level tracking keeps the scene responsive across that overlap.
+
+### The Tech Debt
+- The hero now depends on global pointer listeners, which is the right fix for this overlap case, but it also means the component owns a slightly more complex event lifecycle. If more global pointer-driven surfaces appear later, a shared interaction utility may be cleaner than repeating window-level listener logic.
+
+## 2026-05-12 - Hero logo scaled up dramatically for visual tuning
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the `landscape_warm.png` hero logo uses a much larger frame footprint as an intentional first-pass overshoot.
+
+### The Reasoning
+- The fastest way to tune hero logo scale is to push it clearly too far first, then walk it back to the sweet spot with visual feedback. This pass is meant to establish that upper bound quickly.
+
+### The Tech Debt
+- Hero logo sizing is still controlled inline through the layer frame class. If we keep iterating on logo scale and placement across breakpoints, those values may be easier to manage as named hero layout constants instead of embedded utility strings.
+
+## 2026-05-12 - Hero atmosphere pass added with layered light and dust
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to add extra lighting overlays between scene depths and a subtle animated dust field drifting across the hero.
+
+### The Reasoning
+- The hero already had depth, but it still felt a bit static between pointer moves. Adding soft inter-layer light and slow-floating dust gives the scene a more inhabited, breathing quality without changing the core composition.
+
+### The Tech Debt
+- The new atmosphere treatment is still composed from inline gradients and per-particle motion values inside the hero component. If this visual language expands, those lighting layers and ambient particle settings may be easier to maintain as shared hero scene constants or small reusable primitives.
+
+## 2026-05-12 - Hero ambient animation made visibly stronger
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to replace the barely-there dust feel with larger glowing particles and two slow-moving haze bands so the ambient hero animation is visibly readable.
+
+### The Reasoning
+- The first ambient pass was too subtle to register as real motion. Increasing particle size, glow, travel, and adding drifting light haze makes the hero feel alive even when the cursor is still.
+
+### The Tech Debt
+- The stronger hero atmosphere is still hand-tuned with inline particle definitions and haze gradients. If we keep iterating on this cinematic treatment, it may be worth separating “subtle” vs “pronounced” ambient presets or moving the effect into a dedicated ambient scene layer component.
+
+## 2026-05-12 - Hero ambient particles simplified into tiny drifting motes
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the hero ambient motion now uses tiny independent dust-like motes drifting left-to-right, and removed the larger haze-band animation.
+
+### The Reasoning
+- The stronger atmospheric pass was readable, but it had drifted away from the specific brief of small live dust movement. Simplifying the effect back to tiny autonomous motes keeps the hero alive without turning the ambient layer into a large glowing haze event.
+
+### The Tech Debt
+- The dust layer still relies on hand-authored particle positions and timings inside the hero component. If we continue iterating on ambient scene motion, those particle presets may be better managed as a dedicated ambient config rather than embedded arrays.
+
+## 2026-05-12 - Battle arena given continuous light effects
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add continuous animated light sweeps and a soft pulsing light veil above the arena background layer.
+
+### The Reasoning
+- The arena backdrop had strong artwork but still felt static whenever no gameplay effect was active. Adding slow ambient light motion keeps the battle scene feeling alive without competing directly with cards, characters, or damage effects.
+
+### The Tech Debt
+- The new arena lighting treatment is composed from inline animated gradients inside the battle screen. If we keep adding ambient scene effects, it may be worth extracting a reusable arena-atmosphere layer or shared motion constants instead of continuing to build these ad hoc in one component.
+
+## 2026-05-12 - Battle characters given a soft idle breathing loop
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to give both battle character sprites a subtle continuous breathing animation using a shared inner wrapper and a small bottom-anchored keyframe.
+
+### The Reasoning
+- The arena and UI already had ambient motion, but the character art itself still felt a bit too static between gameplay actions. Applying the idle motion on an inner wrapper keeps the characters feeling alive without interfering with the outer Framer Motion hit and action transforms.
+
+### The Tech Debt
+- The breathing timing and amplitude are currently global and hand-tuned for all battle characters. If individual characters later need distinct idle personalities, this will probably want a small per-character motion config instead of one shared CSS animation.
+
+## 2026-05-12 - Heal actions now face each character back toward their base
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so a character briefly flips orientation during heal actions, making the animation point toward their own base instead of toward the enemy.
+
+### The Reasoning
+- Attack-facing made sense as the default battle stance, but it looked wrong during healing because the character appeared to cast the effect at the opponent. Carrying the action kind through the existing action window lets healing read more clearly without changing the normal idle or attack presentation.
+
+### The Tech Debt
+- The facing swap is currently tied to a short shared action timer rather than a more explicit animation state machine. If character actions become more layered later, orientation may be cleaner to drive from a dedicated motion state object instead of a couple of transient flags.
+
+## 2026-05-12 - Landing Enter Arena CTAs now open in a new tab
+
+### The Change
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) and [CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so both landing-page `Enter Arena` buttons open `/connect` in a new browser tab.
+
+### The Reasoning
+- Opening the arena flow in a separate tab preserves the landing page as a stable reference point while still letting players jump into the connect flow immediately. Applying it to both CTAs keeps the behavior consistent across the page.
+
+### The Tech Debt
+- The new-tab behavior is currently applied inline on each CTA. If more landing links start needing shared external or new-tab handling, it may be worth wrapping this in a small shared CTA component instead of duplicating attributes.
+
+## 2026-05-12 - Hero parallax layers now ease in with real staged entrances
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the hero image layers now use true initial entrance states with staggered opacity, position, scale, and blur settling instead of appearing abruptly.
+
+### The Reasoning
+- The hero already had per-layer entrance definitions, but the layers were using `initial={false}`, which muted the intended reveal. Restoring real initial states and adding a soft blur-to-sharp settle makes each depth plane feel like it is arriving into the scene rather than just popping on.
+
+### The Tech Debt
+- The hero entrance tuning is still distributed across inline entrance presets and per-layer branching logic. If the landing scene keeps evolving, it may be cleaner to centralize the entrance timing and filter presets into a small reusable hero motion config.
+
+## 2026-05-12 - Hero scene populated with floating token coins across depth layers
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to add floating `SOL`, `BONK`, and `MEW` coin art into the hero, with some tokens rendered behind the mid-scene set dressing and others rendered in front. Each coin now has a slight tilt and a slow autonomous float.
+
+### The Reasoning
+- The hero already had strong environmental depth, but adding token coins makes the game economy more visible at a glance and gives the scene more motion cues. Splitting the coins across back and front z-layers helps the parallax read more clearly instead of feeling like all decorative elements are pasted on one plane.
+
+### The Tech Debt
+- The token placements are currently hand-authored inside the hero component, including their depth, offsets, and float timings. If we keep expanding the landing scene, this decorative object layout would be easier to maintain as a dedicated scene config rather than embedded arrays.
+
+## 2026-05-12 - Hero token coins simplified into a single foreground float band
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so all floating token coins now render in front of the bookshelf layers and sit higher in the composition instead of being split between back and front depth bands.
+
+### The Reasoning
+- The mixed-depth token placement added parallax complexity, but it also made the hero feel a bit busier than necessary. Moving all coins into one elevated foreground band keeps the decorative motion readable while preserving the bookshelf scene behind them.
+
+### The Tech Debt
+- The foreground token layout is still manually positioned and tuned per coin. If we keep iterating on this hero ornamentation, it may be worth extracting responsive token placement presets rather than continuing to tweak raw coordinates in the component.
+
+## 2026-05-12 - Hero coins re-scattered with SOL made the dominant token accent
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to re-scatter the floating coins across higher and lower positions in the hero foreground, and increased the size and visibility of the `SOL` coins so they read as the strongest visual anchors.
+
+### The Reasoning
+- Keeping all coins in front simplified the scene, but the previous arrangement still felt too banded. Spreading them vertically makes the ornamentation feel more natural, while emphasizing `SOL` gives the token set a clearer focal hierarchy instead of equal visual weight.
+
+### The Tech Debt
+- The new hierarchy still relies on hand-tuned coordinates, sizes, and opacity per coin. If we keep refining the hero art direction, it may be worth introducing named composition presets so these visual balances are easier to iterate without editing raw token objects every time.
+
+## 2026-05-12 - Hero token layout moved fully to the sides with all six assets used
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the floating token set now uses all six assets (`SOL`, `BONK`, `MEW`, `PEPE`, `PENGU`, `USDC`) while keeping the center clear for the `CORA` logo. The side composition now makes `SOL` the largest coin, keeps `BONK` and `MEW` medium, and scales `PEPE`, `PENGU`, and `USDC` smaller.
+
+### The Reasoning
+- The scattered foreground pass was starting to compete with the logo in the middle of the hero. Moving the tokens to the left and right edges keeps the title readable while still letting the token ecosystem show up in the scene with a clearer visual hierarchy.
+
+### The Tech Debt
+- The side composition and size hierarchy are still hand-authored in the hero token config. If we continue refining this scene, it may be worth splitting token placement into left/right layout presets so future art-direction tweaks are easier to make without editing every token object manually.
+
+## 2026-05-12 - Lead SOL coin nudged inward on the hero
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to move the main left-side `SOL` coin a bit farther right without changing the rest of the token arrangement.
+
+### The Reasoning
+- The lead `SOL` accent was sitting a little too close to the outer edge. Nudging it inward helps it feel more intentionally framed while keeping the center logo area clear.
+
+### The Tech Debt
+- This is another hand-tuned placement tweak inside the hero token config. If these positional refinements continue, the hero would benefit from a more structured decorative layout system instead of one-off coordinate edits.
+
+## 2026-05-12 - Lead SOL coin pushed farther inward on the hero
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) again to move the main left-side `SOL` coin farther toward the center while keeping it clear of the `CORA` logo.
+
+### The Reasoning
+- The first inward nudge still left the lead `SOL` coin reading a little too edge-hugging. Moving it farther in gives that primary token accent more presence inside the composition without letting it drift into the logo zone.
+
+### The Tech Debt
+- The hero token layout is still being tuned through direct coordinate edits. If we keep iterating visually at this level, a small compositional grid or named anchor system would make repeated placement adjustments less manual.
+
+## 2026-05-12 - Lead SOL coin moved further right again
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to push the primary left-side `SOL` coin farther right once more, with the rest of the token arrangement unchanged.
+
+### The Reasoning
+- The main `SOL` accent still needed a bit more inward presence to feel balanced against the right-side token group. This extra shift keeps it visually important without crossing into the middle logo space.
+
+### The Tech Debt
+- Repeated micro-adjustments like this are a sign the hero token composition is still being tuned by eye. A simple placement system or design tokens for decorative anchors would make this sort of iteration less repetitive over time.
+
+## 2026-05-12 - Right-side hero coins now follow the cursor direction correctly
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the right-side foreground coins use the same parallax follow direction as the cursor instead of drifting opposite it.
+
+### The Reasoning
+- The mixed token layout had inherited opposite-direction motion on some right-side coins, which made them feel inconsistent with the rest of the hero foreground. Normalizing their direction keeps the coin layer reading as one coherent cursor-following group.
+
+### The Tech Debt
+- The coin parallax direction is still configured per token object, which makes directional inconsistencies easy to introduce during visual tweaking. If the hero token system keeps evolving, shared directional presets would reduce that risk.

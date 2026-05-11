@@ -169,6 +169,16 @@ body {
   50% { transform: translateX(12px); }
 }
 
+@keyframes softBreath {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-2px) scale(1.012);
+  }
+}
+
 /* Utility classes */
 
 .arena-grid {
@@ -218,6 +228,12 @@ body {
 
 .animate-orb-breath {
   animation: orbBreath 4s ease-in-out infinite;
+}
+
+.animate-soft-breath {
+  transform-origin: center bottom;
+  animation: softBreath 4.8s ease-in-out infinite;
+  will-change: transform;
 }
 
 .animate-card-reveal {

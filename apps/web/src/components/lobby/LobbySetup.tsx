@@ -31,8 +31,9 @@ function truncateWallet(address: string) {
 function ArenaIcon({ token, active }: { token: string; active: boolean }) {
   const color = active ? "#4d2a18" : "var(--tone-bark)";
   if (token === "SOL") {
+    const solColor = active ? "#214335" : "#4f6f5b";
     return (
-      <svg width="20" height="20" viewBox="0 0 35 30" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ color }}>
+      <svg width="20" height="20" viewBox="0 0 35 30" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ color: solColor }}>
         <path d="M6.3 0L0 6.3h28.7l6.3-6.3H6.3zm28.7 11.8L28.7 18.2H0l6.3-6.4h28.7zm-28.7 12L0 30h28.7l6.3-6.3H6.3z" fill="currentColor" />
       </svg>
     );
@@ -68,12 +69,13 @@ export function LobbySetup({
   blinkChallengeBusy,
   hasActiveBlinkChallenge,
 }: LobbySetupProps) {
+  const ARENA_ASSET_VERSION = "2026-05-12-arena-refresh-1";
   const COMING_SOON_ARENA_ID = "mew";
   const COMING_SOON_ARENA_IDS = new Set(["bonk", COMING_SOON_ARENA_ID]);
-  const NULL_ARENA_IMAGE_URL = "/assets/arena/null.png";
-  const SOL_ARENA_IMAGE_URL = "/assets/arena/sol.png";
-  const BONK_ARENA_IMAGE_URL = "/assets/arena/bonk.png";
-  const MEW_ARENA_IMAGE_URL = "/assets/arena/mew.png";
+  const NULL_ARENA_IMAGE_URL = `/assets/arena/null.png?v=${ARENA_ASSET_VERSION}`;
+  const SOL_ARENA_IMAGE_URL = `/assets/arena/sol.png?v=${ARENA_ASSET_VERSION}`;
+  const BONK_ARENA_IMAGE_URL = `/assets/arena/bonk.png?v=${ARENA_ASSET_VERSION}`;
+  const MEW_ARENA_IMAGE_URL = `/assets/arena/mew.png?v=${ARENA_ASSET_VERSION}`;
   const rightBoardBackground =
     "radial-gradient(circle at 58% 42%, rgba(248,214,148,0.16), transparent 36%), linear-gradient(145deg, #10231b 0%, #18392d 48%, #0d1a14 100%)";
   const selectedArena = arenas.find((arena) => arena.id === selectedArenaId) ?? null;
@@ -335,7 +337,10 @@ export function LobbySetup({
                 <div
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-inner"
                   style={{
-                    background: mewArena.previewBg,
+                    background:
+                      selectedArenaId === COMING_SOON_ARENA_ID
+                        ? "linear-gradient(180deg, #c8d8da 0%, #9db8bc 45%, #85A1A5 100%)"
+                        : mewArena.previewBg,
                     border: `1.5px solid ${selectedArenaId === COMING_SOON_ARENA_ID ? "#3C5C5F" : mewArena.accent}`,
                   }}
                 >
@@ -421,13 +426,22 @@ export function LobbySetup({
           </div>
 
           <div className="relative z-10 max-w-lg">
-            <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.24em] text-[var(--tone-cream)] opacity-90 drop-shadow-sm">
+            <p
+              className="font-gabarito text-[11px] font-bold uppercase tracking-[0.24em] text-[var(--tone-cream)] opacity-90"
+              style={{ textShadow: "0 4px 18px rgba(0,0,0,0.78), 0 2px 4px rgba(0,0,0,0.56)" }}
+            >
               Pre-Match Lobby
             </p>
-            <h1 className="mt-2 font-caprasimo text-4xl leading-none text-[#fffaf0] drop-shadow-md md:text-5xl">
+            <h1
+              className="mt-2 font-caprasimo text-4xl leading-none text-[#fffaf0] md:text-5xl"
+              style={{ textShadow: "0 10px 30px rgba(0,0,0,0.82), 0 3px 6px rgba(0,0,0,0.58)" }}
+            >
               Choose Your Arena
             </h1>
-            <p className="mt-3 max-w-md font-gabarito text-sm text-[var(--tone-cream)] drop-shadow-sm">
+            <p
+              className="mt-3 max-w-md font-gabarito text-sm text-[var(--tone-cream)]"
+              style={{ textShadow: "0 4px 18px rgba(0,0,0,0.78), 0 2px 4px rgba(0,0,0,0.56)" }}
+            >
               {selectedArenaDisplay ? `Selected: ${selectedArenaDisplay.token} Arena` : "Pick SOL, BONK, or MEW, lock the wager, then draft your scientist."}
             </p>
           </div>
