@@ -19,8 +19,13 @@ const gabarito = Gabarito({
 });
 
 export const metadata: Metadata = {
-  title: "CORA - Wager-Fi Esports",
+  title: "CORA - Cognitive Arena",
   description: "High-stakes Wager-Fi esports for General Aptitude Tests.",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({

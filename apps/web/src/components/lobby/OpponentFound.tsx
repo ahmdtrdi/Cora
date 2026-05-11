@@ -17,6 +17,7 @@ import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
 import { writeActiveDepositIntent, writeActiveMatchSession } from "@/lib/session/matchSession";
 import { getDepositMagicBlockUi } from "@/lib/magicblock/magicblockUi";
+import { GAME_AUDIO, playOneShotAudio, unlockAudioPlayback, usePreloadedAudio } from "@/lib/audio/gameAudio";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -34,6 +35,7 @@ const AGREEMENT_TIMEOUT_SECONDS = 30;
 const PHANTOM_SIGNING_WARNING_MS = 12_000;
 const SIGNING_TIMEOUT_MS = 28_000;
 const PREPARED_DEPOSIT_MAX_AGE_MS = 45_000;
+const OPPONENT_FOUND_PRELOADED_AUDIO = [GAME_AUDIO.matched, GAME_AUDIO.countdown, GAME_AUDIO.battleMusic] as const;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -81,12 +83,15 @@ export function OpponentFound({
   const preparedDepositTransactionRef = useRef<Transaction | null>(null);
   const preparedDepositReadyAtRef = useRef<number | null>(null);
   const preparedDepositAbortRef = useRef<AbortController | null>(null);
+  const matchedSoundPlayedRef = useRef(false);
+  const lastCountdownSoundRef = useRef<number | null>(null);
   const myHappyExpressionSrc = useMemo(
     () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
     [myScientist.id],
   );
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
+  usePreloadedAudio(OPPONENT_FOUND_PRELOADED_AUDIO);
   const signed = signingState === "waiting";
   const {
     connectionState,
@@ -245,7 +250,25 @@ export function OpponentFound({
         preparedDepositKeyRef.current = null;
       }
     };
-  }, [arena.token, depositPreparationKey, effectiveRole, roomId, wagerUsd]);
+  }, [arena.token, depositPreparationKey, effectiveRole, roomId, wagerUsd, wallet]);
+
+  useEffect(() => {
+    if (matchedSoundPlayedRef.current) return;
+    matchedSoundPlayedRef.current = true;
+    playOneShotAudio(GAME_AUDIO.matched, { volume: 0.85 });
+  }, []);
+
+  useEffect(() => {
+    if (battleLaunchCountdown === null) {
+      lastCountdownSoundRef.current = null;
+      return;
+    }
+    if (battleLaunchCountdown < 1 || battleLaunchCountdown > 3) return;
+    if (lastCountdownSoundRef.current === battleLaunchCountdown) return;
+
+    lastCountdownSoundRef.current = battleLaunchCountdown;
+    playOneShotAudio(GAME_AUDIO.countdown, { volume: 0.9 });
+  }, [battleLaunchCountdown]);
 
   useEffect(() => {
     if (!(signingState === "waiting" && isBattleSnapshotReady && signedDepositSignature)) {
@@ -521,6 +544,8 @@ export function OpponentFound({
     setErrorVisible(false);
     setWalletApprovalTakingLong(false);
     setSigningState("signing");
+
+    await unlockAudioPlayback([GAME_AUDIO.battleMusic]);
 
     const signingAbortController = new AbortController();
     let signingTimeoutId: ReturnType<typeof setTimeout> | null = null;

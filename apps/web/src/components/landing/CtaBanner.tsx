@@ -95,7 +95,7 @@ export function CtaBanner() {
           viewport={{ once: true, amount: 0.35 }}
           transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
         >
-          <Link href="/connect" className="btn-game btn-game-primary font-gabarito">
+          <Link href="/connect" target="_blank" rel="noreferrer" className="btn-game btn-game-primary font-gabarito">
             <span className="relative z-10">Enter Arena</span>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="relative z-10">
               <path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

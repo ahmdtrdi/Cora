@@ -11,6 +11,7 @@ import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
+import { GAME_AUDIO, playOneShotAudio, useLoopingAudio, usePreloadedAudio } from "@/lib/audio/gameAudio";
 import { createBlinkChallengeSession } from "@/lib/challenge/createBlinkChallengeSession";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
@@ -50,10 +51,20 @@ const ENDGAME_SMOKE_REVEAL_DELAY_MS = 360;
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
+  mew: "MEW",
 };
 const ARENA_IMAGE_BY_ID: Record<string, string> = {
-  sol: "/assets/arena/sol.png",
-  bonk: "/assets/arena/bonk.png",
+  sol: "/assets/arena/sol_wide.png",
+  bonk: "/assets/arena/bonk_wide.png",
+  mew: "/assets/arena/mew_wide.png",
+};
+const CARD_ART_BY_TYPE: Record<Card["type"], string> = {
+  attack: "/assets/cards/attack.png",
+  heal: "/assets/cards/heal.png",
+};
+const CARD_BACKGROUND_BY_TYPE: Record<Card["type"], string> = {
+  attack: "#8a5633",
+  heal: "#738b6c",
 };
 const CHARACTER_REACTION_EXPRESSIONS: CharacterExpression[] = ["happy", "confident", "hurt"];
 
@@ -63,6 +74,17 @@ const CARD_TRANSFORMS = [
   "-translate-y-1 rotate-0",
   "translate-y-0 rotate-3",
   "translate-y-2 rotate-6",
+] as const;
+
+const BATTLE_PRELOADED_AUDIO = [
+  GAME_AUDIO.battleMusic,
+  GAME_AUDIO.healing,
+  GAME_AUDIO.hitted,
+  GAME_AUDIO.hitting,
+  GAME_AUDIO.win,
+  GAME_AUDIO.lose,
+  GAME_AUDIO.right,
+  GAME_AUDIO.wrong,
 ] as const;
 
 function getCardTransform(index: number) {
@@ -285,6 +307,7 @@ export function BattleScreen() {
   const [answerFeedback, setAnswerFeedback] = useState<AnswerFeedback | null>(null);
   const [gameNotice, setGameNotice] = useState<{ id: string; message: string; tone: "action" | "phase" } | null>(null);
   const [characterActionSide, setCharacterActionSide] = useState<BattleSide | null>(null);
+  const [characterActionKind, setCharacterActionKind] = useState<"attack" | "heal" | null>(null);
   const [projectile, setProjectile] = useState<ProjectileState | null>(null);
   const [playerBaseFx, setPlayerBaseFx] = useState<BaseFxState>("idle");
   const [opponentBaseFx, setOpponentBaseFx] = useState<BaseFxState>("idle");
@@ -329,6 +352,7 @@ export function BattleScreen() {
   const endgameTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const lastEndgameResultKeyRef = useRef<string | null>(null);
   const lastKnownCommittedRef = useRef(false);
+  const lastTerminalSoundKeyRef = useRef<string | null>(null);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
   const playerBaseControls = useAnimationControls();
@@ -417,6 +441,15 @@ export function BattleScreen() {
   const status = gameState?.status ?? "waiting";
   const player = gameState?.player;
   const opponent = gameState?.opponent;
+
+  usePreloadedAudio(BATTLE_PRELOADED_AUDIO);
+
+  useLoopingAudio(GAME_AUDIO.battleMusic, {
+    enabled: roomId.length > 0,
+    loop: true,
+    volume: 0.18,
+  });
+
   const activeCard = useMemo(
     () => (activeCardId ? activeQuestionCard ?? hand.find((card) => card.id === activeCardId) ?? null : null),
     [activeQuestionCard, hand, activeCardId],
@@ -435,6 +468,7 @@ export function BattleScreen() {
         at: lastCardExpired.at,
       },
     ]);
+    playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
     showGameNotice("No damage this turn.");
     if (answerFeedbackTimerRef.current) {
       clearTimeout(answerFeedbackTimerRef.current);
@@ -462,6 +496,9 @@ export function BattleScreen() {
         at: lastPlayResult.at,
       },
     ]);
+    playOneShotAudio(lastPlayResult.correct ? GAME_AUDIO.right : GAME_AUDIO.wrong, {
+      volume: lastPlayResult.correct ? 0.82 : 0.88,
+    });
     if (lastPlayResult.correct) {
       showReaction("player", "happy");
     }
@@ -508,6 +545,7 @@ export function BattleScreen() {
     const projectileSrc = shouldSpawnProjectile ? getCharacterProjectileSrc(attackerCharacterId) : null;
 
     setCharacterActionSide(attackerSide);
+    setCharacterActionKind(actionKind);
     const projectileSpawnTimer = setTimeout(() => {
       if (shouldSpawnProjectile) {
         setProjectile({
@@ -523,8 +561,16 @@ export function BattleScreen() {
 
     const actionResetTimer = setTimeout(() => {
       setCharacterActionSide(null);
+      setCharacterActionKind(null);
     }, 360);
     const projectileHitTimer = setTimeout(() => {
+      if (actionKind === "heal") {
+        playOneShotAudio(GAME_AUDIO.healing, { volume: 0.86 });
+      } else if (lastDamageEvent.damage > 0) {
+        playOneShotAudio(attackerSide === "player" ? GAME_AUDIO.hitting : GAME_AUDIO.hitted, {
+          volume: 0.88,
+        });
+      }
       setProjectile(null);
       if (targetSide === "player") {
         setPlayerBaseFx(actionKind === "heal" ? "heal" : "hit");
@@ -830,9 +876,8 @@ export function BattleScreen() {
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const regularMatchShareTitle = didWin
-    ? `I just won against ${opponentIdentityLabel}.`
-    : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
+  const playerAddressLabel = address ? shortenAddress(address) : "Unknown";
+  const regularMatchShareTitle = "I just won in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
     : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
@@ -856,6 +901,8 @@ export function BattleScreen() {
   const opponentVisual = getCharacterVisual(opponentCharacterId);
   const playerSpriteState = resolveCharacterSpriteState(player?.characterState, characterActionSide === "player");
   const opponentSpriteState = resolveCharacterSpriteState(opponent?.characterState, characterActionSide === "opponent");
+  const playerFacingBase = characterActionSide === "player" && characterActionKind === "heal";
+  const opponentFacingBase = characterActionSide === "opponent" && characterActionKind === "heal";
   const playerSpriteSrc = getCharacterSpriteSrc(playerCharacterId, playerSpriteState);
   const opponentSpriteSrc = getCharacterSpriteSrc(opponentCharacterId, opponentSpriteState);
   const playerBaseSrc = getCharacterBaseSrc(playerCharacterId, "player");
@@ -927,6 +974,16 @@ export function BattleScreen() {
     }
     lastEndgameResultKeyRef.current = endgameResultKey;
     clearEndgameTransitionTimers();
+
+    if (lastTerminalSoundKeyRef.current !== endgameResultKey) {
+      lastTerminalSoundKeyRef.current = endgameResultKey;
+      if (settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender") {
+        playOneShotAudio(GAME_AUDIO.win, { volume: 0.92 });
+      } else if (settlementOutcomeKind === "lose" || settlementOutcomeKind === "player_surrender") {
+        playOneShotAudio(GAME_AUDIO.lose, { volume: 0.92 });
+      }
+    }
+
     schedule(() => {
       setShowSettlementOverlay(false);
       setEndgameDefeatedSide(resultDefeatedSide);
@@ -983,6 +1040,7 @@ export function BattleScreen() {
     isMatchComplete,
     resetEndgameVisualState,
     resultDefeatedSide,
+    settlementOutcomeKind,
     showReaction,
   ]);
 
@@ -1338,6 +1396,8 @@ export function BattleScreen() {
         wagerUsd,
         playerCharacterName,
         opponentCharacterName,
+        playerAddressLabel,
+        opponentAddressLabel: opponentIdentityLabel,
         playerExpressionSrc: playerResultExpressionSrc,
         opponentExpressionSrc: opponentResultExpressionSrc,
         roundsLabel: `${playerRoundsWon}-${opponentRoundsWon}`,
@@ -1626,6 +1686,44 @@ export function BattleScreen() {
                   sizes="100vw"
                   className="object-cover object-center opacity-60"
                   onError={() => markArenaSpriteFailed(targetArenaImageUrl)}
+                />
+                <motion.div
+                  className="absolute left-[-18%] top-[8%] h-[34%] w-[56%] rounded-full blur-[52px]"
+                  style={{
+                    background:
+                      "linear-gradient(90deg, rgba(248,214,148,0) 0%, rgba(248,214,148,0.08) 28%, rgba(248,214,148,0.18) 50%, rgba(248,214,148,0.08) 72%, rgba(248,214,148,0) 100%)",
+                    mixBlendMode: "screen",
+                  }}
+                  animate={{
+                    x: [0, 90, 0],
+                    y: [0, 8, 0],
+                    opacity: [0.18, 0.34, 0.18],
+                  }}
+                  transition={{ duration: 8.6, repeat: Infinity, ease: "easeInOut" }}
+                />
+                <motion.div
+                  className="absolute right-[-14%] top-[42%] h-[26%] w-[42%] rounded-full blur-[44px]"
+                  style={{
+                    background:
+                      "linear-gradient(90deg, rgba(157,180,150,0) 0%, rgba(157,180,150,0.08) 28%, rgba(157,180,150,0.16) 52%, rgba(157,180,150,0.08) 76%, rgba(157,180,150,0) 100%)",
+                    mixBlendMode: "screen",
+                  }}
+                  animate={{
+                    x: [0, -72, 0],
+                    y: [0, -10, 0],
+                    opacity: [0.14, 0.28, 0.14],
+                  }}
+                  transition={{ duration: 10.8, repeat: Infinity, ease: "easeInOut", delay: 0.7 }}
+                />
+                <motion.div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(42% 36% at 50% 36%, rgba(255,244,214,0.06) 0%, rgba(255,244,214,0.02) 40%, rgba(255,244,214,0) 72%)",
+                    mixBlendMode: "screen",
+                  }}
+                  animate={{ opacity: [0.12, 0.26, 0.12] }}
+                  transition={{ duration: 6.2, repeat: Infinity, ease: "easeInOut" }}
                 />
                 <div className="absolute inset-0 bg-[rgba(12,21,17,0.4)] mix-blend-multiply" />
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_50%,rgba(12,21,17,0.8)_100%)]" />
@@ -2013,7 +2111,7 @@ export function BattleScreen() {
                 }`}
               animate={playerActionControls}
             >
-              <div className="relative h-full w-full">
+              <div className="relative h-full w-full animate-soft-breath">
                 <AnimatePresence>
                   {displayPlayerReaction && playerReactionSrc && hasPlayerReactionSprite && (
                     <motion.div
@@ -2059,7 +2157,7 @@ export function BattleScreen() {
                     alt={`${playerCharacterId ?? "player"} ${playerSpriteState} portrait`}
                     fill
                     sizes="(max-width: 768px) 130px, 200px"
-                    className="object-contain object-center"
+                    className={`object-contain object-center transition-transform duration-200 ${playerFacingBase ? "-scale-x-100" : ""}`}
                     onError={() => markCharacterSpriteFailed(playerSpriteSrc)}
                   />
                 ) : (
@@ -2077,7 +2175,7 @@ export function BattleScreen() {
                 }`}
               animate={opponentActionControls}
             >
-              <div className="relative h-full w-full">
+              <div className="relative h-full w-full animate-soft-breath">
                 <AnimatePresence>
                   {displayOpponentReaction && opponentReactionSrc && hasOpponentReactionSprite && (
                     <motion.div
@@ -2123,7 +2221,7 @@ export function BattleScreen() {
                     alt={`${opponentCharacterId ?? "opponent"} ${opponentSpriteState} portrait`}
                     fill
                     sizes="(max-width: 768px) 130px, 200px"
-                    className="object-contain object-center -scale-x-100"
+                    className={`object-contain object-center transition-transform duration-200 ${opponentFacingBase ? "" : "-scale-x-100"}`}
                     onError={() => markCharacterSpriteFailed(opponentSpriteSrc)}
                   />
                 ) : (
@@ -2264,15 +2362,38 @@ export function BattleScreen() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <p className="mb-1 text-center font-gabarito text-xs text-[rgba(244,240,230,0.86)]">
-              {isMatchComplete
-                ? "Match locked. Resolving final sequence."
-                : activeCard && status === "playing"
-                ? "Choose an answer."
-                : isPlayable
-                  ? "Pick a card from your hand."
-                  : "Waiting for server state..."}
-            </p>
+            <div className="mb-3 flex justify-center">
+              <p
+                className={`inline-flex items-center rounded-full px-3 py-1 text-center font-gabarito text-xs ${
+                  isPlayable && !activeCard && !isMatchComplete
+                    ? "font-bold uppercase tracking-[0.14em]"
+                    : "font-medium"
+                }`}
+                style={
+                  isPlayable && !activeCard && !isMatchComplete
+                    ? {
+                        color: "rgba(255,248,235,0.98)",
+                        border: "1px solid rgba(248,214,148,0.28)",
+                        background:
+                          "linear-gradient(180deg, rgba(38,58,49,0.84) 0%, rgba(20,35,29,0.88) 100%)",
+                        boxShadow:
+                          "0 10px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,248,235,0.08)",
+                        textShadow: "0 2px 8px rgba(0,0,0,0.34)",
+                      }
+                    : {
+                        color: "rgba(244,240,230,0.86)",
+                      }
+                }
+              >
+                {isMatchComplete
+                  ? "Match locked. Resolving final sequence."
+                  : activeCard && status === "playing"
+                    ? "Choose an answer."
+                    : isPlayable
+                      ? "Pick a card from your hand"
+                      : "Waiting for server state..."}
+              </p>
+            </div>
 
             <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
               {Array.from({ length: displaySlots }).map((_, index) => {
@@ -2281,6 +2402,8 @@ export function BattleScreen() {
                 const visuallyActive = active && !isMatchComplete;
                 const transformClass = getCardTransform(index);
                 const cardDisabled = !card || !isPlayable || Boolean(activeCardId) || isMatchComplete;
+                const cardArtSrc = card ? CARD_ART_BY_TYPE[card.type] : null;
+                const cardBackground = card ? CARD_BACKGROUND_BY_TYPE[card.type] : null;
                 return (
                   <button
                     key={card?.id ?? `placeholder-${index}`}
@@ -2289,51 +2412,49 @@ export function BattleScreen() {
                       if (card) onOpenCard(card);
                     }}
                     disabled={cardDisabled}
-                    className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition ${transformClass}`}
+                    className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition duration-200 ease-out enabled:hover:-translate-y-2 enabled:hover:scale-[1.03] ${transformClass}`}
                     style={{
                       border: visuallyActive ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
-                      background: cardDisabled
-                        ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
-                        : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
+                      background: cardBackground
+                        ? cardBackground
+                        : cardDisabled
+                          ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
+                          : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
                       opacity: visuallyActive ? 1 : cardDisabled ? 0.68 : 1,
                       boxShadow: visuallyActive
                         ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
                         : "0 12px 22px rgba(0,0,0,0.3)",
                     }}
                   >
-                    <div
-                      className="pointer-events-none absolute inset-[8%] rounded-2xl"
-                      style={{
-                        border: "1px solid rgba(111,58,40,0.24)",
-                        background:
-                          "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.38), transparent 44%), linear-gradient(150deg, rgba(255,245,226,0.64), rgba(241,217,181,0.68))",
-                      }}
-                    />
-                    <div
-                      className="pointer-events-none absolute inset-0"
-                      style={{
-                        background:
-                          "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
-                      }}
-                    />
-                    {card && (
-                      <span
-                        className="absolute left-1/2 top-[18%] -translate-x-1/2 rounded-full px-2 py-0.5 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.12em]"
-                        style={{
-                          color: card.type === "heal" ? "#214335" : "#6f3a28",
-                          background: card.type === "heal" ? "rgba(216,234,212,0.82)" : "rgba(248,214,148,0.82)",
-                          border: "1px solid rgba(111,58,40,0.22)",
-                        }}
-                      >
-                        {card.type === "heal" ? "Heal" : "Attack"}
-                      </span>
+                    {cardArtSrc ? (
+                      <div className="pointer-events-none absolute inset-[6%] overflow-hidden rounded-[14px] border border-[rgba(255,245,230,0.2)]">
+                        <Image
+                          src={cardArtSrc}
+                          alt={`${card?.type ?? "battle"} card`}
+                          fill
+                          sizes="(max-width: 768px) 118px, 130px"
+                          className="object-cover object-center"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          className="pointer-events-none absolute inset-[8%] rounded-2xl"
+                          style={{
+                            border: "1px solid rgba(111,58,40,0.24)",
+                            background:
+                              "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.38), transparent 44%), linear-gradient(150deg, rgba(255,245,226,0.64), rgba(241,217,181,0.68))",
+                          }}
+                        />
+                        <div
+                          className="pointer-events-none absolute inset-0"
+                          style={{
+                            background:
+                              "repeating-linear-gradient(135deg, rgba(111,58,40,0.08) 0 6px, rgba(111,58,40,0) 6px 14px)",
+                          }}
+                        />
+                      </>
                     )}
-                    <span
-                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-caprasimo text-4xl"
-                      style={{ color: cardDisabled ? "rgba(111,58,40,0.48)" : "rgba(111,58,40,0.82)" }}
-                    >
-                      ?
-                    </span>
                   </button>
                 );
               })}
@@ -2386,6 +2507,8 @@ export function BattleScreen() {
         regularMatchShareTitle={regularMatchShareTitle}
         playerCharacterName={playerCharacterName}
         opponentCharacterName={opponentCharacterName}
+        playerAddressLabel={playerAddressLabel}
+        opponentAddressLabel={opponentIdentityLabel}
         playerResultExpressionSrc={playerResultExpressionSrc}
         opponentResultExpressionSrc={opponentResultExpressionSrc}
         challengeShareTitle={challengeShareTitle}
