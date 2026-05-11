@@ -4725,6 +4725,102 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - FE still infers Blink recovery mode from a mix of local storage, websocket stage, and backend room/challenge status. A backend-owned private-room phase model would remove a lot of this recovery branching.
 
+## 2026-05-11 - Challenger Post-Deposit Character Gate Unlock
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challenger-side character selection unlocks immediately after the local accept/deposit signature succeeds, without waiting for the challenge row to rehydrate `opponentWallet` first.
+
+### The Reasoning
+- The previous FE gate required both local accepted state and backend-refreshed `opponentWallet` ownership, which created a race: after deposit the challenger had already accepted locally, but the UI could still stay stuck on the accept screen until challenge polling caught up.
+
+### The Tech Debt
+- FE still depends on a mix of local accepted context and backend challenge status for progression. A dedicated backend Blink phase for `accepted_waiting_character` would make the transition less implicit.
+
+## 2026-05-11 - Blink Share Link Cleanup After Backend Redirect
+
+### The Change
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the active Blink overlay now treats the Blink URL as the single canonical share link again.
+- Removed the temporary browser-link warning copy and the secondary `Copy Browser Link` action from the Blink share card.
+
+### The Reasoning
+- Backend now redirects normal browser requests from the Blink URL to the challenge page, so FE no longer needs to present a separate browser fallback link in the primary share surface.
+- Returning to one canonical link simplifies the creator UX and matches the original product intent.
+
+### The Tech Debt
+- `webChallengeUrl` still exists in the stored Blink session shape for compatibility with older FE state. If no other recovery flow needs it, that field can be retired in a later cleanup pass.
+
+## 2026-05-11 - Creator Browser Notification For Blink Acceptance
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side Blink flows now support two notification layers when a rival accepts:
+- the existing in-lobby `Rival Accepted` notification card
+- a browser notification fired once per accepted room when Notification permission is granted
+- Blink challenge creation now requests browser notification permission opportunistically when supported and still in the browser’s `default` permission state.
+- Clicking the browser notification focuses the tab and opens the creator challenge flow directly.
+
+### The Reasoning
+- Creator acceptance is exactly the kind of event that benefits from an OS/browser-level heads-up because the user may have tabbed away while waiting for a rival.
+- Keeping the in-lobby notice as well preserves the immediate on-page affordance for users who are already in the app.
+
+### The Tech Debt
+- Permission is requested from the create-challenge flow, which is a reasonable user-gesture moment but still a lightweight implementation. If product wants more explicit notification UX later, this should become a dedicated opt-in setting.
+
+## 2026-05-11 - Blink Creator Acceptance Banner Restyle
+
+### The Change
+- Updated the creator-side `Rival Accepted` in-lobby notification in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to use the same full-width top-banner styling family as the existing `You have an active match` banner.
+- Kept the Blink creator flow passive at this stage: the banner is informational first, and `View Challenge` is still the explicit action that opens character select and confirmation.
+
+### The Reasoning
+- The smaller floating card made Blink acceptance feel like a side alert, while this state is important enough to deserve the same visual weight as other active-match recovery states.
+- Matching the active-match banner style also reinforces the intended flow: notify first, then let the creator opt into the challenge confirmation path.
+
+### The Tech Debt
+- There are now multiple top-of-screen banner variants in the lobby. If more room states accumulate, these should likely converge on a shared banner component with variant props.
+
+## 2026-05-11 - Blink Notification Permission Opt-In
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to remove the automatic browser notification permission prompt from Blink challenge creation.
+- Added explicit notification-permission state in the lobby and passed it into [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx).
+- Added an `Enable Notifications` button in the active Blink challenge panel so creators can opt in manually while waiting for a rival.
+
+### The Reasoning
+- Automatic browser permission prompts are noisy and easy to reject reflexively. This Blink flow benefits more from an explicit in-context opt-in where the user understands why the permission is being requested.
+- The creator still gets both systems after opting in: the in-lobby `Rival Accepted` banner and the browser notification.
+
+### The Tech Debt
+- The panel currently only surfaces the explicit opt-in button while permission is still `default`. If product wants richer notification controls later, this should evolve into a fuller preference state rather than a one-shot prompt button.
+
+## 2026-05-11 - Blink Notification Button Styling
+
+### The Change
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the `Enable Notifications` control uses the same small utility-button visual language as the Blink share actions.
+- Moved the button below the helper copy instead of placing it inline beside the text.
+
+### The Reasoning
+- The notification permission action is a secondary utility control, not a primary CTA. Matching the smaller share-button styling keeps the panel hierarchy calmer.
+- Stacking it below the explanation makes the copy easier to scan and avoids crowding the banner area.
+
+### The Tech Debt
+- The notification opt-in styling is now locally duplicated from the share-card utility buttons. If more small utility actions appear across Blink surfaces, extract a shared button variant.
+
+## 2026-05-11 - Blink Share Card Identity Cleanup
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to remove the fake player-profile block from the challenge card while still showing the wallet address.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) to replace the static `CORA Blink Challenge` headline with a deterministic per-room taunt line chosen from a small message set.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so exported JPGs match the new wallet-first, no-profile layout.
+- Updated the existing post-match challenge-share flow in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to match the shared card API cleanup.
+
+### The Reasoning
+- We do not currently have real player profile data in this flow, so showing a boxed initial and the label `You` makes the card feel fake.
+- The wallet is still useful identity context, so it remains visible as the real anchor.
+- A taunt headline gives the Blink share card more personality than static product branding while staying stable for the same room.
+
+### The Tech Debt
+- The taunt list is hardcoded locally in the Blink panel. If product wants broader brand voice control later, this should move into shared content/config.
+
 ## 2026-05-10 - Fix Blink challenge terminal-state loop
 
 ### The Change
@@ -4812,6 +4908,46 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 **The Tech Debt:** The object scale is still managed with manual percentages and minimum widths. If we continue tuning this art direction, a shared set of responsive scene tokens would be easier to maintain than repeated inline values.
 
+## 2026-05-11 - Blink Share Card Layout + Copy Refresh
+
+### The Change
+- Refactored [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) so the generated card surface is separated from the share-action buttons and helper/link text.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) to move the browser-support sentence above the share card, use the fixed lobby headline `Do you think you can beat me?`, and reuse the selected scientist expression plus low-opacity landing `objects.png` art in both the panel and the JPG export.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so exported Blink/share JPGs match the new card composition with a portrait block, cleaner title alignment, and subtle hero-scene texture.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so post-match Blink share cards now use result-aware copy (`I just won against ...` / rematch fallback) and reuse the player scientist expression artwork.
+
+### The Reasoning
+- The helper sentence about browser/app support is UI guidance, not part of the share artifact, so it belongs outside the generated card.
+- Separating the pure card from the controls keeps the on-screen layout closer to the exported JPG and gives the share surface cleaner hierarchy.
+- Reusing existing landing assets and character expression art makes the Blink card feel grounded in the same visual world instead of reading like a plain utilitarian export.
+
+### The Tech Debt
+- Share-card art direction is still assembled inline from asset paths (`objects.png` and character expression routes). If more share surfaces or variants appear, this should move into a shared share-card theme/config layer.
+- The post-match share title now has a win/rematch split, but the copy rules are still local to `BattleScreen.tsx`. If product iterates more on social/share tone, centralize the messaging.
+
+## 2026-05-11 - Share Match Flow + Explicit Blink Confirmation
+
+### The Change
+- Added [createBlinkChallengeSession.ts](/d:/projects/Cora/apps/web/src/lib/challenge/createBlinkChallengeSession.ts) to centralize the FE-only private Blink creation flow (create room, sign funding tx, confirm room, normalize session snapshot).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so `Create Blink Challenge` no longer opens Phantom immediately. It now opens an explicit confirmation modal showing arena, wager, and current scientist before the wallet step.
+- Added [MatchResultShareCard.tsx](/d:/projects/Cora/apps/web/src/components/play/MatchResultShareCard.tsx) and [renderMatchResultCardPng.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderMatchResultCardPng.ts) for the new finished-match poster flow.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the result overlay button is now `Share Match`, opening a modal with:
+  - regular result-poster PNG export
+  - Blink rematch creation with the same explicit confirmation step before Phantom
+  - post-create Blink sharing using the canonical Blink URL
+- Updated finished-match copy so win and loss share titles now use:
+  - `I just won against ...`
+  - `Matched against ... but this is not the end.`
+
+### The Reasoning
+- Opening Phantom as the very first response to a button click felt abrupt and confusing in both the lobby and result flow. The confirmation layer makes the wallet step feel intentional.
+- Splitting result sharing into a regular poster path and a Blink rematch path keeps the finished overlay easier to understand than forcing everything through one Blink-specific action.
+- Centralizing Blink creation logic reduces the chance of lobby and post-match flows drifting apart in behavior.
+
+### The Tech Debt
+- The lobby and result confirmation modals currently share behavior but not a shared component yet. If we keep iterating on Blink confirmations, extract a reusable confirm surface.
+- The result poster PNG renderer is separate from the on-screen React card and could visually drift over time if one is edited without the other.
+
 ## 2026-05-11 - Hero hover parallax smoothed
 
 **The Change:** Refined the hover motion in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) by softening the pointer-response curve around center, reducing vertical drift, and slowing the spring slightly for a smoother settle.
@@ -4835,3 +4971,110 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 **The Reasoning:** The glow was the wrong direction for the interaction, and the previous parallax pass still felt too restrained. Pushing the layer travel further while keeping the eased response makes the hover read more clearly without changing the scene composition.
 
 **The Tech Debt:** The stronger hover still depends on hand-tuned transform multipliers and spring values. If we keep iterating on hero motion, these interaction settings would be easier to maintain as shared landing motion tokens.
+
+## 2026-05-11 - Share Match Blink Flow Simplified
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the result modal no longer detours through a separate Blink confirmation popup.
+- The `Create Blink` action now starts directly from the first share modal, locks while busy, and shows an inline `Opening Phantom...` status chip modeled after [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx).
+- Updated [MatchResultShareCard.tsx](/d:/projects/Cora/apps/web/src/components/play/MatchResultShareCard.tsx) so the win/loss headline is slightly smaller and can span the card width instead of being constrained to a narrow column.
+
+### The Reasoning
+- The extra confirmation layer added friction without adding much clarity in the post-match flow, especially since opening `Share Match` is already an intentional action.
+- Keeping the user on the same modal while Phantom opens gives better continuity and makes the wallet handoff feel less abrupt.
+- Letting the headline run wider makes longer result copy feel more like a poster headline and less like a cramped text block.
+
+### The Tech Debt
+- The Phantom loading pill styling is still duplicated between lobby and battle flows. If we reuse it again, it should become a shared status primitive.
+- The result-card React layout changed, but the exported poster renderer should stay in sync if we continue iterating on the headline art direction.
+
+## 2026-05-11 - Blink Popup Close Button Restyled
+
+### The Change
+- Updated the share/Blink modal close button in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to use the same `btn-game btn-game-secondary` visual treatment and border/shadow color styling as the `Back To Lobby` button in [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- The tiny frame-cut close control looked visually disconnected from the rest of the Blink flow. Matching the established secondary CTA style makes the popup feel more intentional and consistent.
+
+### The Tech Debt
+- This style is still copied inline between components. If more Blink/lobby controls need to share this exact variant, it should become a named button preset or shared wrapper.
+
+## 2026-05-11 - Blink Confirm Cancel Button Corrected
+
+### The Change
+- Reverted the top-right share modal `Close` control in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) back to its compact frame-cut styling.
+- Updated the `Cancel` button inside the `Create Blink challenge?` confirmation popup in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to match the `Back To Lobby` secondary button styling from [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- The styling request applied to the confirmation popup action, not the modal chrome. Keeping the small corner close button and upgrading the popup’s main cancel CTA preserves hierarchy while matching the intended Blink pattern.
+
+### The Tech Debt
+- The same secondary button colors and shadow are now repeated again across Blink-related surfaces. If this remains the preferred pattern, it should be promoted into a shared variant.
+
+## 2026-05-11 - Blink Card Portrait Removed
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to support hiding the character portrait block while keeping the rest of the card layout intact.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the `Do you think you can beat me?` Blink card no longer renders the character square.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so saved JPG exports from that Blink panel also omit the portrait and rebalance the text block width.
+
+### The Reasoning
+- The portrait square was adding visual weight without adding much value on this specific Blink card. Removing it gives the headline and challenge metadata more room and makes the composition cleaner.
+
+### The Tech Debt
+- The shared challenge-card component now has a mode switch for portrait visibility. If more layout variants appear, we may want a more explicit variant API instead of accumulating booleans.
+
+## 2026-05-11 - Challenge Card Object Overlay Removed
+
+### The Change
+- Removed the decorative `objects.png` overlay from the shared Blink/challenge card in [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx).
+- Removed the same overlay from JPG exports in [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts).
+- Cleared the now-unused overlay prop plumbing from [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx), [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx), and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+
+### The Reasoning
+- The overlay was adding visual noise and competing with the headline/content on the card. Removing it keeps the card cleaner and more focused.
+
+### The Tech Debt
+- The share-card presentation is still controlled by a handful of optional layout switches. If we keep iterating on multiple card looks, a small variant system would be cleaner than continuing to trim props ad hoc.
+
+## 2026-05-11 - Wallet Pill + JPG Layout Sync
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) so the shortened wallet address now sits inside the same pill as the `WALLET` label instead of rendering as a separate line underneath.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so the exported challenge JPG matches the revised layout:
+  - dynamic title line counting
+  - a deeper no-portrait title allowance
+  - wallet address rendered inside the wallet pill
+  - follow-on spacing derived from the title height rather than fixed old coordinates
+
+### The Reasoning
+- The split wallet treatment made the card feel unfinished and visually disconnected. Keeping the label and value in one pill reads more like a single metadata chip.
+- The JPG renderer was still following the earlier fixed layout assumptions, which is why the save/export version broke after the card composition changed.
+
+### The Tech Debt
+- The on-screen card and JPG renderer are closer again, but they still duplicate layout logic in two places. If we keep iterating on these share cards, we should consider a shared layout config to reduce drift.
+
+## 2026-05-11 - JPG No-Portrait Layout Tightened
+
+### The Change
+- Refined the no-portrait Blink JPG export in [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) by narrowing the title text width, slightly reducing the headline size/line spacing, and fitting the right-column metric values before drawing.
+
+### The Reasoning
+- The export was still reading like the older wide layout after the portrait removal, which made the headline and stat column feel off compared with the on-screen card. Tightening those constraints brings the saved JPG back toward the intended composition.
+
+### The Tech Debt
+- The JPG renderer still relies on hand-tuned pixel geometry for each variant. If we keep adjusting these cards, we should centralize the layout constants instead of retuning them inline.
+
+## 2026-05-11 - Challenge JPG Alignment Corrections
+
+### The Change
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so portrait-mode text only uses the shifted `textStartX` when the portrait image actually loads successfully.
+- Increased the portrait-mode title wrapping allowance to three lines and tuned line spacing so `Do you think you can beat me!` no longer truncates prematurely.
+- Standardized pill text baseline handling with `middle` alignment for the status and wallet pills, then reset back to `alphabetic` after the pill block.
+- Right-aligned the metric values inside the `TOKEN` / `WAGER` / `ARENA` boxes using the box geometry instead of a hardcoded absolute x position.
+
+### The Reasoning
+- The renderer was still mixing older fixed offsets with newer layout variants, which caused the title, wallet pill, and right-side metrics to drift out of alignment in exported JPGs.
+
+### The Tech Debt
+- The export renderer now has more explicit alignment state management (`textBaseline` / `textAlign` resets), but it is still a hand-built canvas layout. A shared layout abstraction would make future visual changes less fragile.

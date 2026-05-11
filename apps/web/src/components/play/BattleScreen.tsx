@@ -5,21 +5,25 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
+import { createBlinkChallengeSession } from "@/lib/challenge/createBlinkChallengeSession";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
+import { createMatchResultCardFileName, renderMatchResultCardPng } from "@/lib/challenge/renderMatchResultCardPng";
 import {
   clearMatchSessionState,
   getMatchSessionAddress,
   getMatchSessionToken,
   readActiveDepositIntent,
   readActiveMatchSession,
+  writeActiveBlinkChallengeSession,
   writeActiveMatchSession,
+  type ActiveBlinkChallengeSession,
   type ActiveMatchSession,
 } from "@/lib/session/matchSession";
 
@@ -101,6 +105,12 @@ function formatMatchClock(remainingMs?: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function toBaseUnitWager(wagerUsd: string) {
+  const parsed = Number.parseFloat(wagerUsd);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.max(1, Math.round(parsed * 1_000_000_000));
+}
+
 function clearLobbyReturnState() {
   clearMatchSessionState();
 }
@@ -152,6 +162,14 @@ function getCharacterVisual(characterId?: string) {
   };
 }
 
+function getCharacterName(characterId?: string) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (normalizedId === "turing") return "Alan Turing";
+  if (normalizedId === "curie") return "Marie Curie";
+  if (normalizedId === "einstein") return "Albert Einstein";
+  return "Unknown Scientist";
+}
+
 function resolveCharacterSpriteState(characterState?: CharacterState, isActioning = false): CharacterSpriteState {
   if (isActioning || characterState === "action") return "action";
   return "stay";
@@ -196,6 +214,7 @@ export function BattleScreen() {
   const arenaIdParam = searchParams.get("arena");
   const [activeMatchSession, setActiveMatchSession] = useState<ActiveMatchSession | null>(null);
   const [matchSessionHydrated, setMatchSessionHydrated] = useState(false);
+  const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
 
@@ -275,6 +294,8 @@ export function BattleScreen() {
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [createdBlinkChallenge, setCreatedBlinkChallenge] = useState<ActiveBlinkChallengeSession | null>(null);
+  const [createBlinkBusy, setCreateBlinkBusy] = useState(false);
   const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
   const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
   const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
@@ -749,9 +770,6 @@ export function BattleScreen() {
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
-  const challengeDescription = didWin
-    ? "I just won in CORA. Think you can beat me?"
-    : "I am running it back in CORA. Challenge me.";
   const displaySecondsLeft =
     activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
@@ -813,8 +831,22 @@ export function BattleScreen() {
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
+  const regularMatchShareTitle = didWin
+    ? `I just won against ${opponentIdentityLabel}.`
+    : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
+  const challengeShareTitle = didWin
+    ? `I just won against ${opponentIdentityLabel}.`
+    : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
+  const challengeDescription = didWin
+    ? `I just won against ${opponentIdentityLabel} in CORA. Think you can beat me?`
+    : `Matched against ${opponentIdentityLabel} in CORA, but this is not the end. Challenge me.`;
   const playerCharacterId = player?.characterId ?? undefined;
   const opponentCharacterId = opponent?.characterId ?? undefined;
+  const playerCharacterName = getCharacterName(playerCharacterId);
+  const opponentCharacterName = getCharacterName(opponentCharacterId);
+  const playerResultExpressionSrc = getCharacterExpressionSrc(playerCharacterId, didWin ? "confident" : "hurt");
+  const opponentResultExpressionSrc = getCharacterExpressionSrc(opponentCharacterId, didWin ? "hurt" : "confident");
+  const challengeCharacterExpressionSrc = getCharacterExpressionSrc(playerCharacterId, didWin ? "confident" : "happy");
   const settlementExpressionSrc = settlementEmojiMood
     ? {
       player: getCharacterExpressionSrc(playerCharacterId, settlementEmojiMood.player),
@@ -1286,42 +1318,67 @@ export function BattleScreen() {
   }
 
   async function onCopyChallengeLink() {
-    if (!challengeLink) {
+    const shareableBlinkLink = createdBlinkChallenge?.blinkUrl ?? challengeLink;
+    if (!shareableBlinkLink) {
       setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
       return;
     }
     try {
-      await navigator.clipboard.writeText(challengeLink);
+      await navigator.clipboard.writeText(shareableBlinkLink);
       setShareNotice({ text: "Challenge link copied.", tone: "success" });
     } catch {
       setShareNotice({ text: "Copy failed. Please copy manually from the link below.", tone: "error" });
     }
   }
 
+  async function buildMatchResultShareFile() {
+    try {
+      const input = {
+        title: regularMatchShareTitle,
+        arenaLabel,
+        wagerUsd,
+        playerCharacterName,
+        opponentCharacterName,
+        playerExpressionSrc: playerResultExpressionSrc,
+        opponentExpressionSrc: opponentResultExpressionSrc,
+        roundsLabel: `${playerRoundsWon}-${opponentRoundsWon}`,
+        correctCount,
+        wrongCount,
+        timeoutCount,
+      };
+      const blob = await renderMatchResultCardPng(input);
+      return new File([blob], createMatchResultCardFileName(input), { type: "image/png" });
+    } catch {
+      setShareNotice({ text: "Failed to generate PNG. Try again.", tone: "error" });
+      return null;
+    }
+  }
+
   async function buildChallengeShareImageFile() {
-    if (!challengeLink) return null;
+    const shareableBlinkLink = createdBlinkChallenge?.blinkUrl ?? challengeLink;
+    if (!shareableBlinkLink) return null;
     try {
       const blob = await renderChallengeCardJpg({
-        title: "Challenge Me",
-        challengerName: "You",
+        title: challengeShareTitle,
         challengerAddress: address,
         statusLabel: challengeStatusLabel,
-        description: challengeDescription,
+        description: null,
         token: arenaToken,
         wagerUsd,
         arenaLabel,
-        challengeLink,
+        challengeLink: shareableBlinkLink,
+        characterExpressionSrc: challengeCharacterExpressionSrc,
       });
       const fileName = createChallengeCardFileName({
-        title: "Challenge Me",
-        challengerName: "You",
+        title: challengeShareTitle,
         challengerAddress: address,
         statusLabel: challengeStatusLabel,
-        description: challengeDescription,
+        description: null,
         token: arenaToken,
         wagerUsd,
         arenaLabel,
-        challengeLink,
+        challengeLink: shareableBlinkLink,
+        characterExpressionSrc: challengeCharacterExpressionSrc,
       });
       return new File([blob], fileName, { type: "image/jpeg" });
     } catch {
@@ -1348,14 +1405,22 @@ export function BattleScreen() {
     setShareNotice({ text: "Saved challenge card JPG.", tone: "success" });
   }
 
+  async function onSaveMatchResultPng() {
+    const imageFile = await buildMatchResultShareFile();
+    if (!imageFile) return;
+    downloadShareFile(imageFile);
+    setShareNotice({ text: "Saved match result PNG.", tone: "success" });
+  }
+
   async function onShareChallengeToX() {
-    if (!challengeLink) {
+    const shareableBlinkLink = createdBlinkChallenge?.blinkUrl ?? challengeLink;
+    if (!shareableBlinkLink) {
       setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
       return;
     }
     const imageFile = await buildChallengeShareImageFile();
 
-    const intent = createChallengeTweetIntent(challengeLink, challengeDescription);
+    const intent = createChallengeTweetIntent(shareableBlinkLink, challengeDescription);
     const popup = window.open(intent, "_blank", "noopener,noreferrer");
     if (!popup) {
       setShareNotice({ text: "Popup blocked. Allow popups and retry.", tone: "error" });
@@ -1367,6 +1432,42 @@ export function BattleScreen() {
       return;
     }
     setShareNotice({ text: "Opened X directly.", tone: "success" });
+  }
+
+  async function onCreateBlinkFromResult() {
+    if (!address) {
+      setShareNotice({ text: "Connect wallet before creating a Blink challenge.", tone: "error" });
+      return;
+    }
+    const wagerAmount = toBaseUnitWager(wagerUsd);
+    if (!wagerAmount) {
+      setShareNotice({ text: "Invalid wager amount.", tone: "error" });
+      return;
+    }
+
+    setCreateBlinkBusy(true);
+    setShareNotice(null);
+    try {
+      const snapshot = await createBlinkChallengeSession({
+        connection,
+        wallet,
+        walletAddress: address,
+        tokenMint: arenaToken,
+        wagerAmount,
+        wagerUsd,
+        arenaId,
+        scientistId: playerCharacterId ?? null,
+        origin: typeof window === "undefined" ? null : window.location.origin,
+      });
+      writeActiveBlinkChallengeSession(snapshot);
+      setCreatedBlinkChallenge(snapshot);
+      setShareNotice({ text: "Blink challenge funded and live.", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create Blink challenge.";
+      setShareNotice({ text: message, tone: "error" });
+    } finally {
+      setCreateBlinkBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -2283,9 +2384,18 @@ export function BattleScreen() {
         arenaLabel={arenaLabel}
         arenaToken={arenaToken}
         wagerUsd={wagerUsd}
-        challengeLink={challengeLink}
-        challengeDescription={challengeDescription}
+        regularMatchShareTitle={regularMatchShareTitle}
+        playerCharacterName={playerCharacterName}
+        opponentCharacterName={opponentCharacterName}
+        playerResultExpressionSrc={playerResultExpressionSrc}
+        opponentResultExpressionSrc={opponentResultExpressionSrc}
+        challengeShareTitle={challengeShareTitle}
         challengeStatusLabel={challengeStatusLabel}
+        challengeCharacterExpressionSrc={challengeCharacterExpressionSrc}
+        createdBlinkChallenge={createdBlinkChallenge}
+        createBlinkBusy={createBlinkBusy}
+        onSaveMatchResultPng={onSaveMatchResultPng}
+        onCreateBlinkFromResult={onCreateBlinkFromResult}
         onCopyChallengeLink={onCopyChallengeLink}
         onSaveChallengeJpg={onSaveChallengeJpg}
         onShareChallengeToX={onShareChallengeToX}
