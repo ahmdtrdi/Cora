@@ -30,6 +30,14 @@ export function createActionsRouter(roomManager: RoomManager) {
   router.get('/challenge', async (c) => {
     const roomId = c.req.query('roomId');
     const iconUrl = 'https://arweave.net/qN7Xy_CgGf2Y-DItf-Bf0iV9Wl80S-c4m2rV6Q5S3j0';
+    const acceptHeader = c.req.header('Accept') ?? '';
+    const feBaseUrl = process.env.FE_BASE_URL || 'http://localhost:3000';
+
+    // Browser request: redirect to FE challenge page instead of returning JSON.
+    // Blink-compatible wallets send Accept: application/json — let those through.
+    if (roomId && isBrowserRequest(acceptHeader)) {
+      return c.redirect(`${feBaseUrl}/challenge/${roomId}`, 302);
+    }
 
     if (roomId) {
       const match = await roomManager.refreshBlinkMatchExpiry(roomId);
@@ -263,4 +271,14 @@ function statusForAcceptReason(reason: string): 400 | 404 | 409 | 410 {
   if (reason === 'expired') return 410;
   if (reason === 'already_accepted') return 409;
   return 400;
+}
+
+/**
+ * Returns true if the request is from a normal browser rather than a
+ * Blink-compatible wallet or API client.
+ * Blink clients send Accept: application/json.
+ * Browsers send Accept: text/html,...
+ */
+function isBrowserRequest(acceptHeader: string): boolean {
+  return acceptHeader.includes('text/html') && !acceptHeader.includes('application/json');
 }

@@ -87,8 +87,13 @@ export class Lifecycle {
         lastSeenAt: Date.now(),
       });
 
+      // Preserve hasDeposited if already true (hydrated private Blink room).
+      // hydrateBlinkRoomInternal sets both players to hasDeposited: true after
+      // accept_challenge locks both wagers on-chain. Overwriting to false here
+      // would prevent the room from ever transitioning to playing.
+      const existingMeta = room.playerMeta.get(address);
       room.playerMeta.set(address, {
-        hasDeposited: false,
+        hasDeposited: existingMeta?.hasDeposited ?? false,
         characterId,
       });
     }

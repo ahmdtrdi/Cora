@@ -4181,6 +4181,195 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The countdown slot is intentionally generic, but it is still a one-off prop path through the deposit components. If we add more timer-adjacent states later, it may be worth consolidating this into a dedicated countdown presentation component.
 
+## 2026-05-10 - Layered Landing Hero Artwork
+
+### The Change
+- Rebuilt [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) around the designer-provided layered room artwork, replacing the placeholder doodles, floating cards, cursor orb, and token badges.
+- Added a reusable `HERO_LAYERS` configuration plus `HeroLayer` renderer with staged entrances, spring-smoothed pointer parallax, subtle scene tilt, reduced-motion handling, and smaller motion intensity on coarse/mobile pointers.
+
+### The Reasoning
+- The hero now uses the original 4096 x 2589 canvas ratio so every transparent PNG layer shares one aligned stage and preserves the designer composition.
+- Keeping movement strengths in layer config makes the depth model readable: the stable base barely moves, heavy bookcases stay restrained, and foreground objects/drawer carry the strongest but still subtle parallax.
+- Next `Image` is used inside motion wrappers so we keep optimized image loading while Framer Motion owns the 3D and pointer-following transforms.
+
+### The Tech Debt
+- The assets currently live under `apps/web/public/assets/landing`, so the component serves them from `/assets/landing/...` instead of the originally requested `/landing/...`. If the asset folder is moved later, update `HERO_ASSET_ROOT` rather than every layer entry.
+
+## 2026-05-10 - In-Scene Hero Title Layering
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the landing hero title is now a configured text layer inside the artwork stack rather than a separate heading block above the scene.
+- Removed the extra eyebrow copy, subtitle copy, and scroll indicator, and reordered the depth stack so `CORA` sits between `bookcase_2` and `bookcase_1` with its own entrance timing and parallax strength.
+
+### The Reasoning
+- Treating the title as just another layer keeps the composition faithful to the designer scene and creates the intended “embedded in the environment” feel instead of a conventional marketing hero layout.
+- Keeping text and image layers in the same reusable config makes the depth order, timing, and motion relationships explicit, which should make future composition tuning much less brittle.
+
+### The Tech Debt
+- The exact title placement is currently tuned with percentage positioning inside the shared 4096 x 2589 stage. If the designer revises the artwork crop or safe area, we should retune that anchor with final visual QA rather than assuming the current percentage will remain perfect.
+
+## 2026-05-10 - Static Base And Vertical Hero Parallax
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` is no longer part of the animated layer stack and is instead rendered as the section background, while the remaining scene layers now preload before their entrance sequence begins.
+- Refactored the hero interaction from tilt-plus-XY parallax to Pixelmon-style vertical-only parallax, removed the navbar offset from the hero canvas, and made the scene wrapper full-height so the table and drawer can live inside the initial viewport under the fixed nav.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to keep its non-scrolled state explicitly transparent while preserving the existing solid-on-scroll behavior and frame-cut brand styling.
+
+### The Reasoning
+- Making the base room art completely static gives the scene a stable camera anchor, which helps the layered bookcases, title, table, and foreground details feel like depth within one illustration instead of separate floating objects.
+- Waiting for all PNG layers to load before starting the staggered animation avoids the uneven “pop-in while decoding” look and makes the back-to-front settling sequence feel more intentional.
+- Vertical-only movement is a better fit for this environment art than full tilt because it preserves the room perspective and feels calmer, especially once the hero starts at `y = 0` behind the navbar.
+
+### The Tech Debt
+- The section now uses `background-size: cover` for the static base while the moving PNG layers still rely on shared absolute positioning. If final visual QA shows mismatch between the covered backdrop and the contained overlays at extreme aspect ratios, we may need one more composition pass to tighten their scaling relationship.
+
+## 2026-05-10 - Full-Bleed Hero Canvas And Counter-Parallax
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the layered scene canvas is now full-bleed at `100svh` with no horizontal page padding or max-width cap, allowing the artwork to fill the viewport edge to edge.
+- Restored `bookcase_3` as the backmost animated layer, added an `isBackground` flag for image-layer fit behavior, and changed image rendering from `fill` + shared `object-contain` to explicit absolute sizing with `cover` for background shelves and bottom-anchored `contain` for table/drawer/object layers.
+- Reworked the parallax math to use both `pointerX` and `pointerY` with counter-motion by depth, so background layers drift opposite the cursor, the title moves gently, and foreground layers follow the cursor for a stronger window-like depth effect.
+
+### The Reasoning
+- The previous capped canvas and centered layout were constraining the artwork too much, which made the scene feel like a framed component rather than a full landing-page environment.
+- Splitting background and foreground fit rules fixes the scaling problem where wide shelf layers could shrink awkwardly while the lower scene pieces still need to stay visually anchored to the floor line.
+- Counter-parallax creates a more convincing sense of depth than same-direction drift because it lets the room feel spatial without reintroducing the tilt behavior we intentionally removed.
+
+### The Tech Debt
+- The hero now depends more heavily on manual per-layer fit conventions (`isBackground` vs foreground defaults). If more layer types or special crops are added later, we may want to promote this into a slightly richer layer positioning schema instead of relying on a binary background flag.
+
+## 2026-05-10 - Hero Targeted Layer Fixes
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to stop applying horizontal parallax to the in-scene `CORA` title while keeping its lighter vertical motion.
+- Adjusted `bookcase_3` to render at `depth: 1` so it no longer disappears behind the static section background.
+- Changed all animated image layers to use `object-fit: contain`, with background shelves centered and foreground pieces bottom-anchored, removing the previous `cover` cropping on the shelf layers.
+
+### The Reasoning
+- The title clipping bug came from giving the text layer a nonzero X-direction during the initial spring state, which could shift it sideways before settling.
+- `bookcase_3` was effectively competing with the section background when rendered at `zIndex: 0`, so raising it one layer restores it as the first visible animated shelf plane.
+- The bookcase assets behave more like transparent composition layers than true viewport-filling backgrounds, so `contain` preserves their intended framing better than `cover`.
+
+### The Tech Debt
+- Depth numbers now matter for both rendering order and parallax direction rules. If we keep iterating on this scene, it may be worth separating visual stack order from motion grouping so tiny depth fixes do not also carry interaction semantics.
+
+## 2026-05-10 - Full-Cover Layered Hero Stage
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` is part of the same `HERO_LAYERS` stack as the rest of the room artwork and every image layer renders with `fill`, `object-cover`, and shared center positioning.
+- Removed the constrained flex/content wrapper and decorative gradient blocks from the hero, leaving a full-viewport absolute stage with subtle pointer tilt and parallax.
+- Mirrored the landing PNGs into [apps/web/public/landing](/d:/projects/Cora/apps/web/public/landing) so the runtime paths resolve as `/landing/base.png`, `/landing/bookcase_3.png`, `/landing/bookcase_2.png`, `/landing/bookcase_1.png`, `/landing/table.png`, `/landing/drawer.png`, and `/landing/objects.png`.
+
+### The Reasoning
+- The previous split between a covered section background and contained overlay images made the transparent layers scale differently, so the room composition looked boxed-in and misaligned.
+- Rendering every layer against one absolute viewport-cover stage keeps the designer canvas aligned while allowing the drawer and foreground objects to crop naturally at the hero edge.
+- Keeping the `CORA` title between `bookcase_2` and `bookcase_1` preserves the in-scene framing while using a smaller clamp and higher anchor so it remains readable.
+
+### The Tech Debt
+- The `/assets/landing` copies are still present in the public folder. Once no code references them, we can remove that duplicate asset path after confirming nothing outside the landing hero depends on it.
+
+## 2026-05-10 - Ratio-Preserved Hero Stage
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the landing artwork now renders inside a `4096 / 2589` aspect-ratio stage that is `120svh` tall instead of covering a `100svh` viewport directly.
+- Changed the layered PNG rendering from `object-cover` to `object-contain`, removed the per-layer inset overscan, and adjusted the in-scene `CORA` title to `top-[39%]` with a slightly smaller responsive clamp.
+
+### The Reasoning
+- The exported designer layers all share the same full-canvas dimensions, so preserving that canvas ratio and containing each layer keeps the composition aligned without aggressively cropping the top wall or enlarging the bookcases.
+- Letting the hero be taller than one viewport gives the table and drawer room to sit low while keeping the intended empty wall space visible above the shelves.
+- Keeping parallax on the layer wrappers preserves the subtle Pixelmon-like depth while the sizing model now belongs to the shared stage instead of each individual image.
+
+### The Tech Debt
+- The current stage is tuned to `120svh`. If final visual QA on very wide or very short screens still feels too cropped or too roomy, the next adjustment should be the stage height/width formula rather than switching the layer images back to cover.
+
+## 2026-05-10 - Designer Canvas Hero Replacement
+
+### The Change
+- Replaced [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) with a clean layered scene that uses only `bookcase_3`, `bookcase_2`, the in-scene `CORA` title, `bookcase_1`, `table`, `drawer`, and `objects`.
+- Changed the hero stage to `w-screen` with `aspect-[4096/2589]`, letting the artwork height follow the designer canvas instead of forcing a fixed `100svh` or `120svh` crop.
+- Added staged entrance animation, subtle pointer-following parallax per layer, and a gentle whole-stage 3D tilt while preserving reduced-motion behavior.
+
+### The Reasoning
+- The designer exports share one 4096 x 2589 canvas, so every layer now fills the same absolute stage with `object-contain` and centered positioning to preserve alignment without cropping.
+- Removing `base.png`, old marketing copy, and scroll affordances keeps the hero focused on the provided composition and the single embedded `CORA` title.
+- The motion config keeps depth readable by giving farther shelves smaller movement and foreground objects slightly stronger drift without making the scene feel gimmicky.
+
+### The Tech Debt
+- Final visual QA should still confirm the title's exact overlap with `bookcase_1` across common viewport widths, since that placement depends on the designer layer artwork rather than layout text flow.
+
+## 2026-05-10 - Static Hero Base And Counter Motion
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to restore `/landing/base.png` as the backmost hero layer while keeping it static with `movement: 0`.
+- Added an explicit per-layer `direction` value so back layers and front layers drift in opposing directions during pointer hover.
+
+### The Reasoning
+- The base art should behave like the fixed room plate, giving the parallax layers a stable visual anchor instead of moving with the scene.
+- Opposing layer motion creates clearer depth than same-direction drift: the rear bookcases can slide one way while the foreground furniture and objects slide the other.
+
+### The Tech Debt
+- The exact direction strengths are still design-tunable. If the scene feels too elastic in QA, reduce the foreground `direction` magnitude before changing the shared pointer spring.
+
+## 2026-05-10 - Static Base Isolation And Hero Overscan
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` now renders outside the hover-reactive layer stack instead of living inside the same moving scene wrappers.
+- Added a small shared image overscan to the landing hero PNG layers so subtle hover parallax does not expose dark empty edges around the artwork.
+- Increased the in-scene `CORA` title clamp so the outer letters sit more noticeably behind the bookshelf framing.
+
+### The Reasoning
+- The base looked like it was moving because it was still inside the stage that received hover tilt, even though its own per-layer movement was zero.
+- A tiny scale-up is the cleanest way to preserve the full-canvas composition feel while buying enough bleed to hide edge gaps during motion.
+- Making the title a little larger helps the shelf overlap read intentionally, so the word feels embedded in the scene rather than merely layered over it.
+
+### The Tech Debt
+- The overscan and title scale are both intentionally conservative tuning knobs. If the scene still shows edges or the shelf overlap feels off on certain viewports, the next pass should adjust those two values together before changing the broader layer layout.
+
+## 2026-05-10 - Landing Asset Path Cleanup
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to load the layered hero artwork from `/assets/landing/...` instead of `/landing/...`.
+- Removed the duplicate [apps/web/public/landing](/d:/projects/Cora/apps/web/public/landing) directory so `apps/web/public/assets/landing` is now the single source of truth for the room exports.
+
+### The Reasoning
+- In a Next app, `/assets/landing/...` maps directly to `apps/web/public/assets/landing/...`, so keeping only that directory makes the runtime path and filesystem layout line up cleanly.
+- The duplicate folder existed because the earlier hero implementation was switched to `/landing/...` runtime paths and the files were mirrored to match; that duplication is no longer necessary.
+
+### The Tech Debt
+- Older hero notes in this devlog still mention the temporary `/landing/...` mirroring step from earlier iterations. They remain historically true, but the current implementation now uses `/assets/landing/...`.
+
+## 2026-05-10 - Hero Layer Type Narrowing Fix
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to add an `isImageLayer` type guard and use it when resolving the static base layer and preload image source list.
+
+### The Reasoning
+- `HeroLayer` is a text-or-image union, and the editor was correctly warning that `src` does not exist on text layers. Making the image narrowing explicit keeps the config flexible without papering over the type system.
+
+### The Tech Debt
+- The hero layer config is still a fairly compact union living in one file. If we keep extending the scene schema, it may be worth extracting the layer types and helpers so the rendering logic stays easy to scan.
+
+## 2026-05-11 - Hero Loading Expression Overlay
+
+### The Change
+- Added [LandingIntroLoader.tsx](/d:/projects/Cora/apps/web/src/components/landing/LandingIntroLoader.tsx) as a dedicated full-viewport intro screen that renders before the landing page itself.
+- Added [heroAssets.ts](/d:/projects/Cora/apps/web/src/components/landing/heroAssets.ts) to share the landing preload source list and scientist idle-expression asset helper.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) to hold back the navbar, hero, and rest of the landing page until the intro loader finishes.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) again to mount the navbar on a short follow-up timer after the hero begins revealing, instead of only delaying the navbar animation.
+- Simplified [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so it only handles the room scene entrance now that asset preloading and the intro screen live outside it.
+- The intro uses each scientist's idle expression art as the sole loading indicator, with a subtle staggered bounce and a 1.5 second minimum hold.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to use a fade-and-deblur entrance instead of a vertical slide, avoiding the fixed-nav top-position flash on mount.
+
+### The Reasoning
+- The hero-box loader was never truly centered in the viewport because it still lived inside the hero's aspect-ratio stage rather than owning the whole screen.
+- Rendering the intro first at the page level prevents the navbar and other landing chrome from appearing before the entrance beat has completed.
+- Mounting the navbar later at the page level works better than a Framer delay on the nav itself, because the nav is truly absent during the hero's first frames instead of existing offscreen and then animating in.
+- Reusing the real scientist expression assets keeps the wait state grounded in the game's visual language instead of falling back to generic UI loading patterns.
+- Letting the hero reveal start before the navbar mounts keeps the first frame from feeling crowded and lets the room establish itself before navigation competes for attention.
+- For a fixed navbar, a pure opacity/blur reveal is more reliable than animating vertical position on first mount, because there is no one-frame snap between the browser's pinned layout position and Framer's transform state.
+
+### The Tech Debt
+- The landing intro currently blocks the entire page until its preload list resolves. If we later add heavier media to the first viewport, we may want a more selective preload strategy so the entrance beat stays crisp.
 ## 2026-05-10 - MagicBlock UI Enhancement Layer
 
 ### The Change
@@ -4342,3 +4531,307 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - If we add a dedicated “locked card” visual later, replace the generic disabled opacity with a clearer final-turn lock treatment.
+
+## 2026-05-10 - Blink Challenge Creator Path And Temporary Browser Link
+
+### The Change
+- Added [privateChallenge.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/privateChallenge.ts) for the FE private-match contract: create challenge, confirm creator funding, poll challenge status, resolve API base URL, and derive a temporary web challenge URL.
+- Added [signBackendTransaction.ts](/d:/projects/Cora/apps/web/src/lib/solana/signBackendTransaction.ts) so the creator can sign the backend-provided `create_open_challenge` transaction before calling `/match/private/confirm`.
+- Added creator/challenger Blink UI pieces: [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx), [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx), [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx), and [page.tsx](/d:/projects/Cora/apps/web/src/app/challenge/[roomId]/page.tsx).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx), and [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so active Blink challenges are persisted, normal queueing is blocked while a creator challenge is live, challenge status is polled, and the creator auto-joins when a rival accepts.
+- The creator panel now exposes both `Copy Blink URL` and `Copy Browser Link`: the Blink URL remains the primary share target for Blink-supported apps, while the browser link is a temporary direct route to `/challenge/:roomId`.
+
+### The Reasoning
+- Backend now owns the true Blink escrow transaction flow, so FE should sign and confirm the backend-provided transaction instead of inventing or changing API behavior.
+- A creator with an unresolved Blink challenge must be kept out of normal matchmaking to avoid a shared-link accept racing against a regular queue match.
+- The Blink URL and browser challenge page are not currently the same thing: opening the raw Blink URL in a normal browser returns the backend action payload unless backend later adds browser redirect/content negotiation. Keeping two explicit copy actions is the honest temporary UX while preserving the desired future direction.
+
+### The Tech Debt
+- Backend should eventually redirect normal browser requests from the Blink action URL to the FE `/challenge/:roomId` page so the product can return to a single canonical share link.
+- The browser accept page currently relies on challenge room lookup and default FE arena/scientist context because the backend Blink URL does not carry frontend presentation metadata.
+- Active Blink challenge cleanup is local for terminal states; if backend adds richer cancellation/expiry events, the lobby can switch from polling to a more authoritative push-driven state.
+
+## 2026-05-10 - Blink Share Actions Consolidated Into Card
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to support an optional secondary copy action.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the top active-challenge banner is informational only.
+- Moved the temporary browser-link copy action into the share card alongside `Copy Blink URL`, `Save As JPG`, and `Share On X`.
+- Replaced the framed `Close` control with a plain corner `x` to keep the overlay chrome quieter.
+
+### The Reasoning
+- The previous overlay duplicated CTAs between the banner and card, making the hierarchy noisy.
+- Keeping all share/export actions in the card makes the banner read as status context and the card read as the action surface.
+- A lightweight `x` is enough for dismissing the panel and avoids competing with the share actions.
+
+### The Tech Debt
+- The card now has two explicit copy actions because the raw Blink URL and temporary browser accept URL are still separate. Once backend browser redirect support lands, the secondary browser-copy action should be removed.
+
+## 2026-05-10 - Blink Acceptance Notification And Challenger Page Polish
+
+### The Change
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) with a compact notification variant that still mounts the match socket and sends creator `confirmDeposit`.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `Rival Accepted` no longer replaces the whole lobby; it appears as a notification while presence confirmation runs in the background.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger page shows arena, token, and `$1.00` wager copy, uses the green page background with a light content section, and makes `Back To Lobby` readable with dark text.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) so socket close `1008` with `Room not found or already finished` is treated as a terminal closed-room state: local active match state is cleared, retry is hidden, and `Back To Lobby` is always available.
+- Reused the shared `btn-game btn-game-secondary` style for the challenger page `Back To Lobby` action so it matches the primary accept button system, with local matching text/border color overrides for readability on the light panel.
+- Normalized the wrapped SOL mint display to `SOL` on the challenger page while keeping the raw mint for signing/API calls.
+- Changed creator-side Blink acceptance sequencing so `Rival Accepted` is a passive notification first; clicking `View Challenge` opens the full `Confirming your match...` screen and mounts the websocket confirmer.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) and [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger sends its accepted transaction signature through the existing `confirmDeposit` websocket event after signing.
+
+### The Reasoning
+- `Rival Accepted` is a transient state, not a full page destination. The FE still needs the socket mounted to confirm creator presence, but the user should not feel trapped on an interstitial if the backend takes time to advance the room to `playing`.
+- Challenger-side challenge details should match the lobby product framing: token arena plus fixed `$1.00` wager, not raw base-unit wording.
+- Display should use player-facing token symbols instead of raw mint addresses; signing still needs the backend-provided mint value.
+- The previous back button inherited light text against a light section, so the button needed local contrast styling instead of the generic dark-surface button class.
+- Expired private rooms can disappear before the challenger reconnects, and retrying that socket cannot succeed. FE should surface that as a closed challenge and let the player leave cleanly.
+- Reusing the shared button classes keeps the action row visually consistent, while local color overrides avoid the washed-out white-on-light button state.
+- The previous creator flow stacked a notification and the recovery/confirming page because the background joiner wrote an active `depositing` match session. The new flow avoids that automatic write until the user intentionally opens the confirming screen.
+- Current backend hydration marks both private-room players deposited, but `joinRoom` overwrites the joining player's `hasDeposited` flag back to `false`. Sending the challenger signature over the already-supported socket event is a frontend-side compatibility fix so both player metas become deposited and the room can transition to `playing`.
+
+### The Tech Debt
+- If the creator notification remains visible forever after `confirmDeposit`, FE has done its part and is waiting for the backend/socket to emit a `playing` game state or equivalent room-ready event. A dedicated private-challenge presence/ready event would make this transition easier to diagnose.
+- Terminal socket-close detection is still based on close code/reason text. If the backend adds a structured close reason or REST status for accepted-but-expired rooms, switch to that instead of parsing text.
+- Backend should preserve hydrated private-room `hasDeposited: true` metadata on websocket join instead of requiring FE to re-confirm the challenger deposit signature after `accept_challenge`.
+
+## 2026-05-10 - Blink Character Gate Before Websocket Join
+
+### The Change
+- Added [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), a shared Blink-only post-deposit character selection surface built on the existing character roster component.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `View Challenge` opens character selection first, then mounts [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) only after `Confirm Scientist`.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challengers see the same character gate after accepting/signing the Blink challenge and before joining the websocket room.
+- Passed the selected character ID into the existing `useMatchSocket` join URL via `BlinkRoomJoiner`, so the backend receives the picked scientist through the currently-supported `characterId` query parameter.
+- Adjusted the challenger accept action row so `Back To Lobby` sits directly to the left of the right-aligned `Accept & Lock Wager` button.
+
+### The Reasoning
+- Backend does not currently expose a real post-deposit `selecting_character` phase or character-lock websocket event for Blink rooms.
+- Delaying websocket join is the FE-only way to support `deposit -> select character -> play` without backend changes, because backend reads the character from the websocket join request before the engine initializes.
+- This keeps normal matchmaking unchanged while giving Blink matches a scientist pick step instead of silently defaulting both players to Einstein.
+
+### The Tech Debt
+- If a user refreshes after accepting a Blink challenge but before joining, FE can only re-confirm through websocket if the accepted signature is still available in session storage. Backend preserving hydrated private-room deposit metadata would make this more robust.
+- A proper backend character-lock phase would allow both players to connect first, show opponent selection state, enforce a timer, and auto-assign characters server-side.
+
+## 2026-05-10 - Blink Character Gate CTA And Surrender Confirmation
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so all scientist cards are neutral `Tap To Select` choices, with no Einstein `Balanced Default` label in the Blink post-deposit flow.
+- Moved the Blink gate action row below the scientist roster so the page reads as `choose first, then confirm`.
+- Replaced the gate `Back` action with `Surrender`, guarded by a confirmation popup that warns the wager is already locked.
+- Added [BlinkSurrenderBridge.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkSurrenderBridge.tsx), a frontend-only bridge that connects to the existing match websocket, replays the stored deposit confirmation signature when available, sends the existing `surrender` event, and clears local match state.
+- Wired creator-side surrender from [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and challenger-side surrender from [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- After deposit, leaving is no longer a harmless navigation event. The UI should say `Surrender` and require confirmation because the backend treats that as forfeiting the locked wager.
+- Blink still delays websocket join until after character selection, so surrender from the character gate needs a tiny temporary socket bridge rather than changing backend APIs.
+- Removing the neutral default label prevents the Blink flow from nudging players back toward Einstein after we added explicit character selection.
+
+### The Tech Debt
+- The bridge currently treats successful websocket submission/terminal close as enough to clear local state, matching the existing active-match surrender behavior. A dedicated backend private-challenge surrender endpoint or acknowledgement event would make this more authoritative.
+
+## 2026-05-10 - Blink Pre-Character Recovery Escape
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so accepting a Blink challenge stores only the deposit signature before character selection, not a generic active match session.
+- Added [clearActiveMatchRoomSession](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so FE can clear stale active-room localStorage without deleting the accepted Blink deposit signature from sessionStorage.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so `private + depositing` active rooms are treated as Blink pre-character rooms instead of normal escrow-settlement recovery.
+- Creator recovery now reopens the Blink accepted path when the active private room matches the locally stored Blink challenge.
+- Challenger recovery now routes back to `/challenge/:roomId` so the player can pick a scientist and join through the Blink flow.
+- Added a `Back To Lobby` escape button to the generic `Escrow resolver is settling` screen for stale local recovery cases.
+
+### The Reasoning
+- The previous challenger accept flow wrote `status: depositing` into the generic active-room store before the Blink websocket had joined. If the player hit browser back before choosing a scientist, lobby recovery interpreted that stale local marker as a normal match settlement and got stuck waiting.
+- Blink pre-character state is not equivalent to normal ER settlement. It needs to return to the Blink challenge path, preserving the deposit signature so websocket `confirmDeposit` can still be replayed later.
+
+### The Tech Debt
+- This is still a frontend classification fix based on `roomType: private` and `status: depositing`. A backend-owned Blink room phase like `awaiting_character` would make recovery clearer and remove the need for FE inference.
+
+## 2026-05-10 - Blink Character Gate Label Cleanup
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to hide the reusable roster/status pills in the Blink post-deposit character picker.
+- Restyled the `Surrender` button with the same readable light-panel secondary treatment used by `Back To Lobby` on the challenge accept page.
+
+### The Reasoning
+- The Blink page already has enough heading/subtitle context, so the extra `Roster` and `Pick your scientist to continue` pills were redundant visual noise.
+- The shared secondary button style defaults to light text, which becomes unreadable on the cream Blink card without local color overrides.
+
+### The Tech Debt
+- These local button overrides should eventually become a named light-surface secondary button variant if more light-card flows need the same treatment.
+
+## 2026-05-10 - Compact Blink Character Cards
+
+### The Change
+- Added a `compactCards` option to [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) and [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx).
+- Enabled compact cards in [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), reducing card min-height, portrait size, and the internal gap above each card CTA.
+- Pulled the Blink gate action row closer to the roster.
+
+### The Reasoning
+- The shared character card uses `mt-auto` to create a roomy draft-card layout, but on the Blink cream panel that left too much empty vertical space between character details and `Tap To Select`.
+- A prop keeps the tighter Blink treatment local instead of changing normal matchmaking character select.
+
+### The Tech Debt
+- If more compact selection surfaces appear, the card sizing should move from a boolean prop to a named density variant.
+
+## 2026-05-10 - Blink Character Card Stretch Removal
+
+### The Change
+- Updated compact mode in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) so Blink character cards no longer stretch vertically to fill the parent panel.
+- Compact mode now removes the selector/grid `flex-1` stretch and aligns cards to the top of the grid.
+
+### The Reasoning
+- The remaining bottom gap was caused by the grid stretching each card row, not by internal card spacing.
+- Blink character selection should be allowed to produce a shorter overall section instead of forcing draft cards to fill the available cream-panel height.
+
+### The Tech Debt
+- The compact layout is still a boolean mode. If the character selector accumulates more layout variants, replace it with explicit density/layout tokens.
+
+## 2026-05-10 - Blink Character Panel Height Shrink
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to remove the forced viewport-height minimum from the cream character selection panel.
+
+### The Reasoning
+- After compacting the character cards, the remaining lower gap came from the outer panel still being forced to nearly full screen height.
+- The Blink character selection surface is allowed to be shorter overall, so the panel should wrap its content instead of reserving empty vertical space.
+
+### The Tech Debt
+- If we need more precise vertical rhythm across Blink pages, define shared panel sizing tokens instead of per-component height overrides.
+
+## 2026-05-10 - Blink Character Gate Vertical Centering
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so the full character selection section is vertically centered within the viewport instead of sitting at the top.
+
+### The Reasoning
+- Once the Blink panel height was reduced, the remaining layout issue was placement rather than size. The screen reads better when the compact cream panel is framed in the middle of the dark background.
+
+### The Tech Debt
+- If Blink gets more page states with different heights, it may be worth standardizing per-state vertical alignment rules instead of setting them one component at a time.
+
+## 2026-05-10 - Blink Refresh And Surrender Recovery Corrections
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side Blink status polling no longer demotes an in-progress room recovery back into the lower-priority notification state.
+- Added presentation-aware Blink recovery in the lobby: creator-side private `depositing` rooms now resume directly into `Confirming your match...` when a scientist was already locked, otherwise they reopen character select.
+- Prevented the floating `Rival Accepted` notification from stacking on top of the Blink character gate.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challenger-side resume only happens when real local accepted context still exists, using the stored deposit signature instead of only `opponentWallet` ownership.
+- Added render-time recovery from the stored active match snapshot on the challenge page, so a challenger refresh after already locking a scientist resumes straight back into the joiner instead of dropping to character select.
+
+### The Reasoning
+- Two FE recovery rules were fighting each other. Lobby refresh recovery could correctly detect a creator still in a private `depositing` room, but the Blink status poll would immediately reopen the weaker notification state and kick the creator back out of the join flow.
+- Challenger recovery was too optimistic: if the backend row still said the wallet had accepted the Blink, FE would reopen the character gate even after local surrender/cleanup had already cleared the real resume context.
+
+### The Tech Debt
+- FE still infers Blink recovery mode from a mix of local storage, websocket stage, and backend room/challenge status. A backend-owned private-room phase model would remove a lot of this recovery branching.
+
+## 2026-05-10 - Fix Blink challenge terminal-state loop
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) to detect terminal statuses (`FORFEITED`, `EXPIRED`, `COMPLETED`) and clear stale local session state (`cora:active-room`, `cora:active-deposit-intent`).
+- Replaced the plain `<a>` tag for "Back To Lobby" in [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) with a button that explicitly clears local state before navigating.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) recovery logic to check for terminal match statuses and clear stale recovery state instead of redirecting the challenger back to the challenge page.
+- Added a "Challenge Closed" UI state to [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) for terminal challenges.
+
+### The Reasoning
+- Challengers were getting stuck on the challenge accept screen or redirected back to it even after a challenge was forfeited or expired because the frontend wasn't consistently clearing local recovery state or checking the challenge status during lobby recovery.
+- A plain link doesn't allow for the necessary side effects (clearing local storage) before navigation.
+
+### The Tech Debt
+- Terminal status strings are duplicated across `BlinkChallengeAccept.tsx` and `LobbyScreen.tsx`. These should eventually be centralized in a shared constants file or type definition.
+
+## 2026-05-11 - Landing roster copy aligned with character specialties
+
+**The Change:** Updated [apps/web/src/components/landing/content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts) so the scientist names and copy match the real character definitions in `packages/shared-types/src/characterStats.ts`. Removed invented mechanics like shields, healing, named abilities, and attack-card amplification from the landing roster text.
+
+**The Reasoning:** The shared character stats file is the gameplay source of truth. The landing page should still feel flavorful, but it should only describe supported concepts: specialty category, 1.5x specialty multiplier, and the existing extra-point stacking behavior.
+
+**The Tech Debt:** `content.ts` still duplicates some character presentation data that could drift again later. A follow-up could derive more of this landing copy directly from shared character metadata or add a stricter content contract around allowed mechanic claims.
+
+## 2026-05-11 - How-it-works stage markers use character expressions
+
+**The Change:** Updated [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) to replace the numeric and completed-state markers with character `happy` expression portraits. Steps 1-3 now use Turing, Curie, and Einstein, and step 4 renders a compact three-character triangle cluster. The stage card badge now mirrors the same active marker.
+
+**The Reasoning:** Character portraits make the progression feel more connected to the roster and give the section a stronger in-world identity than generic numbers and checkmarks. Reusing the existing `happy` expression assets keeps the visual language consistent with other parts of the app.
+
+**The Tech Debt:** The stage-to-character mapping is currently local to `HowItWorks.tsx`. If we want the landing flow to stay centrally configurable, that mapping should move into landing content metadata.
+
+## 2026-05-11 - How-it-works rail restored to numeric active steps
+
+**The Change:** Refined [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) so the top progress rail now keeps numeric `1-4` markers for current and upcoming steps, and only completed steps swap to character portraits. The three-character triangle remains only inside the active stage card for step 4.
+
+**The Reasoning:** This restores the clearer scan pattern from the original progress rail while still using character art as the visual reward for completed steps. It also avoids overloading the top rail with the step-4 triangle cluster.
+
+**The Tech Debt:** The rail marker and card marker now have intentionally different behaviors. If we keep iterating on this section, it may be worth formalizing those two display modes behind a shared marker config instead of branching inline.
+
+## 2026-05-11 - CTA floating cards use idle portraits
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the floating character cards now render each scientist's `idle` expression asset instead of the emoji inside a circular badge. Removed the extra secondary emoji line, leaving each floating card as portrait plus name.
+
+**The Reasoning:** The CTA section already leans on character presence, so using the real portrait assets makes the floating cards feel more integrated with the game world than decorative emoji. Removing the duplicate emoji also simplifies the composition and keeps the eye on the character art.
+
+**The Tech Debt:** `CtaBanner.tsx` now has its own small asset helper for idle portraits. If more landing sections keep reusing the same expression asset paths, we should centralize those helpers in shared landing utilities.
+
+## 2026-05-11 - CTA background reuses dim hero scene assets
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) to reuse right-side landing hero art as a low-opacity CTA background layer. Added dimmed `bookcase_3` and `objects` scene assets behind the floating cards, and switched the floating portrait helper to the shared `getScientistIdleExpressionSrc` utility from `heroAssets.ts`.
+
+**The Reasoning:** Reusing the landing hero scene keeps the CTA visually connected to the rest of the page without overpowering the call-to-action. Keeping the art right-aligned and very low opacity preserves contrast for the copy while adding texture to the dark section.
+
+**The Tech Debt:** The CTA now chooses a subset of hero scene layers inline. If we keep reusing the landing environment in multiple sections, we may want a shared scene-fragment config instead of selecting individual asset files in each component.
+
+## 2026-05-11 - CTA background composition rebalanced
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits dimly on the left side of the CTA background, while `bookcase_3.png` is enlarged and anchored more prominently on the right.
+
+**The Reasoning:** Separating the two layers gives the background a nicer spread and keeps the larger structural silhouette on the right where it can frame the floating cards without stacking every asset in the same zone.
+
+**The Tech Debt:** The CTA background layout is now hand-tuned with percentage positioning. If we keep iterating on this scene treatment, it may be worth extracting these art-direction values into named constants or shared landing scene presets.
+
+## 2026-05-11 - CTA objects moved to far-left corner
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits at the far-left bottom corner of the full CTA banner, on the green gradient itself, instead of inside the right-side hero-scene wrapper.
+
+**The Reasoning:** This better matches the intended composition: the objects act as a subtle counterweight on the opposite edge of the section, while the bookcase remains the dominant right-side backdrop.
+
+**The Tech Debt:** The left-corner placement is still tuned with section-relative percentages. If this CTA gets more responsive art direction later, these placements may need breakpoint-specific presets instead of one shared value set.
+
+## 2026-05-11 - CTA right-side objects enlarged
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the larger `objects.png` layer now lives on the right side of the CTA again, while keeping the bigger footprint from the previous size adjustment. The bookcase remains the primary right-edge backdrop behind it.
+
+**The Reasoning:** This keeps the stronger object scale that read well, while aligning the composition with the preferred direction of concentrating the scene dressing on the right rather than splitting it across the banner.
+
+**The Tech Debt:** The right-side object and bookcase layers now overlap through hand-tuned percentages. If we keep polishing this art direction, it may be worth extracting a shared CTA scene layout config instead of adjusting individual absolute positions inline.
+
+## 2026-05-11 - CTA right-side objects scaled up further
+
+**The Change:** Increased the size of the right-side `objects.png` layer in [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) again by expanding its width, height, minimum width, and responsive image sizing.
+
+**The Reasoning:** The previous right-side version had the correct placement but still read a little too quietly. Scaling it further makes the scene layer more legible without changing the overall CTA structure.
+
+**The Tech Debt:** The object scale is still managed with manual percentages and minimum widths. If we continue tuning this art direction, a shared set of responsive scene tokens would be easier to maintain than repeated inline values.
+
+## 2026-05-11 - Hero hover parallax smoothed
+
+**The Change:** Refined the hover motion in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) by softening the pointer-response curve around center, reducing vertical drift, and slowing the spring slightly for a smoother settle.
+
+**The Reasoning:** The original hover reacted a bit too linearly and felt twitchy near the resting position. Adding a gentler center response keeps the parallax alive while making the scene feel more intentional and less awkward.
+
+**The Tech Debt:** The hover feel is still tuned with inline motion constants. If we keep iterating on landing interactions, we may want shared motion tokens for parallax intensity and spring behavior.
+
+## 2026-05-11 - Hero scene lighting added
+
+**The Change:** Added two non-interactive lighting overlays in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx): a soft warm radial highlight through the middle-upper scene and a subtle dimming/vignette gradient above the interactive layers.
+
+**The Reasoning:** The hero art had good structure but still read a little flat overall. Layering a restrained highlight and shadow pass gives the composition more depth and focus without changing the existing artwork or layout.
+
+**The Tech Debt:** The lighting balance is still hard-coded in inline gradient values. If we keep art-directing the landing hero, those values may be better expressed as named scene tokens so they are easier to tune together.
+
+## 2026-05-11 - Hero hover parallax amplified
+
+**The Change:** Removed the pointer-following glow experiment from [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) and increased the existing hover parallax by expanding the transform range and tightening the spring response.
+
+**The Reasoning:** The glow was the wrong direction for the interaction, and the previous parallax pass still felt too restrained. Pushing the layer travel further while keeping the eased response makes the hover read more clearly without changing the scene composition.
+
+**The Tech Debt:** The stronger hover still depends on hand-tuned transform multipliers and spring values. If we keep iterating on hero motion, these interaction settings would be easier to maintain as shared landing motion tokens.
