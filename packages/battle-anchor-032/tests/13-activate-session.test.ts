@@ -4,10 +4,13 @@ import { expect } from "chai";
 import {
   TEST_CONSTANTS,
   activateSession,
+  authority,
   battleStatusName,
   createSession,
   expectAnchorError,
   fetchSession,
+  program,
+  setCardManifest,
 } from "./helpers/battleTestUtils";
 
 describe("activate_session", () => {
@@ -29,10 +32,45 @@ describe("activate_session", () => {
     expect(battleStatusName(session.status)).to.equal("active");
   });
 
+  it("rejects activation before both manifests are committed", async () => {
+    const { sessionPda } = await createSession();
+
+    await expectAnchorError(
+      program.methods
+        .activateSession()
+        .accounts({
+          authority: authority.publicKey,
+          battleSession: sessionPda,
+        })
+        .rpc(),
+      "ManifestNotCommitted"
+    );
+  });
+
   it("rejects double activation", async () => {
     const { sessionPda } = await createSession();
     await activateSession(sessionPda);
 
     await expectAnchorError(activateSession(sessionPda), "InvalidStatus");
+  });
+
+  it("rejects activation when only one manifest is committed", async () => {
+    const { sessionPda } = await createSession();
+    await setCardManifest({
+      sessionPda,
+      isPlayerA: true,
+      entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
+    });
+
+    await expectAnchorError(
+      program.methods
+        .activateSession()
+        .accounts({
+          authority: authority.publicKey,
+          battleSession: sessionPda,
+        })
+        .rpc(),
+      "ManifestNotCommitted"
+    );
   });
 });

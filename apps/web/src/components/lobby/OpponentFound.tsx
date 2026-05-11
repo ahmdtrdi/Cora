@@ -4,15 +4,19 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import type { Transaction } from "@solana/web3.js";
 import type { Arena, Scientist } from "./LobbyScreen";
-import { signDepositIntent } from "@/lib/solana/signDepositIntent";
+import {
+  DepositIntentError,
+  prepareDepositIntentTransaction,
+  sendDepositIntentTransaction,
+} from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
-import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
 import type { DepositStatus } from "@/components/deposit/depositTypes";
-import { RoomStatusRail } from "@/components/room/RoomStatusRail";
-import type { RoomStatusBadge } from "@/components/room/PlayerRoomStatus";
+import { writeActiveDepositIntent, writeActiveMatchSession } from "@/lib/session/matchSession";
+import { getDepositMagicBlockUi } from "@/lib/magicblock/magicblockUi";
 
 type OpponentFoundProps = {
   myScientist: Scientist;
@@ -27,7 +31,9 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
-const PHANTOM_SIGNING_WARNING_MS = 20_000;
+const PHANTOM_SIGNING_WARNING_MS = 12_000;
+const SIGNING_TIMEOUT_MS = 28_000;
+const PREPARED_DEPOSIT_MAX_AGE_MS = 45_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -59,12 +65,22 @@ export function OpponentFound({
   const [signedDepositSignature, setSignedDepositSignature] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [errorVisible, setErrorVisible] = useState(false);
-  const [showRoomStatus, setShowRoomStatus] = useState(false);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
+  const [isRetryingConnection, setIsRetryingConnection] = useState(false);
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
+  const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
+  const [battleLaunchCountdown, setBattleLaunchCountdown] = useState<number | null>(null);
+  const hasConnectedOnceRef = useRef(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
+  const cancelFiredRef = useRef(false);
+  const preparedDepositKeyRef = useRef<string | null>(null);
+  const preparedDepositPromiseRef = useRef<Promise<Transaction> | null>(null);
+  const preparedDepositTransactionRef = useRef<Transaction | null>(null);
+  const preparedDepositReadyAtRef = useRef<number | null>(null);
+  const preparedDepositAbortRef = useRef<AbortController | null>(null);
   const myHappyExpressionSrc = useMemo(
     () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
     [myScientist.id],
@@ -76,7 +92,6 @@ export function OpponentFound({
     connectionState,
     gameState,
     lastSocketCloseInfo,
-    lastSocketError,
     depositUnlockedAt,
     opponentFailedDepositAt,
     lastRoomCancelled,
@@ -89,6 +104,7 @@ export function OpponentFound({
     address: walletAddress,
     characterId: myScientist.id,
   });
+  const isBattleSnapshotReady = gameState?.status === "playing" && (gameState.hand?.length ?? 0) > 0;
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
   const socketRole =
@@ -107,40 +123,189 @@ export function OpponentFound({
     signingState !== "waiting" &&
     !isPlayerBWaitingUnlock &&
     !signed;
+  const depositPreparationKey =
+    wallet.publicKey && !signedDepositSignature
+      ? `${roomId}:${wallet.publicKey.toBase58()}:${arena.token}:${wagerUsd}`
+      : null;
   const reassignedRoomId =
     lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
-  const {
-    statusLabel: playabilityLabel,
-    statusTone: playabilityTone,
-  } = useWalletArenaPlayability({
-    address: wallet.publicKey?.toBase58() ?? "",
-    arenaId: arena.id,
-    token: arena.token,
-    enabled: Boolean(wallet.publicKey),
-  });
   const roomCancelledNotice = useMemo(
     () => (lastRoomCancelled ? getRoomCancelledMessage(lastRoomCancelled.reason) : null),
     [lastRoomCancelled],
   );
+  const magicBlockUi = getDepositMagicBlockUi({
+    erEnabled: gameState?.erEnabled,
+    erStatus: gameState?.erStatus,
+    status: gameState?.status,
+    effectiveRole,
+    signingState,
+    depositUnlockedAt,
+  });
+  const hasArenaPreparationSignal =
+    Boolean(gameState?.erStatus && gameState.erStatus !== "none") ||
+    gameState?.status === "playing" ||
+    gameState?.status === "settling";
+  const playerBHasCompletedSecondDeposit =
+    effectiveRole === "playerB" &&
+    Boolean(depositUnlockedAt) &&
+    Boolean(signedDepositSignature);
+  const playerHasSignedDeposit =
+    signingState === "waiting" &&
+    Boolean(signedDepositSignature) &&
+    !isPlayerBWaitingUnlock;
+  const displayedMagicBlockUi =
+    battleLaunchCountdown !== null
+      ? {
+          ...magicBlockUi,
+          tone: "magicblock" as const,
+          badgeLabel: "Battle Ready",
+          title: `Starting in ${battleLaunchCountdown}`,
+          detail: "Final room sync complete. Keep this window open.",
+          progress: 100,
+          showPulse: false,
+        }
+      : playerHasSignedDeposit && !hasArenaPreparationSignal
+      ? {
+          ...magicBlockUi,
+          tone: "standard" as const,
+          badgeLabel: "Fast Arena",
+          title: playerBHasCompletedSecondDeposit ? "Syncing MagicBlock" : "Fast Arena queued",
+          detail: playerBHasCompletedSecondDeposit
+            ? "Both deposits signed. Preparing the fast arena."
+            : "Deposit signed. Waiting for the rival wager.",
+          progress: playerBHasCompletedSecondDeposit ? 45 : 30,
+          showPulse: true,
+        }
+      : magicBlockUi;
+  const showArenaStatusStrip = playerHasSignedDeposit || battleLaunchCountdown !== null;
+  const isMagicBlockArenaLoading = displayedMagicBlockUi.tone === "magicblock";
+  const isArenaProcessing = displayedMagicBlockUi.tone === "magicblock" || displayedMagicBlockUi.showPulse;
 
   useEffect(() => {
-    if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
-      const params = new URLSearchParams({
-        roomId,
-        address: walletAddress,
-        arena: arena.id,
-        token: arena.token,
-        wager: wagerUsd,
-        scientist: myScientist.id,
-      });
-      if (signedDepositSignature) {
-        params.set("depositSig", signedDepositSignature);
-      }
-      router.push(`/play?${params.toString()}`);
+    if (!depositPreparationKey || !wallet.publicKey) {
+      preparedDepositAbortRef.current?.abort();
+      preparedDepositAbortRef.current = null;
+      preparedDepositPromiseRef.current = null;
+      preparedDepositTransactionRef.current = null;
+      preparedDepositReadyAtRef.current = null;
+      preparedDepositKeyRef.current = null;
       return;
     }
 
-    if (isPlayerBWaitingUnlock || signingState === "waiting") return;
+    if (preparedDepositKeyRef.current === depositPreparationKey && preparedDepositPromiseRef.current) return;
+
+    preparedDepositAbortRef.current?.abort();
+    const abortController = new AbortController();
+    preparedDepositAbortRef.current = abortController;
+    preparedDepositKeyRef.current = depositPreparationKey;
+    preparedDepositTransactionRef.current = null;
+    preparedDepositReadyAtRef.current = null;
+    const startedAt = performance.now();
+
+    const promise = prepareDepositIntentTransaction({
+      wallet,
+      roomId,
+      token: arena.token,
+      wagerUsd,
+      signal: abortController.signal,
+    });
+
+    preparedDepositPromiseRef.current = promise;
+    promise
+      .then((transaction) => {
+        preparedDepositTransactionRef.current = transaction;
+        preparedDepositReadyAtRef.current = Date.now();
+        console.info("[OpponentFound] Deposit transaction prepared", {
+          roomId,
+          role: effectiveRole ?? "unknown",
+          ms: Math.round(performance.now() - startedAt),
+        });
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted) return;
+        console.warn("[OpponentFound] Deposit transaction prefetch failed", {
+          roomId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (preparedDepositPromiseRef.current === promise) {
+          preparedDepositPromiseRef.current = null;
+          preparedDepositTransactionRef.current = null;
+          preparedDepositReadyAtRef.current = null;
+          preparedDepositKeyRef.current = null;
+        }
+      });
+
+    return () => {
+      abortController.abort();
+      if (preparedDepositAbortRef.current === abortController) {
+        preparedDepositAbortRef.current = null;
+        preparedDepositPromiseRef.current = null;
+        preparedDepositTransactionRef.current = null;
+        preparedDepositReadyAtRef.current = null;
+        preparedDepositKeyRef.current = null;
+      }
+    };
+  }, [arena.token, depositPreparationKey, effectiveRole, roomId, wagerUsd]);
+
+  useEffect(() => {
+    if (!(signingState === "waiting" && isBattleSnapshotReady && signedDepositSignature)) {
+      const resetTimer = window.setTimeout(() => setBattleLaunchCountdown(null), 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+
+    const countdownTimers = [
+      window.setTimeout(() => setBattleLaunchCountdown(3), 0),
+      window.setTimeout(() => setBattleLaunchCountdown(2), 1000),
+      window.setTimeout(() => setBattleLaunchCountdown(1), 2000),
+    ];
+    const launchTimer = window.setTimeout(() => {
+      writeActiveMatchSession({
+        walletAddress,
+        address: walletAddress,
+        roomId,
+        role: effectiveRole ?? null,
+        arenaId: arena.id,
+        scientistId: myScientist.id,
+        status: "playing",
+        token: arena.token,
+        arenaToken: arena.token,
+        wagerUsd,
+      });
+      writeActiveDepositIntent({
+        roomId,
+        address: walletAddress,
+        signature: signedDepositSignature,
+      });
+      const params = new URLSearchParams({
+        roomId,
+        arena: arena.id,
+        scientist: myScientist.id,
+      });
+      router.push(`/play?${params.toString()}`);
+    }, 3000);
+
+    return () => {
+      for (const timerId of countdownTimers) {
+        window.clearTimeout(timerId);
+      }
+      window.clearTimeout(launchTimer);
+    };
+  }, [
+    signingState,
+    router,
+    walletAddress,
+    roomId,
+    arena.id,
+    arena.token,
+    wagerUsd,
+    myScientist.id,
+    signedDepositSignature,
+    isBattleSnapshotReady,
+    effectiveRole,
+  ]);
+
+  useEffect(() => {
+    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -161,8 +326,6 @@ export function OpponentFound({
     arena.token,
     wagerUsd,
     myScientist.id,
-    signedDepositSignature,
-    gameState?.status,
     isPlayerBWaitingUnlock,
   ]);
 
@@ -198,8 +361,10 @@ export function OpponentFound({
 
   useEffect(() => {
     if (signingState !== "signing") {
-      setWalletApprovalTakingLong(false);
-      return;
+      const resetTimerId = setTimeout(() => {
+        setWalletApprovalTakingLong(false);
+      }, 0);
+      return () => clearTimeout(resetTimerId);
     }
 
     const timerId = setTimeout(() => {
@@ -208,6 +373,134 @@ export function OpponentFound({
 
     return () => clearTimeout(timerId);
   }, [signingState]);
+
+  // Clear retry-in-progress flag once the socket settles to any non-reconnecting state.
+  useEffect(() => {
+    if (!isRetryingConnection) return;
+    if (connectionState === "reconnecting") return;
+    const timerId = setTimeout(() => {
+      setIsRetryingConnection(false);
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [connectionState, isRetryingConnection]);
+
+  function isInsufficientFundsError(error: unknown) {
+    if (error instanceof DepositIntentError) {
+      return error.code === "insufficient_balance";
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const logs: string = (() => {
+      if (error && typeof error === "object" && "logs" in error) {
+        const value = (error as { logs?: unknown }).logs;
+        if (Array.isArray(value)) return value.join(" ").toLowerCase();
+      }
+      return "";
+    })();
+
+    return `${raw} ${logs}`.toLowerCase().includes("insufficient") || logs.includes("lamport") || logs.includes("0x1");
+  }
+
+  function isWalletCancelledDepositError(error: unknown) {
+    if (error instanceof DepositIntentError) {
+      return error.code === "wallet_declined" || error.message === "signing_timeout" || error.message.includes("aborted");
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const combined = `${error instanceof Error ? error.name : ""} ${raw}`.toLowerCase();
+    return (
+      combined.includes("rejected") ||
+      combined.includes("denied") ||
+      combined.includes("cancel") ||
+      combined.includes("signing_timeout") ||
+      combined.includes("user rejected") ||
+      combined.includes("aborted")
+    );
+  }
+
+  function isAbortedDepositPreparation(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.toLowerCase().includes("aborted");
+  }
+
+  function classifyDepositError(error: unknown): string {
+    if (error instanceof DepositIntentError) {
+      switch (error.code) {
+        case "wallet_declined":
+          return "You cancelled the transaction in your wallet.";
+        case "insufficient_balance":
+          return "Insufficient Balance";
+        case "wallet_not_connected":
+          return "Wallet disconnected. Reconnect and retry.";
+        case "wallet_signing_not_supported":
+          return "Your wallet does not support transaction signing.";
+        case "rpc_error":
+          return "Transaction expired before it could be confirmed. Please retry.";
+        case "network_error":
+          return "Unable to reach the game server. Check your connection and retry.";
+        case "unknown":
+          if (error.message === "signing_timeout") {
+            return "Wallet approval timed out. Returning to lobby so you can queue again.";
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const logs: string = (() => {
+      if (error && typeof error === "object" && "logs" in error) {
+        const value = (error as { logs?: unknown }).logs;
+        if (Array.isArray(value)) return value.join(" ").toLowerCase();
+      }
+      return "";
+    })();
+    const combined = `${raw} ${logs}`.toLowerCase();
+
+    if (combined.includes("rejected") || combined.includes("cancel")) return "You cancelled the transaction in your wallet.";
+    if (
+      combined.includes("insufficient") ||
+      combined.includes("lamport") ||
+      logs.includes("0x1") ||
+      combined.includes('"custom":1') ||
+      combined.includes('"custom": 1') ||
+      combined.includes("instructionerror") ||
+      combined.includes("balance") ||
+      combined.includes("fund")
+    ) {
+      return "Insufficient Balance";
+    }
+    if (combined.includes("blockhash") || combined.includes("expired")) {
+      return "Transaction expired before it could be confirmed. Please retry.";
+    }
+    if (combined.includes("simulation failed")) {
+      return "Transaction simulation failed. This usually means insufficient funds or a network issue.";
+    }
+    if (combined.includes("network") || combined.includes("timeout")) {
+      return "Network error. Check your connection and retry.";
+    }
+
+    return raw.length > 120 ? `${raw.slice(0, 120)}...` : raw || "Deposit signing failed. Please retry.";
+  }
+
+  // Show a timed top-center banner whenever the socket drops unexpectedly.
+  useEffect(() => {
+    if (connectionState === "connected") {
+      hasConnectedOnceRef.current = true;
+      return;
+    }
+    if (!hasConnectedOnceRef.current) return;
+    if (connectionState !== "error" && connectionState !== "disconnected") return;
+    const showTimerId = setTimeout(() => {
+      setConnectionIssueBannerVisible(true);
+    }, 0);
+    const hideTimerId = setTimeout(() => setConnectionIssueBannerVisible(false), 6000);
+    return () => {
+      clearTimeout(showTimerId);
+      clearTimeout(hideTimerId);
+    };
+  }, [connectionState]);
 
   async function onSignDeposit() {
     console.info("[OpponentFound] Deposit click", {
@@ -223,19 +516,70 @@ export function OpponentFound({
     });
     if (!canAttemptSign) return;
 
+    setInsufficientFunds(false);
     setErrorText(null);
     setErrorVisible(false);
     setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
+    const signingAbortController = new AbortController();
+    let signingTimeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const signature = await signDepositIntent({
-        connection,
-        wallet,
-        roomId,
-        token: arena.token,
-        wagerUsd,
+      const signingTimeout = new Promise<never>((_, reject) => {
+        signingTimeoutId = setTimeout(() => {
+          signingAbortController.abort();
+          reject(new DepositIntentError("unknown", "signing_timeout"));
+        }, SIGNING_TIMEOUT_MS);
       });
+      const signature = await Promise.race([
+        (async () => {
+          let preparedTransaction: Transaction;
+          const preparedAge =
+            preparedDepositReadyAtRef.current === null ? Number.POSITIVE_INFINITY : Date.now() - preparedDepositReadyAtRef.current;
+          if (
+            preparedDepositKeyRef.current === depositPreparationKey &&
+            preparedDepositTransactionRef.current &&
+            preparedAge < PREPARED_DEPOSIT_MAX_AGE_MS
+          ) {
+            preparedTransaction = preparedDepositTransactionRef.current;
+          } else if (preparedDepositKeyRef.current === depositPreparationKey && preparedDepositPromiseRef.current) {
+            try {
+              preparedTransaction = await preparedDepositPromiseRef.current;
+            } catch (error) {
+              if (!isAbortedDepositPreparation(error) || signingAbortController.signal.aborted) {
+                throw error;
+              }
+              preparedDepositPromiseRef.current = null;
+              preparedDepositTransactionRef.current = null;
+              preparedDepositReadyAtRef.current = null;
+              preparedDepositKeyRef.current = null;
+              preparedTransaction = await prepareDepositIntentTransaction({
+                wallet,
+                roomId,
+                token: arena.token,
+                wagerUsd,
+                signal: signingAbortController.signal,
+              });
+            }
+          } else {
+            preparedTransaction = await prepareDepositIntentTransaction({
+              wallet,
+              roomId,
+              token: arena.token,
+              wagerUsd,
+              signal: signingAbortController.signal,
+            });
+          }
+
+          return sendDepositIntentTransaction({
+            connection,
+            wallet,
+            transaction: preparedTransaction,
+            signal: signingAbortController.signal,
+          });
+        })(),
+        signingTimeout,
+      ]);
 
       if (!signature) {
         throw new Error("Missing transaction signature");
@@ -244,50 +588,100 @@ export function OpponentFound({
       setSignedDepositSignature(signature);
       setSigningState("waiting");
     } catch (error) {
-      console.error("[OpponentFound] Deposit signing failed", {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorCode = error instanceof DepositIntentError ? error.code : "unknown";
+      const errorName = error instanceof Error ? error.name : typeof error;
+      const userCancelledDeposit = isWalletCancelledDepositError(error);
+      const logPayload = {
         roomId,
         role: effectiveRole ?? "unknown",
         connectionState,
-        error,
-      });
-      const message = error instanceof Error ? error.message : "Deposit signing failed. Please retry.";
+        errorCode,
+        errorName,
+        errorMsg,
+      };
+      if (userCancelledDeposit) {
+        console.info(`[OpponentFound] Deposit signing cancelled: [${errorCode}] ${errorMsg}`, logPayload);
+      } else {
+        console.error(`[OpponentFound] Deposit signing failed: [${errorCode}] ${errorMsg}`, logPayload);
+      }
+      const message = classifyDepositError(error);
+      const hasInsufficientFunds = isInsufficientFundsError(error);
       setSigningState("error");
       setErrorText(message);
       setErrorVisible(true);
+      if (hasInsufficientFunds) {
+        setInsufficientFunds(true);
+      }
+      if (userCancelledDeposit && !cancelFiredRef.current) {
+        cancelFiredRef.current = true;
+        cancelMatch();
+        window.setTimeout(() => {
+          onTimeout();
+        }, 900);
+      }
+    } finally {
+      if (signingTimeoutId) {
+        clearTimeout(signingTimeoutId);
+      }
     }
   }
 
   function onCancelMatch() {
-    if (isCancellingMatch) return;
+    // Ref guard prevents multiple rapid clicks from firing onTimeout() more than once
+    // before the component unmounts (state updates are async, refs are synchronous).
+    if (cancelFiredRef.current) return;
+    cancelFiredRef.current = true;
     setIsCancellingMatch(true);
     cancelMatch();
+    onTimeout();
+  }
+
+  function onRetryConnection() {
+    if (isRetryingConnection) return;
+    setIsRetryingConnection(true);
+    reconnect();
   }
 
   useEffect(() => {
     if (!errorVisible) return;
+    const duration = insufficientFunds ? 30_000 : 12_000;
     const timerId = setTimeout(() => {
       setErrorVisible(false);
       setErrorText(null);
       setSigningState("idle");
-    }, 12000);
+      setInsufficientFunds(false);
+    }, duration);
     return () => clearTimeout(timerId);
-  }, [errorVisible]);
+  }, [errorVisible, insufficientFunds]);
 
   function getDepositHint() {
+    const isDisconnected = connectionState === "error" || connectionState === "disconnected";
+    const isReconnecting = connectionState === "reconnecting";
     if (reassignedRoomId) {
       return `Server reassigned to room ${reassignedRoomId}. Return to queue to continue sync.`;
     }
+    if (insufficientFunds) {
+      return `Top up your ${arena.token} wallet to cover $${wagerUsd} wager + ~0.001 SOL in fees, then retry.`;
+    }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
-    if (isPlayerBWaitingUnlock) return "Waiting for Player A to deposit first.";
+    if (isPlayerBWaitingUnlock) {
+      if (isDisconnected) {
+        const code = lastSocketCloseInfo?.code;
+        return `Connection issue while waiting${code ? ` (${code})` : ""}. Retry or cancel to return to lobby.`;
+      }
+      if (isReconnecting) return "Reconnecting... waiting for Player A to deposit.";
+      return "Waiting for Player A to deposit first.";
+    }
     if (isPlayerAWaitingForPlayerB) return "Deposit signed. Waiting for Player B.";
     if (effectiveRole === "playerB" && depositUnlockedAt && signingState === "idle") {
       return "Player A deposited. Your turn to sign.";
     }
     if (connectionState === "reconnecting") return "Reconnecting to room server...";
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
-    if (isCancellingMatch) return "Cancelling match...";
     if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
+    if (battleLaunchCountdown !== null) return `Battle starts in ${battleLaunchCountdown}...`;
     if (walletApprovalTakingLong) {
       return "Phantom approval has been open for a while. Close the old prompt if needed, then retry for a fresh transaction.";
     }
@@ -300,47 +694,38 @@ export function OpponentFound({
   }
 
   function getDepositStatus(): DepositStatus {
+    if (insufficientFunds) return "insufficient_funds";
     if (opponentFailedDepositAt) return "opponent_failed";
     if (signingState === "error") return "error";
     if (!wallet.publicKey) return "wallet_required";
     if (signingState === "signing") return "signing";
-    if (gameState?.status === "playing" && signedDepositSignature) return "confirmed";
+    if (battleLaunchCountdown !== null) return "confirmed";
+    if (isBattleSnapshotReady && signedDepositSignature) return "confirmed";
     if (signingState === "waiting") return "waiting_opponent";
     if (signedDepositSignature) return "submitted";
     return "idle";
   }
 
   function getPrimaryButtonLabel() {
-    if (isPlayerBWaitingUnlock) return "Waiting For Player A...";
+    const isDisconnected = connectionState === "error" || connectionState === "disconnected";
+    const isReconnecting = connectionState === "reconnecting";
+    if (isPlayerBWaitingUnlock) {
+      if (isDisconnected) return "Disconnected...";
+      if (isReconnecting) return "Reconnecting...";
+      return "Waiting For Player A...";
+    }
     if (isPlayerAWaitingForPlayerB) return "Waiting For Player B...";
+    if (insufficientFunds) return "Retry After Top-Up";
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
     return "Sign Deposit";
   }
 
-  function getPlayerBadges(): RoomStatusBadge[] {
-    if (gameState?.status === "playing") {
-      return ["connected", "matched", "deposited", "ready"];
-    }
-    if (signedDepositSignature) {
-      return ["connected", "matched", "deposited"];
-    }
-    if (signingState === "signing") {
-      return ["connected", "matched", "selecting"];
-    }
-    return ["connected", "matched", "selecting"];
-  }
 
-  function getOpponentBadges(): RoomStatusBadge[] {
-    if (opponentFailedDepositAt) return ["connected", "matched"];
-    if (gameState?.status === "playing") return ["connected", "matched", "deposited", "ready"];
-    if (depositUnlockedAt || signingState === "waiting") return ["connected", "matched", "deposited"];
-    return ["connected", "matched", "selecting"];
-  }
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
+    <div className="mx-auto flex h-[100svh] w-full max-w-5xl flex-col overflow-hidden px-4 py-8 md:px-6">
       {/* Opponent failed to deposit popup */}
       {opponentFailedDepositAt && (
         <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
@@ -406,6 +791,7 @@ export function OpponentFound({
                   setErrorVisible(false);
                   setErrorText(null);
                   setSigningState("idle");
+                  setInsufficientFunds(false);
                 }}
                 className="font-gabarito text-xs font-bold leading-none text-[var(--tone-bark)] opacity-60 hover:opacity-100"
                 aria-label="Close alert"
@@ -423,7 +809,7 @@ export function OpponentFound({
                   width: "100%",
                   background: "var(--tone-clay)",
                   animationName: "alertDrain",
-                  animationDuration: "12000ms",
+                  animationDuration: insufficientFunds ? "30000ms" : "12000ms",
                   animationTimingFunction: "linear",
                   animationFillMode: "forwards",
                 }}
@@ -450,40 +836,63 @@ export function OpponentFound({
           </div>
         </div>
       )}
-
-      <div className="mb-4 flex w-full items-center justify-between gap-2">
-        <span
-          className="frame-cut frame-cut-sm px-3 py-1.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
-          style={{
-            border: playabilityTone === "warning" ? "1px solid rgba(186,105,49,0.75)" : "1px solid rgba(157,180,150,0.58)",
-            color: playabilityTone === "warning" ? "#f8d694" : "#d8ead4",
-            background: "rgba(16,26,22,0.72)",
-          }}
-        >
-          {playabilityLabel}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowRoomStatus((value) => !value)}
-            className="rounded-full border border-[rgba(248,214,148,0.46)] bg-[rgba(16,26,22,0.5)] px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--tone-cream)] transition-colors hover:bg-[rgba(16,26,22,0.66)]"
+      {connectionIssueBannerVisible && (
+        <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(186,105,49,0.72)",
+              background: "linear-gradient(145deg, #2c1e10 0%, #3d2a14 100%)",
+            }}
           >
-            {showRoomStatus ? "Hide Room Status" : "Show Room Status"}
-          </button>
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-caprasimo text-base text-[#f8d694]">
+                Connection issue while waiting
+              </p>
+              <button
+                type="button"
+                onClick={() => setConnectionIssueBannerVisible(false)}
+                className="font-gabarito text-xs font-bold leading-none text-[#f8d694] opacity-60 hover:opacity-100"
+                aria-label="Dismiss connection banner"
+              >
+                ✕
+              </button>
+            </div>
+            {lastSocketCloseInfo && (
+              <p className="mt-1 font-mono text-xs text-[rgba(244,240,230,0.72)]">
+                Close code {lastSocketCloseInfo.code}{lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}
+              </p>
+            )}
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.12)]">
+              <div
+                className="h-full"
+                style={{
+                  width: "100%",
+                  background: "#f8d694",
+                  animationName: "alertDrain",
+                  animationDuration: "6000ms",
+                  animationTimingFunction: "linear",
+                  animationFillMode: "forwards",
+                }}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
+      <div className="flex-shrink-0 text-center">
       <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
         {arena.label} · ${wagerUsd} {arena.token}
       </p>
-      <h1 className="mt-2 text-center font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
+      <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
         Rival Locked
       </h1>
-      <p className="mt-2 text-center font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+      <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
         Sign the deposit before the timer expires.
       </p>
+      </div>
 
-      <div className="mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+      <div className="mt-8 grid w-full flex-shrink-0 grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div
           className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
@@ -570,103 +979,139 @@ export function OpponentFound({
                 Character revealed when battle starts.
               </p>
               <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+                {opponentAddress ? shortWallet(opponentAddress) : "Syncing rival..."}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      <div
-        className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
-        style={{
-          borderColor: "rgba(248,214,148,0.35)",
-          background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
-        }}
-      >
-        <DepositPanel
-          token={arena.token}
-          wagerUsd={wagerUsd}
-          status={getDepositStatus()}
-          helperText={getDepositHint()}
-          countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
-          signature={signedDepositSignature}
-          canPrimaryAction={canAttemptSign}
-          primaryActionLabel={getPrimaryButtonLabel()}
-          onPrimaryAction={onSignDeposit}
-          walletSlot={
-            !wallet.publicKey ? (
-              <div className="pt-1">
-                <HydratedWalletButton />
-              </div>
-            ) : null
-          }
-          retrySlot={
-            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-              <button
-                type="button"
-                onClick={reconnect}
-                className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
-              >
-                Retry Connection
-              </button>
-            ) : null
-          }
-          cancelSlot={
-            <button
-              type="button"
-              onClick={onCancelMatch}
-              disabled={isCancellingMatch}
-              className="btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm"
-            >
-              {isCancellingMatch ? "Cancelling..." : "Cancel Match"}
-            </button>
-          }
-          extraSlot={
-            connectionState === "error" || connectionState === "disconnected" || connectionState === "reconnecting" ? (
-              <div className="mt-2 frame-cut px-3 py-2 shadow-xl" style={{ border: "2px solid var(--tone-clay)", background: "var(--warm-surface)" }}>
-                <p className="font-gabarito text-xs font-bold uppercase tracking-wide text-[var(--tone-bark)]">
-                  {connectionState === "reconnecting" ? "Reconnecting to room server" : "Connection issue while waiting"}
-                </p>
-                <p className="mt-1 break-words font-gabarito text-xs text-[var(--warm-text)]">
-                  {connectionState === "reconnecting"
-                    ? "Trying to restore room state. Keep this page open."
-                    : lastSocketCloseInfo
-                    ? `Close code ${lastSocketCloseInfo.code}${lastSocketCloseInfo.reason ? `: ${lastSocketCloseInfo.reason}` : ""}`
-                    : lastSocketError ?? "Socket disconnected."}
-                </p>
-              </div>
-            ) : null
-          }
-        />
-      </div>
-
-      {showRoomStatus && (
+      <div className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto pb-4">
         <div
-          className="mt-5 w-full rounded-2xl border p-4 shadow-lg"
+          className="mt-8 w-full rounded-2xl border p-4 shadow-xl md:p-5"
           style={{
-            borderColor: "rgba(248,214,148,0.32)",
-            background: "linear-gradient(160deg, rgba(12,21,17,0.62), rgba(19,32,26,0.62))",
+            borderColor: "rgba(248,214,148,0.35)",
+            background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
           }}
         >
-          <RoomStatusRail
-            rows={[
-              {
-                id: "you",
-                label: "You",
-                subtitle: signedDepositSignature ? "Deposit signature submitted" : "Waiting for wallet signature",
-                badges: getPlayerBadges(),
-              },
-              {
-                id: "opponent",
-                label: "Opponent",
-                subtitle: opponentFailedDepositAt ? "Deposit failed or timed out" : "Waiting for opponent deposit",
-                badges: getOpponentBadges(),
-              },
-            ]}
+          <DepositPanel
+            token={arena.token}
+            wagerUsd={wagerUsd}
+            status={getDepositStatus()}
+            helperText={getDepositHint()}
+            countdownSeconds={shouldShowCountdown ? secondsLeft : undefined}
+            countdownSlot={
+              signingState === "signing" ? (
+                <div
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.26)",
+                    background: "linear-gradient(145deg, rgba(248,214,148,0.14), rgba(203,227,193,0.1))",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <span className="h-2 w-2 rounded-full bg-[#f8d694] animate-pulse" />
+                  <span className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[#f8d694]">
+                    Opening Phantom...
+                  </span>
+                </div>
+              ) : null
+            }
+            signature={signedDepositSignature}
+            canPrimaryAction={canAttemptSign}
+            primaryActionLabel={getPrimaryButtonLabel()}
+            onPrimaryAction={onSignDeposit}
+            statusStripSlot={
+              showArenaStatusStrip ? (
+                <div className="mx-auto flex min-h-[58px] w-full max-w-xl items-center justify-center">
+                  <div
+                    className="w-full rounded-2xl px-3 py-2"
+                    style={{
+                      border:
+                        displayedMagicBlockUi.tone === "magicblock"
+                          ? "1px solid rgba(157,180,150,0.34)"
+                          : "1px solid rgba(248,214,148,0.24)",
+                      background:
+                        displayedMagicBlockUi.tone === "magicblock"
+                          ? "linear-gradient(145deg, rgba(157,180,150,0.14), rgba(60,92,95,0.12))"
+                          : "linear-gradient(145deg, rgba(248,214,148,0.10), rgba(255,255,255,0.04))",
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex shrink-0 rounded-full border border-[rgba(255,255,255,0.16)] px-2.5 py-1 font-gabarito text-[10px] font-black uppercase tracking-[0.14em] text-[var(--tone-cream)]">
+                        {displayedMagicBlockUi.badgeLabel}
+                      </span>
+                      <div className="min-w-0 flex-1 text-left">
+                        <p className="truncate font-gabarito text-xs font-bold uppercase tracking-[0.08em] text-[rgba(244,240,230,0.92)]">
+                          {displayedMagicBlockUi.title}
+                        </p>
+                        <p className="truncate font-gabarito text-xs text-[rgba(244,240,230,0.72)]">
+                          {displayedMagicBlockUi.detail}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+                      <div
+                        className={`h-full rounded-full ${
+                          displayedMagicBlockUi.showPulse && !isArenaProcessing ? "animate-pulse" : ""
+                        }`}
+                        style={{
+                          width: isArenaProcessing ? "100%" : `${displayedMagicBlockUi.progress ?? 0}%`,
+                          backgroundImage: isMagicBlockArenaLoading
+                            ? "linear-gradient(90deg, #5f806d 0%, #9db496 35%, #e1f2d8 50%, #9db496 65%, #5f806d 100%)"
+                            : isArenaProcessing
+                              ? "linear-gradient(90deg, #ba6931 0%, #f8d694 35%, #fff6e0 50%, #f8d694 65%, #ba6931 100%)"
+                              : "linear-gradient(90deg, #f8d694 0%, #ba6931 100%)",
+                          backgroundSize: isArenaProcessing ? "200% 100%" : undefined,
+                          animation: isArenaProcessing ? "shimmer 2s linear infinite" : undefined,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null
+            }
+            walletSlot={
+              !wallet.publicKey ? (
+                <div className="pt-1">
+                  <HydratedWalletButton />
+                </div>
+              ) : null
+            }
+            retrySlot={
+              connectionState === "error" || connectionState === "disconnected" ? (
+                <button
+                  type="button"
+                  onClick={onRetryConnection}
+                  disabled={isRetryingConnection}
+                  className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                    isRetryingConnection ? "cursor-not-allowed opacity-55" : ""
+                  }`}
+                >
+                  {isRetryingConnection ? "Retrying..." : "Retry Connection"}
+                </button>
+              ) : null
+            }
+            cancelSlot={
+              signingState === "idle" || signingState === "error" ? (
+                <button
+                  type="button"
+                  onClick={onCancelMatch}
+                  disabled={isCancellingMatch}
+                  className={`btn-game btn-game-secondary px-3 py-1.5 text-[10px] shadow-sm ${
+                    isCancellingMatch ? "cursor-not-allowed opacity-55" : ""
+                  }`}
+                >
+                  {isCancellingMatch ? "Leaving..." : "Cancel Match"}
+                </button>
+              ) : null
+            }
+            extraSlot={null}
           />
         </div>
-      )}
+      </div>
+
+
     </div>
   );
 }

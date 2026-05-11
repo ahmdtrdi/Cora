@@ -40,3 +40,28 @@ pub struct MatchSettledEvent {
 pub struct MatchRefundedEvent {
     pub match_id: [u8; 32],
 }
+
+#[event]
+pub struct OpenChallengeCreatedEvent {
+    pub match_id: [u8; 32],
+    pub creator: Pubkey,
+    pub token_mint: Pubkey,
+    pub wager_amount: u64,
+    pub expires_at: i64,
+}
+
+#[event]
+pub struct ChallengeAcceptedEvent {
+    pub match_id: [u8; 32],
+    pub creator: Pubkey,
+    pub challenger: Pubkey,
+    pub token_mint: Pubkey,
+    pub wager_amount: u64,
+}
+
+#[event]
+pub struct ChallengeReclaimedEvent {
+    pub match_id: [u8; 32],
+    pub creator: Pubkey,
+    pub refunded_amount: u64,
+}

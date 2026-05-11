@@ -24,6 +24,11 @@ export const CHARACTER_DEFS: Record<string, CharacterDef> = {
   einstein: { id: 'einstein', name: 'Albert Einstein', specialty: 'math',     specialtyMultiplier: 1.5 },
 };
 
+export const MAX_SPECIALTY_MULTIPLIER = Math.max(
+  1,
+  ...Object.values(CHARACTER_DEFS).map((character) => character.specialtyMultiplier),
+);
+
 /**
  * Returns the specialty multiplier for a character answering a question
  * from a given category. Returns 1 if no specialty match.

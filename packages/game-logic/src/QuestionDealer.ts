@@ -16,10 +16,13 @@ export class QuestionDealer {
   private totalRemaining: number = 0;
   private dealtCount: number = 0;
   private healSlotInBatch: number = this.rollHealSlot();
+  /** Original full question list — preserved for hash derivation after dealing */
+  private allQuestions: SchemaQuestion[];
 
   constructor(questions: SchemaQuestion[]) {
     // Only keep questions that have exactly one correct answer
     const validQuestions = questions.filter(q => q.options.filter(o => o.score === true).length === 1);
+    this.allQuestions = [...validQuestions];
     
     if (validQuestions.length === 0) {
       console.warn('QuestionDealer initialized with 0 valid questions.');
@@ -106,6 +109,15 @@ export class QuestionDealer {
    */
   getRemainingCount(): number {
     return this.totalRemaining;
+  }
+
+  /**
+   * Returns the original list of all valid questions loaded for this match.
+   * Preserved from construction time — unaffected by dealing/consumption.
+   * Used for deterministic question hash derivation.
+   */
+  getQuestions(): SchemaQuestion[] {
+    return this.allQuestions;
   }
 
   /**

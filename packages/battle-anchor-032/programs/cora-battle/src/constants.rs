@@ -27,10 +27,23 @@ pub const EFFECT_HEAL: u8 = 2;
 pub const EFFECT_NONE: u8 = 3;
 
 /// Maximum final effect value the backend may authorize for ATTACK/HEAL cards.
-pub const MAX_EFFECT_VALUE: u16 = 100;
+/// Mirrors gameplay's current ceiling: base 10 * extra-point 2x * specialty 1.5x.
+pub const MAX_EFFECT_VALUE: u16 = 30;
 
 /// Maximum gameplay-score delta the backend may apply from one card resolution.
 pub const MAX_SCORE_DELTA: u32 = 10_000;
+
+/// Maximum number of committed card slots per player in the inline manifest.
+pub const MAX_CARD_SLOTS: u8 = 128;
+
+/// Packed bytes per inline manifest slot: effect_type (1) + max_value (2).
+pub const MANIFEST_ENTRY_SIZE: usize = 3;
+
+/// Total inline manifest bytes per player.
+pub const INLINE_MANIFEST_LEN: usize = MAX_CARD_SLOTS as usize * MANIFEST_ENTRY_SIZE;
+
+/// Score delta ceiling relative to final_value for inline manifest effects.
+pub const MAX_SCORE_MULTIPLIER: u32 = 100;
 
 /// Minimum damage a single card can deal (prevents zero-damage griefing)
 pub const MIN_DAMAGE: u16 = 1;
@@ -39,7 +52,7 @@ pub const MIN_DAMAGE: u16 = 1;
 pub const SESSION_TIMEOUT: i64 = 900;
 
 /// Current state schema version for forward-compatible upgrades
-pub const CURRENT_VERSION: u8 = 4;
+pub const CURRENT_VERSION: u8 = 5;
 
 pub const END_REASON_NONE: u8 = 0;
 pub const END_REASON_NORMAL_WIN: u8 = 1;
@@ -49,3 +62,4 @@ pub const END_REASON_SERVER_CANCELLED: u8 = 4;
 pub const END_REASON_CHEATER_FLAGGED: u8 = 5;
 pub const END_REASON_FORCE_ENDED: u8 = 6;
 pub const END_REASON_DRAW_NO_CONTEST: u8 = 7;
+pub const END_REASON_SURRENDER: u8 = 8;

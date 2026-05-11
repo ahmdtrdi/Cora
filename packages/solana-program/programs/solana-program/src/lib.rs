@@ -6,12 +6,16 @@ pub mod state;
 
 use anchor_lang::prelude::*;
 pub use instructions::{
-    DepositWager, InitializeConfig, InitializeMatch, Refund, SettleMatch, UpdateConfig,
+    AcceptChallenge, CreateOpenChallenge, DepositWager, InitializeConfig, InitializeMatch,
+    ReclaimChallenge, Refund, SettleMatch, UpdateConfig,
 };
 pub(crate) use instructions::{
+    __client_accounts_accept_challenge,
+    __client_accounts_create_open_challenge,
     __client_accounts_deposit_wager,
     __client_accounts_initialize_config,
     __client_accounts_initialize_match,
+    __client_accounts_reclaim_challenge,
     __client_accounts_refund,
     __client_accounts_settle_match,
     __client_accounts_update_config,
@@ -48,6 +52,26 @@ pub mod solana_program {
 
     pub fn deposit_wager(ctx: Context<DepositWager>) -> Result<()> {
         instructions::deposit_wager::handler(ctx)
+    }
+
+    pub fn create_open_challenge(
+        ctx: Context<CreateOpenChallenge>,
+        match_id: [u8; 32],
+        wager_amount: u64,
+        server_pubkey: Pubkey,
+    ) -> Result<()> {
+        instructions::create_open_challenge::handler(ctx, match_id, wager_amount, server_pubkey)
+    }
+
+    pub fn accept_challenge(
+        ctx: Context<AcceptChallenge>,
+        match_id: [u8; 32],
+    ) -> Result<()> {
+        instructions::accept_challenge::handler(ctx, match_id)
+    }
+
+    pub fn reclaim_challenge(ctx: Context<ReclaimChallenge>) -> Result<()> {
+        instructions::reclaim_challenge::handler(ctx)
     }
 
     pub fn settle_match(

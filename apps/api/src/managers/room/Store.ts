@@ -1,8 +1,11 @@
 import { deriveMatchId } from '@shared/escrow';
+import { isMagicBlockConfigured } from '../../services/magicblock';
 import { Room } from './types';
 
 export class Store {
   private rooms: Map<string, Room> = new Map();
+  /** Reverse index: player wallet address → roomId for O(1) active-room lookups */
+  private playerRooms: Map<string, string> = new Map();
 
   public createRoom(roomId: string): Room {
     if (this.rooms.has(roomId)) {
@@ -26,6 +29,12 @@ export class Store {
       depositTimeouts: new Map(),
       erSessionPda: null,
       wagerUsdValue: null,
+      blinkJoinDeadline: null,
+      erEnabled: isMagicBlockConfigured(),
+      erLifecycleStatus: 'none',
+      erCardRegistry: new Map(),
+      erNextCardNonce: 0,
+      erProofMeta: null,
     };
     this.rooms.set(roomId, newRoom);
     return newRoom;
@@ -40,6 +49,35 @@ export class Store {
   }
 
   public deleteRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (room) {
+      if (room.playerA) this.playerRooms.delete(room.playerA);
+      if (room.playerB) this.playerRooms.delete(room.playerB);
+    }
     this.rooms.delete(roomId);
+  }
+
+  /** Track a player's association with a room (O(1) reverse index). */
+  public trackPlayer(address: string, roomId: string): void {
+    this.playerRooms.set(address, roomId);
+  }
+
+  /** Remove a player's room association. */
+  public untrackPlayer(address: string): void {
+    this.playerRooms.delete(address);
+  }
+
+  /** O(1) lookup: find the active (non-finished) room a player belongs to. */
+  public findRoomByPlayer(address: string): Room | undefined {
+    const roomId = this.playerRooms.get(address);
+    if (!roomId) return undefined;
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      // Stale index entry — clean up
+      this.playerRooms.delete(address);
+      return undefined;
+    }
+    if (room.status === 'finished') return undefined;
+    return room;
   }
 }

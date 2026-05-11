@@ -51,6 +51,28 @@ export interface PlayCardResult {
   antiCheatVerdict?: AntiCheatVerdict;
 }
 
+export interface ExternalPlayCardResult extends PlayCardResult {
+  effectType: 'attack' | 'heal' | 'none';
+  finalValue: number;
+  scoreDelta: number;
+  replacementCard?: EngineCard;
+}
+
+export interface ExternalAuthorityState {
+  playerA: string;
+  playerB: string;
+  status: 'WaitingCards' | 'Active' | 'Finished' | 'Cancelled';
+  healthA: number;
+  healthB: number;
+  scoreA: number;
+  scoreB: number;
+  gameScoreA: number;
+  gameScoreB: number;
+  currentRound: number;
+  winner: string | null;
+  roundDeadline?: number;
+}
+
 /**
  * Statistics collected for a player during a match
  */
@@ -95,6 +117,7 @@ export type GameOverReason = 'hp_zero' | 'time_up' | 'surrender' | 'draw';
 export type GameEngineEventMap = {
   timerSync: { remainingMs: number; phase: GamePhase };
   phaseChange: { phase: GamePhase };
+  roundDeadline: { roundNumber: number };
   roundOver: { winnerAddress: string | null; reason: 'hp_zero' | 'time_up' };
   gameOver: {
     winnerAddress: string | null;

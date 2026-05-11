@@ -8,6 +8,7 @@ import { createDiscoveryRouter } from './routes/discovery';
 import { createHealthRouter } from './routes/health';
 import { createHistoryRouter } from './routes/history';
 import { createApiMatchRouter, createMatchRouter, createMatchSocketRoute } from './routes/match';
+import { createQueueSocketRoute } from './routes/queueSocket';
 import { createQuestionsRouter } from './routes/questions';
 import { startEventListener } from './utils/eventListener';
 
@@ -15,6 +16,9 @@ const { upgradeWebSocket, websocket } = createBunWebSocket<unknown>();
 const app = new Hono();
 const roomManager = new RoomManager();
 const matchSocketRoute = createMatchSocketRoute(roomManager);
+const queueSocketRoute = createQueueSocketRoute(roomManager);
+roomManager.startBlinkJanitor();
+roomManager.startPublicRoomJanitor();
 
 // Global middleware
 app.use('/*', cors());
@@ -29,13 +33,19 @@ app.route('/api/match', createApiMatchRouter(roomManager));
 app.route('/api', createQuestionsRouter());
 app.route('/match', createMatchRouter(roomManager));
 
-// WebSocket match route
+// WebSocket match route (room-level)
 app.get('/match/:roomId', upgradeWebSocket((c) => {
   const roomId = c.req.param('roomId');
   const address = c.req.query('address');
   const characterId = c.req.query('characterId') || 'einstein';
 
   return matchSocketRoute(roomId, address, characterId);
+}));
+
+// WebSocket queue route (matchmaking)
+app.get('/queue', upgradeWebSocket((c) => {
+  const address = c.req.query('address');
+  return queueSocketRoute(address);
 }));
 
 // Start the server

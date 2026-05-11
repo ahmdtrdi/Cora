@@ -1,213 +1,394 @@
-# 🚀 CORA — Master Reference
+# CORA - Master Reference
 
-**Project Name:** CORA  
-**One-Line Pitch:** High-stakes Wager-Fi esports for General Aptitude Tests (GAT) — from university prep to corporate hiring.
-
----
-
-## ⚠️ The Problem (The Market Gap)
-
-Every year, over **100 million** people worldwide take General Aptitude Tests (GAT) — logic, math, and spatial reasoning exams required for university admissions (SAT, GRE) and corporate/government hiring (McKinsey, CPNS, UPSC). The preparation industry is a massive, highly-stressful grind:
-
-- Relies on outdated, solitary "try-outs" (practice exams)
-- Zero immediate financial incentive to perform well in practice
-- No real-time competitive pressure to simulate the actual exam environment
-- Hundreds of hours of boring, isolated study with no feedback loop
+**Project Name:** CORA
+**One-Line Pitch:** Real-time Solana wagering for aptitude battles, with public queue play, Blink challenge flow, and verifiable battle-state support through MagicBlock.
 
 ---
 
-## 💡 The Solution (CORA)
+## Overview
 
-CORA transforms General Aptitude Test prep into a fast-paced, *Clash Royale*-style real-time PvP battle with real financial stakes.
+CORA turns aptitude-test practice into a head-to-head battle game. Players connect a Solana wallet, lock a wager in escrow, answer timed questions, and settle the result on-chain.
 
-- **Wager-Fi Model:** Players wager any SPL token (USDC, SOL, BONK, or any meme coin) against each other in rapid-fire logic and math matches. Both players in a match use the same token — no cross-token swaps. Zero-sum — no inflationary token, no ponzinomics.
-- **Meme Coin Arenas:** Dead meme coins get new utility. Each token community gets their own competitive arena. Your unused bags become battle currency.
-- **Revenue Model:** Winner takes the pot. CORA smart contract routes a 2.5% platform fee to the treasury. Pure skill-based yield.
-- **Behavioral Hook:** Loss aversion transforms casual practice into high-focus performance — backed by behavioral economics.
+The current repository is no longer just a concept MVP. It now contains:
+
+- A Next.js web app for landing, lobby, queue, challenge acceptance, battle, and history views
+- A Bun + Hono backend for matchmaking, WebSocket room state, Solana Actions, Blink transaction building, and settlement orchestration
+- A Solana escrow program for wager custody and payout
+- A separate MagicBlock-compatible battle program for delegated real-time battle state
+- Shared TypeScript packages for game logic, escrow constants, and generated Solana client artifacts
 
 ---
 
-## ⛓️ Architecture (Why Solana)
+## Product Model
 
-Real-time PvP wagering requires sub-second finality and near-zero transaction fees. Only 2 on-chain transactions per match.
+At a high level, CORA supports two ways to start a match:
 
-### The Match Flow
+1. Public queue flow
+Two players enter the matchmaking queue, get paired, deposit into a shared match escrow, then play.
+
+2. Private Blink challenge flow
+One player funds an open challenge on-chain, shares the Blink URL, and a rival accepts the challenge into the final match escrow.
+
+Both flows converge into the same gameplay loop and final on-chain settlement model.
+
+---
+
+## Current Match Architecture
+
+### Public Queue Flow
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                     CORA MATCH FLOW                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  1. MATCHMAKING (Off-Chain)                                 │
-│     └─ Player joins queue via app or Blink                  │
-│     └─ FIFO matchmaking pairs two players                   │
-│     └─ WebSocket room created                               │
-│                                                             │
-│  2. ESCROW (On-Chain — Transaction #1)                      │
-│     └─ Both players sign deposit via Phantom wallet         │
-│     └─ Anchor smart contract locks tokens in PDA vault      │
-│                                                             │
-│  3. BATTLE (Off-Chain)                                      │
-│     └─ 3-round card-based battle via WebSocket              │
-│     └─ Players use randomized Action Cards (Heal/Attack)    │
-│     └─ Cards contain GAT logic multiple-choice questions    │
-│     └─ Correct answers reduce enemy or restore own Base HP  │
-│                                                             │
-│  4. SETTLEMENT (On-Chain — Transaction #2)                  │
-│     └─ Server determines winner                             │
-│     └─ Server keypair signs settlement authorization        │
-│     └─ Smart contract verifies signature + releases funds   │
-│     └─ 97.5% to winner, 2.5% to treasury                    │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+1. Player joins public queue over WebSocket
+2. FIFO queue pairs two players into a room
+3. Room enters deposit phase
+4. Players sign escrow transactions
+   - player A initializes the match and deposits
+   - player B deposits
+5. Backend starts gameplay
+6. Result is settled on-chain or refunded on timeout/error
 ```
 
-### Smart Contract (Anchor/Rust)
+### Blink Challenge Flow
+
+```text
+1. Creator opens a private challenge
+2. Creator signs create_open_challenge
+3. Challenge link is shared through Solana Actions / Blink UX
+4. Challenger opens the challenge page or Blink
+5. Challenger signs accept_challenge
+6. Match room is hydrated and both players join the battle room
+7. Gameplay runs
+8. Result is settled on-chain or refunded/reclaimed by contract rules
+```
+
+### Gameplay Layer
+
+Gameplay is real-time and mostly off-chain from the player's perspective:
+
+- WebSocket rooms handle live state updates
+- The backend deals questions, validates answers, and advances the game engine
+- Battles are structured as best-of-3 rounds
+- Players choose scientist characters with specialty modifiers
+- Questions currently span `math`, `logical`, and `sequence`
+
+When MagicBlock is configured, delegated battle-state updates are mirrored into the `cora-battle` program for verifiable real-time battle progression. When it is not configured, CORA falls back to engine-only battle execution.
+
+### Settlement Layer
+
+The escrow program remains the money layer:
+
+- Wagers are locked in the escrow program
+- The backend signs settlement authorization
+- The contract verifies settlement instructions and releases funds
+- The current fee model remains 2.5% to treasury and 97.5% to the winner
+- Refund paths exist for timeout, draw, and failure cases
+
+---
+
+## On-Chain Programs
+
+### 1. Escrow Program
+
+Location:
+- `packages/solana-program`
+
+Responsibility:
+- Hold player wagers
+- Support public-match escrow flow
+- Support Blink open-challenge flow
+- Verify settlement authorization
+- Handle refund and reclaim cases
+
+Implemented instruction surface includes:
 
 ```rust
-initialize_match(player_a, player_b, wager_amount, token_mint)
-deposit_wager(player, amount)
-settle_match(winner, server_signature)
-refund(match_id)  // timeout or disconnect
+initialize_config(...)
+update_config(...)
+initialize_match(...)
+deposit_wager(...)
+create_open_challenge(...)
+accept_challenge(...)
+settle_match(...)
+refund(...)
+reclaim_challenge(...)
 ```
 
-### Token-Agnostic (No Custom Token)
+### 2. Battle Program
 
-CORA does **not** create a new token. The escrow accepts **any existing SPL token** — USDC, SOL, BONK, WIF, or any meme coin. Both players in a match must wager the same token (no cross-token swaps). This is intentional:
-- No tokenomics bloat, no inflationary risk
-- Dead meme coins get new utility ("Meme Coin Arenas")
-- `token_mint` is a parameter, not hardcoded
+Location:
+- `packages/battle-anchor-032`
 
-- CORA-specific (not generalized protocol — that's V2 roadmap)
-- Deployed on **Devnet** with test tokens
-- Clean, auditable, well-documented IDL
+Responsibility:
+- Represent real-time battle session state
+- Support delegated execution through MagicBlock / Ephemeral Rollups
+- Track rounds, health, scores, manifests, and terminal outcomes
 
----
+Implemented instruction surface includes:
 
-## 🔬 Key Features
+```rust
+create_session(...)
+set_card_manifest(...)
+activate_session(...)
+apply_effect(...)
+resolve_round_by_state(...)
+timeout_player_for_round(...)
+surrender_match(...)
+finalize_match(...)
+delegate_battle_session(...)
+commit_battle_session(...)
+undelegate_battle_session(...)
+```
 
-### 1. Viral Distribution via Solana Actions & Blinks
-Turn every match into a shareable "Challenge Me" link on X (Twitter). A rival clicks the Blink, connects their wallet, deposits their wager, and enters the queue — **directly in their social feed**. No app store visit needed.
-
-### 2. Blue Ocean Vertical with Massive Global TAM
-There is zero crypto competition in cognitive testing. The architecture scales seamlessly from Indonesian civil service (CPNS: 7M users) to India (UPSC: 20M users), corporate hiring, and global university entries (SAT/GRE). Logic questions are universal and copyright-free.
-
-### 3. Meme Coin Arenas
-Every SPL token community gets their own competitive space. BONK holders play in the BONK Arena, WIF holders in the WIF Arena. Dead meme coins sitting in wallets become battle currency — giving them genuine utility.
-
-### 4. Anti-Cheat Behavioral Analysis (Proof of Concept)
-Server logs click-cadence and time-to-answer data during matches. A Jupyter notebook demonstrates basic anomaly detection to flag bot-like behavior. **This is a roadmap item, not a production feature for MVP.**
-
----
-
-## 🗺️ Go-To-Market Strategy
-
-**"Global Engine, Local Beachhead"** — The CORA platform evaluates universal logic (GAT). However, our launch beachhead is the **Indonesian CPNS Exam (Specifically the TIU / General Intelligence section)**. 
-By targeting CPNS first, we capture a hyper-motivated local market (7M users/year, zero crypto competitors) to prove unit economics, while presenting a universally scalable GAT model to stakeholders and investors.
+Legacy compatibility instructions still exist for older card-registration paths, but the current backend flow is centered on inline manifest setup plus delegated effect application.
 
 ---
 
-## 🧑‍💻 Team (6 Specialists)
+## Backend Responsibilities
 
-| Role | Scope |
-|------|-------|
-| **Frontend Lead** (React/Next.js) | Battle UI, game loop animations, `@solana/wallet-adapter-react` for Phantom |
-| **Backend & Networking Lead** (Bun + Hono) | WebSocket rooms, matchmaking queue, Solana Actions endpoints, settlement oracle |
-| **Data & Game Logic Engineer** (Python/TS) | Question bank (100 GAT/logic questions), scoring engine, anti-cheat PoC notebook |
-| **Web3 & Smart Contract Lead** (Rust/Anchor) | Escrow program (4 instructions), Devnet deployment, IDL generation |
-| **Designer** (Figma) | Design system, all screens (lobby/battle/result), Blink card, micro-animations |
-| **Business & Product Lead** | Pitch deck, 3-minute video, Investor pitching, economic modeling |
+Location:
+- `apps/api`
 
----
+Current backend scope includes:
 
-## 🚫 Explicitly Out of Scope for MVP
+- Hono HTTP API
+- Bun WebSocket server
+- Public FIFO matchmaking
+- Private Blink room orchestration
+- Solana Actions endpoints under `/api/actions`
+- Match room lifecycle and janitors
+- Settlement signing and payout dispatch
+- Optional MagicBlock orchestration for battle-state delegation
+- Question loading from Supabase with local JSON fallback
+- History and wallet playability endpoints
 
-| Cut | Reason |
-|-----|--------|
-| Generalized protocol / open infrastructure | Not needed for MVP core loop. V2 roadmap. |
-| Elo matchmaking | Overkill for demo. FIFO queue works. |
-| Session Keys / Ephemeral Rollups (MagicBlock) | Out of scope for the original MVP, but implemented as the V2 MagicBlock track for verifiable real-time battle state. See `docs-archive/BLUEPRINT_V2_GOLDRUSH_MAGICBLOCK.md`. |
-| Production AI anti-cheat | Slated for Q3 roadmap. Jupyter notebook PoC handles MVP validation. |
-| On-chain fairness proof hash | Mock "fairness badge" in UI is sufficient. |
-| Mainnet deployment | Devnet only. Full audits required before mainnet launch. |
-| Multiple GAT categories (SAT, GRE) | Stick to one logic category for MVP. |
-| Custom token | No CORA token. Use existing SPL tokens. |
-| Cross-token swaps (Jupiter/Raydium) | Both players must use same token. No DEX integration. |
-| NFT minting for winners | P2 nice-to-have only. Not in core flow. |
-| DAO / governance contracts | Community via Discord + X for now. Roadmap item. |
-| Native mobile app | Web app instead — instant access, no app store friction. |
+### Key Runtime Routes
 
----
+- `/api/actions` for Solana Actions / Blink support
+- `/api/history` for arena and wallet history endpoints
+- `/api/match` for match-related HTTP APIs
+- `/match/:roomId` for room WebSocket connection
+- `/queue` for matchmaking WebSocket connection
 
-## 🌐 Community & Growth (Post-MVP)
+### External Integrations
 
-| Phase | Channel | Purpose |
-|-------|---------|--------|
-| **Phase 1 (Private Beta)** | Discord + X/Twitter | Match finding, feedback, Blink sharing |
-| **Phase 2 (Public Launch)** | + Telegram group | SEA crypto community outreach |
-| **V2 roadmap** | Token-gated governance | Community votes on question categories, tournament rules |
+- **Supabase**: question selection and Blink/match persistence support
+- **GoldRush / Covalent**: token pricing and wallet playability checks
+- **Solana RPC**: escrow and settlement
+- **MagicBlock Router / Ephemeral endpoints**: delegated battle-state execution when enabled
 
-No DAO for MVP. Community management = Discord server + viral Blinks on X.
+Note: the current wallet and arena history endpoints are still mocked, while pricing/playability and question-loading paths are partially live.
 
 ---
 
-## ✅ Core Validation Milestone
+## Frontend Responsibilities
 
-> A user opens a URL, connects their Phantom browser extension, wagers test tokens, plays a 3-round card-based logic battle against another player, and watches the funds settle on-chain. This complete loop validates our core architecture.
+Location:
+- `apps/web`
+
+The web app currently includes:
+
+- Landing page
+- Wallet connection flow
+- Lobby and queue flow
+- Character selection
+- Deposit and opponent-found phases
+- Battle screen
+- Result and rematch challenge UX
+- Blink challenge acceptance page
+- History page
+- Dev room-state view
+
+Important user-facing flows already present in the codebase:
+
+- Public queue matchmaking
+- Private Blink challenge creation and acceptance
+- Challenge share card generation
+- Result share / rematch Blink generation
+- Wallet-based arena playability checks
+
 ---
 
-## Project Folder Structure (MVP)
+## Game Logic and Data
 
-The repository is intentionally scaffolded with clear top-level boundaries, while leaving implementation details to each role and module owner.
+### Game Logic
+
+Location:
+- `packages/game-logic`
+
+Responsibilities:
+
+- Core battle engine
+- Question dealing
+- Score and round progression
+- Anti-cheat heuristics
+
+The repo currently contains a TypeScript anti-cheat analyzer used by the runtime engine. This is not a notebook-based PoC anymore.
+
+### Shared Types
+
+Location:
+- `packages/shared-types`
+
+Responsibilities:
+
+- Escrow constants and match-id derivation
+- WebSocket payload contracts
+- Question and character-related shared types
+
+### Solana Client Artifacts
+
+Location:
+- `packages/solana-client`
+
+Responsibilities:
+
+- Generated IDL JSON
+- Generated TypeScript client types for both on-chain programs
+
+### Question Data
+
+Location:
+- `data/questions`
+
+Current state:
+
+- Local JSON question bank is present
+- Backend can load questions from disk as fallback
+- Current pool contains 105 questions
+- Categories currently used by the system are `math`, `logical`, and `sequence`
+
+### Token Data
+
+Location:
+- `apps/api/src/config/tokens.ts`
+- `data/tokens`
+
+Current configured symbols:
+
+- `SOL`
+- `BONK`
+- `USDC`
+
+The codebase is token-agnostic by design, but these are the currently wired symbols in runtime config.
+
+---
+
+## Current Repository Structure
 
 ```text
 Cora/
 |-- .github/
 |   `-- workflows/
 |-- apps/
-|   |-- web/
 |   |-- api/
-|   `-- settlement-oracle/
+|   `-- web/
 |-- packages/
-|   |-- solana-program/
-|   |-- solana-client/
+|   |-- battle-anchor-032/
 |   |-- game-logic/
 |   |-- shared-types/
+|   |-- solana-client/
+|   |-- solana-program/
 |   `-- ui/
 |-- data/
+|   |-- fixtures/
 |   |-- questions/
-|   |-- tokens/
-|   `-- fixtures/
+|   `-- tokens/
+|-- docs/
 |-- notebooks/
 |-- scripts/
-`-- docs/
-    |-- MASTER.md
-    `-- AGENTS.md
+|-- logs/
+|-- package.json
+|-- package-lock.json
+`-- bun.lock
 ```
 
-### Folder Explanations
+### Structure Notes
 
-- `.github/workflows`: CI pipelines for lint, test, build, and deploy checks.
-- `apps/web`: User-facing app for lobby, battle, result flow, and wallet connection.
-- `apps/api`: Matchmaking, WebSocket gameplay transport, and app APIs.
-- `apps/settlement-oracle`: Service that authorizes match settlement signatures for on-chain verification.
-- `packages/solana-program`: Anchor/Rust escrow root for wager deposit and settlement.
-- `packages/battle-anchor-032`: Separate Anchor `0.32.1` root for MagicBlock `cora-battle` ER logic.
-- `packages/solana-client`: TypeScript client helpers for program interaction and transaction construction.
-- `packages/game-logic`: Shared scoring rules, question flow, and deterministic match logic.
-- `packages/shared-types`: Shared schemas and types used across apps and packages.
-- `packages/ui`: Reusable UI components and design tokens for frontend consistency.
-- `data/questions`: Source question bank for GAT/TIU and related metadata.
-- `data/tokens`: Allowed SPL token arena configuration and token metadata.
-- `data/fixtures`: Test fixtures and mock payloads for development and QA.
-- `notebooks`: Research notebooks, including anti-cheat proof-of-concept experiments.
-- `scripts`: Project automation scripts such as seeding, local setup, and helper utilities.
-- `docs`: Product, architecture, and execution references for the team.
+- `apps/api` is the active backend service
+- `apps/web` is the active frontend app
+- `packages/solana-program` is the escrow contract root
+- `packages/battle-anchor-032` is the separate Anchor root for the MagicBlock-compatible battle program
+- `packages/solana-client` stores generated client artifacts
+- `packages/ui` currently exists as a placeholder package, not a populated shared component system
+- `notebooks/` currently exists but is effectively empty
 
-### Ownership Model
+---
 
-- Frontend Lead primarily owns `apps/web` and collaborates on `packages/ui`.
-- Backend & Networking Lead primarily owns `apps/api` and `apps/settlement-oracle`.
-- Data & Game Logic Engineer primarily owns `packages/game-logic`, `data/questions`, and `notebooks`.
-- Web3 & Smart Contract Lead primarily owns `packages/solana-program`, `packages/battle-anchor-032`, and `packages/solana-client`.
-- Cross-team interfaces should be stabilized in `packages/shared-types`.
+## Ownership Model
+
+This is the practical ownership split implied by the current repo:
+
+- Frontend work primarily lives in `apps/web`
+- Backend and networking work primarily lives in `apps/api`
+- Core gameplay logic primarily lives in `packages/game-logic`
+- Shared cross-app contracts primarily live in `packages/shared-types`
+- Escrow/web3 work primarily lives in `packages/solana-program`
+- MagicBlock battle-state work primarily lives in `packages/battle-anchor-032`
+- Generated on-chain client artifacts live in `packages/solana-client`
+
+---
+
+## What Is Implemented vs Placeholder
+
+### Implemented
+
+- Public FIFO matchmaking
+- Room WebSocket lifecycle
+- On-chain escrow deposits and settlement
+- Blink open-challenge flow
+- Dedicated challenge acceptance route/page
+- Character-based battle loop
+- Optional MagicBlock-backed battle-state flow
+- Shared escrow constants and match-id derivation
+- Local question-bank fallback
+- History UI and API surface
+
+### Partial / In Progress
+
+- Supabase-backed question selection and persistence
+- GoldRush-backed wallet intelligence
+- Fully live history data
+- Production-grade observability and deployment hardening
+
+### Placeholder / Minimal
+
+- `packages/ui` shared package
+- `notebooks/` research directory
+- Some data folders such as `data/tokens` and `data/fixtures`
+
+---
+
+## Out of Scope or Not Yet Productized
+
+These items are not the current source-of-truth MVP deliverables:
+
+- Native mobile app
+- Open generalized wagering protocol
+- DAO / governance layer
+- Dedicated standalone settlement-oracle app
+- Fully productionized anti-cheat ML pipeline
+- Rich notebook-based ML research artifacts in-repo
+
+---
+
+## Current Validation Target
+
+The clearest end-to-end validation loop for the current codebase is:
+
+> A player opens the web app, connects a wallet, enters either the public queue or a private Blink challenge, locks a wager through the escrow program, plays a real-time aptitude battle, and completes settlement on-chain with optional MagicBlock-backed battle-state verification.
+
+---
+
+## Source of Truth Guidance
+
+This document is the high-level project reference.
+
+For implementation truth, prefer:
+
+- `apps/api/src/index.ts` for runtime backend surface
+- `apps/api/src/services/BlinkTransactionBuilder.ts` for escrow transaction-building flows
+- `apps/api/src/services/magicblock.ts` for delegated battle-state integration
+- `packages/solana-program/programs/solana-program/src/lib.rs` for escrow program surface
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` for battle program surface
+- `apps/web/src/app` and `apps/web/src/components` for active frontend flows
+

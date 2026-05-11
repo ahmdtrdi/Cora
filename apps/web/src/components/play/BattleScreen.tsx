@@ -5,14 +5,27 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
+import { createBlinkChallengeSession } from "@/lib/challenge/createBlinkChallengeSession";
 import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
 import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
+import { createMatchResultCardFileName, renderMatchResultCardPng } from "@/lib/challenge/renderMatchResultCardPng";
+import {
+  clearMatchSessionState,
+  getMatchSessionAddress,
+  getMatchSessionToken,
+  readActiveDepositIntent,
+  readActiveMatchSession,
+  writeActiveBlinkChallengeSession,
+  writeActiveMatchSession,
+  type ActiveBlinkChallengeSession,
+  type ActiveMatchSession,
+} from "@/lib/session/matchSession";
 
 type MatchOutcome = {
   cardId: string;
@@ -34,8 +47,6 @@ const ENDGAME_NEUTRAL_DELAY_MS = 180;
 const ENDGAME_IMPACT_FLASH_MS = 340;
 const ENDGAME_CRACK_REVEAL_DELAY_MS = 200;
 const ENDGAME_SMOKE_REVEAL_DELAY_MS = 360;
-const LOBBY_DRAFT_STORAGE_KEY = "cora:lobby-draft";
-const ACTIVE_ROOM_STORAGE_KEY = "cora:active-room";
 const ARENA_TOKEN_BY_ID: Record<string, string> = {
   sol: "SOL",
   bonk: "BONK",
@@ -94,10 +105,14 @@ function formatMatchClock(remainingMs?: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function toBaseUnitWager(wagerUsd: string) {
+  const parsed = Number.parseFloat(wagerUsd);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.max(1, Math.round(parsed * 1_000_000_000));
+}
+
 function clearLobbyReturnState() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
-  window.sessionStorage.removeItem(LOBBY_DRAFT_STORAGE_KEY);
+  clearMatchSessionState();
 }
 
 type BattleSide = "player" | "opponent";
@@ -147,6 +162,14 @@ function getCharacterVisual(characterId?: string) {
   };
 }
 
+function getCharacterName(characterId?: string) {
+  const normalizedId = characterId?.trim().toLowerCase();
+  if (normalizedId === "turing") return "Alan Turing";
+  if (normalizedId === "curie") return "Marie Curie";
+  if (normalizedId === "einstein") return "Albert Einstein";
+  return "Unknown Scientist";
+}
+
 function resolveCharacterSpriteState(characterState?: CharacterState, isActioning = false): CharacterSpriteState {
   if (isActioning || characterState === "action") return "action";
   return "stay";
@@ -189,21 +212,38 @@ export function BattleScreen() {
   const searchParams = useSearchParams();
   const roomIdParam = searchParams.get("roomId");
   const arenaIdParam = searchParams.get("arena");
-  const tokenParam = searchParams.get("token");
-  const wagerParam = searchParams.get("wager");
-  const roomId = roomIdParam ?? "";
-  const arenaId = arenaIdParam ?? "sol";
-  const arenaToken = tokenParam ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
-  const wagerUsd = wagerParam ?? FIXED_WAGER_USD;
-  const preSignedDepositSig = searchParams.get("depositSig");
+  const [activeMatchSession, setActiveMatchSession] = useState<ActiveMatchSession | null>(null);
+  const [matchSessionHydrated, setMatchSessionHydrated] = useState(false);
+  const { connection } = useConnection();
   const wallet = useWallet();
   const { publicKey } = wallet;
 
   const address = publicKey?.toBase58() ?? "";
+  const matchSessionAddress = getMatchSessionAddress(activeMatchSession);
+  const roomMatchesSession = Boolean(roomIdParam && activeMatchSession?.roomId === roomIdParam);
+  const walletMatchesSession = Boolean(address && matchSessionAddress && address === matchSessionAddress);
+  const canUseMatchSession = matchSessionHydrated && roomMatchesSession && walletMatchesSession;
+  const roomId = canUseMatchSession ? activeMatchSession?.roomId ?? "" : "";
+  const arenaId = canUseMatchSession ? activeMatchSession?.arenaId ?? arenaIdParam ?? "sol" : arenaIdParam ?? "sol";
+  const arenaToken = canUseMatchSession
+    ? getMatchSessionToken(activeMatchSession) ?? ARENA_TOKEN_BY_ID[arenaId] ?? "SOL"
+    : ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
+  const wagerUsd = canUseMatchSession ? activeMatchSession?.wagerUsd ?? FIXED_WAGER_USD : FIXED_WAGER_USD;
+  const preSignedDepositSig = canUseMatchSession ? readActiveDepositIntent(roomId, address) : null;
   const requiresWalletConnect = !address;
   const playGuardError = !roomIdParam
     ? "Missing roomId. Return to lobby and enter the match from the found flow."
-    : null;
+    : !matchSessionHydrated
+      ? null
+      : !activeMatchSession
+        ? "Missing local match session. Return to lobby and enter the match from the found flow."
+        : activeMatchSession.roomId !== roomIdParam
+          ? "This play link does not match your active local match session."
+          : !matchSessionAddress
+            ? "Local match session is missing a wallet address. Return to lobby and rejoin the match."
+            : address && matchSessionAddress !== address
+              ? "Connected wallet does not match the wallet that started this match."
+              : null;
 
   const {
     connectionState,
@@ -228,7 +268,14 @@ export function BattleScreen() {
     cancelMatch,
     surrender,
     reconnect,
-  } = useMatchSocket({ roomId, address });
+  } = useMatchSocket({ roomId, address, characterId: activeMatchSession?.scientistId ?? undefined });
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setActiveMatchSession(readActiveMatchSession());
+      setMatchSessionHydrated(true);
+    });
+  }, []);
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activeQuestionCard, setActiveQuestionCard] = useState<Card | null>(null);
@@ -247,9 +294,12 @@ export function BattleScreen() {
   const [dismissedAlerts, setDismissedAlerts] = useState<Record<string, boolean>>({});
   const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [createdBlinkChallenge, setCreatedBlinkChallenge] = useState<ActiveBlinkChallengeSession | null>(null);
+  const [createBlinkBusy, setCreateBlinkBusy] = useState(false);
   const [settlementDetailsOpen, setSettlementDetailsOpen] = useState(false);
   const [surrenderModalOpen, setSurrenderModalOpen] = useState(false);
   const [pendingSurrenderAfterReconnect, setPendingSurrenderAfterReconnect] = useState(false);
+  const [isRejoining, setIsRejoining] = useState(false);
   const [failedCharacterSprites, setFailedCharacterSprites] = useState<Record<string, true>>({});
   const [failedProjectileSprites, setFailedProjectileSprites] = useState<Record<string, true>>({});
   const [failedBaseSprites, setFailedBaseSprites] = useState<Record<string, true>>({});
@@ -278,6 +328,7 @@ export function BattleScreen() {
   const previousRoundsWonRef = useRef<{ player: number; opponent: number } | null>(null);
   const endgameTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const lastEndgameResultKeyRef = useRef<string | null>(null);
+  const lastKnownCommittedRef = useRef(false);
   const playerActionControls = useAnimationControls();
   const opponentActionControls = useAnimationControls();
   const playerBaseControls = useAnimationControls();
@@ -506,11 +557,31 @@ export function BattleScreen() {
   const isPlayable = status === "playing" && connectionState === "connected";
   const hasTerminalResult = Boolean(settlementResult) || Boolean(matchSummaryResult) || Boolean(matchInvalidated);
   const isRoomCancelled = Boolean(lastRoomCancelled);
+  const hasResolvedMatchResult = hasTerminalResult || isRoomCancelled;
   const isMatchComplete = hasTerminalResult || isRoomCancelled || status === "finished";
   const isCommittedState = status === "playing" || status === "settling";
-  const canSurrenderByState = !isMatchComplete && isCommittedState;
+  // eslint-disable-next-line react-hooks/refs -- preserve surrender eligibility across transient disconnect renders
+  const canSurrenderByState = !isMatchComplete && (isCommittedState || lastKnownCommittedRef.current);
   const canCancelMatch = connectionState === "connected" && !isMatchComplete && (status === "waiting" || status === "depositing");
   const canSurrenderMatch = connectionState === "connected" && canSurrenderByState;
+  const isDeviceOffline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  useEffect(() => {
+    if (connectionState !== "connected") return;
+    const timerId = setTimeout(() => {
+      setIsRejoining(false);
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [connectionState]);
+
+  useEffect(() => {
+    if (isCommittedState) {
+      lastKnownCommittedRef.current = true;
+    }
+    if (isMatchComplete) {
+      lastKnownCommittedRef.current = false;
+    }
+  }, [isCommittedState, isMatchComplete]);
 
   function onOpenCard(card: Card) {
     if (!isPlayable || activeCardId || isMatchComplete) return;
@@ -529,7 +600,7 @@ export function BattleScreen() {
   }
 
   function onAnswer(optionId: string) {
-    if (!activeCard || answerLocked || !isPlayable) return;
+    if (!activeCard || answerLocked || !isPlayable || isMatchComplete) return;
     setSelectedOptionId(optionId);
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
@@ -558,6 +629,11 @@ export function BattleScreen() {
     setSurrenderModalOpen(false);
   }
 
+  function onReconnectToRoom() {
+    setIsRejoining(true);
+    reconnect();
+  }
+
   const playerScore = player?.score ?? 0;
   const opponentScore = opponent?.score ?? 0;
   const playerRoundsWon = player?.roundsWon ?? 0;
@@ -579,6 +655,7 @@ export function BattleScreen() {
   const didOpponentSurrender =
     matchResultReason === "surrender" && Boolean(surrenderedAddress) && surrenderedAddress !== address;
   const isDraw = matchResultReason === "draw";
+  const isServerErrorFallback = matchResultReason === "server_error";
   const roomCancelledTitle =
     lastRoomCancelled?.reason === "deposit_timeout"
       ? "Deposit timed out"
@@ -610,6 +687,8 @@ export function BattleScreen() {
     ? roomCancelledSubtitle
     : matchInvalidated
       ? "Match invalidated."
+      : isServerErrorFallback
+        ? "Fast arena proof was unavailable. Wager resolution is being handled safely."
       : didCurrentPlayerSurrender
         ? "You forfeited this match. Settlement is being resolved."
         : didOpponentSurrender
@@ -621,11 +700,23 @@ export function BattleScreen() {
                 ? "Victory secured."
                 : "Rival took this round."
               : "Match results are being finalized."
-  const settlementStatus = isRoomCancelled ? "Cancelled" : matchInvalidated ? "Invalidated" : settlementResult ? "Settled" : "Pending";
+  const settlementStatus = isRoomCancelled
+    ? "Cancelled"
+    : matchInvalidated
+      ? "Invalidated"
+      : settlementResult
+        ? "Settled"
+        : isServerErrorFallback
+          ? "Review"
+        : matchSummaryResult
+          ? "Finalized"
+          : "Pending";
   const settlementOutcomeKind = isRoomCancelled
     ? "cancelled"
     : matchInvalidated
       ? "invalidated"
+      : isServerErrorFallback
+        ? "server_error"
       : didCurrentPlayerSurrender
         ? "player_surrender"
         : didOpponentSurrender
@@ -645,7 +736,7 @@ export function BattleScreen() {
         : null;
   const isSurrenderOutcome =
     settlementOutcomeKind === "player_surrender" || settlementOutcomeKind === "opponent_surrender";
-  const endgameResultKey = isMatchComplete
+  const endgameResultKey = hasResolvedMatchResult
     ? [
       settlementOutcomeKind,
       winnerAddress ?? "none",
@@ -662,6 +753,10 @@ export function BattleScreen() {
       ? { color: "#8a3f2b", background: "rgba(185,96,62,0.14)", border: "1px solid rgba(138,63,43,0.34)" }
       : settlementResult
         ? { color: "#214335", background: "rgba(103,149,123,0.18)", border: "1px solid rgba(33,67,53,0.28)" }
+        : isServerErrorFallback
+          ? { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" }
+        : matchSummaryResult
+          ? { color: "#486357", background: "rgba(103,149,123,0.14)", border: "1px solid rgba(72,99,87,0.22)" }
         : { color: "#6f3a28", background: "rgba(214,174,119,0.2)", border: "1px solid rgba(111,58,40,0.25)" };
   const settlementEmojiMood =
     isRoomCancelled || isDraw || matchInvalidated
@@ -675,9 +770,6 @@ export function BattleScreen() {
   const arenaLabel = `${arenaToken} Arena`;
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
-  const challengeDescription = didWin
-    ? "I just won in CORA. Think you can beat me?"
-    : "I am running it back in CORA. Challenge me.";
   const displaySecondsLeft =
     activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
@@ -687,10 +779,11 @@ export function BattleScreen() {
   const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
   const roundText = `Round ${currentRound}/${maxRounds}`;
   const remainingMatchClock = formatMatchClock(gameState?.timer?.remainingMs);
+  const hasMatchSocket = Boolean(socketUrl);
   const isSocketRecovering = connectionState === "connecting" || connectionState === "reconnecting";
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
-  const isRoomStateLoading = !gameState && isSocketRecovering;
-  const isRoomUnavailable = !gameState && hasSocketIssue;
+  const isRoomStateLoading = hasMatchSocket && !gameState && isSocketRecovering;
+  const isRoomUnavailable = Boolean(lastSocketIssueAt) && hasMatchSocket && !gameState && hasSocketIssue;
   const presenceOpponentConnected =
     opponent?.address && lastPresenceUpdate?.players
       ? lastPresenceUpdate.players[opponent.address]?.isConnected
@@ -705,9 +798,7 @@ export function BattleScreen() {
     connectionState !== "connected" &&
     !isMatchComplete &&
     !isRoomCancelled;
-  const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
-  const shouldShowPlayStateGate = !isPlayStateReady;
-  const showRoomGateModal = (isRoomStateLoading || shouldShowPlayStateGate) && !showOpponentAwayStatus && !showDisconnectedOverlay;
+  const showRoomGateModal = isRoomUnavailable && !showOpponentAwayStatus && !showDisconnectedOverlay;
   const roomGateTitle = isRoomStateLoading
     ? "Syncing Room State"
     : isRoomUnavailable
@@ -739,8 +830,22 @@ export function BattleScreen() {
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
+  const regularMatchShareTitle = didWin
+    ? `I just won against ${opponentIdentityLabel}.`
+    : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
+  const challengeShareTitle = didWin
+    ? `I just won against ${opponentIdentityLabel}.`
+    : `Matched against ${opponentIdentityLabel}, but this is not the end.`;
+  const challengeDescription = didWin
+    ? `I just won against ${opponentIdentityLabel} in CORA. Think you can beat me?`
+    : `Matched against ${opponentIdentityLabel} in CORA, but this is not the end. Challenge me.`;
   const playerCharacterId = player?.characterId ?? undefined;
   const opponentCharacterId = opponent?.characterId ?? undefined;
+  const playerCharacterName = getCharacterName(playerCharacterId);
+  const opponentCharacterName = getCharacterName(opponentCharacterId);
+  const playerResultExpressionSrc = getCharacterExpressionSrc(playerCharacterId, didWin ? "confident" : "hurt");
+  const opponentResultExpressionSrc = getCharacterExpressionSrc(opponentCharacterId, didWin ? "hurt" : "confident");
+  const challengeCharacterExpressionSrc = getCharacterExpressionSrc(playerCharacterId, didWin ? "confident" : "happy");
   const settlementExpressionSrc = settlementEmojiMood
     ? {
       player: getCharacterExpressionSrc(playerCharacterId, settlementEmojiMood.player),
@@ -793,6 +898,14 @@ export function BattleScreen() {
   const defeatedBaseSoftMode = isSurrenderOutcome;
   const playerDestroyedEffectActive = playerBaseDefeatActive && endgameAnimationActive;
   const opponentDestroyedEffectActive = opponentBaseDefeatActive && endgameAnimationActive;
+  const showEndgameNotice = isMatchComplete && !showSettlementOverlay && !hasResolvedMatchResult;
+  const activeGameNotice = showEndgameNotice
+    ? {
+        id: "endgame-lock",
+        message: "Match finished. Cards locked while result syncs.",
+        tone: "phase" as const,
+      }
+    : gameNotice;
 
   useEffect(() => {
     const schedule = (callback: () => void, delayMs = 0) => {
@@ -899,6 +1012,21 @@ export function BattleScreen() {
     refAddress: address,
   });
   const cleanLobbyHref = "/lobby";
+
+  function onReturnToLobbyWithActiveRoom() {
+    writeActiveMatchSession({
+      roomId,
+      arenaId,
+      arenaToken,
+      token: arenaToken,
+      wagerUsd,
+      address,
+      walletAddress: address,
+      status: "playing",
+      canSurrenderByState,
+    });
+  }
+
   useEffect(() => {
     if (playerSpriteState !== "action") {
       playerActionControls.start({
@@ -1189,42 +1317,67 @@ export function BattleScreen() {
   }
 
   async function onCopyChallengeLink() {
-    if (!challengeLink) {
+    const shareableBlinkLink = createdBlinkChallenge?.blinkUrl ?? challengeLink;
+    if (!shareableBlinkLink) {
       setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
       return;
     }
     try {
-      await navigator.clipboard.writeText(challengeLink);
+      await navigator.clipboard.writeText(shareableBlinkLink);
       setShareNotice({ text: "Challenge link copied.", tone: "success" });
     } catch {
       setShareNotice({ text: "Copy failed. Please copy manually from the link below.", tone: "error" });
     }
   }
 
+  async function buildMatchResultShareFile() {
+    try {
+      const input = {
+        title: regularMatchShareTitle,
+        arenaLabel,
+        wagerUsd,
+        playerCharacterName,
+        opponentCharacterName,
+        playerExpressionSrc: playerResultExpressionSrc,
+        opponentExpressionSrc: opponentResultExpressionSrc,
+        roundsLabel: `${playerRoundsWon}-${opponentRoundsWon}`,
+        correctCount,
+        wrongCount,
+        timeoutCount,
+      };
+      const blob = await renderMatchResultCardPng(input);
+      return new File([blob], createMatchResultCardFileName(input), { type: "image/png" });
+    } catch {
+      setShareNotice({ text: "Failed to generate PNG. Try again.", tone: "error" });
+      return null;
+    }
+  }
+
   async function buildChallengeShareImageFile() {
-    if (!challengeLink) return null;
+    const shareableBlinkLink = createdBlinkChallenge?.blinkUrl ?? challengeLink;
+    if (!shareableBlinkLink) return null;
     try {
       const blob = await renderChallengeCardJpg({
-        title: "Challenge Me",
-        challengerName: "You",
+        title: challengeShareTitle,
         challengerAddress: address,
         statusLabel: challengeStatusLabel,
-        description: challengeDescription,
+        description: null,
         token: arenaToken,
         wagerUsd,
         arenaLabel,
-        challengeLink,
+        challengeLink: shareableBlinkLink,
+        characterExpressionSrc: challengeCharacterExpressionSrc,
       });
       const fileName = createChallengeCardFileName({
-        title: "Challenge Me",
-        challengerName: "You",
+        title: challengeShareTitle,
         challengerAddress: address,
         statusLabel: challengeStatusLabel,
-        description: challengeDescription,
+        description: null,
         token: arenaToken,
         wagerUsd,
         arenaLabel,
-        challengeLink,
+        challengeLink: shareableBlinkLink,
+        characterExpressionSrc: challengeCharacterExpressionSrc,
       });
       return new File([blob], fileName, { type: "image/jpeg" });
     } catch {
@@ -1251,14 +1404,22 @@ export function BattleScreen() {
     setShareNotice({ text: "Saved challenge card JPG.", tone: "success" });
   }
 
+  async function onSaveMatchResultPng() {
+    const imageFile = await buildMatchResultShareFile();
+    if (!imageFile) return;
+    downloadShareFile(imageFile);
+    setShareNotice({ text: "Saved match result PNG.", tone: "success" });
+  }
+
   async function onShareChallengeToX() {
-    if (!challengeLink) {
+    const shareableBlinkLink = createdBlinkChallenge?.blinkUrl ?? challengeLink;
+    if (!shareableBlinkLink) {
       setShareNotice({ text: "Challenge link unavailable on this client.", tone: "error" });
       return;
     }
     const imageFile = await buildChallengeShareImageFile();
 
-    const intent = createChallengeTweetIntent(challengeLink, challengeDescription);
+    const intent = createChallengeTweetIntent(shareableBlinkLink, challengeDescription);
     const popup = window.open(intent, "_blank", "noopener,noreferrer");
     if (!popup) {
       setShareNotice({ text: "Popup blocked. Allow popups and retry.", tone: "error" });
@@ -1270,6 +1431,42 @@ export function BattleScreen() {
       return;
     }
     setShareNotice({ text: "Opened X directly.", tone: "success" });
+  }
+
+  async function onCreateBlinkFromResult() {
+    if (!address) {
+      setShareNotice({ text: "Connect wallet before creating a Blink challenge.", tone: "error" });
+      return;
+    }
+    const wagerAmount = toBaseUnitWager(wagerUsd);
+    if (!wagerAmount) {
+      setShareNotice({ text: "Invalid wager amount.", tone: "error" });
+      return;
+    }
+
+    setCreateBlinkBusy(true);
+    setShareNotice(null);
+    try {
+      const snapshot = await createBlinkChallengeSession({
+        connection,
+        wallet,
+        walletAddress: address,
+        tokenMint: arenaToken,
+        wagerAmount,
+        wagerUsd,
+        arenaId,
+        scientistId: playerCharacterId ?? null,
+        origin: typeof window === "undefined" ? null : window.location.origin,
+      });
+      writeActiveBlinkChallengeSession(snapshot);
+      setCreatedBlinkChallenge(snapshot);
+      setShareNotice({ text: "Blink challenge funded and live.", tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create Blink challenge.";
+      setShareNotice({ text: message, tone: "error" });
+    } finally {
+      setCreateBlinkBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -1435,9 +1632,9 @@ export function BattleScreen() {
               </div>
             )}
             <AnimatePresence mode="wait">
-              {gameNotice && (
+              {activeGameNotice && (
                 <motion.div
-                  key={gameNotice.id}
+                  key={activeGameNotice.id}
                   initial={{ opacity: 0, y: -8, x: "-50%", scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
                   exit={{ opacity: 0, y: -4, x: "-50%", scale: 0.98 }}
@@ -1445,15 +1642,15 @@ export function BattleScreen() {
                   className="pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
                   style={{
                     border:
-                      gameNotice.tone === "phase"
+                      activeGameNotice.tone === "phase"
                         ? "1px solid rgba(248,214,148,0.46)"
                         : "1px solid rgba(157,180,150,0.52)",
                     background:
-                      gameNotice.tone === "phase"
+                      activeGameNotice.tone === "phase"
                         ? "linear-gradient(145deg, rgba(54,36,21,0.93), rgba(29,20,12,0.94))"
                         : "linear-gradient(145deg, rgba(28,46,38,0.93), rgba(14,25,21,0.94))",
                     boxShadow:
-                      gameNotice.tone === "phase"
+                      activeGameNotice.tone === "phase"
                         ? "0 12px 28px rgba(64,43,24,0.45)"
                         : "0 12px 28px rgba(19,40,31,0.45)",
                   }}
@@ -1462,15 +1659,15 @@ export function BattleScreen() {
                     className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
                     style={{
                       color:
-                        gameNotice.tone === "phase"
+                        activeGameNotice.tone === "phase"
                           ? "rgba(248,214,148,0.88)"
                           : "rgba(173,209,164,0.86)",
                     }}
                   >
-                    {gameNotice.tone === "phase" ? "Battle Update" : "Combat Update"}
+                    {activeGameNotice.tone === "phase" ? "Battle Update" : "Combat Update"}
                   </p>
                   <p className="mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
-                    {gameNotice.message}
+                    {activeGameNotice.message}
                   </p>
                 </motion.div>
               )}
@@ -2024,7 +2221,7 @@ export function BattleScreen() {
                         <button
                           key={option.id}
                           type="button"
-                          disabled={answerLocked}
+                          disabled={answerLocked || isMatchComplete}
                           onClick={() => onAnswer(option.id)}
                           className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
                           style={{
@@ -2068,7 +2265,9 @@ export function BattleScreen() {
               )}
             </AnimatePresence>
             <p className="mb-1 text-center font-gabarito text-xs text-[rgba(244,240,230,0.86)]">
-              {activeCard && status === "playing" && !isMatchComplete
+              {isMatchComplete
+                ? "Match locked. Resolving final sequence."
+                : activeCard && status === "playing"
                 ? "Choose an answer."
                 : isPlayable
                   ? "Pick a card from your hand."
@@ -2079,6 +2278,7 @@ export function BattleScreen() {
               {Array.from({ length: displaySlots }).map((_, index) => {
                 const card = hand[index] ?? null;
                 const active = card ? activeCardId === card.id : false;
+                const visuallyActive = active && !isMatchComplete;
                 const transformClass = getCardTransform(index);
                 const cardDisabled = !card || !isPlayable || Boolean(activeCardId) || isMatchComplete;
                 return (
@@ -2091,12 +2291,12 @@ export function BattleScreen() {
                     disabled={cardDisabled}
                     className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition ${transformClass}`}
                     style={{
-                      border: active ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
+                      border: visuallyActive ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
                       background: cardDisabled
                         ? "linear-gradient(165deg, rgba(228,210,181,0.84) 0%, rgba(205,183,156,0.84) 100%)"
                         : "linear-gradient(165deg, #fff7e6 0%, #f6dfbd 100%)",
-                      opacity: active ? 1 : cardDisabled ? 0.68 : 1,
-                      boxShadow: active
+                      opacity: visuallyActive ? 1 : cardDisabled ? 0.68 : 1,
+                      boxShadow: visuallyActive
                         ? "0 0 0 2px rgba(248,214,148,0.25), 0 16px 28px rgba(0,0,0,0.34)"
                         : "0 12px 22px rgba(0,0,0,0.3)",
                     }}
@@ -2147,12 +2347,13 @@ export function BattleScreen() {
         roomGateTitle={roomGateTitle}
         roomGateMessage={roomGateMessage}
         hasSocketIssue={hasSocketIssue}
-        onReconnect={reconnect}
+        onReconnect={onReconnectToRoom}
         cleanLobbyHref={cleanLobbyHref}
         onReturnToLobby={clearLobbyReturnState}
+        onDisconnectedReturnToLobby={onReturnToLobbyWithActiveRoom}
         showDisconnectedOverlay={showDisconnectedOverlay}
-        pendingSurrenderAfterReconnect={pendingSurrenderAfterReconnect}
-        canSurrenderByState={canSurrenderByState}
+        isDeviceOffline={isDeviceOffline}
+        isRejoining={isRejoining}
         onConfirmSurrender={onConfirmSurrender}
         isMatchComplete={isMatchComplete}
         showSettlementOverlay={showSettlementOverlay}
@@ -2182,9 +2383,18 @@ export function BattleScreen() {
         arenaLabel={arenaLabel}
         arenaToken={arenaToken}
         wagerUsd={wagerUsd}
-        challengeLink={challengeLink}
-        challengeDescription={challengeDescription}
+        regularMatchShareTitle={regularMatchShareTitle}
+        playerCharacterName={playerCharacterName}
+        opponentCharacterName={opponentCharacterName}
+        playerResultExpressionSrc={playerResultExpressionSrc}
+        opponentResultExpressionSrc={opponentResultExpressionSrc}
+        challengeShareTitle={challengeShareTitle}
         challengeStatusLabel={challengeStatusLabel}
+        challengeCharacterExpressionSrc={challengeCharacterExpressionSrc}
+        createdBlinkChallenge={createdBlinkChallenge}
+        createBlinkBusy={createBlinkBusy}
+        onSaveMatchResultPng={onSaveMatchResultPng}
+        onCreateBlinkFromResult={onCreateBlinkFromResult}
         onCopyChallengeLink={onCopyChallengeLink}
         onSaveChallengeJpg={onSaveChallengeJpg}
         onShareChallengeToX={onShareChallengeToX}

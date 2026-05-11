@@ -57,6 +57,33 @@ pub struct CardEffectAppliedEvent {
 }
 
 #[event]
+pub struct ManifestCommittedEvent {
+    pub session: Pubkey,
+    pub match_id: [u8; 32],
+    pub is_player_a: bool,
+    pub total_slots: u8,
+}
+
+#[event]
+pub struct EffectAppliedEvent {
+    pub session: Pubkey,
+    pub actor: Pubkey,
+    pub actor_is_a: bool,
+    pub slot: u8,
+    pub effect_type: u8,
+    pub max_value: u16,
+    pub final_value: u16,
+    pub score_delta: u32,
+    pub health_a: u16,
+    pub health_b: u16,
+    pub score_a: u16,
+    pub score_b: u16,
+    pub game_score_a: u32,
+    pub game_score_b: u32,
+    pub current_round: u8,
+}
+
+#[event]
 pub struct RoundEndedEvent {
     pub session: Pubkey,
     pub match_id: [u8; 32],
@@ -131,5 +158,18 @@ pub struct SessionCancelledEvent {
     pub session: Pubkey,
     pub match_id: [u8; 32],
     pub reason: u8,
+    pub finished_at: i64,
+}
+
+#[event]
+pub struct MatchSurrenderedEvent {
+    pub session: Pubkey,
+    pub surrendering_player: Pubkey,
+    pub winner: Pubkey,
+    pub current_round: u8,
+    pub score_a: u16,
+    pub score_b: u16,
+    pub game_score_a: u32,
+    pub game_score_b: u32,
     pub finished_at: i64,
 }

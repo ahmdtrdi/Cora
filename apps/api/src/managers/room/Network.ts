@@ -40,11 +40,22 @@ export class Network {
           wagerAmount: room.wagerAmount?.toString() || '0',
           wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
+          erEnabled: room.erEnabled,
+          erStatus: room.erProofMeta?.status ?? room.erLifecycleStatus,
+          erSessionPda: room.erSessionPda,
         };
         this.applyPresence(room, payload);
       } else {
         // Pre-game state (waiting / depositing)
-        const opponentAddress = addresses.find(a => a !== address);
+        // Use room.playerA/playerB as source of truth for opponent identity,
+        // since room.clients may not have both WS connections yet.
+        const opponentAddress = (() => {
+          if (room.playerA && room.playerB) {
+            return address === room.playerA ? room.playerB : room.playerA;
+          }
+          // Fallback to checking connected clients
+          return addresses.find(a => a !== address);
+        })();
         payload = {
           status: room.status,
           player: {
@@ -97,6 +108,9 @@ export class Network {
           wagerAmount: room.wagerAmount?.toString() || '0',
           wagerUsdValue: room.wagerUsdValue || undefined,
           roomType: room.roomType,
+          erEnabled: room.erEnabled,
+          erStatus: room.erProofMeta?.status ?? room.erLifecycleStatus,
+          erSessionPda: room.erSessionPda,
         };
       }
 

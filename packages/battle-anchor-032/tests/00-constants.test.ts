@@ -41,12 +41,20 @@ describe("constants spec alignment", () => {
       TEST_CONSTANTS.endReasonCheaterFlagged,
       TEST_CONSTANTS.endReasonForceEnded,
       TEST_CONSTANTS.endReasonDrawNoContest,
+      TEST_CONSTANTS.endReasonSurrender,
     ];
 
     expect(new Set(reasons).size).to.equal(reasons.length);
   });
 
-  it("max_effect_value_equals_max_damage", () => {
-    expect(TEST_CONSTANTS.maxEffectValue).to.equal(TEST_CONSTANTS.maxDamage);
+  it("max_effect_value_supports_game_attack_ceiling", () => {
+    expect(TEST_CONSTANTS.maxEffectValue).to.equal(30);
+    expect(TEST_CONSTANTS.maxEffectValue).to.be.lessThan(TEST_CONSTANTS.maxDamage);
+  });
+
+  it("inline_manifest_limits_are_consistent", () => {
+    expect(TEST_CONSTANTS.maxCardSlots).to.equal(128);
+    expect(TEST_CONSTANTS.manifestEntrySize).to.equal(3);
+    expect(TEST_CONSTANTS.maxScoreMultiplier).to.be.greaterThan(0);
   });
 });

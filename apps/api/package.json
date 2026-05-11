@@ -7,7 +7,8 @@
     "start": "bun run src/index.ts",
     "lint": "eslint .",
     "test:matchmaking": "bun run scripts/test-matchmaking.ts",
-    "test:ws": "bun run scripts/test-ws.ts"
+    "test:ws": "bun run scripts/test-ws.ts",
+    "test:blink-soft": "bun run scripts/test-blink-soft-commitment.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

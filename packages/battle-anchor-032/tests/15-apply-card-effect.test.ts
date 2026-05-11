@@ -23,7 +23,7 @@ describe("apply_card_effect", () => {
       cardIndex: 0,
       owner: playerA.publicKey,
       effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 50,
+      maxValue: TEST_CONSTANTS.maxEffectValue,
     });
     await activateSession(sessionPda);
 
@@ -92,13 +92,13 @@ describe("apply_card_effect", () => {
       cardIndex: 0,
       owner: playerA.publicKey,
       effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 50,
+      maxValue: TEST_CONSTANTS.maxEffectValue,
     });
     await activateSession(sessionPda);
 
     await expectAnchorError(
       program.methods
-        .applyCardEffect(60, 100)
+        .applyCardEffect(TEST_CONSTANTS.maxEffectValue + 1, 100)
         .accounts({
           authority: authority.publicKey,
           battleSession: sessionPda,
@@ -140,7 +140,7 @@ describe("apply_card_effect", () => {
       cardIndex: 2,
       owner: playerA.publicKey,
       effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 35,
+      maxValue: TEST_CONSTANTS.maxEffectValue,
     });
     await activateSession(sessionPda);
 
@@ -168,23 +168,29 @@ describe("apply_card_effect", () => {
 
   it("awards the round after an effect-based KO", async () => {
     const { sessionPda, playerA } = await createSession();
-    const { cardPda } = await registerEffectCard({
-      sessionPda,
-      cardIndex: 3,
-      owner: playerA.publicKey,
-      effectType: TEST_CONSTANTS.effectAttack,
-      maxValue: 100,
-    });
+    const cards = await Promise.all(
+      [3, 4, 5, 6].map((cardIndex) =>
+        registerEffectCard({
+          sessionPda,
+          cardIndex,
+          owner: playerA.publicKey,
+          effectType: TEST_CONSTANTS.effectAttack,
+          maxValue: TEST_CONSTANTS.maxEffectValue,
+        }),
+      ),
+    );
     await activateSession(sessionPda);
 
-    await program.methods
-      .applyCardEffect(100, 150)
-      .accounts({
-        authority: authority.publicKey,
-        battleSession: sessionPda,
-        registeredCard: cardPda,
-      })
-      .rpc();
+    for (const card of cards) {
+      await program.methods
+        .applyCardEffect(TEST_CONSTANTS.maxEffectValue, 150)
+        .accounts({
+          authority: authority.publicKey,
+          battleSession: sessionPda,
+          registeredCard: card.cardPda,
+        })
+        .rpc();
+    }
 
     const session = await fetchSession(sessionPda);
     expect(session.scoreA).to.equal(1);

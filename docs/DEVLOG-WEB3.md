@@ -238,6 +238,8 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 **Test update (1 file):**
 
+---
+
 - `tests/test_initialize.rs` — Added `test_initialize_match_below_min_wager_fails` (wager = 1 lamport, should be rejected).
 
 **Total test count: 18 → 19**
@@ -730,3 +732,237 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 1. **Deadlines must be enforced on-chain.** Previously, the `round_deadline` was used to authorize `timeout_player_for_round` and `resolve_round_by_state`, but `apply_card_effect` and `apply_damage` were only guarded by the match-level `SESSION_TIMEOUT`. This meant a delayed backend call could technically mutate state after the round was supposed to be over. Adding explicit `RoundDeadlinePassed` guards enforces strict temporal boundaries on all score mutations.
 2. **`END_REASON_FORCE_ENDED` is an automated outcome, not an input.** `force_end` explicitly sets this outcome internally. Allowing `cancel_session` to receive it as a manual input parameter created ambiguity in the API. Removing it solidifies `cancel_session` exclusively for `SERVER_CANCELLED` and `BOTH_PLAYERS_TIMEOUT`.
+
+---
+
+## Entry 22 — 2026-05-09: Dedicated Devnet Testing Suite and Environment Resilience
+
+### The Change
+
+**TypeScript Test Infrastructure:**
+- `packages/battle-anchor-032/package.json` — Added explicit Devnet testing scripts (`test:devnet:anchor`, `test:devnet:magicrouter`, and `test:devnet:all`).
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Modified `airdropSol` to fallback to a manual `SystemProgram.transfer` from the configured wallet authority if the RPC rejects the airdrop (which is a standard restriction on public Devnet).
+- `packages/battle-anchor-032/tests/helpers/magicblockLocalStackUtils.ts` — Updated `waitForMagicBlockRpcReady` to intelligently skip strict identity checking if the configured `EPHEMERAL_PROVIDER_ENDPOINT` is remote (e.g., MagicBlock public Devnet router).
+- `packages/battle-anchor-032/scripts/test-devnet-anchor.sh` & `test-devnet-magicrouter.sh` — **NEW**: Added dedicated bash scripts to safely bootstrap and isolate Devnet test runs without accidentally polluting or targeting localnet.
+- `packages/battle-anchor-032/.env.devnet.example` — **NEW**: Added an environment template specifically for Devnet routing.
+
+### The Reasoning
+
+1. **Devnet parity requires Devnet testing.** The local validator is excellent for fast logic validation, but it doesn't simulate real-world conditions like MagicBlock's remote router latency, RPC rate limits, or actual network congestion. We needed a frictionless way to point the entire test suite to Devnet.
+2. **Airdrops fail in production-like environments.** Relying purely on `requestAirdrop` locally is fine, but Devnet public nodes frequently throttle or outright reject airdrop requests. Adding a transparent fallback to fund transient test accounts from the primary developer wallet (`~/.config/solana/id.json`) ensures the test suite doesn't crash intermittently during account initialization.
+3. **Remote routers have different identities.** The MagicBlock local stack readiness check specifically verified our local `mAGicPQY...` validator identity. When targeting Devnet, the router will naturally have a different public key. Loosening this constraint dynamically based on the URL allows the exact same test suite to run seamlessly on both Localnet and Devnet.
+
+---
+
+## Entry 23 — 2026-05-09: Inline Manifest Flow, Surrender Finalization, and Larger ER Session State
+
+### The Change
+
+**ER Smart Contract:**
+- `packages/battle-anchor-032/programs/cora-battle/src/state.rs` — Expanded `BattleSession` with inline manifest state: `total_slots_a/b`, `cards_used_a/b`, manifest committed flags, and packed `card_manifest_a/b`. Updated `BattleSession::LEN` from `267` to `1071`.
+- `packages/battle-anchor-032/programs/cora-battle/src/constants.rs` — Increased `MAX_EFFECT_VALUE` from `100` to `150`, added inline manifest constants (`MAX_CARD_SLOTS`, `MANIFEST_ENTRY_SIZE`, `INLINE_MANIFEST_LEN`, `MAX_SCORE_MULTIPLIER`), bumped `CURRENT_VERSION` to `5`, and introduced `END_REASON_SURRENDER`.
+- `packages/battle-anchor-032/programs/cora-battle/src/error.rs` — Added inline-manifest/surrender errors: `ManifestNotCommitted`, `InvalidManifest`, `SlotOutOfBounds`, `ScoreDeltaExceedsMultiplier`, and `InvalidSurrenderPlayer`.
+- `packages/battle-anchor-032/programs/cora-battle/src/events.rs` — Added `ManifestCommittedEvent`, `EffectAppliedEvent`, and `MatchSurrenderedEvent`.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/set_card_manifest.rs` — **NEW.** Authority-only manifest commit instruction for each player before activation.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/apply_effect.rs` — **NEW.** Single-account inline effect application with slot replay protection, packed-manifest decoding, dynamic score invariant, and KO round progression.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/surrender_match.rs` — **NEW.** Terminal surrender path that immediately marks the match `Finished`, writes the winner, and emits surrender/finalization events.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/activate_session.rs` — Now requires both manifests to be committed before the match can become active.
+- `packages/battle-anchor-032/programs/cora-battle/src/instructions/*.rs` — Boxed `BattleSession` / `RegisteredCard` accounts across instruction account structs to avoid Solana SBF stack-frame overflow after the session account grew to 1071 bytes.
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` and `instructions/mod.rs` — Wired in `set_card_manifest`, `apply_effect`, and `surrender_match`.
+
+**TypeScript tests/helpers:**
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Added inline-manifest helpers (`packManifestSlot`, `packManifest`, `setCardManifest`, `applyInlineEffect`, `surrenderMatch`) and auto-commits a minimal manifest inside the legacy `activateSession()` helper so older test flows still activate cleanly.
+- `packages/battle-anchor-032/tests/helpers/magicblockFlowUtils.ts` — Added inline-manifest local-stack helpers for delegated session-only flows plus ER `apply_effect` / `surrender_match` helpers.
+- `packages/battle-anchor-032/tests/00-constants.test.ts`, `01-state-rules.test.ts`, `13-activate-session.test.ts` — Updated baseline assertions for the larger session layout and the new activation rules.
+- `packages/battle-anchor-032/tests/40-set-card-manifest.test.ts` — **NEW.**
+- `packages/battle-anchor-032/tests/42-apply-effect-inline-manifest.test.ts` — **NEW.**
+- `packages/battle-anchor-032/tests/43-surrender-match.test.ts` — **NEW.**
+- `packages/battle-anchor-032/tests/45-magicblock-inline-manifest-er.test.ts` and `46-magicblock-surrender-er.test.ts` — **NEW.** Added ER-local-stack coverage for delegated session-only inline-manifest flows.
+
+**Local program identity alignment:**
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs`
+- `packages/battle-anchor-032/Anchor.toml`
+- `packages/battle-anchor-032/package.json`
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts`
+- Synced the package-local declared program id and local scripts to the actual deploy keypair id `3FNDHzmJywwrBbhCX1UU1ZfPQVbwqdRTFBwERqxRFABS`, fixing the previous `DeclaredProgramIdMismatch` during local deploy / IDL initialization.
+
+### The Reasoning
+
+1. **The old `RegisteredCard`-per-PDA model was the real bottleneck.** It imposed `O(N)` registration, `O(N)` delegation, and `O(N)` undelegation. Inline manifest collapses this to a single session account for the hot gameplay path while preserving per-slot commitment and replay protection on-chain.
+2. **`MAX_EFFECT_VALUE=150` matches actual gameplay better than `100`.** The game engine can produce attack values above 100, so the smart contract needed to accept those values without forced backend capping in the common case.
+3. **Surrender should be a first-class terminal win, not a cancellation.** A player who surrenders creates an unambiguous winner immediately; encoding this as `Finished + END_REASON_SURRENDER` keeps settlement semantics clean.
+4. **Large session accounts require mechanical memory fixes.** Growing `BattleSession` to 1071 bytes pushed Anchor account parsing over Solana's 4096-byte stack frame limit. Boxing the large accounts keeps the architecture intact without fragmenting the state back into multiple PDAs.
+5. **Local deployment had a hidden program-id mismatch.** The repo was still declaring `3eMD...`, but the local deploy keypair was `3FND...`. Syncing those values was necessary for reliable local deploy/test cycles.
+
+### Verification
+
+- [x] `anchor build` succeeds after the inline manifest state expansion.
+- [x] Local deploy to a clean validator on `http://127.0.0.1:8897` succeeds with the synced program id.
+- [x] Targeted TypeScript local-validator subset passes:
+  - `tests/00-constants.test.ts`
+  - `tests/01-state-rules.test.ts`
+  - `tests/13-activate-session.test.ts`
+  - `tests/40-set-card-manifest.test.ts`
+  - `tests/42-apply-effect-inline-manifest.test.ts`
+  - `tests/43-surrender-match.test.ts`
+- [x] Result: `37 passing`, `1 pending` (`apply_effect` deadline test was skipped when warp/realtime timing could not be deterministically satisfied).
+
+### The Tech Debt
+
+- [ ] `apps/api` and `packages/solana-client` still need to be updated to consume the new inline-manifest instructions and the synced local program id. This session intentionally stopped at Web3-only scope.
+- [ ] The new MagicBlock local-stack tests for inline manifest (`45-*`, `46-*`) were added but not yet run end-to-end in this session.
+- [ ] The package name/path still uses `battle-anchor-032`. If we want a more industry-style package folder name, that should be handled as a follow-up refactor because it will ripple through workspace paths, scripts, and downstream imports.
+
+---
+
+## Entry 24 — 2026-05-09: Devnet Program-ID Re-Sync to `3eMD...` and Root-Cause Split
+
+### The Change
+
+- `packages/battle-anchor-032/programs/cora-battle/src/lib.rs` — Updated `declare_id!` to `3eMDYJTc5uxA5CueLoRvdCiCvhUnjSZS7gVwX6jREQR8`.
+- `packages/battle-anchor-032/Anchor.toml` — Updated both `[programs.devnet]` and `[programs.localnet]` IDs to `3eMD...`.
+- `packages/battle-anchor-032/tests/helpers/battleTestUtils.ts` — Updated `DECLARED_BATTLE_PROGRAM_ID` to `3eMD...`.
+- `packages/battle-anchor-032/package.json` — Updated `magicblock:base` `--bpf-program` ID to `3eMD...`.
+
+### The Reasoning
+
+1. The failing Devnet suite originally showed `DeclaredProgramIdMismatch`; that means runtime ID constants and deployed ID were out of sync.
+2. After the sync, `DeclaredProgramIdMismatch` disappeared from the run, confirming ID alignment was fixed.
+3. Remaining failures split into two independent buckets:
+   - **RPC reliability**: `fetch failed`, `ConnectTimeoutError`, and `TransactionExpiredTimeoutError`.
+   - **Program/IDL version drift**: `RangeError ... offset ... Received 259` when decoding `BattleSession`, indicating Devnet `3eMD...` likely still runs an older binary/layout than current tests expect.
+
+### The Tech Debt
+
+- [ ] Redeploy latest `cora_battle` binary to Devnet under `3eMD...` (same keypair) so account layout matches current IDL (`BattleSession::LEN = 1071`).
+- [ ] Refresh client IDL artifacts after deploy (`target/idl`, `packages/solana-client/src/cora_battle.json/.ts`) and re-run Devnet suite.
+- [ ] Stabilize Devnet RPC for CI-like runs (dedicated endpoint + tuned retry/confirm strategy), because public/shared RPC introduces non-deterministic timeouts for transaction-heavy integration tests.
+
+---
+
+## Entry 25 — 2026-05-11: Inline-Manifest Heal Test Drift After Effect Ceiling Rebalance
+
+### The Change
+
+- `packages/battle-anchor-032/tests/42-apply-effect-inline-manifest.test.ts` — Updated the heal-flow scenario to use `TEST_CONSTANTS.maxEffectValue` instead of the stale pre-rebalance `40`, and corrected the post-heal expectation to cap back at `INITIAL_HEALTH`.
+- `packages/battle-anchor-032/tests/40-set-card-manifest.test.ts` — Replaced hardcoded heal manifest `30` with `TEST_CONSTANTS.maxEffectValue`.
+- `packages/battle-anchor-032/tests/43-surrender-match.test.ts` — Replaced hardcoded heal manifest `30` with `TEST_CONSTANTS.maxEffectValue`.
+
+### The Reasoning
+
+1. The failing `apply_effect` test was not exposing a smart-contract bug. The contract correctly rejected `final_value=40` because the committed inline manifest and `MAX_EFFECT_VALUE` were both rebalanced down to `30`.
+2. The stale test was still asserting the old balance model: damage `40`, heal `30`, final HP `90`. Under the new ceiling, the same scenario becomes damage `30`, heal `30`, final HP capped back to `100`.
+3. Moving the tests to `TEST_CONSTANTS.maxEffectValue` reduces future drift the next time gameplay balance changes.
+
+### Verification
+
+- [x] `anchor test`
+- [x] Result: `77 passing`, `16 pending`
+
+### The Tech Debt
+
+- [ ] A few ER/MagicBlock tests still use literal `30` for attack assertions or inputs. They are valid today, but should be normalized to shared constants if we want future balance changes to be cheaper.
+
+---
+
+## Entry 25 — 2026-05-10: Blink Escrow Plan Revision for Soft-to-True Cutover
+
+### The Change
+
+- Rewrote `docs/blink_escrow_PLAN.md` into a stricter execution plan for the true Blink escrow flow.
+- Clarified that the backend soft Blink work is **not throwaway**; it remains the off-chain orchestration base while the on-chain escrow semantics are upgraded.
+- Added canonical decisions for:
+  - `match_id = deriveMatchId(roomId)`
+  - DB statuses vs on-chain `MatchStatus`
+  - creator no-show resolved via normal `settle_match(action = 0, target = challenger)`
+  - temporary challenge-account rent returning to the creator
+- Added a concrete backend cutover section specifying which parts of the soft implementation stay, which transaction-building assumptions must change, and the required merge/deploy order.
+- Added explicit Web3/BE handoff notes and a smoke checklist covering both contract lifecycle and Blink/API lifecycle.
+
+### The Reasoning
+
+1. **The previous escrow plan was technically close but operationally under-specified.** The biggest risk was not Rust implementation itself, but drift between backend DB semantics, on-chain state semantics, and the soft Blink work already done on another branch.
+
+2. **`match_id` canonicalization is a cross-team contract.** Without explicitly pinning Blink to `deriveMatchId(roomId)`, it is too easy for the backend, settlement oracle, and contract client to derive different PDAs for the same challenge.
+
+3. **No-show needs one authoritative policy.** Since both wagers are already locked after `accept_challenge`, the cleanest MVP rule is to settle the challenger as the winner through the existing settlement path instead of introducing a Blink-only refund or slash branch.
+
+4. **The soft backend implementation still has lasting value.** Its Supabase persistence, janitor logic, and private room hydration should survive the smart-contract upgrade; only the transaction semantics need to change.
+
+### The Tech Debt
+
+- [ ] `MASTER.md` still describes the escrow as a simpler 2-transaction model; Blink is now documented as an intentional async exception, but the high-level product doc may still need wording cleanup later.
+- [ ] This was a documentation hardening pass only. The Rust instructions, IDL, and backend builders still need to be updated in code.
+- [ ] A matching backend devlog entry should be added when the BE branch actually performs the soft-to-true Blink cutover.
+
+---
+
+## Entry 26 — 2026-05-10: True Blink Escrow Smart-Contract Implementation
+
+### The Change
+
+**Plan hardening:**
+- `docs/blink_escrow_PLAN.md` — Folded the key review findings into the canonical plan:
+  - added `EXPIRED` DB state
+  - clarified `creator` must be mutable in `accept_challenge`
+  - documented SPL `close_account` CPI for `challenge_vault`
+  - documented required `MatchState.version` and `MatchState.bump` initialization
+  - added duplicate-accept test requirement and no-show signing ceremony note
+
+**Smart contract (9 files):**
+- `packages/solana-program/programs/solana-program/src/state.rs`
+  - added `OpenChallengeState` with `created_at`, `expires_at`, and PDA bumps
+- `.../constants.rs`
+  - added `CHALLENGE_SEED`, `CHALLENGE_VAULT_SEED`, and `CHALLENGE_EXPIRY`
+- `.../error.rs`
+  - added `ChallengeExpired`, `ChallengeNotExpired`, `CreatorCannotAccept`
+- `.../events.rs`
+  - added `OpenChallengeCreatedEvent`, `ChallengeAcceptedEvent`, `ChallengeReclaimedEvent`
+- `.../instructions/create_open_challenge.rs`
+  - **NEW** creator-funded open challenge path
+- `.../instructions/accept_challenge.rs`
+  - **NEW** challenger accepts, migrates funds into the final `MatchState` + vault, returns temporary PDA rent to creator
+- `.../instructions/reclaim_challenge.rs`
+  - **NEW** creator reclaim path after challenge expiry
+- `.../instructions.rs` and `.../lib.rs`
+  - wired the 3 new instructions into the Anchor program and client account re-exports
+
+**Tests (2 files):**
+- `packages/solana-program/programs/solana-program/tests/common/mod.rs`
+  - added PDA helpers, lamport/account helpers, and reusable helpers for create/accept/reclaim challenge flow
+- `.../tests/test_blink_challenge.rs`
+  - **NEW** 10-test Blink escrow lifecycle suite covering create, accept, reclaim, full settlement, refund-after-timeout, and duplicate-accept race behavior
+
+**Shared/client artifacts (3 files):**
+- `packages/shared-types/src/escrow.ts`
+  - added challenge constants and aligned timeout constants with Rust (`30 / 900 / 900`)
+- `packages/solana-client/src/solana_program.json`
+- `packages/solana-client/src/solana_program.ts`
+  - refreshed from `anchor build` so FE/BE can consume the new instruction/account surface
+
+### The Reasoning
+
+1. **The soft BE branch needed a real escrow target, not a vague future note.** The new instructions let us preserve BE's Supabase/private-room orchestration while upgrading the economic commitment model to true creator-funded challenges.
+
+2. **`accept_challenge` was designed as the compatibility bridge.** After acceptance, the contract emits a standard `MatchState` in `Active` status so the existing `settle_match` and `refund` instructions continue to work without Blink-specific branching.
+
+3. **Rent routing matters economically and operationally.** Returning temporary challenge-account rent to the creator matches who funded those accounts and avoids a subtle value transfer to the challenger.
+
+4. **SBF stack limits surfaced immediately in `accept_challenge`.** The first `anchor build` hit a stack-frame overflow in `AcceptChallenge::try_accounts`; boxing the heavier accounts fixed the issue without changing the external instruction contract.
+
+5. **Generated artifacts must move with the contract.** Refreshing `solana_program.json/.ts` right after `anchor build` keeps FE/BE from integrating against an outdated IDL.
+
+### Verification
+
+- [x] `anchor build`
+- [x] `cargo test`
+- [x] Blink escrow suite: `10 passed`
+- [x] Full Rust suite result: `26 passed, 0 failed`
+- [x] Generated client artifacts copied from `target/idl` and `target/types` into `packages/solana-client/src`
+
+### The Tech Debt
+
+- [ ] This session implemented the Web3 side only. The BE branch still needs the transaction-builder cutover from soft flow to true flow (`create_open_challenge` / `accept_challenge`).
+- [ ] `MASTER.md` still describes a simpler 2-transaction escrow story; Blink remains an intentional async exception that may need product-doc cleanup later.
+- [ ] `anchor build` warns that the Anchor CLI is `0.32.1` while the crate uses `anchor-lang = 1.0.1`. It built successfully here, but version pinning in `Anchor.toml` would reduce future environment drift.
+- [ ] `packages/shared-types/src/escrow.ts` had stale timeout constants before this change. They are now aligned with Rust, but FE/BE should be made aware because any logic that assumed `300 / 1800` seconds was already drifted from the actual program.

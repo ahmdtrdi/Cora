@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach, mock } from 'bun:test';
 import { RoomManager } from '../src/managers/RoomManager';
-import type { Room } from '../src/managers/RoomManager';
+import type { Room } from '../src/managers/room/types';
 
 /**
  * Create a mock WebSocket that records all sent messages.
@@ -23,6 +23,17 @@ function createMockWs() {
       return JSON.parse(sent[sent.length - 1]);
     },
   };
+}
+
+async function waitForPlayingRoom(room: Room) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (room.status === 'playing' && room.engine?.isActive()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  expect(room.status).toBe('playing');
+  expect(room.engine).not.toBeNull();
+  expect(room.engine!.isActive()).toBe(true);
 }
 
 describe('RoomManager', () => {
@@ -205,7 +216,7 @@ describe('RoomManager', () => {
       expect(mock3.ws.close).toHaveBeenCalledWith(1008, 'Room is full');
     });
 
-    test('player reconnect restores presence without ending the room', () => {
+    test('player reconnect restores presence without ending the room', async () => {
       manager.createRoom('room-reconnect');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -222,7 +233,7 @@ describe('RoomManager', () => {
       manager.handleMessage('room-reconnect', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sig' } });
       manager.handleMessage('room-reconnect', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sig' } });
 
-      expect(room.status).toBe('playing');
+      await waitForPlayingRoom(room);
 
       // Simulate disconnect during playing
       manager.leaveRoom('room-reconnect', 'playerA');
@@ -239,7 +250,7 @@ describe('RoomManager', () => {
       expect(clientAfter.ws).toBe(mock1b.ws);
     });
 
-    test('stale socket close after reconnect is ignored', () => {
+    test('stale socket close after reconnect is ignored', async () => {
       manager.createRoom('room-stale-close');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -254,7 +265,7 @@ describe('RoomManager', () => {
       manager.handleMessage('room-stale-close', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sigA' } });
       manager.handleMessage('room-stale-close', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sigB' } });
 
-      expect(room.status).toBe('playing');
+      await waitForPlayingRoom(room);
 
       const replacement = createMockWs();
       manager.joinRoom('room-stale-close', 'playerA', replacement.ws);
@@ -279,7 +290,7 @@ describe('RoomManager', () => {
   // ─── Leave Room ──────────────────────────────────────────────
 
   describe('leaveRoom', () => {
-    test('sets ws to null and keeps funded playing room open', () => {
+    test('sets ws to null and keeps funded playing room open', async () => {
       manager.createRoom('room-leave');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -295,7 +306,7 @@ describe('RoomManager', () => {
       manager.handleMessage('room-leave', 'playerA', { type: 'confirmDeposit', payload: { signature: 'sig' } });
       manager.handleMessage('room-leave', 'playerB', { type: 'confirmDeposit', payload: { signature: 'sig' } });
 
-      expect(room.status).toBe('playing');
+      await waitForPlayingRoom(room);
 
       manager.leaveRoom('room-leave', 'playerA');
 
@@ -377,7 +388,7 @@ describe('RoomManager', () => {
       expect(room.playerMeta.get('pB')!.hasDeposited).toBe(false);
     });
 
-    test('both deposits transition to playing and init engine', () => {
+    test('both deposits transition to playing and init engine', async () => {
       manager.createRoom('room-dep2');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -398,7 +409,7 @@ describe('RoomManager', () => {
         payload: { signature: 'sigB' },
       });
 
-      expect(room.status).toBe('playing');
+      await waitForPlayingRoom(room);
       expect(room.engine).not.toBeNull();
 
       // Both should have received gameStateUpdate with playing status
@@ -412,7 +423,7 @@ describe('RoomManager', () => {
   // ─── Card Open Pipeline ──────────────────────────────────────
 
   describe('handleMessage - openCard', () => {
-    function setupPlayingRoom() {
+    async function setupPlayingRoom() {
       manager.createRoom('room-card');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -434,11 +445,12 @@ describe('RoomManager', () => {
         payload: { signature: 'sig' },
       });
 
+      await waitForPlayingRoom(room);
       return { room, mock1, mock2 };
     }
 
-    test('opening a card starts countdown', () => {
-      const { room, mock1 } = setupPlayingRoom();
+    test('opening a card starts countdown', async () => {
+      const { room, mock1 } = await setupPlayingRoom();
       expect(room.status).toBe('playing');
 
       // Get a card from player A's hand
@@ -464,8 +476,8 @@ describe('RoomManager', () => {
       expect(countdownMsg.payload.remainingMs).toBe(10_000);
     });
 
-    test('opening a second card while one is open is rejected', () => {
-      const { room, mock1 } = setupPlayingRoom();
+    test('opening a second card while one is open is rejected', async () => {
+      const { room, mock1 } = await setupPlayingRoom();
 
       const state = room.engine!.getStateForPlayer('pA');
       const cardId1 = state.hand[0].id;
@@ -485,8 +497,8 @@ describe('RoomManager', () => {
       expect(room.openedCards.get('pA')!.cardId).toBe(cardId1);
     });
 
-    test('opening a card not in hand is rejected', () => {
-      const { room } = setupPlayingRoom();
+    test('opening a card not in hand is rejected', async () => {
+      const { room } = await setupPlayingRoom();
 
       manager.handleMessage('room-card', 'pA', {
         type: 'openCard',
@@ -500,7 +512,7 @@ describe('RoomManager', () => {
   // ─── Card Play Handling ──────────────────────────────────────
 
   describe('handleMessage - playCard', () => {
-    function setupPlayingRoom() {
+    async function setupPlayingRoom() {
       manager.createRoom('room-play');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -521,11 +533,12 @@ describe('RoomManager', () => {
         payload: { signature: 'sig' },
       });
 
+      await waitForPlayingRoom(room);
       return { room, mock1, mock2 };
     }
 
-    test('playing card without opening it first is rejected', () => {
-      const { room, mock1 } = setupPlayingRoom();
+    test('playing card without opening it first is rejected', async () => {
+      const { room, mock1 } = await setupPlayingRoom();
 
       const state = room.engine!.getStateForPlayer('pA');
       const cardId = state.hand[0].id;
@@ -542,8 +555,8 @@ describe('RoomManager', () => {
       expect(resultMsg).toBeUndefined();
     });
 
-    test('playing card after opening sends playCardResult and scoreUpdate', () => {
-      const { room, mock1, mock2 } = setupPlayingRoom();
+    test('playing card after opening sends playCardResult and scoreUpdate', async () => {
+      const { room, mock1, mock2 } = await setupPlayingRoom();
 
       const internalPa = (room.engine! as any).players.get('pA');
       const engineCard = internalPa.hand[0];
@@ -579,8 +592,8 @@ describe('RoomManager', () => {
       expect(room.openedCards.has('pA')).toBe(false);
     });
 
-    test('wrong answer still clears opened card but no damage/heal', () => {
-      const { room, mock1 } = setupPlayingRoom();
+    test('wrong answer still clears opened card but no damage/heal', async () => {
+      const { room, mock1 } = await setupPlayingRoom();
 
       const internalPa = (room.engine! as any).players.get('pA');
       const engineCard = internalPa.hand[0];
@@ -617,7 +630,7 @@ describe('RoomManager', () => {
   // ─── Broadcasting ────────────────────────────────────────────
 
   describe('broadcasting', () => {
-    test('gameStateUpdate is per-player (different perspectives)', () => {
+    test('gameStateUpdate is per-player (different perspectives)', async () => {
       manager.createRoom('room-broadcast');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -638,6 +651,7 @@ describe('RoomManager', () => {
         type: 'confirmDeposit',
         payload: { signature: 'sig' },
       });
+      await waitForPlayingRoom(room);
 
       // Get last gameStateUpdate for each player
       const pAStates = mock1.messages.filter((m: any) => m.type === 'gameStateUpdate');

@@ -8,6 +8,7 @@ import {
   authority,
   createSession,
   registerEffectCard,
+  setCardManifest,
 } from "./battleTestUtils";
 import {
   baseProgram,
@@ -26,11 +27,28 @@ export async function createMagicBlockBattleFixture() {
     cardIndex: 0,
     owner: playerA.publicKey,
     effectType: TEST_CONSTANTS.effectAttack,
-    maxValue: 35,
+    maxValue: TEST_CONSTANTS.maxEffectValue,
   });
 
   await activateSession(sessionPda);
   return { sessionPda, cardId, cardPda };
+}
+
+export async function createInlineManifestMagicBlockFixture() {
+  const session = await createSession();
+  await setCardManifest({
+    sessionPda: session.sessionPda,
+    isPlayerA: true,
+    entries: [{ effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue }],
+  });
+  await setCardManifest({
+    sessionPda: session.sessionPda,
+    isPlayerA: false,
+    entries: [{ effectType: TEST_CONSTANTS.effectNone, maxValue: 0 }],
+  });
+  await activateSession(session.sessionPda);
+
+  return session;
 }
 
 export async function assertBaseAccountsOwnedByProgram(params: {
@@ -203,6 +221,28 @@ export async function commitCardAndSession(params: {
   await sendMagicRouterTransaction(commitSessionTx);
 }
 
+export async function commitAndUndelegateSessionOnly(
+  sessionPda: anchor.web3.PublicKey
+) {
+  const commitSessionTx = await ephemeralProgram.methods
+    .commitBattleSession()
+    .accounts({
+      payer: authority.publicKey,
+      battleSession: sessionPda,
+    })
+    .transaction();
+  await sendMagicRouterTransaction(commitSessionTx);
+
+  const undelegateSessionTx = await ephemeralProgram.methods
+    .undelegateBattleSession()
+    .accounts({
+      payer: authority.publicKey,
+      battleSession: sessionPda,
+    })
+    .transaction();
+  await sendMagicRouterTransaction(undelegateSessionTx);
+}
+
 export async function undelegateCardAndSession(params: {
   sessionPda: anchor.web3.PublicKey;
   cardPda: anchor.web3.PublicKey;
@@ -225,4 +265,92 @@ export async function undelegateCardAndSession(params: {
     })
     .transaction();
   await sendMagicRouterTransaction(undelegateSessionTx);
+}
+
+export async function applyInlineEffectOnErWithRetry(params: {
+  sessionPda: anchor.web3.PublicKey;
+  slot?: number;
+  actorIsA?: boolean;
+  finalValue?: number;
+  scoreDelta?: number;
+}) {
+  const slot = params.slot ?? 0;
+  const actorIsA = params.actorIsA ?? true;
+  const finalValue = params.finalValue ?? 30;
+  const scoreDelta = params.scoreDelta ?? 120;
+
+  const builder = ephemeralProgram.methods
+    .applyEffect(slot, actorIsA, finalValue, scoreDelta)
+    .accounts({
+      authority: authority.publicKey,
+      battleSession: params.sessionPda,
+    });
+
+  try {
+    await builder.simulate();
+  } catch {
+    // The local stack can reject warm-up simulation before ER routing stabilizes.
+  }
+
+  await waitForCondition(
+    "first ER apply_effect transaction",
+    async () => {
+      try {
+        const tx = await builder.transaction();
+        await sendMagicRouterTransaction(tx);
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          message.includes("cannot be written") ||
+          message.includes("InvalidWritableAccount")
+        ) {
+          return false;
+        }
+        throw error;
+      }
+    },
+    15_000,
+    500
+  );
+}
+
+export async function surrenderMatchOnErWithRetry(params: {
+  sessionPda: anchor.web3.PublicKey;
+  surrenderingPlayer: anchor.web3.PublicKey;
+}) {
+  const builder = ephemeralProgram.methods
+    .surrenderMatch(params.surrenderingPlayer)
+    .accounts({
+      authority: authority.publicKey,
+      battleSession: params.sessionPda,
+    });
+
+  try {
+    await builder.simulate();
+  } catch {
+    // Warm-up simulation can fail before routing settles.
+  }
+
+  await waitForCondition(
+    "ER surrender_match transaction",
+    async () => {
+      try {
+        const tx = await builder.transaction();
+        await sendMagicRouterTransaction(tx);
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          message.includes("cannot be written") ||
+          message.includes("InvalidWritableAccount")
+        ) {
+          return false;
+        }
+        throw error;
+      }
+    },
+    15_000,
+    500
+  );
 }

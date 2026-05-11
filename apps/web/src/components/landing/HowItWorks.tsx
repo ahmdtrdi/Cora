@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   AnimatePresence,
   motion,
@@ -10,6 +11,132 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { LANDING_STAGES } from "./content";
 import { getLandingAccentStyle } from "./visuals";
+
+const STAGE_MARKER_CHARACTERS = [
+  ["turing"],
+  ["curie"],
+  ["einstein"],
+  ["turing", "curie", "einstein"],
+] as const;
+
+function getHappyExpressionSrc(characterId: string) {
+  return `/assets/characters/${characterId}/exp/happy.png`;
+}
+
+function CharacterMarker({
+  index,
+  active,
+  isCompleted,
+  accent,
+}: {
+  index: number;
+  active: boolean;
+  isCompleted: boolean;
+  accent: string;
+}) {
+  const characterIds = STAGE_MARKER_CHARACTERS[index] ?? [];
+  const background = active
+    ? "rgba(255,250,240,0.98)"
+    : isCompleted
+      ? "rgba(255,248,236,0.92)"
+      : "rgba(255,250,239,0.72)";
+  const borderColor = active || isCompleted ? accent : "var(--warm-border)";
+  const shadow = active ? "0 10px 24px rgba(41,32,25,0.16)" : undefined;
+
+  if (characterIds.length === 1) {
+    const characterId = characterIds[0];
+
+    return (
+      <div
+        className={`relative h-11 w-11 overflow-hidden rounded-xl border-[2.5px] transition-all duration-300 ${active ? "shadow-md" : ""}`}
+        style={{ borderColor, background, boxShadow: shadow }}
+      >
+        <Image
+          src={getHappyExpressionSrc(characterId)}
+          alt={`${characterId} happy expression`}
+          fill
+          sizes="44px"
+          className="object-cover object-center scale-[1.06]"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`relative h-11 w-11 overflow-hidden rounded-xl border-[2.5px] transition-all duration-300 ${active ? "shadow-md" : ""}`}
+      style={{ borderColor, background, boxShadow: shadow }}
+    >
+      <div className="relative h-full w-full">
+        <div className="absolute left-1/2 top-[3px] h-[18px] w-[18px] -translate-x-1/2 overflow-hidden rounded-full border border-[rgba(255,250,240,0.95)] bg-[var(--warm-bg)]">
+          <Image
+            src={getHappyExpressionSrc(characterIds[0])}
+            alt={`${characterIds[0]} happy expression`}
+            fill
+            sizes="18px"
+            className="object-cover object-center scale-110"
+          />
+        </div>
+        <div className="absolute bottom-[3px] left-[4px] h-[18px] w-[18px] overflow-hidden rounded-full border border-[rgba(255,250,240,0.95)] bg-[var(--warm-bg)]">
+          <Image
+            src={getHappyExpressionSrc(characterIds[1])}
+            alt={`${characterIds[1]} happy expression`}
+            fill
+            sizes="18px"
+            className="object-cover object-center scale-110"
+          />
+        </div>
+        <div className="absolute bottom-[3px] right-[4px] h-[18px] w-[18px] overflow-hidden rounded-full border border-[rgba(255,250,240,0.95)] bg-[var(--warm-bg)]">
+          <Image
+            src={getHappyExpressionSrc(characterIds[2])}
+            alt={`${characterIds[2]} happy expression`}
+            fill
+            sizes="18px"
+            className="object-cover object-center scale-110"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepRailMarker({
+  index,
+  active,
+  isCompleted,
+  accent,
+}: {
+  index: number;
+  active: boolean;
+  isCompleted: boolean;
+  accent: string;
+}) {
+  if (!isCompleted) {
+    return (
+      <div
+        className={`font-gabarito flex h-11 w-11 items-center justify-center rounded-xl border-[2.5px] text-xs font-black transition-all duration-300 ${
+          active ? "shadow-md" : ""
+        }`}
+        style={{
+          borderColor: active ? accent : "var(--warm-border)",
+          background: active ? accent : "rgba(255,250,239,0.72)",
+          color: active ? "#fffaf0" : "var(--warm-muted)",
+        }}
+      >
+        {index + 1}
+      </div>
+    );
+  }
+
+  return (
+    <CharacterMarker
+      index={index}
+      active={false}
+      isCompleted
+      accent={accent}
+    />
+  );
+}
 
 export function HowItWorks() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,20 +195,12 @@ export function HowItWorks() {
         <div className="mb-10 flex items-center gap-2">
           {LANDING_STAGES.map((s, i) => (
             <div key={s.id} className="flex items-center gap-2">
-              <div
-                className={`font-gabarito flex h-9 w-9 items-center justify-center rounded-xl border-[2.5px] text-xs font-black transition-all duration-300 ${
-                  i === active
-                    ? "shadow-md"
-                    : ""
-                }`}
-                style={{
-                  borderColor: i === active ? (isPrimary ? "var(--tone-clay)" : "var(--tone-teal)") : "var(--warm-border)",
-                  background: i === active ? (isPrimary ? "var(--tone-clay)" : "var(--tone-teal)") : i < active ? "var(--warm-surface)" : "transparent",
-                  color: i === active ? "#fffaf0" : i < active ? "var(--warm-text)" : "var(--warm-muted)",
-                }}
-              >
-                {i < active ? "✓" : s.id}
-              </div>
+              <StepRailMarker
+                index={i}
+                active={i === active}
+                isCompleted={i < active}
+                accent={i === active ? stageStyle.accent : s.accent === "primary" ? "var(--tone-clay)" : "var(--tone-teal)"}
+              />
               {i < LANDING_STAGES.length - 1 && (
                 <div className="h-0.5 w-8 rounded-full bg-[var(--warm-border)]">
                   {i < active && (
@@ -120,14 +239,18 @@ export function HowItWorks() {
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div className="flex items-start gap-4">
                     <div
-                      className="flex h-12 w-12 items-center justify-center rounded-xl border-[2.5px] font-mono text-sm font-black tracking-wider"
+                      className="grid h-12 w-12 place-items-center rounded-xl border-[2.5px]"
                       style={{
                         borderColor: stageStyle.accent,
-                        color: stageStyle.accent,
                         background: isPrimary ? "rgba(186,105,49,0.1)" : "rgba(60,92,95,0.1)",
                       }}
                     >
-                      #{Number(stage.id)}
+                      <CharacterMarker
+                        index={active}
+                        active
+                        isCompleted={false}
+                        accent={stageStyle.accent}
+                      />
                     </div>
                     <div>
                       <p className="font-gabarito text-xs font-bold uppercase tracking-widest text-[var(--warm-muted)]">

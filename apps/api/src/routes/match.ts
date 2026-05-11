@@ -21,7 +21,13 @@ export function createMatchRouter(roomManager: RoomManager) {
     }
 
     const existingRoom = roomManager.queue.findActiveRoomForAddress(address);
+    const existingRoomId = existingRoom?.id;
     const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
+
+    if (roomId === '__aborted__') {
+      return c.json({ error: 'Queue cancelled' }, 400);
+    }
+
     const room = roomManager.getRoom(roomId);
     const role =
       room?.playerA === address ? 'playerA' :
@@ -32,7 +38,7 @@ export function createMatchRouter(roomManager: RoomManager) {
       roomId,
       role,
       roomType: room?.roomType,
-      alreadyInRoom: Boolean(existingRoom),
+      alreadyInRoom: Boolean(existingRoomId && existingRoomId === roomId),
       status: room?.status,
     });
   });
@@ -87,7 +93,8 @@ export function createMatchRouter(roomManager: RoomManager) {
     });
   });
 
-  // Private room creation for Blinks / direct challenge invites.
+  // Private room creation for Blinks / direct challenge invites (Step 1).
+  // Returns an unsigned create_open_challenge transaction. DB row is NOT written yet.
   // tokenMint and wagerAmount are stored server-side; never exposed in the Blink URL.
   router.post('/private', async (c) => {
     let address: string;
@@ -112,12 +119,86 @@ export function createMatchRouter(roomManager: RoomManager) {
       return c.json({ error: `Unknown token "${rawTokenMint}" - provide a symbol (SOL, BONK, USDC) or a valid mint address.` }, 400);
     }
 
-    const roomId = roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
+    const { roomId, transaction } = await roomManager.createPrivateRoom(address, tokenMint, BigInt(wagerAmount));
 
     const baseUrl = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 8080}`;
     const blinkUrl = `${baseUrl}/api/actions/challenge?roomId=${roomId}`;
 
-    return c.json({ roomId, blinkUrl, role: 'playerA', roomType: 'private' });
+    return c.json({ roomId, blinkUrl, transaction, role: 'playerA', roomType: 'private' });
+  });
+
+  // Private room creation confirmation (Step 2).
+  // Client signs the create_open_challenge tx, then calls this to confirm on-chain.
+  // DB row is only written after successful on-chain confirmation.
+  router.post('/private/confirm', async (c) => {
+    let roomId: string;
+    let address: string;
+    let signature: string;
+    let rawTokenMint: string;
+    let wagerAmount: number;
+
+    try {
+      const body = await c.req.json();
+      roomId = body.roomId;
+      address = body.address;
+      signature = body.signature;
+      rawTokenMint = body.tokenMint;
+      wagerAmount = body.wagerAmount;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    if (!roomId || !address || !signature || !rawTokenMint || !wagerAmount) {
+      return c.json({ error: 'roomId, address, signature, tokenMint, and wagerAmount are required' }, 400);
+    }
+
+    const tokenMint = resolveTokenMint(rawTokenMint);
+    if (!tokenMint) {
+      return c.json({ error: `Unknown token "${rawTokenMint}"` }, 400);
+    }
+
+    try {
+      const match = await roomManager.confirmPrivateRoom(
+        roomId,
+        address,
+        signature,
+        tokenMint,
+        BigInt(wagerAmount),
+      );
+
+      return c.json({ status: match.status, roomId: match.id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+
+      // Distinguish timeout from other failures
+      if (message.includes('timeout') || message.includes('Timeout') || message.includes('expired')) {
+        return c.json({ error: 'Transaction confirmation timed out. Please retry.' }, 408);
+      }
+
+      console.error(`[match/private/confirm] Confirmation failed for room ${roomId}:`, err);
+      return c.json({ error: `Transaction confirmation failed: ${message}` }, 400);
+    }
+  });
+
+  router.get('/private/:roomId', async (c) => {
+    const roomId = c.req.param('roomId');
+    const match = await roomManager.refreshBlinkMatchExpiry(roomId);
+
+    if (!match) {
+      return c.json({ error: 'Private challenge not found' }, 404);
+    }
+
+    return c.json({
+      roomId: match.id,
+      roomType: 'private',
+      status: match.status,
+      creatorWallet: match.creatorWallet,
+      opponentWallet: match.opponentWallet,
+      tokenMint: match.tokenMint,
+      wagerAmount: match.wagerAmount,
+      expiresAt: match.expiresAt,
+      joinDeadline: match.joinDeadline,
+    });
   });
 
   return router;
@@ -129,13 +210,19 @@ export function createApiMatchRouter(roomManager: RoomManager) {
   router.get('/:roomId/proof', (c) => {
     const roomId = c.req.param('roomId');
     const room = roomManager.getRoom(roomId);
-    if (!room?.erSessionPda) {
+    if (!room?.erProofMeta) {
       return c.json({ error: 'No ER session for this match' }, 404);
     }
 
     return c.json({
-      erSessionPda: room.erSessionPda,
-      explorerUrl: `https://explorer.solana.com/address/${room.erSessionPda}?cluster=devnet`,
+      erSessionPda: room.erProofMeta.sessionPda,
+      explorerUrl: `https://explorer.solana.com/address/${room.erProofMeta.sessionPda}?cluster=devnet`,
+      erEnabled: room.erEnabled,
+      status: room.erProofMeta.status ?? room.erLifecycleStatus,
+      winner: room.erProofMeta.winner,
+      setupTxSignatures: room.erProofMeta.setupTxSignatures,
+      terminalTxSignatures: room.erProofMeta.terminalTxSignatures,
+      endReason: room.erProofMeta.endReason,
     });
   });
 

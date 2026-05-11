@@ -15,6 +15,10 @@ type MatchmakingWaitingProps = {
   state: "searching" | "timeout" | "error";
   stage: "finding" | "verifying" | "preparing";
   errorMessage?: string | null;
+  /** 1-based position in the queue (from WS queue) */
+  queuePosition?: number | null;
+  /** Total players in queue (from WS queue) */
+  queueDepth?: number | null;
   onRetry: () => void;
   onCancel: () => void;
 };
@@ -45,6 +49,8 @@ export function MatchmakingWaiting({
   state,
   stage,
   errorMessage,
+  queuePosition,
+  queueDepth,
   onRetry,
   onCancel,
 }: MatchmakingWaitingProps) {
@@ -99,7 +105,9 @@ export function MatchmakingWaiting({
       ? "Queue timed out. You can retry or go back."
       : state === "error"
         ? errorMessage ?? "Unable to reach matchmaking service."
-        : null;
+        : queuePosition && queueDepth && stage === "finding"
+          ? `Position ${queuePosition} of ${queueDepth} in queue`
+          : null;
   const isFailureState = state === "timeout" || state === "error";
   const matchedOpponent = opponentScientist ?? null;
 

@@ -67,13 +67,19 @@ export interface GameState {
   /** Number of rounds needed to win the match */
   roundsToWin: number;
   /** Token address */
-  tokenMint: string;  
+  tokenMint: string;
   /** Wager amount */
   wagerAmount: string;
   /** Wager USD value */
   wagerUsdValue?: string;
   /** Public or private match */
   roomType: 'public' | 'private';
+  /** True when public combat fields are backed by MagicBlock ER authority */
+  erEnabled?: boolean;
+  /** Current ER lifecycle/status for proof-aware clients */
+  erStatus?: string | null;
+  /** MagicBlock battle session PDA when available */
+  erSessionPda?: string | null;
 }
 
 // ─── Card Countdown Pipeline Types ────────────────────────────
@@ -116,6 +122,8 @@ export type ClientToServerEvents = {
   confirmDeposit: (data: { signature: string }) => void;
   cancelMatch: () => void;
   surrender: () => void;
+  /** Sent on /queue WS to cancel matchmaking */
+  cancelQueue: () => void;
 };
 
 // Settlement result payload sent after match ends
@@ -129,6 +137,16 @@ export interface MatchResultPayload {
   serverPublicKey: string;
 }
 
+/** Queue status payload sent on /queue WS */
+export interface QueueStatusData {
+  /** 1-based position in the queue */
+  position: number;
+  /** Estimated wait time in ms (null if unknown) */
+  estimatedWaitMs: number | null;
+  /** Total number of players currently in queue */
+  queueDepth: number;
+}
+
 // Messages sent from Server -> Client
 export type ServerToClientEvents = {
   opponentFailedDeposit: (data: {}) => void;
@@ -139,6 +157,7 @@ export type ServerToClientEvents = {
   settlementAuthorization: (result: MatchResultPayload) => void;
   matchResult: (result: MatchResult) => void;
   matchInvalidated: (result: MatchResult) => void; // New event for anti-cheat rejections
+  surrenderRejected: (data: { message: string }) => void;
   timerSync: (timer: TimerState) => void;
   damageEvent: (event: DamageEvent) => void;
   phaseChange: (phase: GamePhase) => void;
@@ -148,6 +167,12 @@ export type ServerToClientEvents = {
   cardExpired: (data: CardExpiredData) => void;
   scoreUpdate: (data: ScoreUpdateData) => void;
   presenceUpdate: (data: PresenceUpdateData) => void;
+  /** Queue-phase: sent when player successfully joins the queue */
+  queueJoined: (data: QueueStatusData) => void;
+  /** Queue-phase: periodic position updates while waiting */
+  queueStatus: (data: QueueStatusData) => void;
+  /** Queue-phase: sent when player is removed from queue (not via matchFound) */
+  queueLeft: (data: { reason: 'cancelled' | 'ttl_expired' | 'error' }) => void;
 };
 
 export interface MatchResult {
@@ -159,6 +184,18 @@ export interface MatchResult {
   finalCorrectAnswers?: Record<string, number>;
   surrenderedAddress?: string;
   antiCheatWarning?: boolean; // True if the match was suspicious but still settled
+  erProof?: ErProofPayload;
+}
+
+export interface ErProofPayload {
+  erSessionPda: string;
+  explorerUrl: string;
+  erEnabled: boolean;
+  status: string | null;
+  winner: string | null;
+  endReason: number | null;
+  setupTxSignatures?: string[];
+  terminalTxSignatures?: string[];
 }
 
 export interface PresenceUpdateData {

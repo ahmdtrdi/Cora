@@ -529,3 +529,144 @@ Added a dedicated live streak field, `currentCorrectStreak`, to the player state
 **Tech Debt:**
 
 - `currentCorrectStreak` currently lives only in live `gameStateUpdate` payloads. If we later want post-match UX summaries ("best streak this round" or "final streak before loss"), we should decide whether that belongs in final match result payloads too.
+
+---
+
+## 18. Inline Manifest Architecture Integration — (2026-05-10)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/services/magicblock.ts`
+- `apps/api/src/managers/room/Blockchain.ts`
+- `apps/api/src/managers/room/Engine.ts`
+- `apps/api/src/managers/room/Lifecycle.ts`
+- `apps/api/src/managers/room/types.ts`
+- `apps/api/src/managers/room/Store.ts`
+- `apps/api/src/managers/RoomManager.ts`
+
+Migrated to the **Inline Manifest** ER architecture to solve severe performance bottlenecks in setup/settlement and enable instant surrenders.
+
+**What changed:**
+
+1. **5-Tx Setup:** Replaced loop-based `registerCard` logic with a 2-transaction pre-commitment of both players' card manifests. Setup dropped from ~99 transactions (~45s) down to **5 transactions (~15s)**.
+2. **2-Tx Settlement:** Since individual cards no longer generate on-chain PDAs, settlement no longer requires loop-based `commit` / `undelegate` calls. Settlement dropped from ~98 transactions (~52s) to **2 transactions (~4s)**.
+3. **Slot-Based Tracking:** Modified the play-flow from referencing arbitrary card IDs to referencing precise, sequential manifest slot indexes. Valid answers, wrong answers, and timeouts now all definitively consume on-chain slots to maintain source-of-truth syncing.
+4. **Authoritative Surrender:** Enabled the previously-disabled surrender flow via a terminal `surrender_match` ER instruction, resolving the winner/loser instantly and on-chain.
+5. **Optimistic UI:** The `Engine` now fires `damageEvent` and `playCardResult` payloads immediately upon client validation **before** waiting for the ER lane transaction round-trip, stripping the apparent latency from gameplay entirely.
+
+**The Reasoning:**
+
+- The 1-PDA-per-card architecture imposed astronomical setup/teardown bloat on the Solana base layer. Moving that state into two inline vectors embedded into the primary `BattleSession` account is an asymptotic speedup for the platform.
+- Optimistic UI is standard for modern online games. Relying on chain confirmation latency for animation rendering hurts the 'feel' of high-speed trivia.
+
+**Tech Debt:**
+
+- The legacy logic (registered card PDA loops) is deprecated but remains theoretically supported by raw functions in `magicblock.ts` for backwards compatibility during migration cutoff. It should be completely pruned once version stability is locked.
+- Currently waiting on client-side IDL synchronization for final verification since instructions must perfectly match the new program schema.
+
+---
+
+## 19. Bugfix — InvalidEffectValue (0x1779) Slot Synchronization (2026-05-10)
+
+**The Bug:**
+The `cora-battle` Solana program consistently threw a `0x1779 InvalidEffectValue` error during MagicBlock ER card plays. This usually surfaced when a player chose to play an Attack card (value 50) while the smart contract expected a Heal card limit (max 30) for that slot.
+
+**Root Cause:**
+The backend `applyErCardEffect` was tracking `erNextSlotA` and `erNextSlotB` as blind, sequential increments (`0, 1, 2...`). However, the player's Hand gives them 3 cards, allowing them to play cards out of order relative to the generated manifest queue. If the manifest had Heal on Slot 0 and Attack on Slot 1, and the player played the Attack card first, the backend incorrectly submitted Slot 0 to the contract, causing a metadata mismatch and triggering the strict validation limit in the Solana program.
+
+**The Fix:**
+_Files touched:_ `apps/api/src/managers/room/Blockchain.ts`, `apps/api/src/managers/room/Engine.ts`, `apps/api/src/managers/room/types.ts`, `apps/api/src/managers/room/Store.ts`
+
+- **Removed blind increment state:** Deleted `erNextSlotA` and `erNextSlotB` from tracking entirely.
+- **Dynamic index lookup:** Updated `applyErCardEffect` to dynamically find the exact underlying manifest index using `findIndex` on the unmutated `matchQueue`:
+  `const slot = room.engine.getMatchQueue().findIndex(c => c.id === params.cardId);`
+- **Invalidation sync:** Updated `consumeErSlotEmpty` to accept the actual `cardId` meant to be consumed for timeouts or wrong answers, keeping backend/on-chain states locked to the specific card instance.
+
+**The Reasoning:**
+- The on-chain manifest tracks usage via an independent bitmask (`cards_used_a & bit`). It was explicitly designed by the smart contract engineers to support out-of-order execution safely. Replacing the rigid backend integer with a dynamic index search correctly honors the bitmask design without adding local lag (`O(N)` on ~100 array items runs in < 0.01ms).
+
+**Tech Debt:**
+- None. Logic is fully stateless and aligns execution with the Solana contract's bitmask design.
+
+---
+
+## 20. Queue WebSocket Migration - Phantom Speedup & Room Sync Protection (2026-05-11)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/index.ts`
+- `apps/api/src/managers/RoomManager.ts`
+- `apps/api/src/managers/room/Lifecycle.ts`
+- `apps/api/src/managers/room/Network.ts`
+- `apps/api/src/managers/room/Queue.ts`
+- `apps/api/src/managers/room/Store.ts`
+- `apps/api/src/routes/match.ts`
+- `apps/api/src/routes/queueSocket.ts`
+- `apps/api/src/services/BlinkTransactionBuilder.ts`
+- `apps/api/test/RoomManager.test.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/components/lobby/MatchmakingWaiting.tsx`
+- `apps/web/src/components/lobby/OpponentFound.tsx`
+- `apps/web/src/components/play/BattleScreen.tsx`
+- `apps/web/src/hooks/useMatchSocket.ts`
+- `apps/web/src/hooks/useQueueSocket.ts`
+- `apps/web/src/lib/solana/signDepositIntent.ts`
+- `packages/shared-types/src/websocket.ts`
+
+Replaced the public matchmaking long-poll flow with a dedicated `/queue` WebSocket, reduced Phantom deposit latency by prebuilding transactions before wallet approval, and hardened room recovery so reconnects and late joins can safely resync instead of getting stuck behind stale room state.
+
+**What changed:**
+
+1. **Queue moved to WebSocket events:** Added `/queue` as a dedicated WS route plus shared event types for `queueJoined`, `queueStatus`, `matchFound`, `queueLeft`, and `cancelQueue`.
+2. **Frontend queue hook:** Added `useQueueSocket()` and rewired `LobbyScreen` to use realtime queue updates instead of the old HTTP waiting flow and periodic presence self-heal.
+3. **Visible queue position:** The waiting UI now shows live queue position and depth from backend WS broadcasts.
+4. **O(1) room lookup:** Added a reverse player-to-room index in `Store` so reconnect and active-room checks do not need full room scans.
+5. **Safer public room recovery:** Before queueing, the backend now releases incomplete public deposit rooms and ignores zombie deposit rooms that no longer have timers, sockets, or deposits.
+6. **Zombie janitor:** Added a periodic public-room cleanup pass to destroy orphaned deposit rooms before they can trap players.
+7. **Late-join deposit recovery:** If player B reconnects after being unlocked but before confirming deposit, the server now re-sends `depositUnlocked`.
+8. **Snapshot-based room sync:** Added `requestSnapshot` handling on the room socket so the client can explicitly request a fresh room state and presence rebroadcast.
+9. **Match socket retry logic:** `useMatchSocket()` now retries room connection and snapshot recovery instead of failing permanently on the first transient close.
+10. **Single-start protection:** Added lifecycle guards so the engine cannot double-initialize when both deposits and reconnect events race each other.
+11. **Phantom prompt speedup:** Split deposit signing into `prepareDepositIntentTransaction()` and `sendDepositIntentTransaction()`, allowing the FE to prefetch the unsigned tx before the user clicks approve.
+12. **Removed extra RPC round-trip:** Dropped the explicit simulation before `sendTransaction` and increased error classification coverage for aborts, wallet cancellation, and backend/network failures.
+13. **Faster Blink tx building:** Added short-lived blockhash caching in `BlinkTransactionBuilder` so repeated transaction generation does not keep paying the full RPC latency cost.
+14. **Battle handoff polish:** The opponent-found flow now waits for a real playable room snapshot before launching the battle screen, with a short countdown once sync is ready.
+
+**The Reasoning:**
+
+- The biggest remaining queue fragility came from HTTP request lifetime and frontend guesswork around whether the player was still queued. A websocket-native queue replaces that uncertainty with explicit server-pushed state.
+- Phantom UX was being slowed down by work that happened too late in the click path. Preparing the transaction earlier makes wallet approval feel much faster, especially over tunnels or slower RPC links.
+- Room start and reconnect are now multi-step distributed flows: queue match, deposit unlock, socket join, engine init, and play snapshot. Once those phases overlap, explicit resync paths and lifecycle guards matter more than optimistic assumptions.
+
+**Test:**
+
+- Attempted: `bun test apps/api/test/RoomManager.test.ts`
+- Current result: blocked before test execution by an external Goldrush dependency returning `401 Invalid or missing API key`
+
+**Tech Debt:**
+
+- The old HTTP `/match` path still exists for compatibility. The queue is now websocket-native, but matchmaking entrypoints are temporarily split across both styles.
+- `RoomManager` lifecycle, reconnect, and cancellation logic is becoming state-machine-shaped. It works, but the branching surface is large enough that a formal statechart would reduce future regressions.
+- The RoomManager test suite still touches dependencies that expect external credentials. Those boundaries should be isolated so room lifecycle tests can run fully offline.
+
+---
+
+## 21. Base Damage Rebalance (2026-05-11)
+
+**The Change:**
+
+_Files touched:_ `packages/game-logic/src/GameEngine.ts`, `packages/shared-types/src/characterStats.ts`, `apps/api/src/managers/room/Blockchain.ts`, `packages/battle-anchor-032/programs/cora-battle/src/constants.rs`, `packages/battle-anchor-032/tests/*`, `packages/game-logic/test/GameEngine.test.ts`
+
+- Reduced `GameEngine.BASE_DAMAGE` from `50` to `10`.
+- Added derived max-effect constants in `GameEngine` so balance limits are computed from base damage/heal plus the max phase/specialty multiplier.
+- Exposed `MAX_SPECIALTY_MULTIPLIER` from shared character stats instead of duplicating the `1.5x` assumption elsewhere.
+- Updated MagicBlock manifest registration to use `GameEngine.MAX_DAMAGE` and `GameEngine.MAX_HEAL`, keeping ER card limits aligned with gameplay balance.
+- Lowered the ER program's `MAX_EFFECT_VALUE` from `150` to `30` so the on-chain manifest envelope matches the new gameplay ceiling.
+
+**The Reasoning:**
+
+- Damage balance should have one source of truth. Lowering base attack damage without updating ER manifests or the program ceiling would keep oversized attack slots registered on-chain and make future balance changes easier to miss.

@@ -8,3 +8,5 @@ test-ledger
 .surfpool
 .magicblock-test-ledger
 magicblock-test-storage
+.anchor-test-ledger
+.env.devnet

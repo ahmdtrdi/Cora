@@ -1,9 +1,12 @@
 import type { WsMessage, MatchResult } from '@shared/websocket';
+import { deriveMatchId } from '@shared/escrow';
 import type { Room, RoomSocket } from './types';
 import type { RoomManager } from '../RoomManager';
+import { submitSettlementTransaction } from '../../utils/settlement';
 
 export class Lifecycle {
   private DEPOSIT_TIMEOUT_MS = 30_000;
+  private startingRooms = new Set<string>();
 
   constructor(private manager: RoomManager) {}
 
@@ -17,6 +20,7 @@ export class Lifecycle {
     room.playerA = playerAPubkey;
     room.tokenMint = tokenMint;
     room.wagerAmount = wagerAmount;
+    this.manager.store.trackPlayer(playerAPubkey, roomId);
 
     console.log(`[Private] Room ${roomId} created for Player A: ${playerAPubkey}`);
     this.armDepositTimeout(room, playerAPubkey);
@@ -35,6 +39,7 @@ export class Lifecycle {
 
     room.playerB = playerBPubkey;
     room.playerMeta.set(playerBPubkey, { hasDeposited: false, characterId: 'einstein' });
+    this.manager.store.trackPlayer(playerBPubkey, roomId);
     console.log(`[Private] Player B ${playerBPubkey} joined room ${roomId}`);
     return 'ok';
   }
@@ -82,8 +87,13 @@ export class Lifecycle {
         lastSeenAt: Date.now(),
       });
 
+      // Preserve hasDeposited if already true (hydrated private Blink room).
+      // hydrateBlinkRoomInternal sets both players to hasDeposited: true after
+      // accept_challenge locks both wagers on-chain. Overwriting to false here
+      // would prevent the room from ever transitioning to playing.
+      const existingMeta = room.playerMeta.get(address);
       room.playerMeta.set(address, {
-        hasDeposited: false,
+        hasDeposited: existingMeta?.hasDeposited ?? false,
         characterId,
       });
     }
@@ -101,15 +111,24 @@ export class Lifecycle {
       if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false) && playerAConnected && playerBConnected) {
         for (const t of room.depositTimeouts.values()) clearTimeout(t);
         room.depositTimeouts.clear();
-        room.status = 'playing';
         console.log(`Room ${roomId}: Late join triggered game start — both already deposited!`);
-        this.manager.engine.initializeEngine(room);
+        this.startGameWhenReady(room);
         return;
       }
     }
 
     this.manager.network.broadcastGameState(room);
     this.manager.network.broadcastPresence(room);
+
+    if (room.status === 'depositing' && address === room.playerB && room.playerBUnlocked) {
+      const meta = room.playerMeta.get(address);
+      if (!meta?.hasDeposited) {
+        this.manager.network.safeSend(ws, {
+          type: 'depositUnlocked',
+          payload: { roomId: room.id },
+        } satisfies WsMessage);
+      }
+    }
   }
 
   public leaveRoom(roomId: string, address: string, ws?: RoomSocket) {
@@ -163,6 +182,42 @@ export class Lifecycle {
   public handleDeposit(room: Room, address: string, signature: string) {
     console.log(`Player ${address} confirmed deposit with signature ${signature} in room ${room.id}`);
 
+    if (
+      room.roomType === 'private' &&
+      address === room.playerA &&
+      room.blinkJoinDeadline &&
+      Date.now() > room.blinkJoinDeadline
+    ) {
+      console.log(`[Blink] Creator deposit missed join deadline in room ${room.id}. Forfeiting.`);
+      void this.manager.blinkMatches.forfeitChallenged(room.id)
+        .then(async (forfeitedMatch) => {
+          // Trigger on-chain settlement awarding the challenger
+          if (forfeitedMatch?.opponentWallet) {
+            const matchIdBytes = deriveMatchId(room.id);
+            try {
+              await submitSettlementTransaction(0, matchIdBytes, forfeitedMatch.opponentWallet);
+              await this.manager.blinkMatches.markCompleted(room.id);
+              console.log(`[Blink] FORFEITED room ${room.id} settled on-chain. Challenger ${forfeitedMatch.opponentWallet} awarded. DB marked COMPLETED.`);
+            } catch (settlementErr) {
+              // Keep DB as FORFEITED — do NOT mark COMPLETED
+              console.error(
+                `[Blink] Settlement FAILED for FORFEITED room ${room.id}. ` +
+                `Challenger: ${forfeitedMatch.opponentWallet}. DB remains FORFEITED.`,
+                settlementErr,
+              );
+            }
+          }
+        })
+        .catch((err) => {
+          console.error(`[Blink] Failed to mark room ${room.id} forfeited:`, err);
+        });
+      this.cancelRoom(room.id, room.playerB ?? undefined, {
+        reason: 'deposit_timeout',
+        cancelledBy: address,
+      });
+      return;
+    }
+
     const timer = room.depositTimeouts.get(address);
     if (timer) {
       clearTimeout(timer);
@@ -171,6 +226,22 @@ export class Lifecycle {
 
     const meta = room.playerMeta.get(address);
     if (meta) meta.hasDeposited = true;
+
+    // True flow: for private rooms, both wagers are already locked on-chain
+    // after accept_challenge. Creator's deposit confirmation via WebSocket
+    // just means they've connected. Mark the match as ACTIVE in DB.
+    if (room.roomType === 'private' && address === room.playerA) {
+      void this.manager.blinkMatches.markActive(room.id, address, signature).then((match) => {
+        if (match?.status === 'FORFEITED') {
+          this.cancelRoom(room.id, room.playerB ?? undefined, {
+            reason: 'deposit_timeout',
+            cancelledBy: address,
+          });
+        }
+      }).catch((err) => {
+        console.error(`[Blink] Failed to mark private room ${room.id} active:`, err);
+      });
+    }
 
     const isPlayerA = address === room.playerA;
 
@@ -209,10 +280,20 @@ export class Lifecycle {
         return;
       }
 
-      room.status = 'playing';
       console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
-      this.manager.engine.initializeEngine(room);
+      this.startGameWhenReady(room);
     }
+  }
+
+  private startGameWhenReady(room: Room): void {
+    if (room.engine || this.startingRooms.has(room.id)) return;
+
+    this.startingRooms.add(room.id);
+    void this.manager.engine.initializeEngine(room).catch((err) => {
+      console.error(`[RoomLifecycle] Failed to initialize game engine for room ${room.id}:`, err);
+    }).finally(() => {
+      this.startingRooms.delete(room.id);
+    });
   }
 
   public armDepositTimeout(room: Room, address: string): void {
@@ -235,10 +316,13 @@ export class Lifecycle {
   ): void {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
-    const shouldRequeueInnocent = room.status !== 'depositing';
     const reason = options?.reason ?? 'deposit_timeout';
 
-    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'}`);
+    // Check if the innocent player had deposited — if so, trigger a refund before re-queue
+    const innocentMeta = innocentAddress ? room.playerMeta.get(innocentAddress) : null;
+    const innocentHadDeposited = innocentMeta?.hasDeposited ?? false;
+
+    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'} (deposited: ${innocentHadDeposited})`);
 
     for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
     room.depositTimeouts.clear();
@@ -252,22 +336,37 @@ export class Lifecycle {
     });
 
     if (innocentAddress) {
+      // Refund the innocent player's deposit if they had already deposited
+      if (innocentHadDeposited) {
+        console.log(`[Cancel] Refunding innocent player ${innocentAddress} deposit for room ${roomId}.`);
+        this.manager.blockchain.refundMatch(room, 'server_error');
+      }
+
       const client = room.clients.get(innocentAddress);
       const innocentWs = client?.ws;
 
       if (innocentWs) {
         this.manager.network.safeSend(innocentWs, { type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage);
-        if (shouldRequeueInnocent) {
-          this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
-        } else {
-          console.log(`[Cancel] Room ${roomId} ended during depositing. Skipping re-queue for ${innocentAddress}.`);
-        }
       } else {
         console.log(`[Cancel] ${innocentAddress} already disconnected — skipping re-queue.`);
       }
     }
 
+    this.closeRoomSockets(room, 'Match cancelled');
     this.destroyRoom(roomId);
+  }
+
+  private closeRoomSockets(room: Room, reason: string): void {
+    for (const [address, client] of room.clients) {
+      if (!client.ws) continue;
+      try {
+        client.ws.close(1000, reason);
+        client.ws = null;
+        client.lastSeenAt = Date.now();
+      } catch (error) {
+        console.warn(`[RoomLifecycle] Failed to close room socket for ${address} in ${room.id}:`, error);
+      }
+    }
   }
 
   public destroyRoom(roomId: string): void {
@@ -288,7 +387,7 @@ export class Lifecycle {
     this.manager.store.deleteRoom(roomId);
   }
 
-  public surrender(roomId: string, surrenderedAddress: string): void {
+  public async surrender(roomId: string, surrenderedAddress: string): Promise<void> {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
     if (room.status !== 'playing' && room.status !== 'depositing') return;
@@ -310,6 +409,20 @@ export class Lifecycle {
     room.depositTimeouts.clear();
     this.clearAllOpenedCards(room);
 
+    // ER-authoritative surrender: send surrender_match instruction to ER
+    if (room.erEnabled && room.erSessionPda) {
+      try {
+        await this.manager.blockchain.surrenderErMatch(room, surrenderedAddress);
+        // finalizeTerminalErSession handles settlement + broadcast
+        return;
+      } catch (e) {
+        console.error(`[Surrender] ER surrender failed for room ${roomId}, falling back to engine:`, e);
+        await this.manager.blockchain.handleErFatalError(room, 'surrender', e);
+        return;
+      }
+    }
+
+    // Non-ER path: engine-only surrender
     if (room.engine) {
       room.engine.surrender(surrenderedAddress);
       return;

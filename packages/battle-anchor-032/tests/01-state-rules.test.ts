@@ -163,9 +163,11 @@ describe("state rules spec alignment", () => {
     expect(determineWinnerByMatchRules(snapshot)).to.equal(null);
   });
 
-  it("battle_session_len_is_267", () => {
-    const battleSessionLength = 8 + 1 + 32 + 32 + 32 + 32 + 2 + 2 + 2 + 2 + 1 + 1 + 1 + 8 + 8 + 1 + 1 + 2 + 1 + 32 + 32 + 1 + 8 + 8 + 1 + 4 + 4 + 4 + 4;
-    expect(battleSessionLength).to.equal(267);
+  it("battle_session_len_is_1071", () => {
+    const battleSessionLength =
+      8 + 1 + 32 + 32 + 32 + 32 + 2 + 2 + 2 + 2 + 1 + 1 + 1 + 8 + 8 + 1 + 1 + 2 + 1 + 32 + 32 + 1 + 8 + 8 + 1 + 4 + 4 + 4 + 4 +
+      1 + 1 + 16 + 16 + 1 + 1 + 384 + 384;
+    expect(battleSessionLength).to.equal(1071);
   });
 
   it("registered_card_len_is_95", () => {

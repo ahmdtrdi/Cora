@@ -3832,3 +3832,1249 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - End-game phase timing is still tuned by local constants and inline keyframes; a dedicated transition profile object would simplify future balancing.
+
+## 2026-05-09 — OpponentFound: Cancel Match & Retry Connection Fixes
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **`apps/web/src/components/lobby/OpponentFound.tsx`** — two targeted patches:
+  1. **Cancel Match button**: removed the `cancelMatch` WebSocket send + async "Cancelling..." wait. The button now calls `onTimeout()` directly, immediately routing the user back to character select. `cancelMatch` was removed from the `useMatchSocket` destructure (dead code cleanup).
+  2. **Retry Connection button**: replaced the bare `reconnect()` call with a full `onRetryConnection()` handler that sets `isRetryingConnection` state. While the socket is reconnecting, the button shows "Retrying..." and is disabled. A new `useEffect` detects when `connectionState` settles out of `reconnecting`; if it lands on `error`/`disconnected`, `retryConnectionFailed` is set. The `extraSlot` connection banner then turns red with a "Couldn't connect" heading and an explicit message to cancel back to lobby, persisting until the next retry or cancel.
+
+### The Reasoning
+- The old cancel flow was broken: `cancelMatch` is sent over the socket, but if the socket was in an error/disconnected state (the exact scenario where you'd want to cancel), the send was a no-op and the button locked on "Cancelling..." forever.
+- Re-queueing the innocent player was deliberately removed to avoid ghost players. The room deposit timeout is the correct authoritative cancel mechanism on the backend.
+- The retry button previously gave zero feedback on outcome — a silent failure if reconnect didn't work. The new state machine makes the failure explicit and keeps the "cancel to lobby" escape hatch visible.
+
+### Tech Debt
+- `cancelMatch` message handler on the backend (`RoomManager.handleMessage`) is now dead from the frontend side. It's safe to leave it for now but can be cleaned up if confirmed no other path sends it.
+- If a "polite cancel" that immediately notifies the opponent is needed later, it should go through a dedicated HTTP endpoint (not the deposit socket) with proper room lifecycle handling.
+
+## 2026-05-09 — OpponentFound: UX Refinements for Connection Drops and Cancel Guard
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **Cancel Button Guard**: Added `cancelFiredRef` to prevent multiple rapid clicks on the "Cancel Match" button from firing `onTimeout()` multiple times before the React component unmounts. The button now immediately changes its label to "Leaving..." and visually disables upon first click.
+- **Connection Issue Toast**: Replaced the inline `extraSlot` connection failure panel with a fixed, top-center toast banner (`connectionIssueBannerVisible`) that auto-dismisses after 6 seconds. The toast explicitly displays the WebSocket close code (e.g., `1006`) and reason if available.
+- **Context-Aware Hints**: Updated `getDepositHint()` and `getPrimaryButtonLabel()` to reflect socket disconnection states when waiting for the opponent to deposit. Instead of a generic "Waiting for Player A...", the UI now explicitly indicates "Connection issue while waiting" or "Disconnected...".
+
+### The Reasoning
+- **Cancel Guard**: React state updates are asynchronous, meaning rapid clicks on "Cancel Match" could bypass the previous `isCancellingMatch` guard before the UI had a chance to lock out further interactions. A synchronous `useRef` provides an immediate lock.
+- **Connection Issue Toast**: The top-center toast banner pattern matches the other critical alerts (e.g., Phantom taking too long, opponent failed to deposit) and provides a more consistent visual hierarchy than an inline panel.
+- **Context-Aware Hints**: The user shouldn't be left wondering why the opponent is taking so long to deposit if the underlying issue is actually a dropped socket connection. Surfacing this state directly in the primary action button and hint text improves clarity.
+
+### Tech Debt
+- The `alertDrain` animation duration for the new toast banner is hardcoded to 6000ms in the inline style, matching the `setTimeout` duration. This could be centralized into a shared constant if more timed toasts are introduced.
+
+## 2026-05-09 — OpponentFound: Removed Room Status Pill
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **Removed Room Status UI**: Completely removed the "Show Room Status" button and its expandable `RoomStatusRail` from `OpponentFound.tsx`. 
+- **Code Cleanup**: Removed the local `showRoomStatus` state, `getPlayerBadges()`, and `getOpponentBadges()` helper functions. Dropped the now-unused `RoomStatusRail` and `RoomStatusBadge` imports.
+- **Layout Adjustment**: Centered the remaining `playabilityLabel` pill (e.g., "Devnet · SOL Arena") to balance the layout after removing the trailing button.
+
+### The Reasoning
+- **Streamlined UX**: The Room Status Rail exposed low-level connection states ("matched", "deposited", "ready") that were redundant and overly technical for this phase. The new connection error toasts and primary button hints (added in the previous pass) provide all the necessary contextual feedback in a much more direct and user-friendly way.
+
+### Tech Debt
+- None introduced by this removal. The underlying `RoomStatusRail` component remains available in the codebase if needed elsewhere in the future.
+
+## 2026-05-09 — OpponentFound: Removed Playability Pill
+
+**Branch:** `fe/fix/opponentfound-bug`
+
+### The Change
+- **Removed Playability Pill**: Completely removed the `playabilityLabel` pill and its wrapping container from `OpponentFound.tsx`.
+- **Logic Cleanup**: Removed the `useWalletArenaPlayability` hook call and its import.
+- **Top Alignment**: The arena information (`{arena.label} · ${wagerUsd} {arena.token}`) is now the very top element on the page.
+
+### The Reasoning
+- **UI Simplification**: The playability pill was redundant in the Rival Locked screen as the user had already verified their eligibility during the lobby/queue phase. Removing it makes the arena and wagering details the focal point at the top of the hierarchy.
+
+### Tech Debt
+- None.
+
+## 2026-05-09 - OpponentFound Deposit UI Stability and Banner Guard
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to lock the screen to `h-[100svh] overflow-hidden`, suppress the connection issue banner on cold mount until the socket has connected at least once, hide retry while the socket is actively reconnecting, and hide cancel while signing is in progress or waiting on confirmation.
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) to reserve a fixed `min-h-[140px]` content area beneath the helper/timer so signature, wallet, and action rows appear inside pre-allocated space instead of growing the card and pushing the page.
+- Verified [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) did not need structural changes once the reserved-space behavior was localized to the status card.
+
+### The Reasoning
+- The opponent-found screen now behaves like a locked viewport rather than a document that grows as late UI elements appear, which prevents scrollbars and layout jumps during signing-state transitions.
+- The initial socket state begins as `disconnected`, so the banner needed a "has connected once" guard to distinguish a real drop from the first handshake.
+- Retry and cancel visibility now follow the actionable states more closely: reconnecting is already communicated by the primary CTA, and cancel should not compete with active signing or waiting states.
+
+### The Tech Debt
+- The reserved `140px` card content height is tuned for the current signature/wallet/action stack. If those rows gain more vertical content later, the reserved height should be revisited instead of letting the card grow again.
+
+## 2026-05-09 - Deposit UI Layout Regression Follow-up
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) to remove the inner reserved slot stack (`min-h` plus `justify-end`) and instead give the card shell a fixed `h-[220px]` footprint with `overflow-hidden`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to replace the hard-clipped `h-[100svh] overflow-hidden` wrapper with `min-h-[100svh] overflow-y-auto` so the primary CTA is never cut off on shorter screens.
+
+### The Reasoning
+- Reserving space inside the slot stack prevented layout growth, but it also created an obvious dead zone between the countdown and the revealed controls. Moving the fixed footprint to the card wrapper keeps the card stable without pushing the dynamic rows away from the timer.
+- The screen should prefer a locked-feeling layout, but clipping the bottom action button is worse than allowing limited vertical scroll on small viewports. `overflow-y-auto` keeps the default experience intact while preserving access to all controls.
+
+### The Tech Debt
+- The fixed card height is still a tuned visual constant. If helper copy or action density increases later, we should revisit the shell height rather than reintroducing inner spacer blocks.
+
+## 2026-05-09 - OpponentFound Flex Column Layout Correction
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) to remove the fixed `h-[220px]` shell height and return the card to natural height.
+- Updated [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) to replace the root `mt-8` spacing with `pt-3`, allowing the parent layout to control the vertical rhythm.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to use a true `h-[100svh]` flex-column shell with non-shrinking header and VS sections, plus a bottom-aligned `flex-1` deposit region that owns the remaining space and becomes scrollable only when needed.
+
+### The Reasoning
+- The bottom gap in the Player B waiting state came from the fixed deposit card height, not from the slot content itself, so the correct fix was to remove that shell constraint entirely.
+- The page-level persistent scroll came from treating the whole screen like a document flow. Moving to a fixed-height flex column lets the title and matchup cards keep their natural space while the deposit section absorbs whatever space remains.
+- Removing the panel-level top margin prevents nested spacing from pushing the primary action button below the fold on shorter viewports.
+
+### The Tech Debt
+- The opponent-found layout now depends on the deposit region being the only flexible vertical section. If more large blocks are added above it later, we should preserve that contract instead of reintroducing global page scrolling.
+
+## 2026-05-09 - OpponentFound Cancel Match Room Exit Signal
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to call `cancelMatch()` from `useMatchSocket` inside `onCancelMatch()` before the immediate `onTimeout()` handoff.
+- Increased the deposit section spacing in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) from `mt-8` to `mt-12` to restore separation between the VS cards and the deposit panel.
+
+### The Reasoning
+- The UI was leaving the opponent-found screen immediately, but the room itself was not being told to close, so Player B could appear to hang in a "Leaving..." state until the backend timeout path eventually cancelled the room. Emitting `cancelMatch()` keeps the instant UI transition while still notifying the server right away.
+- The spacing change is intentionally local to the deposit wrapper so the current flex-column layout keeps its behavior without reintroducing extra panel-level offsets.
+
+### The Tech Debt
+- `OpponentFound.tsx` now depends on the socket hook exposing a cancellation action. If room-leave semantics ever get renamed or split between soft leave and hard cancel flows, this screen should consume a more explicitly named API to avoid ambiguity.
+
+## 2026-05-09 - BattleScreen Disconnected Overlay Recovery UX
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to preserve `canSurrenderByState` across transient disconnect renders by tracking the last committed match phase and resetting that latch once the match completes.
+- Added `isDeviceOffline` derivation in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and passed it into [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx).
+- Updated the disconnected overlay in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so offline users no longer fire `onReconnect`; they now see a `No Internet Connection` CTA, mobile devices can jump to `app-settings:`, desktop users get a reconnect hint, and all users get a subtle `Abandon match and return to lobby` escape hatch.
+- Verified the two touched files with `npx eslint src/components/play/BattleScreen.tsx src/components/play/BattleScreenOverlays.tsx`.
+
+### The Reasoning
+- Disconnecting was temporarily nulling `gameState`, which made the UI think the match had fallen back to `waiting` and incorrectly hid surrender even when the room had already been committed.
+- Distinguishing true device-offline state from a recoverable socket disconnect avoids presenting a `Rejoin Room` action that is guaranteed to fail silently.
+- The disconnected overlay stays on `/play` because the live match still belongs there; the missing piece was a safe exit path, not a route change.
+
+### The Tech Debt
+- The committed-state latch intentionally uses a narrowly scoped lint exception because the requested ref-backed persistence pattern conflicts with the local React refs rule; if this pattern spreads, we should extract a shared render-safe helper or revisit the lint policy.
+- `app-settings:` is a best-effort mobile shortcut and may vary by platform/browser shell, so broader native deep-link handling may be needed later if mobile reconnection support expands.
+
+## 2026-05-09 - MLBB-Style Active Match Banner Flow for Disconnections
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) to add an `isRejoining` UI state, wrap reconnect attempts with a loading state, and persist a live-match snapshot to `localStorage` when the disconnected overlay's `Return to Lobby` link is used.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the disconnected overlay now:
+- shows `Rejoining Room...` while reconnect is in flight,
+- disables the reconnect button during that state,
+- replaces the old offline-disconnected surrender action with a non-interactive `Connect to Surrender` button,
+- routes the muted `Return to Lobby` link through the active-room preservation handler,
+- keeps settlement and room-gate lobby exits on the normal clear-state path.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to normalize active-room snapshots, surface a top-of-lobby active-match banner for live `playing` rooms, and add an in-lobby surrender flow:
+- `Rejoin Match` pushes back to `/play` with the stored room/arena/token/wager info and clears the key,
+- `Surrender Match` opens a confirmation modal, mounts a one-shot socket bridge, waits up to 10 seconds for connection, then sends `surrender()` without routing to `/play`,
+- success/failure toasts are shown and the stored live-room key is cleared at the end of that flow.
+- Verified the three touched UI files with `npx eslint src/components/play/BattleScreen.tsx src/components/play/BattleScreenOverlays.tsx src/components/lobby/LobbyScreen.tsx`.
+
+### The Reasoning
+- The disconnected overlay should no longer pretend it can finish surrender locally while offline; the MLBB/PUBG pattern is to let the lobby own "you still have a live match" recovery.
+- Persisting the active room on manual lobby exit gives the user a real escape hatch from `/play` while still preserving a clear way back into the match.
+- The lobby now distinguishes between pre-battle room recovery (`depositing` / found-room flows) and true live-match recovery (`playing`), so we keep existing deposit recovery behavior while giving active matches a dedicated banner treatment.
+- The one-shot surrender bridge reuses the existing socket hook contract instead of inventing a second low-level WebSocket path, which keeps the change UI-scoped and avoids touching hook internals.
+
+### The Tech Debt
+- The active-match banner currently lives inside `LobbyScreen.tsx`; if this pattern expands to other routes, it should move into a shared recovery/banner component.
+- Lobby-side surrender submission still has no explicit server acknowledgement event to wait on, so `Surrender submitted` currently means "socket connected and surrender message sent" rather than confirmed backend acceptance.
+- The persisted snapshot schema now carries compatibility fields (`walletAddress` plus `address`, `token` plus `arenaToken`) to bridge older lobby recovery paths and the new battle-return path. If the format settles, we should consolidate it into one shared typed helper/module.
+
+## 2026-05-09 - Lobby Coming-Soon Arena Slot for MEW
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add a visible disabled `MEW` arena card below BONK plus a second disabled `and more to come` card using the same muted styling language.
+- Wired in the existing `/assets/arena/mew.png` path so the setup screen can support a MEW-specific arena image if a coming-soon selection state is ever passed down.
+- Updated the main lobby CTA in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to switch to a disabled gray `Coming Soon` label for a `mew` coming-soon state while leaving normal SOL and BONK play flow intact.
+
+### The Reasoning
+- Keeping MEW outside the playable `arenas` prop preserves the current matchmaking and selection flow for SOL and BONK while still making the roadmap visible in the arena picker.
+- The CTA guard is defensive: today the MEW card itself does not select anything, but if upstream state ever points at `mew`, the primary action still refuses progression and presents the correct coming-soon message.
+- Reusing the same disabled visual language for `MEW` and `and more to come` makes it obvious these are future arenas rather than broken interactions.
+
+### The Tech Debt
+- `LobbySetup.tsx` now knows about a hard-coded coming-soon arena id (`mew`). If more teaser arenas are added, we should likely move arena rendering to a single typed config that can represent both playable and disabled entries.
+
+## 2026-05-09 - Lobby MEW Selection and BONK CTA Lock
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the `MEW` card is now clickable/selectable, shows selected-state styling, and swaps the right-side panel into a `MEW Arena` display using `/assets/arena/mew.png`.
+- Locked the main `Pick Scientist` CTA for both `BONK` and `MEW`, changing the button label to `Coming Soon` and preventing `onPlay` from firing for either arena.
+- Removed the `Coming Soon` copy from the `MEW` card itself while keeping the separate disabled `and more to come` card underneath it.
+
+### The Reasoning
+- This keeps the arena picker exploratory and interactive while making the gating happen where it matters most: the progression CTA.
+- Treating `BONK` and `MEW` as coming-soon arenas at the CTA layer preserves the existing upstream arena list contract and avoids forcing lobby/matchmaking changes for non-playable tokens.
+- Adding a local display model for `MEW` lets the setup panel show coherent selected-state copy and imagery even though `MEW` is not yet part of the playable `ARENAS` array in the parent screen.
+
+### The Tech Debt
+- `LobbySetup.tsx` now has mixed knowledge of playable arenas from props and teaser arenas declared locally. If more non-playable arenas are added, we should centralize this into one shared arena config with an explicit availability flag.
+
+## 2026-05-09 - MEW Arena Visual Pass
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the `MEW` arena icon now renders as a cat instead of reusing the generic token glyph.
+- Restyled the `MEW` card so its unselected state uses the same warm card treatment as the other arena options, while the icon medallion uses the requested blue tone `#85A1A5`.
+- Added the requested selected-state palette for `MEW`: blue background `#85A1A5`, blue outline `#3C5C5F`, and matching blue-toned highlight/shadow treatment.
+
+### The Reasoning
+- The earlier muted-gray treatment made `MEW` read as disabled at the card level, which conflicted with the newer requirement that it should still be clickable/selectable.
+- Giving `MEW` its own cat silhouette helps the card read as a distinct token/arena instead of a temporary placeholder.
+- Keeping the unselected card warm while only shifting the selected state to blue preserves consistency with the rest of the lobby list and makes the active choice stand out more clearly.
+
+### The Tech Debt
+- The `MEW` card styling is still bespoke inside `LobbySetup.tsx`; if more arena-specific themes arrive, we should move these visual tokens into shared config rather than branching inline.
+
+## 2026-05-09 - MEW Selected-State Gradient Tuning
+
+### The Change
+- Updated the selected `MEW` card in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so its outline now uses `#85A1A5` to match the requested selected-state color.
+- Reworked the selected `MEW` background from a flatter blue fill to a more dimensional blue gradient while keeping the same overall tone family.
+
+### The Reasoning
+- Matching the outline to the primary selected color makes the card feel cleaner and less split between two different blue accents.
+- Using a gradient instead of a flatter fill keeps the `MEW` selected state visually consistent with the other arena cards, which already use layered, beveled-looking surfaces.
+
+### The Tech Debt
+- The `MEW` visual tuning remains hand-authored inline in `LobbySetup.tsx`; if we keep iterating on per-arena themes, a shared tokenized styling layer would be easier to maintain.
+
+## 2026-05-09: MEW Arena UI Polish
+- **The Change**: Polished the MEW arena selection UI in `LobbySetup.tsx`. Simplified the MEW SVG icon to a silhouette and updated the selection button's background circle. Also fixed a TypeScript error by adding the missing `frame` property to the `mewArena` object.
+- **The Reasoning**: Improved icon abstraction and UI consistency. The `frame` property fix was required due to a recent update in the `Arena` type definition.
+- **The Tech Debt**: None.
+
+## 2026-05-09 - Lobby ER Recovery Guardrails
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to defer stale `depositing` room recovery behind a new `pendingErRecovery` state instead of immediately reopening the found-room flow from `cora:active-room`.
+- Added a full-screen "Confirming your match..." recovery screen that polls ER state every 2 seconds, auto-redirects to `/play` once the match becomes `playing`, and falls back to lobby setup with a toast after the room disappears, finishes, or fails confirmation repeatedly.
+- Added `erSettling` polling for the existing missing-context fallback card so its reset buttons stay disabled with an animated settling indicator while ER still reports the room as `depositing`.
+
+### The Reasoning
+- The broken loop came from trusting stale local storage before fresh ER state was available, so the safest fix was to gate that recovery path until the backend confirms whether the room is still live.
+- Keeping the user on an intermediate confirmation screen avoids bouncing them into `phase="found"` with incomplete hydrated context, which is what produced the "Match room context missing" dead end.
+- Locking the fallback-card buttons during active settlement preserves an escape hatch once ER resolves, without letting the user trigger state resets that would immediately be overwritten by the same stale snapshot.
+
+### The Tech Debt
+- The lobby now has two ER-related polling paths: one for recovery interception and one for the missing-context fallback lock. If this flow expands further, we should consider centralizing ER recovery/status polling into a dedicated hook to reduce duplication and edge-case drift.
+
+## 2026-05-10 - Match Session Folder Naming
+
+### The Change
+- Moved the match-session helper into [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) under a lowercase `session` lib folder, matching the surrounding folder-plus-descriptive-file convention.
+
+### The Reasoning
+- Keeping the helper in a one-word lowercase folder avoids a special-case `matchSession` directory while preserving a clear helper filename.
+
+### The Tech Debt
+- None for this move; backend wallet-authenticated websocket joins and on-chain deposit verification remain the real security work after this FE guardrail.
+
+## 2026-05-10 - Play Route Match Session Guard
+
+### The Change
+- Added [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) to centralize lobby draft state, active match session state, and tab-scoped deposit intent signatures.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to write active match sessions before entering `/play`, keep rejoin sessions intact, and stop putting token, wager, address, or deposit signatures into play URLs.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `/play` only opens the match socket when the stored active match session matches the URL `roomId` and the connected wallet, and so deposit confirmation is read from tab session storage instead of query params.
+
+### The Reasoning
+- This is frontend hardening only: URL params are now treated as routing/display hints, while room identity, wallet address, wager display, token display, and deposit signature source come from the local session created by the real lobby/deposit flow.
+- Blocking socket connection until the local session and wallet match reduces casual spoofing through copied or edited `/play` links without changing the existing backend protocol.
+
+### The Tech Debt
+- This does not replace backend security. The API still needs wallet-authenticated websocket joins and on-chain verification of `confirmDeposit` signatures before the match can be considered production-safe against custom clients.
+
+## 2026-05-09 - Lobby Deposit Flow Regression Guard
+
+### The Change
+- Tightened the `pendingErRecovery` trigger in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so stale `depositing` snapshots are only treated as ER-recovery when they are read from `phase === "setup"`.
+- Added a small safety-valve effect that clears `pendingErRecovery` if the lobby legitimately transitions into `phase === "found"`, ensuring the normal `OpponentFound` deposit UI stays visible.
+
+### The Reasoning
+- The previous ER guardrail fix correctly protected the “back from battle while settling” case, but it was too broad: the normal fresh match-found flow also writes a `depositing` snapshot, so later effect runs mistook that for recovery and hid the deposit screen.
+- Restricting the intercept to the actual lobby landing phase preserves the original loop fix while restoring the intended live deposit experience for newly matched players.
+
+### The Tech Debt
+- The recovery-vs-live-flow distinction still depends on a mix of `phase` state and local-storage snapshot status. If more recovery paths are added, we should consider recording an explicit snapshot origin or recovery mode to make this branching less implicit.
+
+## 2026-05-09 - Deposit Failure UX Hardening
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the deposit countdown now pauses while Phantom is open, deposit signing errors are classified into user-facing messages, and a new `insufficientFunds` state drives retry copy plus longer-lived insufficient-balance feedback.
+- Updated [depositTypes.ts](/d:/projects/Cora/apps/web/src/components/deposit/depositTypes.ts) to add the new `insufficient_funds` status metadata consumed by the existing deposit status UI.
+
+### The Reasoning
+- Players were losing deposit time while the wallet approval modal was open, so treating `signing` like the existing waiting states prevents Phantom latency from burning the match window.
+- Solana simulation and Phantom rejection errors are too raw for players, so the caller now translates common wallet, network, expiry, and insufficient-funds failures into concise guidance while capping unknown fallbacks.
+- Keeping insufficient-balance state separate from generic signing errors lets the status card and primary CTA explain the actual next step: top up and retry.
+
+### The Tech Debt
+- Error classification is still substring-based inside `OpponentFound.tsx`; if more wallet providers or on-chain programs join the flow, we should consider centralizing these mappings in a shared Solana UX error helper.
+
+## 2026-05-09 - Deposit Preflight Recovery And Typed Error Routing
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so deposit signing no longer skips preflight, stops retrying failed sends, and inspects wallet error logs to preserve `insufficient_balance` and RPC-style failures through `DepositIntentError`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to consume `DepositIntentError.code` directly, add a 45-second wallet-signing timeout safety net, and treat timeout plus typed insufficient-balance failures as the existing insufficient-funds UI state.
+
+### The Reasoning
+- The broken UX came from bypassing simulation: empty-wallet deposits sat in `signing` until on-chain confirmation failed, which hid the real cause and left the timer paused for far too long.
+- Reading `SendTransactionError.logs` inside the signer keeps the error typed at the source, which is more reliable than trying to reconstruct wallet intent from raw strings in the React layer.
+- Keeping a local timeout in the UI protects against wallet adapters that abandon the signing promise without resolving, so the player gets control back instead of silently hanging until the room expires.
+
+### The Tech Debt
+- The timeout heuristic currently treats `signing_timeout` as likely insufficient funds because that is the most harmful silent-failure case we know about. If we start seeing more timeout causes in production, we should split that into its own status or collect wallet-specific telemetry before tightening the UX copy further.
+
+## 2026-05-09 - Deposit Insufficient-Balance Copy Unification
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so failed `/api/actions/challenge` responses now classify backend insufficient-balance signals, including HTTP `402` and balance/fund wording in `error`, `message`, `reason`, or `code`, as `DepositIntentError("insufficient_balance", "Insufficient Balance")`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both typed and fallback insufficient-balance detection now surface the exact user-facing message `Insufficient Balance` while preserving the existing `insufficientFunds` status behavior.
+
+### The Reasoning
+- The deposit UI already had the right state transition for insufficient funds, but some backend and fallback error paths still leaked into generic retry copy or "unexpected" messaging.
+- Normalizing the copy at both the signer boundary and the React fallback layer gives us one stable message regardless of whether the failure comes from backend transaction construction, Solana preflight, or raw wallet error text.
+
+### The Tech Debt
+- Backend insufficient-balance detection is still keyword-based because the action endpoint does not yet expose a dedicated structured error enum. If that endpoint grows a stable machine-readable code, we should prefer that over substring matching.
+
+## 2026-05-09 - Deposit Pre-Send Simulation Guard
+
+### The Change
+- Updated [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts) so deposit transactions are simulated immediately after setting `recentBlockhash` and `feePayer`, before calling `wallet.sendTransaction`.
+- Preserved existing `DepositIntentError` instances inside `mapWalletError`, and added simulation-side insufficient-balance detection that promotes matching simulation failures to `DepositIntentError("insufficient_balance", "Insufficient Balance")` before the wallet adapter can collapse them into `WalletSendTransactionError: Unexpected error`.
+
+### The Reasoning
+- The latest failure report showed the real insufficient-balance signal was happening at `wallet.sendTransaction`, which meant the backend guard was too early and the wallet adapter was too lossy.
+- Simulating the fully prepared transaction ourselves lets us inspect both `simulation.value.err` and `simulation.value.logs` while they still contain the useful Solana failure details, so we can fail fast with the same typed insufficient-balance path the UI already understands.
+
+### The Tech Debt
+- Simulation-side insufficient-balance detection is still string-based across logs and serialized error payloads. If we later standardize the transaction program errors we expect here, we should tighten this into a smaller helper with explicit structured cases instead of broad keyword matching.
+
+## 2026-05-09 - Phantom Opening Timer Badge
+
+### The Change
+- Updated [DepositStatusCard.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositStatusCard.tsx) and [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) to support an optional countdown-area slot rendered directly under the timer.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to show a pill-style `Opening Phantom...` badge beneath the frozen countdown while `signingState === "signing"`.
+
+### The Reasoning
+- Once the timer began freezing during wallet signing, there was no immediate visual cue telling players that the pause was intentional and that Phantom was being opened.
+- Placing the badge directly under the countdown keeps the explanation attached to the paused timer itself, which is clearer than repurposing the broader helper text or adding another top-level banner.
+
+### The Tech Debt
+- The countdown slot is intentionally generic, but it is still a one-off prop path through the deposit components. If we add more timer-adjacent states later, it may be worth consolidating this into a dedicated countdown presentation component.
+
+## 2026-05-10 - Layered Landing Hero Artwork
+
+### The Change
+- Rebuilt [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) around the designer-provided layered room artwork, replacing the placeholder doodles, floating cards, cursor orb, and token badges.
+- Added a reusable `HERO_LAYERS` configuration plus `HeroLayer` renderer with staged entrances, spring-smoothed pointer parallax, subtle scene tilt, reduced-motion handling, and smaller motion intensity on coarse/mobile pointers.
+
+### The Reasoning
+- The hero now uses the original 4096 x 2589 canvas ratio so every transparent PNG layer shares one aligned stage and preserves the designer composition.
+- Keeping movement strengths in layer config makes the depth model readable: the stable base barely moves, heavy bookcases stay restrained, and foreground objects/drawer carry the strongest but still subtle parallax.
+- Next `Image` is used inside motion wrappers so we keep optimized image loading while Framer Motion owns the 3D and pointer-following transforms.
+
+### The Tech Debt
+- The assets currently live under `apps/web/public/assets/landing`, so the component serves them from `/assets/landing/...` instead of the originally requested `/landing/...`. If the asset folder is moved later, update `HERO_ASSET_ROOT` rather than every layer entry.
+
+## 2026-05-10 - In-Scene Hero Title Layering
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the landing hero title is now a configured text layer inside the artwork stack rather than a separate heading block above the scene.
+- Removed the extra eyebrow copy, subtitle copy, and scroll indicator, and reordered the depth stack so `CORA` sits between `bookcase_2` and `bookcase_1` with its own entrance timing and parallax strength.
+
+### The Reasoning
+- Treating the title as just another layer keeps the composition faithful to the designer scene and creates the intended “embedded in the environment” feel instead of a conventional marketing hero layout.
+- Keeping text and image layers in the same reusable config makes the depth order, timing, and motion relationships explicit, which should make future composition tuning much less brittle.
+
+### The Tech Debt
+- The exact title placement is currently tuned with percentage positioning inside the shared 4096 x 2589 stage. If the designer revises the artwork crop or safe area, we should retune that anchor with final visual QA rather than assuming the current percentage will remain perfect.
+
+## 2026-05-10 - Static Base And Vertical Hero Parallax
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` is no longer part of the animated layer stack and is instead rendered as the section background, while the remaining scene layers now preload before their entrance sequence begins.
+- Refactored the hero interaction from tilt-plus-XY parallax to Pixelmon-style vertical-only parallax, removed the navbar offset from the hero canvas, and made the scene wrapper full-height so the table and drawer can live inside the initial viewport under the fixed nav.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to keep its non-scrolled state explicitly transparent while preserving the existing solid-on-scroll behavior and frame-cut brand styling.
+
+### The Reasoning
+- Making the base room art completely static gives the scene a stable camera anchor, which helps the layered bookcases, title, table, and foreground details feel like depth within one illustration instead of separate floating objects.
+- Waiting for all PNG layers to load before starting the staggered animation avoids the uneven “pop-in while decoding” look and makes the back-to-front settling sequence feel more intentional.
+- Vertical-only movement is a better fit for this environment art than full tilt because it preserves the room perspective and feels calmer, especially once the hero starts at `y = 0` behind the navbar.
+
+### The Tech Debt
+- The section now uses `background-size: cover` for the static base while the moving PNG layers still rely on shared absolute positioning. If final visual QA shows mismatch between the covered backdrop and the contained overlays at extreme aspect ratios, we may need one more composition pass to tighten their scaling relationship.
+
+## 2026-05-10 - Full-Bleed Hero Canvas And Counter-Parallax
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the layered scene canvas is now full-bleed at `100svh` with no horizontal page padding or max-width cap, allowing the artwork to fill the viewport edge to edge.
+- Restored `bookcase_3` as the backmost animated layer, added an `isBackground` flag for image-layer fit behavior, and changed image rendering from `fill` + shared `object-contain` to explicit absolute sizing with `cover` for background shelves and bottom-anchored `contain` for table/drawer/object layers.
+- Reworked the parallax math to use both `pointerX` and `pointerY` with counter-motion by depth, so background layers drift opposite the cursor, the title moves gently, and foreground layers follow the cursor for a stronger window-like depth effect.
+
+### The Reasoning
+- The previous capped canvas and centered layout were constraining the artwork too much, which made the scene feel like a framed component rather than a full landing-page environment.
+- Splitting background and foreground fit rules fixes the scaling problem where wide shelf layers could shrink awkwardly while the lower scene pieces still need to stay visually anchored to the floor line.
+- Counter-parallax creates a more convincing sense of depth than same-direction drift because it lets the room feel spatial without reintroducing the tilt behavior we intentionally removed.
+
+### The Tech Debt
+- The hero now depends more heavily on manual per-layer fit conventions (`isBackground` vs foreground defaults). If more layer types or special crops are added later, we may want to promote this into a slightly richer layer positioning schema instead of relying on a binary background flag.
+
+## 2026-05-10 - Hero Targeted Layer Fixes
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to stop applying horizontal parallax to the in-scene `CORA` title while keeping its lighter vertical motion.
+- Adjusted `bookcase_3` to render at `depth: 1` so it no longer disappears behind the static section background.
+- Changed all animated image layers to use `object-fit: contain`, with background shelves centered and foreground pieces bottom-anchored, removing the previous `cover` cropping on the shelf layers.
+
+### The Reasoning
+- The title clipping bug came from giving the text layer a nonzero X-direction during the initial spring state, which could shift it sideways before settling.
+- `bookcase_3` was effectively competing with the section background when rendered at `zIndex: 0`, so raising it one layer restores it as the first visible animated shelf plane.
+- The bookcase assets behave more like transparent composition layers than true viewport-filling backgrounds, so `contain` preserves their intended framing better than `cover`.
+
+### The Tech Debt
+- Depth numbers now matter for both rendering order and parallax direction rules. If we keep iterating on this scene, it may be worth separating visual stack order from motion grouping so tiny depth fixes do not also carry interaction semantics.
+
+## 2026-05-10 - Full-Cover Layered Hero Stage
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` is part of the same `HERO_LAYERS` stack as the rest of the room artwork and every image layer renders with `fill`, `object-cover`, and shared center positioning.
+- Removed the constrained flex/content wrapper and decorative gradient blocks from the hero, leaving a full-viewport absolute stage with subtle pointer tilt and parallax.
+- Mirrored the landing PNGs into [apps/web/public/landing](/d:/projects/Cora/apps/web/public/landing) so the runtime paths resolve as `/landing/base.png`, `/landing/bookcase_3.png`, `/landing/bookcase_2.png`, `/landing/bookcase_1.png`, `/landing/table.png`, `/landing/drawer.png`, and `/landing/objects.png`.
+
+### The Reasoning
+- The previous split between a covered section background and contained overlay images made the transparent layers scale differently, so the room composition looked boxed-in and misaligned.
+- Rendering every layer against one absolute viewport-cover stage keeps the designer canvas aligned while allowing the drawer and foreground objects to crop naturally at the hero edge.
+- Keeping the `CORA` title between `bookcase_2` and `bookcase_1` preserves the in-scene framing while using a smaller clamp and higher anchor so it remains readable.
+
+### The Tech Debt
+- The `/assets/landing` copies are still present in the public folder. Once no code references them, we can remove that duplicate asset path after confirming nothing outside the landing hero depends on it.
+
+## 2026-05-10 - Ratio-Preserved Hero Stage
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the landing artwork now renders inside a `4096 / 2589` aspect-ratio stage that is `120svh` tall instead of covering a `100svh` viewport directly.
+- Changed the layered PNG rendering from `object-cover` to `object-contain`, removed the per-layer inset overscan, and adjusted the in-scene `CORA` title to `top-[39%]` with a slightly smaller responsive clamp.
+
+### The Reasoning
+- The exported designer layers all share the same full-canvas dimensions, so preserving that canvas ratio and containing each layer keeps the composition aligned without aggressively cropping the top wall or enlarging the bookcases.
+- Letting the hero be taller than one viewport gives the table and drawer room to sit low while keeping the intended empty wall space visible above the shelves.
+- Keeping parallax on the layer wrappers preserves the subtle Pixelmon-like depth while the sizing model now belongs to the shared stage instead of each individual image.
+
+### The Tech Debt
+- The current stage is tuned to `120svh`. If final visual QA on very wide or very short screens still feels too cropped or too roomy, the next adjustment should be the stage height/width formula rather than switching the layer images back to cover.
+
+## 2026-05-10 - Designer Canvas Hero Replacement
+
+### The Change
+- Replaced [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) with a clean layered scene that uses only `bookcase_3`, `bookcase_2`, the in-scene `CORA` title, `bookcase_1`, `table`, `drawer`, and `objects`.
+- Changed the hero stage to `w-screen` with `aspect-[4096/2589]`, letting the artwork height follow the designer canvas instead of forcing a fixed `100svh` or `120svh` crop.
+- Added staged entrance animation, subtle pointer-following parallax per layer, and a gentle whole-stage 3D tilt while preserving reduced-motion behavior.
+
+### The Reasoning
+- The designer exports share one 4096 x 2589 canvas, so every layer now fills the same absolute stage with `object-contain` and centered positioning to preserve alignment without cropping.
+- Removing `base.png`, old marketing copy, and scroll affordances keeps the hero focused on the provided composition and the single embedded `CORA` title.
+- The motion config keeps depth readable by giving farther shelves smaller movement and foreground objects slightly stronger drift without making the scene feel gimmicky.
+
+### The Tech Debt
+- Final visual QA should still confirm the title's exact overlap with `bookcase_1` across common viewport widths, since that placement depends on the designer layer artwork rather than layout text flow.
+
+## 2026-05-10 - Static Hero Base And Counter Motion
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to restore `/landing/base.png` as the backmost hero layer while keeping it static with `movement: 0`.
+- Added an explicit per-layer `direction` value so back layers and front layers drift in opposing directions during pointer hover.
+
+### The Reasoning
+- The base art should behave like the fixed room plate, giving the parallax layers a stable visual anchor instead of moving with the scene.
+- Opposing layer motion creates clearer depth than same-direction drift: the rear bookcases can slide one way while the foreground furniture and objects slide the other.
+
+### The Tech Debt
+- The exact direction strengths are still design-tunable. If the scene feels too elastic in QA, reduce the foreground `direction` magnitude before changing the shared pointer spring.
+
+## 2026-05-10 - Static Base Isolation And Hero Overscan
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` now renders outside the hover-reactive layer stack instead of living inside the same moving scene wrappers.
+- Added a small shared image overscan to the landing hero PNG layers so subtle hover parallax does not expose dark empty edges around the artwork.
+- Increased the in-scene `CORA` title clamp so the outer letters sit more noticeably behind the bookshelf framing.
+
+### The Reasoning
+- The base looked like it was moving because it was still inside the stage that received hover tilt, even though its own per-layer movement was zero.
+- A tiny scale-up is the cleanest way to preserve the full-canvas composition feel while buying enough bleed to hide edge gaps during motion.
+- Making the title a little larger helps the shelf overlap read intentionally, so the word feels embedded in the scene rather than merely layered over it.
+
+### The Tech Debt
+- The overscan and title scale are both intentionally conservative tuning knobs. If the scene still shows edges or the shelf overlap feels off on certain viewports, the next pass should adjust those two values together before changing the broader layer layout.
+
+## 2026-05-10 - Landing Asset Path Cleanup
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to load the layered hero artwork from `/assets/landing/...` instead of `/landing/...`.
+- Removed the duplicate [apps/web/public/landing](/d:/projects/Cora/apps/web/public/landing) directory so `apps/web/public/assets/landing` is now the single source of truth for the room exports.
+
+### The Reasoning
+- In a Next app, `/assets/landing/...` maps directly to `apps/web/public/assets/landing/...`, so keeping only that directory makes the runtime path and filesystem layout line up cleanly.
+- The duplicate folder existed because the earlier hero implementation was switched to `/landing/...` runtime paths and the files were mirrored to match; that duplication is no longer necessary.
+
+### The Tech Debt
+- Older hero notes in this devlog still mention the temporary `/landing/...` mirroring step from earlier iterations. They remain historically true, but the current implementation now uses `/assets/landing/...`.
+
+## 2026-05-10 - Hero Layer Type Narrowing Fix
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to add an `isImageLayer` type guard and use it when resolving the static base layer and preload image source list.
+
+### The Reasoning
+- `HeroLayer` is a text-or-image union, and the editor was correctly warning that `src` does not exist on text layers. Making the image narrowing explicit keeps the config flexible without papering over the type system.
+
+### The Tech Debt
+- The hero layer config is still a fairly compact union living in one file. If we keep extending the scene schema, it may be worth extracting the layer types and helpers so the rendering logic stays easy to scan.
+
+## 2026-05-11 - Hero Loading Expression Overlay
+
+### The Change
+- Added [LandingIntroLoader.tsx](/d:/projects/Cora/apps/web/src/components/landing/LandingIntroLoader.tsx) as a dedicated full-viewport intro screen that renders before the landing page itself.
+- Added [heroAssets.ts](/d:/projects/Cora/apps/web/src/components/landing/heroAssets.ts) to share the landing preload source list and scientist idle-expression asset helper.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) to hold back the navbar, hero, and rest of the landing page until the intro loader finishes.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) again to mount the navbar on a short follow-up timer after the hero begins revealing, instead of only delaying the navbar animation.
+- Simplified [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so it only handles the room scene entrance now that asset preloading and the intro screen live outside it.
+- The intro uses each scientist's idle expression art as the sole loading indicator, with a subtle staggered bounce and a 1.5 second minimum hold.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to use a fade-and-deblur entrance instead of a vertical slide, avoiding the fixed-nav top-position flash on mount.
+
+### The Reasoning
+- The hero-box loader was never truly centered in the viewport because it still lived inside the hero's aspect-ratio stage rather than owning the whole screen.
+- Rendering the intro first at the page level prevents the navbar and other landing chrome from appearing before the entrance beat has completed.
+- Mounting the navbar later at the page level works better than a Framer delay on the nav itself, because the nav is truly absent during the hero's first frames instead of existing offscreen and then animating in.
+- Reusing the real scientist expression assets keeps the wait state grounded in the game's visual language instead of falling back to generic UI loading patterns.
+- Letting the hero reveal start before the navbar mounts keeps the first frame from feeling crowded and lets the room establish itself before navigation competes for attention.
+- For a fixed navbar, a pure opacity/blur reveal is more reliable than animating vertical position on first mount, because there is no one-frame snap between the browser's pinned layout position and Framer's transform state.
+
+### The Tech Debt
+- The landing intro currently blocks the entire page until its preload list resolves. If we later add heavier media to the first viewport, we may want a more selective preload strategy so the entrance beat stays crisp.
+## 2026-05-10 - MagicBlock UI Enhancement Layer
+
+### The Change
+- Added [magicblockUi.ts](/d:/projects/Cora/apps/web/src/lib/magicblock/magicblockUi.ts) to translate MagicBlock/ER lifecycle states into player-facing badge labels, short copy, progress values, and pulse behavior for deposit and settlement surfaces.
+- Updated [DepositPanel.tsx](/d:/projects/Cora/apps/web/src/components/deposit/DepositPanel.tsx) with an optional `statusStripSlot`, then wired [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) to render a compact `Fast Arena` / `Standard Arena` status strip inside the existing deposit panel.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to show the same style of support strip inside the existing settlement result overlay without changing the primary outcome copy.
+
+### The Reasoning
+- We wanted to support MagicBlock delays as a presentation enhancement, not as a separate screen or layout branch. Keeping the enhancement inside existing deposit and settlement slots avoids layout jumps and keeps fallback to standard mode feeling intentional.
+- The result overlay keeps player-centered copy like `You Win` / `You Lose`, while the new strip explains what the arena/proof layer is doing underneath. This protects the emotional result moment while still making ER settlement progress legible.
+- Centralizing the ER-to-UI mapping keeps raw lifecycle labels such as `creating`, `delegating`, and `committing` out of component markup and makes it easier to tune copy later.
+
+### The Tech Debt
+- The status strips are currently local JSX in `OpponentFound` and `BattleScreenOverlays`; if more screens need the same treatment, extract a shared `ArenaStatusStrip` component.
+- Production build verification was blocked by a local `.next` file lock (`EPERM unlink ... .next/build/chunks/...`) after Google Fonts access was allowed. Lint and TypeScript checks passed, but the build should be rerun after clearing the locked build artifact or stopping the process holding it.
+
+## 2026-05-10 - MagicBlock Enhancement Timing And Fallback Result Copy
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the arena/proof status strip only appears after the player has signed and the room has an actual preparation signal (`erStatus`, `playing`, or `settling`). Player A waiting for Player B and Player B waiting for unlock now stay on the normal deposit UI.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `server_error` fallback match results are classified as finalized standard fallback instead of unresolved pending settlement.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so `server_error` outcomes show clear fallback payout copy instead of `Settlement is still being finalized`.
+
+### The Reasoning
+- The MagicBlock strip should communicate post-deposit loading, not appear as a default decoration from the start of the opponent-found screen.
+- When ER card play fails and the backend emits local `server_error` finalization, the FE receives a terminal `matchResult` without a settlement authorization. Treating that as `Pending` made a completed fallback path look stuck.
+- Forcing the settlement support UI into standard mode on `server_error` prevents stale pre-fallback `gameState.erEnabled` / `erStatus` snapshots from briefly showing a MagicBlock proof state after fallback has already won.
+
+### The Tech Debt
+- The FE still depends on `server_error` as the fallback signal. If the backend later emits a more specific ER fallback reason or status enum, the settlement copy should switch to that structured signal.
+
+## 2026-05-10 - Player-B MagicBlock Loading Color Timing
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the MagicBlock status strip can show an orange `Fast Arena` loading state immediately after Player B signs the second deposit.
+- Kept the green state tied to the existing server-provided preparation signal (`erStatus` / `playing` / `settling`), so the strip now visually moves from local post-deposit loading to server-confirmed fast-arena readiness.
+
+### The Reasoning
+- The frontend cannot infer Player B completion from Player A's side without a new backend event, but Player B's client knows it was unlocked and just signed. Using that local fact lets us show the intended yellow/orange loading phase without touching backend code.
+- Keeping Player A on the normal waiting UI avoids pretending both deposits are done before the frontend has a reliable signal.
+
+### The Tech Debt
+- This is intentionally asymmetric until the backend emits a dedicated `bothDeposited` / `erSetupStarted` event or broadcasts ER lifecycle changes during setup. If that signal becomes available later, Player A can show the same orange loading phase too.
+
+## 2026-05-10 - Shared Post-Sign Fast Arena Loading State
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both players now see the Fast Arena strip after their own deposit signature is captured.
+- Player A sees an orange `Fast Arena queued` state while waiting for Player B's wager, and Player B sees an orange `Syncing MagicBlock` state after signing the second deposit.
+- Existing server-provided `erStatus` / `playing` / `settling` signals still drive the green ready state when the room snapshot catches up.
+
+### The Reasoning
+- This keeps the UX fair: both players get an immediate post-sign loading state without requiring backend changes.
+- Player A cannot know from frontend-only state that Player B has signed, so the copy stays honest by saying the fast arena is queued rather than claiming setup has started.
+
+### The Tech Debt
+- The orange-to-green transition is still partly local/optimistic because the frontend does not receive a dedicated `bothDeposited` or `erSetupStarted` event. If backend events are added later, this can become fully authoritative for both players.
+
+## 2026-05-10 - Settlement Overlay Pending Bar Simplification
+
+### The Change
+- Removed the arena/proof support strip from [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so settlement results no longer show internal copy like `Standard Arena`, `Result secured`, or `Match outcome is finalized`.
+- Added a slim bottom shimmer bar to the settlement overlay only when `settlementStatus === "Pending"`.
+- Removed now-unused settlement support prop plumbing from [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+
+### The Reasoning
+- The settlement result overlay should stay outcome-focused. Showing standard/proof state text inside the card felt too implementation-facing and competed with the actual result.
+- Pending still needs motion feedback, but a bottom loading rail is enough to communicate that the app is waiting without adding more copy or shifting the layout.
+
+### The Tech Debt
+- The bottom rail currently keys off the display string `Pending`. If settlement states become richer later, this should switch to a boolean derived in `BattleScreen` instead of comparing UI copy.
+
+## 2026-05-10 - Settlement Fallback Copy Softening
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so `server_error` fallback copy now reads `Match closed safely. No winner payout was awarded`.
+
+### The Reasoning
+- The previous wording (`Standard fallback finalized`) sounded too implementation-facing for a player result overlay.
+- The new copy keeps the important payout expectation clear while sounding more like product language and less like a backend state.
+
+### The Tech Debt
+- `server_error` still covers multiple fallback causes. If backend eventually distinguishes ER failure, refund-gated draw, or settlement-service issues, these should get more specific result copy.
+
+## 2026-05-10 - Settlement Review Copy For ER Failure
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so `server_error` match results show a `Review` settlement status instead of `Finalized`.
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so ER failure fallback copy says `Match closed safely. Wager resolution is pending review`.
+- Softened the standard loss payout line from `No winner payout was awarded to you for this match` to `Rival secured the wager for this match`.
+
+### The Reasoning
+- The MagicBlock failure log shows local `server_error` finalization after a delegated ER transaction failure, not the normal winner-payout settlement path.
+- The UI should not imply the match had no winner or that players had no reason to play. It should communicate that the room was closed safely and wager handling needs a review/resolution path.
+
+### The Tech Debt
+- This remains frontend wording over a broad backend `server_error` reason. A dedicated escrow review/refund/winner-settlement status would let the UI be more precise later.
+
+## 2026-05-10 - Opponent Found Green Loading Rail
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so confirmed green MagicBlock states use a continuous full-width loading rail instead of a fixed progress width.
+
+### The Reasoning
+- Once the UI turns green, the player should read it as server-confirmed Fast Arena preparation, not as a precise percentage countdown. The moving rail keeps the wait feeling alive without implying exact backend progress.
+
+### The Tech Debt
+- Orange local states still use optimistic progress values because the frontend does not receive authoritative phase progress before the server snapshot catches up.
+
+## 2026-05-10 - Endgame Notice And Processing Rails
+
+### The Change
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so both orange post-sign Fast Arena states use a full-width left-to-right infinite loading rail.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so terminal results show as a small in-game battle notice while cards are locked and the base destruction/result sequence resolves.
+- Updated the card helper text to say `Match locked. Resolving final sequence.` when a terminal result has arrived.
+
+### The Reasoning
+- Orange should communicate active processing for both players, not a static/progress estimate.
+- The final win/loss overlay should be the only big result popup. The earlier match-finished moment now reads as an in-game transition while the base animation completes.
+
+### The Tech Debt
+- The endgame notice reuses the existing battle notice layer. If more transition states are added, that notice model may need explicit variants instead of overloading the `phase` tone.
+
+## 2026-05-10 - Match Finished Notice Gate
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so raw `status === "finished"` no longer opens the large settlement/result overlay by itself.
+- Generic finished state now stays in the in-game notice bar as `Match finished. Cards locked while result syncs.`
+- The large result overlay is reserved for resolved outcomes from `settlementResult`, `matchResult`, invalidation, or room cancellation.
+
+### The Reasoning
+- `Match Finished` is a transition state, not an emotional result. Keeping it in the battle notice bar avoids showing two similar popup moments before the base-destroyed sequence and final result.
+
+### The Tech Debt
+- This still depends on the existing socket result payloads arriving after `finished`. If backend ever emits a dedicated `result_syncing` status, the FE should key the notice from that explicit state.
+
+## 2026-05-10 - Endgame Base Notice Removal
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so resolved endgame/base-destruction sequences no longer show `Final impact registered. Cards locked while the base resolves.`
+- Kept the generic `Match finished. Cards locked while result syncs.` notice only for unresolved raw `finished` status.
+
+### The Reasoning
+- The base destruction animation is already the transition moment. Removing extra copy lets the final result popup land cleaner.
+
+### The Tech Debt
+- If the result-sync delay becomes long, we may want a quieter visual-only lock indicator instead of text.
+
+## 2026-05-10 - Terminal Card Lock Tightening
+
+### The Change
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so answer clicks are ignored once `isMatchComplete` is true.
+- Marked answer options disabled during match completion using the derived terminal lock state.
+- Removed the active-card glow from hand cards during terminal lock so the played card no longer looks interactable while the result sequence resolves.
+
+### The Reasoning
+- Hand cards were technically disabled by `isMatchComplete`, but the active card could still look selected/available because active styling overrode the locked opacity.
+- The open answer panel already unmounts on match completion, but guarding `onAnswer` closes the small race window between terminal socket updates and React render.
+
+### The Tech Debt
+- If we add a dedicated “locked card” visual later, replace the generic disabled opacity with a clearer final-turn lock treatment.
+
+## 2026-05-10 - Blink Challenge Creator Path And Temporary Browser Link
+
+### The Change
+- Added [privateChallenge.ts](/d:/projects/Cora/apps/web/src/lib/matchmaking/privateChallenge.ts) for the FE private-match contract: create challenge, confirm creator funding, poll challenge status, resolve API base URL, and derive a temporary web challenge URL.
+- Added [signBackendTransaction.ts](/d:/projects/Cora/apps/web/src/lib/solana/signBackendTransaction.ts) so the creator can sign the backend-provided `create_open_challenge` transaction before calling `/match/private/confirm`.
+- Added creator/challenger Blink UI pieces: [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx), [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx), [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx), and [page.tsx](/d:/projects/Cora/apps/web/src/app/challenge/[roomId]/page.tsx).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx), and [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so active Blink challenges are persisted, normal queueing is blocked while a creator challenge is live, challenge status is polled, and the creator auto-joins when a rival accepts.
+- The creator panel now exposes both `Copy Blink URL` and `Copy Browser Link`: the Blink URL remains the primary share target for Blink-supported apps, while the browser link is a temporary direct route to `/challenge/:roomId`.
+
+### The Reasoning
+- Backend now owns the true Blink escrow transaction flow, so FE should sign and confirm the backend-provided transaction instead of inventing or changing API behavior.
+- A creator with an unresolved Blink challenge must be kept out of normal matchmaking to avoid a shared-link accept racing against a regular queue match.
+- The Blink URL and browser challenge page are not currently the same thing: opening the raw Blink URL in a normal browser returns the backend action payload unless backend later adds browser redirect/content negotiation. Keeping two explicit copy actions is the honest temporary UX while preserving the desired future direction.
+
+### The Tech Debt
+- Backend should eventually redirect normal browser requests from the Blink action URL to the FE `/challenge/:roomId` page so the product can return to a single canonical share link.
+- The browser accept page currently relies on challenge room lookup and default FE arena/scientist context because the backend Blink URL does not carry frontend presentation metadata.
+- Active Blink challenge cleanup is local for terminal states; if backend adds richer cancellation/expiry events, the lobby can switch from polling to a more authoritative push-driven state.
+
+## 2026-05-10 - Blink Share Actions Consolidated Into Card
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to support an optional secondary copy action.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the top active-challenge banner is informational only.
+- Moved the temporary browser-link copy action into the share card alongside `Copy Blink URL`, `Save As JPG`, and `Share On X`.
+- Replaced the framed `Close` control with a plain corner `x` to keep the overlay chrome quieter.
+
+### The Reasoning
+- The previous overlay duplicated CTAs between the banner and card, making the hierarchy noisy.
+- Keeping all share/export actions in the card makes the banner read as status context and the card read as the action surface.
+- A lightweight `x` is enough for dismissing the panel and avoids competing with the share actions.
+
+### The Tech Debt
+- The card now has two explicit copy actions because the raw Blink URL and temporary browser accept URL are still separate. Once backend browser redirect support lands, the secondary browser-copy action should be removed.
+
+## 2026-05-10 - Blink Acceptance Notification And Challenger Page Polish
+
+### The Change
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) with a compact notification variant that still mounts the match socket and sends creator `confirmDeposit`.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `Rival Accepted` no longer replaces the whole lobby; it appears as a notification while presence confirmation runs in the background.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger page shows arena, token, and `$1.00` wager copy, uses the green page background with a light content section, and makes `Back To Lobby` readable with dark text.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) so socket close `1008` with `Room not found or already finished` is treated as a terminal closed-room state: local active match state is cleared, retry is hidden, and `Back To Lobby` is always available.
+- Reused the shared `btn-game btn-game-secondary` style for the challenger page `Back To Lobby` action so it matches the primary accept button system, with local matching text/border color overrides for readability on the light panel.
+- Normalized the wrapped SOL mint display to `SOL` on the challenger page while keeping the raw mint for signing/API calls.
+- Changed creator-side Blink acceptance sequencing so `Rival Accepted` is a passive notification first; clicking `View Challenge` opens the full `Confirming your match...` screen and mounts the websocket confirmer.
+- Updated [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) and [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so the challenger sends its accepted transaction signature through the existing `confirmDeposit` websocket event after signing.
+
+### The Reasoning
+- `Rival Accepted` is a transient state, not a full page destination. The FE still needs the socket mounted to confirm creator presence, but the user should not feel trapped on an interstitial if the backend takes time to advance the room to `playing`.
+- Challenger-side challenge details should match the lobby product framing: token arena plus fixed `$1.00` wager, not raw base-unit wording.
+- Display should use player-facing token symbols instead of raw mint addresses; signing still needs the backend-provided mint value.
+- The previous back button inherited light text against a light section, so the button needed local contrast styling instead of the generic dark-surface button class.
+- Expired private rooms can disappear before the challenger reconnects, and retrying that socket cannot succeed. FE should surface that as a closed challenge and let the player leave cleanly.
+- Reusing the shared button classes keeps the action row visually consistent, while local color overrides avoid the washed-out white-on-light button state.
+- The previous creator flow stacked a notification and the recovery/confirming page because the background joiner wrote an active `depositing` match session. The new flow avoids that automatic write until the user intentionally opens the confirming screen.
+- Current backend hydration marks both private-room players deposited, but `joinRoom` overwrites the joining player's `hasDeposited` flag back to `false`. Sending the challenger signature over the already-supported socket event is a frontend-side compatibility fix so both player metas become deposited and the room can transition to `playing`.
+
+### The Tech Debt
+- If the creator notification remains visible forever after `confirmDeposit`, FE has done its part and is waiting for the backend/socket to emit a `playing` game state or equivalent room-ready event. A dedicated private-challenge presence/ready event would make this transition easier to diagnose.
+- Terminal socket-close detection is still based on close code/reason text. If the backend adds a structured close reason or REST status for accepted-but-expired rooms, switch to that instead of parsing text.
+- Backend should preserve hydrated private-room `hasDeposited: true` metadata on websocket join instead of requiring FE to re-confirm the challenger deposit signature after `accept_challenge`.
+
+## 2026-05-10 - Blink Character Gate Before Websocket Join
+
+### The Change
+- Added [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), a shared Blink-only post-deposit character selection surface built on the existing character roster component.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side `View Challenge` opens character selection first, then mounts [BlinkRoomJoiner.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkRoomJoiner.tsx) only after `Confirm Scientist`.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challengers see the same character gate after accepting/signing the Blink challenge and before joining the websocket room.
+- Passed the selected character ID into the existing `useMatchSocket` join URL via `BlinkRoomJoiner`, so the backend receives the picked scientist through the currently-supported `characterId` query parameter.
+- Adjusted the challenger accept action row so `Back To Lobby` sits directly to the left of the right-aligned `Accept & Lock Wager` button.
+
+### The Reasoning
+- Backend does not currently expose a real post-deposit `selecting_character` phase or character-lock websocket event for Blink rooms.
+- Delaying websocket join is the FE-only way to support `deposit -> select character -> play` without backend changes, because backend reads the character from the websocket join request before the engine initializes.
+- This keeps normal matchmaking unchanged while giving Blink matches a scientist pick step instead of silently defaulting both players to Einstein.
+
+### The Tech Debt
+- If a user refreshes after accepting a Blink challenge but before joining, FE can only re-confirm through websocket if the accepted signature is still available in session storage. Backend preserving hydrated private-room deposit metadata would make this more robust.
+- A proper backend character-lock phase would allow both players to connect first, show opponent selection state, enforce a timer, and auto-assign characters server-side.
+
+## 2026-05-10 - Blink Character Gate CTA And Surrender Confirmation
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so all scientist cards are neutral `Tap To Select` choices, with no Einstein `Balanced Default` label in the Blink post-deposit flow.
+- Moved the Blink gate action row below the scientist roster so the page reads as `choose first, then confirm`.
+- Replaced the gate `Back` action with `Surrender`, guarded by a confirmation popup that warns the wager is already locked.
+- Added [BlinkSurrenderBridge.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkSurrenderBridge.tsx), a frontend-only bridge that connects to the existing match websocket, replays the stored deposit confirmation signature when available, sends the existing `surrender` event, and clears local match state.
+- Wired creator-side surrender from [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) and challenger-side surrender from [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- After deposit, leaving is no longer a harmless navigation event. The UI should say `Surrender` and require confirmation because the backend treats that as forfeiting the locked wager.
+- Blink still delays websocket join until after character selection, so surrender from the character gate needs a tiny temporary socket bridge rather than changing backend APIs.
+- Removing the neutral default label prevents the Blink flow from nudging players back toward Einstein after we added explicit character selection.
+
+### The Tech Debt
+- The bridge currently treats successful websocket submission/terminal close as enough to clear local state, matching the existing active-match surrender behavior. A dedicated backend private-challenge surrender endpoint or acknowledgement event would make this more authoritative.
+
+## 2026-05-10 - Blink Pre-Character Recovery Escape
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so accepting a Blink challenge stores only the deposit signature before character selection, not a generic active match session.
+- Added [clearActiveMatchRoomSession](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so FE can clear stale active-room localStorage without deleting the accepted Blink deposit signature from sessionStorage.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so `private + depositing` active rooms are treated as Blink pre-character rooms instead of normal escrow-settlement recovery.
+- Creator recovery now reopens the Blink accepted path when the active private room matches the locally stored Blink challenge.
+- Challenger recovery now routes back to `/challenge/:roomId` so the player can pick a scientist and join through the Blink flow.
+- Added a `Back To Lobby` escape button to the generic `Escrow resolver is settling` screen for stale local recovery cases.
+
+### The Reasoning
+- The previous challenger accept flow wrote `status: depositing` into the generic active-room store before the Blink websocket had joined. If the player hit browser back before choosing a scientist, lobby recovery interpreted that stale local marker as a normal match settlement and got stuck waiting.
+- Blink pre-character state is not equivalent to normal ER settlement. It needs to return to the Blink challenge path, preserving the deposit signature so websocket `confirmDeposit` can still be replayed later.
+
+### The Tech Debt
+- This is still a frontend classification fix based on `roomType: private` and `status: depositing`. A backend-owned Blink room phase like `awaiting_character` would make recovery clearer and remove the need for FE inference.
+
+## 2026-05-10 - Blink Character Gate Label Cleanup
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to hide the reusable roster/status pills in the Blink post-deposit character picker.
+- Restyled the `Surrender` button with the same readable light-panel secondary treatment used by `Back To Lobby` on the challenge accept page.
+
+### The Reasoning
+- The Blink page already has enough heading/subtitle context, so the extra `Roster` and `Pick your scientist to continue` pills were redundant visual noise.
+- The shared secondary button style defaults to light text, which becomes unreadable on the cream Blink card without local color overrides.
+
+### The Tech Debt
+- These local button overrides should eventually become a named light-surface secondary button variant if more light-card flows need the same treatment.
+
+## 2026-05-10 - Compact Blink Character Cards
+
+### The Change
+- Added a `compactCards` option to [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) and [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx).
+- Enabled compact cards in [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx), reducing card min-height, portrait size, and the internal gap above each card CTA.
+- Pulled the Blink gate action row closer to the roster.
+
+### The Reasoning
+- The shared character card uses `mt-auto` to create a roomy draft-card layout, but on the Blink cream panel that left too much empty vertical space between character details and `Tap To Select`.
+- A prop keeps the tighter Blink treatment local instead of changing normal matchmaking character select.
+
+### The Tech Debt
+- If more compact selection surfaces appear, the card sizing should move from a boolean prop to a named density variant.
+
+## 2026-05-10 - Blink Character Card Stretch Removal
+
+### The Change
+- Updated compact mode in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) so Blink character cards no longer stretch vertically to fill the parent panel.
+- Compact mode now removes the selector/grid `flex-1` stretch and aligns cards to the top of the grid.
+
+### The Reasoning
+- The remaining bottom gap was caused by the grid stretching each card row, not by internal card spacing.
+- Blink character selection should be allowed to produce a shorter overall section instead of forcing draft cards to fill the available cream-panel height.
+
+### The Tech Debt
+- The compact layout is still a boolean mode. If the character selector accumulates more layout variants, replace it with explicit density/layout tokens.
+
+## 2026-05-10 - Blink Character Panel Height Shrink
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) to remove the forced viewport-height minimum from the cream character selection panel.
+
+### The Reasoning
+- After compacting the character cards, the remaining lower gap came from the outer panel still being forced to nearly full screen height.
+- The Blink character selection surface is allowed to be shorter overall, so the panel should wrap its content instead of reserving empty vertical space.
+
+### The Tech Debt
+- If we need more precise vertical rhythm across Blink pages, define shared panel sizing tokens instead of per-component height overrides.
+
+## 2026-05-10 - Blink Character Gate Vertical Centering
+
+### The Change
+- Updated [BlinkCharacterGate.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkCharacterGate.tsx) so the full character selection section is vertically centered within the viewport instead of sitting at the top.
+
+### The Reasoning
+- Once the Blink panel height was reduced, the remaining layout issue was placement rather than size. The screen reads better when the compact cream panel is framed in the middle of the dark background.
+
+### The Tech Debt
+- If Blink gets more page states with different heights, it may be worth standardizing per-state vertical alignment rules instead of setting them one component at a time.
+
+## 2026-05-10 - Blink Refresh And Surrender Recovery Corrections
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side Blink status polling no longer demotes an in-progress room recovery back into the lower-priority notification state.
+- Added presentation-aware Blink recovery in the lobby: creator-side private `depositing` rooms now resume directly into `Confirming your match...` when a scientist was already locked, otherwise they reopen character select.
+- Prevented the floating `Rival Accepted` notification from stacking on top of the Blink character gate.
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challenger-side resume only happens when real local accepted context still exists, using the stored deposit signature instead of only `opponentWallet` ownership.
+- Added render-time recovery from the stored active match snapshot on the challenge page, so a challenger refresh after already locking a scientist resumes straight back into the joiner instead of dropping to character select.
+
+### The Reasoning
+- Two FE recovery rules were fighting each other. Lobby refresh recovery could correctly detect a creator still in a private `depositing` room, but the Blink status poll would immediately reopen the weaker notification state and kick the creator back out of the join flow.
+- Challenger recovery was too optimistic: if the backend row still said the wallet had accepted the Blink, FE would reopen the character gate even after local surrender/cleanup had already cleared the real resume context.
+
+### The Tech Debt
+- FE still infers Blink recovery mode from a mix of local storage, websocket stage, and backend room/challenge status. A backend-owned private-room phase model would remove a lot of this recovery branching.
+
+## 2026-05-11 - Challenger Post-Deposit Character Gate Unlock
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) so challenger-side character selection unlocks immediately after the local accept/deposit signature succeeds, without waiting for the challenge row to rehydrate `opponentWallet` first.
+
+### The Reasoning
+- The previous FE gate required both local accepted state and backend-refreshed `opponentWallet` ownership, which created a race: after deposit the challenger had already accepted locally, but the UI could still stay stuck on the accept screen until challenge polling caught up.
+
+### The Tech Debt
+- FE still depends on a mix of local accepted context and backend challenge status for progression. A dedicated backend Blink phase for `accepted_waiting_character` would make the transition less implicit.
+
+## 2026-05-11 - Blink Share Link Cleanup After Backend Redirect
+
+### The Change
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the active Blink overlay now treats the Blink URL as the single canonical share link again.
+- Removed the temporary browser-link warning copy and the secondary `Copy Browser Link` action from the Blink share card.
+
+### The Reasoning
+- Backend now redirects normal browser requests from the Blink URL to the challenge page, so FE no longer needs to present a separate browser fallback link in the primary share surface.
+- Returning to one canonical link simplifies the creator UX and matches the original product intent.
+
+### The Tech Debt
+- `webChallengeUrl` still exists in the stored Blink session shape for compatibility with older FE state. If no other recovery flow needs it, that field can be retired in a later cleanup pass.
+
+## 2026-05-11 - Creator Browser Notification For Blink Acceptance
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so creator-side Blink flows now support two notification layers when a rival accepts:
+- the existing in-lobby `Rival Accepted` notification card
+- a browser notification fired once per accepted room when Notification permission is granted
+- Blink challenge creation now requests browser notification permission opportunistically when supported and still in the browser’s `default` permission state.
+- Clicking the browser notification focuses the tab and opens the creator challenge flow directly.
+
+### The Reasoning
+- Creator acceptance is exactly the kind of event that benefits from an OS/browser-level heads-up because the user may have tabbed away while waiting for a rival.
+- Keeping the in-lobby notice as well preserves the immediate on-page affordance for users who are already in the app.
+
+### The Tech Debt
+- Permission is requested from the create-challenge flow, which is a reasonable user-gesture moment but still a lightweight implementation. If product wants more explicit notification UX later, this should become a dedicated opt-in setting.
+
+## 2026-05-11 - Blink Creator Acceptance Banner Restyle
+
+### The Change
+- Updated the creator-side `Rival Accepted` in-lobby notification in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to use the same full-width top-banner styling family as the existing `You have an active match` banner.
+- Kept the Blink creator flow passive at this stage: the banner is informational first, and `View Challenge` is still the explicit action that opens character select and confirmation.
+
+### The Reasoning
+- The smaller floating card made Blink acceptance feel like a side alert, while this state is important enough to deserve the same visual weight as other active-match recovery states.
+- Matching the active-match banner style also reinforces the intended flow: notify first, then let the creator opt into the challenge confirmation path.
+
+### The Tech Debt
+- There are now multiple top-of-screen banner variants in the lobby. If more room states accumulate, these should likely converge on a shared banner component with variant props.
+
+## 2026-05-11 - Blink Notification Permission Opt-In
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to remove the automatic browser notification permission prompt from Blink challenge creation.
+- Added explicit notification-permission state in the lobby and passed it into [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx).
+- Added an `Enable Notifications` button in the active Blink challenge panel so creators can opt in manually while waiting for a rival.
+
+### The Reasoning
+- Automatic browser permission prompts are noisy and easy to reject reflexively. This Blink flow benefits more from an explicit in-context opt-in where the user understands why the permission is being requested.
+- The creator still gets both systems after opting in: the in-lobby `Rival Accepted` banner and the browser notification.
+
+### The Tech Debt
+- The panel currently only surfaces the explicit opt-in button while permission is still `default`. If product wants richer notification controls later, this should evolve into a fuller preference state rather than a one-shot prompt button.
+
+## 2026-05-11 - Blink Notification Button Styling
+
+### The Change
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the `Enable Notifications` control uses the same small utility-button visual language as the Blink share actions.
+- Moved the button below the helper copy instead of placing it inline beside the text.
+
+### The Reasoning
+- The notification permission action is a secondary utility control, not a primary CTA. Matching the smaller share-button styling keeps the panel hierarchy calmer.
+- Stacking it below the explanation makes the copy easier to scan and avoids crowding the banner area.
+
+### The Tech Debt
+- The notification opt-in styling is now locally duplicated from the share-card utility buttons. If more small utility actions appear across Blink surfaces, extract a shared button variant.
+
+## 2026-05-11 - Blink Share Card Identity Cleanup
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to remove the fake player-profile block from the challenge card while still showing the wallet address.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) to replace the static `CORA Blink Challenge` headline with a deterministic per-room taunt line chosen from a small message set.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so exported JPGs match the new wallet-first, no-profile layout.
+- Updated the existing post-match challenge-share flow in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to match the shared card API cleanup.
+
+### The Reasoning
+- We do not currently have real player profile data in this flow, so showing a boxed initial and the label `You` makes the card feel fake.
+- The wallet is still useful identity context, so it remains visible as the real anchor.
+- A taunt headline gives the Blink share card more personality than static product branding while staying stable for the same room.
+
+### The Tech Debt
+- The taunt list is hardcoded locally in the Blink panel. If product wants broader brand voice control later, this should move into shared content/config.
+
+## 2026-05-10 - Fix Blink challenge terminal-state loop
+
+### The Change
+- Updated [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) to detect terminal statuses (`FORFEITED`, `EXPIRED`, `COMPLETED`) and clear stale local session state (`cora:active-room`, `cora:active-deposit-intent`).
+- Replaced the plain `<a>` tag for "Back To Lobby" in [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) with a button that explicitly clears local state before navigating.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) recovery logic to check for terminal match statuses and clear stale recovery state instead of redirecting the challenger back to the challenge page.
+- Added a "Challenge Closed" UI state to [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx) for terminal challenges.
+
+### The Reasoning
+- Challengers were getting stuck on the challenge accept screen or redirected back to it even after a challenge was forfeited or expired because the frontend wasn't consistently clearing local recovery state or checking the challenge status during lobby recovery.
+- A plain link doesn't allow for the necessary side effects (clearing local storage) before navigation.
+
+### The Tech Debt
+- Terminal status strings are duplicated across `BlinkChallengeAccept.tsx` and `LobbyScreen.tsx`. These should eventually be centralized in a shared constants file or type definition.
+
+## 2026-05-11 - Landing roster copy aligned with character specialties
+
+**The Change:** Updated [apps/web/src/components/landing/content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts) so the scientist names and copy match the real character definitions in `packages/shared-types/src/characterStats.ts`. Removed invented mechanics like shields, healing, named abilities, and attack-card amplification from the landing roster text.
+
+**The Reasoning:** The shared character stats file is the gameplay source of truth. The landing page should still feel flavorful, but it should only describe supported concepts: specialty category, 1.5x specialty multiplier, and the existing extra-point stacking behavior.
+
+**The Tech Debt:** `content.ts` still duplicates some character presentation data that could drift again later. A follow-up could derive more of this landing copy directly from shared character metadata or add a stricter content contract around allowed mechanic claims.
+
+## 2026-05-11 - How-it-works stage markers use character expressions
+
+**The Change:** Updated [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) to replace the numeric and completed-state markers with character `happy` expression portraits. Steps 1-3 now use Turing, Curie, and Einstein, and step 4 renders a compact three-character triangle cluster. The stage card badge now mirrors the same active marker.
+
+**The Reasoning:** Character portraits make the progression feel more connected to the roster and give the section a stronger in-world identity than generic numbers and checkmarks. Reusing the existing `happy` expression assets keeps the visual language consistent with other parts of the app.
+
+**The Tech Debt:** The stage-to-character mapping is currently local to `HowItWorks.tsx`. If we want the landing flow to stay centrally configurable, that mapping should move into landing content metadata.
+
+## 2026-05-11 - How-it-works rail restored to numeric active steps
+
+**The Change:** Refined [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) so the top progress rail now keeps numeric `1-4` markers for current and upcoming steps, and only completed steps swap to character portraits. The three-character triangle remains only inside the active stage card for step 4.
+
+**The Reasoning:** This restores the clearer scan pattern from the original progress rail while still using character art as the visual reward for completed steps. It also avoids overloading the top rail with the step-4 triangle cluster.
+
+**The Tech Debt:** The rail marker and card marker now have intentionally different behaviors. If we keep iterating on this section, it may be worth formalizing those two display modes behind a shared marker config instead of branching inline.
+
+## 2026-05-11 - CTA floating cards use idle portraits
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the floating character cards now render each scientist's `idle` expression asset instead of the emoji inside a circular badge. Removed the extra secondary emoji line, leaving each floating card as portrait plus name.
+
+**The Reasoning:** The CTA section already leans on character presence, so using the real portrait assets makes the floating cards feel more integrated with the game world than decorative emoji. Removing the duplicate emoji also simplifies the composition and keeps the eye on the character art.
+
+**The Tech Debt:** `CtaBanner.tsx` now has its own small asset helper for idle portraits. If more landing sections keep reusing the same expression asset paths, we should centralize those helpers in shared landing utilities.
+
+## 2026-05-11 - CTA background reuses dim hero scene assets
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) to reuse right-side landing hero art as a low-opacity CTA background layer. Added dimmed `bookcase_3` and `objects` scene assets behind the floating cards, and switched the floating portrait helper to the shared `getScientistIdleExpressionSrc` utility from `heroAssets.ts`.
+
+**The Reasoning:** Reusing the landing hero scene keeps the CTA visually connected to the rest of the page without overpowering the call-to-action. Keeping the art right-aligned and very low opacity preserves contrast for the copy while adding texture to the dark section.
+
+**The Tech Debt:** The CTA now chooses a subset of hero scene layers inline. If we keep reusing the landing environment in multiple sections, we may want a shared scene-fragment config instead of selecting individual asset files in each component.
+
+## 2026-05-11 - CTA background composition rebalanced
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits dimly on the left side of the CTA background, while `bookcase_3.png` is enlarged and anchored more prominently on the right.
+
+**The Reasoning:** Separating the two layers gives the background a nicer spread and keeps the larger structural silhouette on the right where it can frame the floating cards without stacking every asset in the same zone.
+
+**The Tech Debt:** The CTA background layout is now hand-tuned with percentage positioning. If we keep iterating on this scene treatment, it may be worth extracting these art-direction values into named constants or shared landing scene presets.
+
+## 2026-05-11 - CTA objects moved to far-left corner
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits at the far-left bottom corner of the full CTA banner, on the green gradient itself, instead of inside the right-side hero-scene wrapper.
+
+**The Reasoning:** This better matches the intended composition: the objects act as a subtle counterweight on the opposite edge of the section, while the bookcase remains the dominant right-side backdrop.
+
+**The Tech Debt:** The left-corner placement is still tuned with section-relative percentages. If this CTA gets more responsive art direction later, these placements may need breakpoint-specific presets instead of one shared value set.
+
+## 2026-05-11 - CTA right-side objects enlarged
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the larger `objects.png` layer now lives on the right side of the CTA again, while keeping the bigger footprint from the previous size adjustment. The bookcase remains the primary right-edge backdrop behind it.
+
+**The Reasoning:** This keeps the stronger object scale that read well, while aligning the composition with the preferred direction of concentrating the scene dressing on the right rather than splitting it across the banner.
+
+**The Tech Debt:** The right-side object and bookcase layers now overlap through hand-tuned percentages. If we keep polishing this art direction, it may be worth extracting a shared CTA scene layout config instead of adjusting individual absolute positions inline.
+
+## 2026-05-11 - CTA right-side objects scaled up further
+
+**The Change:** Increased the size of the right-side `objects.png` layer in [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) again by expanding its width, height, minimum width, and responsive image sizing.
+
+**The Reasoning:** The previous right-side version had the correct placement but still read a little too quietly. Scaling it further makes the scene layer more legible without changing the overall CTA structure.
+
+**The Tech Debt:** The object scale is still managed with manual percentages and minimum widths. If we continue tuning this art direction, a shared set of responsive scene tokens would be easier to maintain than repeated inline values.
+
+## 2026-05-11 - Blink Share Card Layout + Copy Refresh
+
+### The Change
+- Refactored [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) so the generated card surface is separated from the share-action buttons and helper/link text.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) to move the browser-support sentence above the share card, use the fixed lobby headline `Do you think you can beat me?`, and reuse the selected scientist expression plus low-opacity landing `objects.png` art in both the panel and the JPG export.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so exported Blink/share JPGs match the new card composition with a portrait block, cleaner title alignment, and subtle hero-scene texture.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so post-match Blink share cards now use result-aware copy (`I just won against ...` / rematch fallback) and reuse the player scientist expression artwork.
+
+### The Reasoning
+- The helper sentence about browser/app support is UI guidance, not part of the share artifact, so it belongs outside the generated card.
+- Separating the pure card from the controls keeps the on-screen layout closer to the exported JPG and gives the share surface cleaner hierarchy.
+- Reusing existing landing assets and character expression art makes the Blink card feel grounded in the same visual world instead of reading like a plain utilitarian export.
+
+### The Tech Debt
+- Share-card art direction is still assembled inline from asset paths (`objects.png` and character expression routes). If more share surfaces or variants appear, this should move into a shared share-card theme/config layer.
+- The post-match share title now has a win/rematch split, but the copy rules are still local to `BattleScreen.tsx`. If product iterates more on social/share tone, centralize the messaging.
+
+## 2026-05-11 - Share Match Flow + Explicit Blink Confirmation
+
+### The Change
+- Added [createBlinkChallengeSession.ts](/d:/projects/Cora/apps/web/src/lib/challenge/createBlinkChallengeSession.ts) to centralize the FE-only private Blink creation flow (create room, sign funding tx, confirm room, normalize session snapshot).
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so `Create Blink Challenge` no longer opens Phantom immediately. It now opens an explicit confirmation modal showing arena, wager, and current scientist before the wallet step.
+- Added [MatchResultShareCard.tsx](/d:/projects/Cora/apps/web/src/components/play/MatchResultShareCard.tsx) and [renderMatchResultCardPng.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderMatchResultCardPng.ts) for the new finished-match poster flow.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) and [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the result overlay button is now `Share Match`, opening a modal with:
+  - regular result-poster PNG export
+  - Blink rematch creation with the same explicit confirmation step before Phantom
+  - post-create Blink sharing using the canonical Blink URL
+- Updated finished-match copy so win and loss share titles now use:
+  - `I just won against ...`
+  - `Matched against ... but this is not the end.`
+
+### The Reasoning
+- Opening Phantom as the very first response to a button click felt abrupt and confusing in both the lobby and result flow. The confirmation layer makes the wallet step feel intentional.
+- Splitting result sharing into a regular poster path and a Blink rematch path keeps the finished overlay easier to understand than forcing everything through one Blink-specific action.
+- Centralizing Blink creation logic reduces the chance of lobby and post-match flows drifting apart in behavior.
+
+### The Tech Debt
+- The lobby and result confirmation modals currently share behavior but not a shared component yet. If we keep iterating on Blink confirmations, extract a reusable confirm surface.
+- The result poster PNG renderer is separate from the on-screen React card and could visually drift over time if one is edited without the other.
+
+## 2026-05-11 - Hero hover parallax smoothed
+
+**The Change:** Refined the hover motion in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) by softening the pointer-response curve around center, reducing vertical drift, and slowing the spring slightly for a smoother settle.
+
+**The Reasoning:** The original hover reacted a bit too linearly and felt twitchy near the resting position. Adding a gentler center response keeps the parallax alive while making the scene feel more intentional and less awkward.
+
+**The Tech Debt:** The hover feel is still tuned with inline motion constants. If we keep iterating on landing interactions, we may want shared motion tokens for parallax intensity and spring behavior.
+
+## 2026-05-11 - Hero scene lighting added
+
+**The Change:** Added two non-interactive lighting overlays in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx): a soft warm radial highlight through the middle-upper scene and a subtle dimming/vignette gradient above the interactive layers.
+
+**The Reasoning:** The hero art had good structure but still read a little flat overall. Layering a restrained highlight and shadow pass gives the composition more depth and focus without changing the existing artwork or layout.
+
+**The Tech Debt:** The lighting balance is still hard-coded in inline gradient values. If we keep art-directing the landing hero, those values may be better expressed as named scene tokens so they are easier to tune together.
+
+## 2026-05-11 - Hero hover parallax amplified
+
+**The Change:** Removed the pointer-following glow experiment from [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) and increased the existing hover parallax by expanding the transform range and tightening the spring response.
+
+**The Reasoning:** The glow was the wrong direction for the interaction, and the previous parallax pass still felt too restrained. Pushing the layer travel further while keeping the eased response makes the hover read more clearly without changing the scene composition.
+
+**The Tech Debt:** The stronger hover still depends on hand-tuned transform multipliers and spring values. If we keep iterating on hero motion, these interaction settings would be easier to maintain as shared landing motion tokens.
+
+## 2026-05-11 - Share Match Blink Flow Simplified
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) so the result modal no longer detours through a separate Blink confirmation popup.
+- The `Create Blink` action now starts directly from the first share modal, locks while busy, and shows an inline `Opening Phantom...` status chip modeled after [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx).
+- Updated [MatchResultShareCard.tsx](/d:/projects/Cora/apps/web/src/components/play/MatchResultShareCard.tsx) so the win/loss headline is slightly smaller and can span the card width instead of being constrained to a narrow column.
+
+### The Reasoning
+- The extra confirmation layer added friction without adding much clarity in the post-match flow, especially since opening `Share Match` is already an intentional action.
+- Keeping the user on the same modal while Phantom opens gives better continuity and makes the wallet handoff feel less abrupt.
+- Letting the headline run wider makes longer result copy feel more like a poster headline and less like a cramped text block.
+
+### The Tech Debt
+- The Phantom loading pill styling is still duplicated between lobby and battle flows. If we reuse it again, it should become a shared status primitive.
+- The result-card React layout changed, but the exported poster renderer should stay in sync if we continue iterating on the headline art direction.
+
+## 2026-05-11 - Blink Popup Close Button Restyled
+
+### The Change
+- Updated the share/Blink modal close button in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to use the same `btn-game btn-game-secondary` visual treatment and border/shadow color styling as the `Back To Lobby` button in [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- The tiny frame-cut close control looked visually disconnected from the rest of the Blink flow. Matching the established secondary CTA style makes the popup feel more intentional and consistent.
+
+### The Tech Debt
+- This style is still copied inline between components. If more Blink/lobby controls need to share this exact variant, it should become a named button preset or shared wrapper.
+
+## 2026-05-11 - Blink Confirm Cancel Button Corrected
+
+### The Change
+- Reverted the top-right share modal `Close` control in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) back to its compact frame-cut styling.
+- Updated the `Cancel` button inside the `Create Blink challenge?` confirmation popup in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to match the `Back To Lobby` secondary button styling from [BlinkChallengeAccept.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengeAccept.tsx).
+
+### The Reasoning
+- The styling request applied to the confirmation popup action, not the modal chrome. Keeping the small corner close button and upgrading the popup’s main cancel CTA preserves hierarchy while matching the intended Blink pattern.
+
+### The Tech Debt
+- The same secondary button colors and shadow are now repeated again across Blink-related surfaces. If this remains the preferred pattern, it should be promoted into a shared variant.
+
+## 2026-05-11 - Blink Card Portrait Removed
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) to support hiding the character portrait block while keeping the rest of the card layout intact.
+- Updated [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx) so the `Do you think you can beat me?` Blink card no longer renders the character square.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so saved JPG exports from that Blink panel also omit the portrait and rebalance the text block width.
+
+### The Reasoning
+- The portrait square was adding visual weight without adding much value on this specific Blink card. Removing it gives the headline and challenge metadata more room and makes the composition cleaner.
+
+### The Tech Debt
+- The shared challenge-card component now has a mode switch for portrait visibility. If more layout variants appear, we may want a more explicit variant API instead of accumulating booleans.
+
+## 2026-05-11 - Challenge Card Object Overlay Removed
+
+### The Change
+- Removed the decorative `objects.png` overlay from the shared Blink/challenge card in [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx).
+- Removed the same overlay from JPG exports in [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts).
+- Cleared the now-unused overlay prop plumbing from [BlinkChallengePanel.tsx](/d:/projects/Cora/apps/web/src/components/challenge/BlinkChallengePanel.tsx), [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx), and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx).
+
+### The Reasoning
+- The overlay was adding visual noise and competing with the headline/content on the card. Removing it keeps the card cleaner and more focused.
+
+### The Tech Debt
+- The share-card presentation is still controlled by a handful of optional layout switches. If we keep iterating on multiple card looks, a small variant system would be cleaner than continuing to trim props ad hoc.
+
+## 2026-05-11 - Wallet Pill + JPG Layout Sync
+
+### The Change
+- Updated [ChallengeShareCard.tsx](/d:/projects/Cora/apps/web/src/components/challenge/ChallengeShareCard.tsx) so the shortened wallet address now sits inside the same pill as the `WALLET` label instead of rendering as a separate line underneath.
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so the exported challenge JPG matches the revised layout:
+  - dynamic title line counting
+  - a deeper no-portrait title allowance
+  - wallet address rendered inside the wallet pill
+  - follow-on spacing derived from the title height rather than fixed old coordinates
+
+### The Reasoning
+- The split wallet treatment made the card feel unfinished and visually disconnected. Keeping the label and value in one pill reads more like a single metadata chip.
+- The JPG renderer was still following the earlier fixed layout assumptions, which is why the save/export version broke after the card composition changed.
+
+### The Tech Debt
+- The on-screen card and JPG renderer are closer again, but they still duplicate layout logic in two places. If we keep iterating on these share cards, we should consider a shared layout config to reduce drift.
+
+## 2026-05-11 - JPG No-Portrait Layout Tightened
+
+### The Change
+- Refined the no-portrait Blink JPG export in [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) by narrowing the title text width, slightly reducing the headline size/line spacing, and fitting the right-column metric values before drawing.
+
+### The Reasoning
+- The export was still reading like the older wide layout after the portrait removal, which made the headline and stat column feel off compared with the on-screen card. Tightening those constraints brings the saved JPG back toward the intended composition.
+
+### The Tech Debt
+- The JPG renderer still relies on hand-tuned pixel geometry for each variant. If we keep adjusting these cards, we should centralize the layout constants instead of retuning them inline.
+
+## 2026-05-11 - Challenge JPG Alignment Corrections
+
+### The Change
+- Updated [renderChallengeCardJpg.ts](/d:/projects/Cora/apps/web/src/lib/challenge/renderChallengeCardJpg.ts) so portrait-mode text only uses the shifted `textStartX` when the portrait image actually loads successfully.
+- Increased the portrait-mode title wrapping allowance to three lines and tuned line spacing so `Do you think you can beat me!` no longer truncates prematurely.
+- Standardized pill text baseline handling with `middle` alignment for the status and wallet pills, then reset back to `alphabetic` after the pill block.
+- Right-aligned the metric values inside the `TOKEN` / `WAGER` / `ARENA` boxes using the box geometry instead of a hardcoded absolute x position.
+
+### The Reasoning
+- The renderer was still mixing older fixed offsets with newer layout variants, which caused the title, wallet pill, and right-side metrics to drift out of alignment in exported JPGs.
+
+### The Tech Debt
+- The export renderer now has more explicit alignment state management (`textBaseline` / `textAlign` resets), but it is still a hand-built canvas layout. A shared layout abstraction would make future visual changes less fragile.

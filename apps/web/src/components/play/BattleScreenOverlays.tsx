@@ -3,7 +3,9 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { ChallengeShareActions, ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
+import { MatchResultShareCard } from "@/components/play/MatchResultShareCard";
+import type { ActiveBlinkChallengeSession } from "@/lib/session/matchSession";
 
 type SettlementPayload = {
   matchId: string;
@@ -34,6 +36,7 @@ type SettlementOutcomeKind =
   | "draw"
   | "invalidated"
   | "cancelled"
+  | "server_error"
   | "pending";
 
 type BattleScreenOverlaysProps = {
@@ -44,9 +47,10 @@ type BattleScreenOverlaysProps = {
   onReconnect: () => void;
   cleanLobbyHref: string;
   onReturnToLobby: () => void;
+  onDisconnectedReturnToLobby: () => void;
   showDisconnectedOverlay: boolean;
-  pendingSurrenderAfterReconnect: boolean;
-  canSurrenderByState: boolean;
+  isDeviceOffline: boolean;
+  isRejoining: boolean;
   onConfirmSurrender: () => void;
   isMatchComplete: boolean;
   showSettlementOverlay: boolean;
@@ -76,9 +80,18 @@ type BattleScreenOverlaysProps = {
   arenaLabel: string;
   arenaToken: string;
   wagerUsd: string;
-  challengeLink: string | null;
-  challengeDescription: string;
+  regularMatchShareTitle: string;
+  playerCharacterName: string;
+  opponentCharacterName: string;
+  playerResultExpressionSrc: string | null;
+  opponentResultExpressionSrc: string | null;
+  challengeShareTitle: string;
   challengeStatusLabel: string;
+  challengeCharacterExpressionSrc: string | null;
+  createdBlinkChallenge: ActiveBlinkChallengeSession | null;
+  createBlinkBusy: boolean;
+  onSaveMatchResultPng: () => Promise<void>;
+  onCreateBlinkFromResult: () => Promise<void>;
   onCopyChallengeLink: () => Promise<void>;
   onSaveChallengeJpg: () => Promise<void>;
   onShareChallengeToX: () => Promise<void>;
@@ -93,9 +106,10 @@ export function BattleScreenOverlays({
   onReconnect,
   cleanLobbyHref,
   onReturnToLobby,
+  onDisconnectedReturnToLobby,
   showDisconnectedOverlay,
-  pendingSurrenderAfterReconnect,
-  canSurrenderByState,
+  isDeviceOffline,
+  isRejoining,
   onConfirmSurrender,
   isMatchComplete,
   showSettlementOverlay,
@@ -124,9 +138,18 @@ export function BattleScreenOverlays({
   arenaLabel,
   arenaToken,
   wagerUsd,
-  challengeLink,
-  challengeDescription,
+  regularMatchShareTitle,
+  playerCharacterName,
+  opponentCharacterName,
+  playerResultExpressionSrc,
+  opponentResultExpressionSrc,
+  challengeShareTitle,
   challengeStatusLabel,
+  challengeCharacterExpressionSrc,
+  createdBlinkChallenge,
+  createBlinkBusy,
+  onSaveMatchResultPng,
+  onCreateBlinkFromResult,
   onCopyChallengeLink,
   onSaveChallengeJpg,
   onShareChallengeToX,
@@ -160,7 +183,7 @@ export function BattleScreenOverlays({
         ? `You win the ${payoutUsdDisplay} wager in ${tokenLabel}`
         : `You win the ${tokenLabel} wager`
       : settlementOutcomeKind === "lose"
-      ? "No winner payout was awarded to you for this match"
+      ? "Rival secured the wager for this match"
       : settlementOutcomeKind === "player_surrender"
       ? wagerUsdDisplay
         ? `You surrendered and forfeited your ${wagerUsdDisplay} wager`
@@ -171,11 +194,24 @@ export function BattleScreenOverlays({
       ? "Match invalidated: payout is pending the invalidation outcome"
       : settlementOutcomeKind === "cancelled"
       ? "Room cancelled before a final winner payout"
+      : settlementOutcomeKind === "server_error"
+      ? "Match closed safely. Wager resolution is pending review"
       : "Settlement is still being finalized";
 
   const isWinPayoutHighlight = settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender";
 
   const shouldShowResultOverlay = isMatchComplete && showSettlementOverlay;
+  const isMobileDevice =
+    typeof navigator !== "undefined" && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function onOpenDeviceConnectionSettings() {
+    if (!isDeviceOffline || !isMobileDevice || typeof window === "undefined") return;
+    window.location.href = "app-settings:";
+  }
+
+  function resetShareView() {
+    onCloseShareModal();
+  }
 
   return (
     <>
@@ -219,37 +255,55 @@ export function BattleScreenOverlays({
           >
             <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">You were disconnected</p>
             <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-              Your match is still active. Rejoin to continue, or surrender to end the match.
+              Your match is still active. Rejoin now, or return to the lobby and manage it from the active match banner.
             </p>
-            {pendingSurrenderAfterReconnect && (
-              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
-                Rejoining room to submit surrender...
-              </p>
-            )}
-            {!canSurrenderByState && (
-              <p className="mt-2 font-gabarito text-xs text-[rgba(244,240,230,0.76)]">
-                Surrender is only available after the match is committed.
-              </p>
-            )}
             <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {isDeviceOffline ? (
+                <button
+                  type="button"
+                  onClick={onOpenDeviceConnectionSettings}
+                  disabled={!isMobileDevice}
+                  className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{
+                    border: "1px solid rgba(248,214,148,0.26)",
+                    color: "rgba(244,240,230,0.84)",
+                    background: "rgba(19,32,26,0.72)",
+                  }}
+                >
+                  No Internet Connection
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onReconnect}
+                  disabled={isRejoining}
+                  className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+                >
+                  {isRejoining ? "Rejoining Room..." : "Rejoin Room"}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onReconnect}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
-              >
-                Rejoin Room
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmSurrender}
-                disabled={!canSurrenderByState || pendingSurrenderAfterReconnect}
-                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:opacity-50"
+                disabled
+                className="frame-cut frame-cut-sm cursor-not-allowed px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide opacity-50"
                 style={{ border: "1px solid rgba(186,105,49,0.42)", color: "var(--tone-cream)", background: "rgba(77,42,24,0.92)" }}
               >
-                Surrender
+                Connect to Surrender
               </button>
             </div>
+            {isDeviceOffline && !isMobileDevice && (
+              <p className="mt-2 text-center font-gabarito text-xs text-[rgba(244,240,230,0.62)]">
+                Check your connection, then tap Rejoin.
+              </p>
+            )}
+            <Link
+              href={cleanLobbyHref}
+              onClick={onDisconnectedReturnToLobby}
+              className="mt-2 block text-center font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[rgba(244,240,230,0.54)] underline decoration-dotted underline-offset-2 hover:text-[rgba(244,240,230,0.84)]"
+            >
+              Return to Lobby
+            </Link>
           </div>
         </div>
       )}
@@ -303,7 +357,7 @@ export function BattleScreenOverlays({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
               transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="frame-cut w-full max-w-2xl p-4 md:p-5"
+              className="frame-cut relative w-full max-w-2xl overflow-hidden p-4 md:p-5"
               style={{
                 border: "1px solid rgba(248,214,148,0.42)",
                 background:
@@ -473,10 +527,12 @@ export function BattleScreenOverlays({
               <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
-                  onClick={onOpenShareModal}
+                  onClick={() => {
+                    onOpenShareModal();
+                  }}
                   className="btn-game btn-game-primary min-w-[146px] px-4 py-2 text-xs shadow-xl"
                 >
-                  Blink Share
+                  Share Match
                 </button>
                 <Link
                   href="/lobby"
@@ -540,6 +596,11 @@ export function BattleScreenOverlays({
                   )}
                 </div>
               )}
+              {settlementStatus === "Pending" && (
+                <div className="absolute inset-x-0 bottom-0 h-1 bg-[rgba(39,65,55,0.08)]">
+                  <div className="shimmer-bar h-full w-full" />
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -550,30 +611,103 @@ export function BattleScreenOverlays({
           <div className="relative w-full max-w-3xl">
             <button
               type="button"
-              onClick={onCloseShareModal}
+              onClick={resetShareView}
               className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
               style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
             >
               Close
             </button>
-            <ChallengeShareCard
-              title="Challenge Me"
-              challengerName="You"
-              challengerAddress={address}
-              arenaLabel={arenaLabel}
-              token={arenaToken}
-              wagerUsd={wagerUsd}
-              challengeLink={challengeLink}
-              description={challengeDescription}
-              statusLabel={challengeStatusLabel}
-              onCopy={onCopyChallengeLink}
-              onSaveJpg={onSaveChallengeJpg}
-              onShareX={onShareChallengeToX}
-              notice={shareNotice}
-            />
+            {!createdBlinkChallenge && (
+              <div className="space-y-4">
+                <p className="px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
+                  Save the finished match as a result poster, or turn this win into a rematch Blink.
+                </p>
+                <MatchResultShareCard
+                  title={regularMatchShareTitle}
+                  arenaLabel={arenaLabel}
+                  wagerUsd={wagerUsd}
+                  playerCharacterName={playerCharacterName}
+                  opponentCharacterName={opponentCharacterName}
+                  playerExpressionSrc={playerResultExpressionSrc}
+                  opponentExpressionSrc={opponentResultExpressionSrc}
+                  roundsLabel={`${playerRoundsWon}-${opponentRoundsWon}`}
+                  correctCount={correctCount}
+                  wrongCount={wrongCount}
+                  timeoutCount={timeoutCount}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void onSaveMatchResultPng()}
+                    className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5"
+                    style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
+                  >
+                    Save As PNG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onCreateBlinkFromResult()}
+                    disabled={createBlinkBusy}
+                    className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                    style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
+                  >
+                    {createBlinkBusy ? "Opening Phantom..." : "Create Blink"}
+                  </button>
+                </div>
+                {createBlinkBusy && (
+                  <div
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+                    style={{
+                      border: "1px solid rgba(248,214,148,0.26)",
+                      background: "linear-gradient(145deg, rgba(248,214,148,0.14), rgba(203,227,193,0.1))",
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    <span className="h-2 w-2 rounded-full bg-[#f8d694] animate-pulse" />
+                    <span className="font-gabarito text-[11px] font-bold uppercase tracking-[0.14em] text-[#f8d694]">
+                      Opening Phantom...
+                    </span>
+                  </div>
+                )}
+                {shareNotice && (
+                  <p className="font-gabarito text-xs" style={{ color: shareNotice.tone === "success" ? "#2f6249" : "#8a3f2b" }}>
+                    {shareNotice.text}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {createdBlinkChallenge && (
+              <div className="space-y-3">
+                <p className="px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
+                  Share the Blink URL to open the challenge in supported apps or the browser challenge page.
+                </p>
+                <ChallengeShareCard
+                  title={challengeShareTitle}
+                  challengerAddress={address}
+                  arenaLabel={arenaLabel}
+                  token={arenaToken}
+                  wagerUsd={wagerUsd}
+                  challengeLink={createdBlinkChallenge.blinkUrl}
+                  description={null}
+                  statusLabel={challengeStatusLabel}
+                  characterExpressionSrc={challengeCharacterExpressionSrc}
+                  characterExpressionAlt="Your scientist expression"
+                />
+                <ChallengeShareActions
+                  challengeLink={createdBlinkChallenge.blinkUrl}
+                  notice={shareNotice}
+                  actionCopyLabel="Copy Blink URL"
+                  onCopy={onCopyChallengeLink}
+                  onSaveJpg={onSaveChallengeJpg}
+                  onShareX={onShareChallengeToX}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
     </>
   );
 }
+

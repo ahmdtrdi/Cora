@@ -27,8 +27,11 @@ export const TEST_CONSTANTS = {
   roundDurationSeconds: 180,
   minDamage: 1,
   maxDamage: 100,
-  maxEffectValue: 100,
+  maxEffectValue: 30,
   maxScoreDelta: 10_000,
+  maxCardSlots: 128,
+  manifestEntrySize: 3,
+  maxScoreMultiplier: 100,
   sessionTimeout: 900,
   effectAttack: 1,
   effectHeal: 2,
@@ -41,6 +44,7 @@ export const TEST_CONSTANTS = {
   endReasonCheaterFlagged: 5,
   endReasonForceEnded: 6,
   endReasonDrawNoContest: 7,
+  endReasonSurrender: 8,
 } as const;
 
 export type BattleSessionAccount = IdlAccounts<CoraBattle>["battleSession"];
@@ -88,6 +92,23 @@ export function findCardPda(
 
 export function battleStatusName(status: BattleSessionAccount["status"]): string {
   return Object.keys(status)[0] ?? "";
+}
+
+export function packManifestSlot(effectType: number, maxValue: number): number[] {
+  const normalizedMaxValue = Math.max(0, Math.min(0xffff, maxValue));
+  return [
+    effectType,
+    normalizedMaxValue & 0xff,
+    (normalizedMaxValue >> 8) & 0xff,
+  ];
+}
+
+export function packManifest(
+  entries: Array<{ effectType: number; maxValue: number }>
+): number[] {
+  return entries.flatMap((entry) =>
+    packManifestSlot(entry.effectType, entry.maxValue)
+  );
 }
 
 export async function expectAnchorError(
@@ -208,8 +229,26 @@ export async function airdropSol(
   publicKey: PublicKey,
   lamports = LAMPORTS_PER_SOL
 ): Promise<void> {
-  const signature = await provider.connection.requestAirdrop(publicKey, lamports);
-  await provider.connection.confirmTransaction(signature, "confirmed");
+  try {
+    const signature = await provider.connection.requestAirdrop(publicKey, lamports);
+    await provider.connection.confirmTransaction(signature, "confirmed");
+    return;
+  } catch (error) {
+    const payer = (authority as any).payer as Keypair | undefined;
+    if (!payer) {
+      throw error;
+    }
+
+    const transferTx = new anchor.web3.Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: payer.publicKey,
+        toPubkey: publicKey,
+        lamports,
+      })
+    );
+
+    await provider.sendAndConfirm(transferTx, [payer]);
+  }
 }
 
 export async function createSession(params?: {
@@ -239,6 +278,8 @@ export async function createSession(params?: {
 }
 
 export async function activateSession(sessionPda: PublicKey): Promise<void> {
+  await ensureInlineManifestCommitted(sessionPda);
+
   await program.methods
     .activateSession()
     .accounts({
@@ -295,6 +336,56 @@ export async function registerEffectCard(params: {
     .rpc();
 
   return { cardId, cardPda };
+}
+
+export async function setCardManifest(params: {
+  sessionPda: PublicKey;
+  isPlayerA: boolean;
+  entries: Array<{ effectType: number; maxValue: number }>;
+}) {
+  const manifest = Buffer.from(packManifest(params.entries));
+
+  await program.methods
+    .setCardManifest(params.isPlayerA, params.entries.length, manifest)
+    .accounts({
+      authority: authority.publicKey,
+      battleSession: params.sessionPda,
+    })
+    .rpc();
+}
+
+export async function applyInlineEffect(params: {
+  sessionPda: PublicKey;
+  slot: number;
+  actorIsA: boolean;
+  finalValue: number;
+  scoreDelta: number;
+}) {
+  await program.methods
+    .applyEffect(
+      params.slot,
+      params.actorIsA,
+      params.finalValue,
+      params.scoreDelta
+    )
+    .accounts({
+      authority: authority.publicKey,
+      battleSession: params.sessionPda,
+    })
+    .rpc();
+}
+
+export async function surrenderMatch(params: {
+  sessionPda: PublicKey;
+  surrenderingPlayer: PublicKey;
+}) {
+  await program.methods
+    .surrenderMatch(params.surrenderingPlayer)
+    .accounts({
+      authority: authority.publicKey,
+      battleSession: params.sessionPda,
+    })
+    .rpc();
 }
 
 export async function fetchSession(
@@ -370,4 +461,24 @@ export async function createFinishedKoBattle() {
     playerA,
     playerB,
   };
+}
+
+async function ensureInlineManifestCommitted(sessionPda: PublicKey): Promise<void> {
+  const session = await fetchSession(sessionPda);
+
+  if (!session.manifestCommittedA) {
+    await setCardManifest({
+      sessionPda,
+      isPlayerA: true,
+      entries: [{ effectType: TEST_CONSTANTS.effectNone, maxValue: 0 }],
+    });
+  }
+
+  if (!session.manifestCommittedB) {
+    await setCardManifest({
+      sessionPda,
+      isPlayerA: false,
+      entries: [{ effectType: TEST_CONSTANTS.effectNone, maxValue: 0 }],
+    });
+  }
 }

@@ -541,3 +541,195 @@
 - Aligning the shared client-to-server event types removes another small contract drift between FE and BE.
 
 
+## 2026-05-09 - MagicBlock ER Authority: Room State & Backend Setup Pipeline (Points 1 & 2)
+
+### The Change
+
+**`apps/api/src/managers/room/types.ts` (3 new types, 4 new Room fields):**
+- Added `ErRegisteredCard` interface tracking per-card ER state: `cardPda`, `owner`, `effectType`, `maxValue`, `isDelegated`, `isConsumed`.
+- Added `ErLifecycleStatus` type — a 9-state FSM (`none` → `creating` → `registering` → `activating` → `delegating` → `active` → `committing` → `finished` | `failed`) so the backend can branch on exactly where the ER setup is.
+- Added `ErProofMeta` interface for the `/proof` API endpoint: stores session PDA, setup tx signatures, terminal tx signatures, and end reason.
+- Extended `Room` with `erEnabled`, `erLifecycleStatus`, `erCardRegistry: Map<string, ErRegisteredCard>`, and `erProofMeta`.
+
+**`apps/api/src/managers/room/Store.ts` (ER defaults):**
+- `erEnabled` defaults from `isMagicBlockConfigured()` at room creation — all room code branches on `room.erEnabled` instead of re-checking the env every time.
+- Other ER fields default to `'none'`, empty `Map`, and `null`.
+
+**`apps/api/src/utils/questionHash.ts` (NEW):**
+- `deriveQuestionHash()` — SHA-256 of sorted question IDs, producing the deterministic 32-byte hash needed by `createSession`. Replaces the zeroed `new Uint8Array(32)` placeholder.
+
+**`packages/game-logic/src/QuestionDealer.ts` (question accessor):**
+- Stores `allQuestions` at construction time (before pools are consumed by dealing).
+- Added `getQuestions()` accessor returning the original full set.
+
+**`packages/game-logic/src/GameEngine.ts` (question accessor):**
+- Added `getQuestions()` delegating to `QuestionDealer.getQuestions()` so `Blockchain.createBattleSession()` can derive the question hash.
+
+**`apps/api/src/managers/room/Blockchain.ts` (full ER setup pipeline):**
+- Refactored `createBattleSession()` from a 2-step stub (createSession + delegate) into a **5-phase pipeline**:
+  1. `createSession` with real `questionHash` (base RPC)
+  2. `registerCardV2` × 10 — initial visible hand (5 cards × 2 players) with deterministic card keys `<playerIndex>-<slotIndex>` (base RPC)
+  3. `activateSession` (base RPC)
+  4. `delegateBattleSession` (router RPC)
+  5. `delegateRegisteredCard` × 10 (router RPC)
+- Card key encoding: `"0-00"` through `"1-04"` — always ≤5 bytes UTF-8, well within the 16-byte on-chain limit.
+- On any phase failure, `erEnabled` flips to `false`, `erLifecycleStatus = 'failed'`, match continues engine-only.
+- All tx signatures are collected in `setupTxs` and stored in `room.erProofMeta`.
+
+**`apps/api/src/routes/match.ts` (enhanced /proof endpoint):**
+- `GET /api/match/:roomId/proof` now returns `erEnabled`, `status` (lifecycle phase), `setupTxSignatures`, `terminalTxSignatures`, and `endReason` alongside the existing `erSessionPda` and `explorerUrl`.
+
+### The Reasoning
+
+1. **`erEnabled` at creation time:** Previously, every ER-aware code path had to call `isMagicBlockConfigured()`. Caching the result on the room at creation time means all subsequent branching is a simple boolean check — cleaner, faster, and prevents inconsistency if env vars are modified mid-flight.
+2. **Fine-grained lifecycle FSM:** The 9-state `ErLifecycleStatus` lets us log exactly which phase failed, retry from the correct point if needed (future), and gives the `/proof` endpoint meaningful status for the frontend fairness badge.
+3. **Deterministic card keys:** Engine card IDs are long UUIDs (`card-<questionId>-<timestamp>-<random>`) that exceed the 16-byte on-chain limit. The `<playerIndex>-<slotIndex>` encoding is short, deterministic, and unique per session — ideal for PDA derivation.
+4. **Question hash from IDs only:** SHA-256 of sorted question IDs is sufficient to prove the question set is deterministic and unchanged. Including full text would be wasteful and leak question content on-chain.
+5. **Lazy registration:** Only the initial 10 visible hand cards are registered. Replacement cards (after a play consumes one) will be registered lazily in Point 4's `handlePlayCard` refactor — this keeps room start latency reasonable.
+
+### The Tech Debt
+
+- [ ] **Replacement card registration:** Point 4 (not yet implemented) must register and delegate new cards before they become playable when a hand slot is refilled.
+- [ ] **ER terminal flow:** Points 4–5 (commit/undelegate/read final state/settle from ER) are not yet wired.
+- [ ] **Surrender rejection:** ER rooms should reject surrender at the websocket layer — to be implemented in Point 4.
+- [ ] **Pre-existing test failures:** The same 7 `RoomManager.test.ts` failures around message ordering and async `initializeEngine()` persist — they predate this change and are documented in the 2026-05-08 Backend Contract Deduplication entry.
+- [ ] **`allQuestions` memory:** `QuestionDealer` now stores a copy of all valid questions for the match lifetime. This is ~60 question objects per match — negligible, but worth noting.
+
+## 2026-05-10 - Blink Matchmaking Soft Commitment Backend
+
+### The Change
+- Added `apps/api/src/services/blinkMatches.ts` with a Supabase-backed Blink match repository and in-memory fallback for local/no-env testing.
+- Reworked private Blink creation so `/match/private` creates a `PENDING` DB challenge instead of an in-memory depositing room.
+- Replaced targeted `/api/actions/challenge?roomId=...` handling with the soft-commitment flow:
+  - Player A/creator creates the challenge without paying.
+  - Player B/challenger accepts first and receives an `initialize_match + deposit_wager` transaction.
+  - Player A later receives a `deposit_wager` transaction and starts the game after websocket `confirmDeposit`.
+- Added private room hydration from Supabase when `/match/:roomId` is opened for a `CHALLENGED` Blink match.
+- Added a Blink janitor in `RoomManager` to mark `PENDING -> EXPIRED` and `CHALLENGED -> FORFEITED`.
+- Added `apps/api/supabase/matches.sql`, `apps/api/test/blinkMatches.test.ts`, and the smoke script `bun run test:blink-soft`.
+
+### The Reasoning
+- The current escrow program requires `player_b` at `initialize_match`, so the backend cannot implement true Player-A-pays-first Blinks yet.
+- The workaround preserves the user-facing creator/challenger roles while using Player B as the on-chain initializer for now.
+- Keeping this path in a separate Blink match repository avoids touching the working public FIFO matchmaking queue.
+
+### The Tech Debt
+- True Player-A-pays-first Blink challenges require smart contract support for open challenges where `player_b` is assigned later.
+- During `PENDING`, Player A has no funds at risk; if Player A flakes after Player B accepts, Player B can only reclaim/refund their own deposit with today's contract.
+- Current on-chain timeout constants may not align with the backend's 15-minute accept window and 3-minute creator response window.
+- Full `bun test` and `bun run lint` still hit pre-existing repo harness/lint issues; focused Blink tests and API typecheck pass.
+
+## 2026-05-10 - Blink True Flow Backend Cutover (Soft → True Commitment)
+
+### The Change
+
+**`apps/api/src/config/solana.ts` (discriminators):**
+- Added `createOpenChallenge`, `acceptChallenge`, `reclaimChallenge` discriminators from the deployed IDL (Entry 26 in DEVLOG-WEB3). These are required by the new transaction builders.
+
+**`apps/api/src/services/BlinkTransactionBuilder.ts` (2 new methods):**
+- Added `buildCreateOpenChallengeTransaction(account, matchIdBytes, tokenMint, wagerAmount)`:
+  - Derives `challenge_state` and `challenge_vault` PDAs from `CHALLENGE_SEED` / `CHALLENGE_VAULT_SEED` + match_id.
+  - Creator is signer/funder. Includes wSOL wrap for native SOL.
+  - Returns unsigned base64 serialized transaction.
+- Added `buildAcceptChallengeTransaction(account, matchIdBytes, tokenMint, creatorPubkey)`:
+  - Derives both challenge PDAs (closed by accept_challenge) and final escrow PDAs (created by accept_challenge).
+  - `creatorPubkey` is read from the DB row (`creator_wallet`) at the time challenger hits `POST /api/actions/challenge`.
+  - Challenger is signer. Creator receives rent from closed challenge accounts.
+  - Returns unsigned base64 serialized transaction.
+- Kept existing `buildDepositTransaction` for public FIFO matchmaking (untouched).
+
+**`apps/api/src/routes/match.ts` (Change 1 — creator flow):**
+- `POST /match/private` no longer writes a DB row immediately. Instead:
+  1. Generates `roomId` (UUID) and derives `matchIdBytes`.
+  2. Builds unsigned `create_open_challenge` transaction.
+  3. Returns `{ roomId, blinkUrl, transaction }`.
+- `POST /match/private/confirm` (NEW endpoint):
+  - Accepts `{ roomId, address, signature, tokenMint, wagerAmount }`.
+  - Verifies on-chain confirmation with `connection.confirmTransaction(sig, 'confirmed')` and 30s timeout.
+  - On success: writes DB row via `blinkMatches.createPending()` with the pre-determined `roomId`. Returns `{ status: 'PENDING' }`.
+  - On timeout: returns **408 Request Timeout**, does NOT write DB row.
+  - On tx failure: returns 400 with error message.
+
+**`apps/api/src/routes/actions.ts` (Change 2 — challenger flow):**
+- PENDING path now builds `accept_challenge` transaction (was `initialize_match + deposit_wager`).
+- Removed CHALLENGED creator deposit path entirely — after `accept_challenge`, both wagers are locked on-chain. Creator only needs to join WebSocket.
+- Non-PENDING requests return 409 with "Challenge already accepted. Join the match via WebSocket."
+
+**`apps/api/src/managers/RoomManager.ts` (Change 3 — FORFEITED settlement + hydration):**
+- `createPrivateRoom()` returns `{ roomId, transaction }` instead of just `roomId`.
+- `confirmPrivateRoom()` (NEW) verifies on-chain, then writes DB with pre-determined ID.
+- Janitor `runBlinkJanitorOnce()`: FORFEITED matches now trigger `submitSettlementTransaction(action=0, target=challengerWallet)`.
+  - On success: marks DB `COMPLETED`.
+  - On failure: keeps DB as `FORFEITED`, logs `match_id` and `challenger_wallet` explicitly. **Never silently swallows.**
+- `hydrateBlinkRoomInternal()`: both players now marked `hasDeposited: true` (was `false` for creator in soft flow).
+
+**`apps/api/src/managers/room/Lifecycle.ts` (Change 3 — deadline settlement):**
+- Creator deadline miss now also triggers `submitSettlementTransaction(action=0, target=challengerWallet)` with same success/failure handling as janitor.
+
+**`apps/api/src/services/blinkMatches.ts` (timeout alignment):**
+- `JOIN_WINDOW_MS` changed from `3 * 60 * 1000` (180s) to `ESCROW_CONSTANTS.DEPOSIT_TIMEOUT_SECONDS * 1000` (30s) — matches on-chain timeout.
+- `PENDING_TTL_MS` changed from hardcoded `15 * 60 * 1000` to `ESCROW_CONSTANTS.CHALLENGE_EXPIRY_SECONDS * 1000` (900s).
+- `CreateBlinkMatchInput` now accepts optional `id` for pre-determined PDA derivation.
+
+**`apps/api/test/blinkMatches.test.ts` (3 new tests):**
+- Pre-determined ID support: verifies `createPending({ id: 'custom-id' })` uses the given ID.
+- 30s window boundary: verifies `joinDeadline` is ~30s from acceptance.
+- Creator self-accept rejection: verifies `acceptPending(id, CREATOR)` returns `creator_cannot_accept`.
+
+### The Reasoning
+
+1. **True on-chain commitment:** The soft flow was a workaround because the contract couldn't accept a creator-pays-first model. Now that `create_open_challenge` and `accept_challenge` are deployed (DEVLOG-WEB3 Entry 26), we can implement the intended flow where Player A funds the escrow *before* sharing the Blink link.
+2. **Two-step creation:** `POST /match/private` returns the unsigned tx; `POST /match/private/confirm` verifies on-chain before writing DB. This avoids blocking the HTTP connection and prevents orphaned DB rows if the creator never signs.
+3. **FORFEITED settlement on-chain:** Previously, a FORFEITED match only cancelled the room locally. Now the janitor and lifecycle both trigger `settle_match(action=0, target=challenger)`, ensuring the challenger receives the escrowed wagers automatically. Failure handling is explicit — DB stays `FORFEITED` with loud logging.
+4. **Timeout alignment (180s → 30s):** The smart contract's `DEPOSIT_TIMEOUT_SECONDS = 30` was mismatched with the backend's 3-minute join window. Corrected to import from `@shared/escrow` to prevent future drift.
+5. **Both players deposited:** After `accept_challenge`, both wagers are locked on-chain. The room hydration now reflects this — creator only needs to join via WebSocket, not sign another transaction.
+
+### The Tech Debt
+
+- [ ] **confirmTransaction timeout:** `connection.confirmTransaction` uses the default timeout (~30s). For production, consider using `confirmTransaction` with `lastValidBlockHeight` for more reliable timeout behavior.
+- [ ] **Pre-existing test failures:** 8 `RoomManager.test.ts` failures remain (engine is null due to missing questions API in test environment). These predate this change.
+- [ ] **Reclaim challenge:** The `reclaim_challenge` instruction is supported by the contract but not yet wired in the backend. If a creator's challenge expires on-chain before anyone accepts, the creator can reclaim via a frontend-only flow.
+
+## 2026-05-11 - Fix: Preserve hasDeposited on WebSocket Join
+
+### The Change
+- Fixed `joinRoom` in `Lifecycle.ts` to preserve `hasDeposited: true`
+  when a player joins a hydrated private Blink room.
+- Previously, `hydrateBlinkRoomInternal` correctly set both players to
+  `hasDeposited: true` after `accept_challenge`, but `joinRoom` overwrote
+  it back to `false` on new connections.
+- Both players now enter `playing` state automatically when both connect
+  to a hydrated room, without needing to send `confirmDeposit`.
+
+### The Reasoning
+- After `accept_challenge`, both wagers are locked on-chain. The WebSocket
+  join is presence confirmation only, not a deposit gate. The metadata
+  must reflect the on-chain reality.
+- The FE had a workaround (resending deposit signature via `confirmDeposit`
+  after join). That workaround can remain as a harmless safety net but the
+  root cause is now fixed on the backend.
+
+## 2026-05-11 - Blink URL Browser Redirect
+
+### The Change
+- Added browser detection to `GET /api/actions/challenge` via `Accept`
+  header content negotiation.
+- Normal browser requests (Accept: text/html) with a `roomId` now
+  redirect to `FE_BASE_URL/challenge/:roomId` (302).
+- Blink-compatible wallets (Accept: application/json) continue to
+  receive the JSON action payload unchanged.
+- Added `FE_BASE_URL` env var (default: `http://localhost:3000`).
+
+### The Reasoning
+- Sharing the raw Blink URL outside a wallet-aware app returned raw JSON,
+  making the link unusable for anyone without a Blink-compatible client.
+- Content negotiation is the standard Solana Actions pattern for this —
+  wallets send application/json, browsers send text/html.
+- Terminal states (EXPIRED, FORFEITED) correctly redirect to FE which
+  already handles the "Challenge Closed" UI via status polling.
+
+### The Tech Debt
+- [ ] The generic Blink endpoint (no roomId) does not redirect browsers.
+  If a creator shares the base Blink URL without a roomId, a browser
+  visitor still sees JSON. Low priority — the shareable link always
+  includes a roomId.
