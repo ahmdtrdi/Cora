@@ -4181,6 +4181,195 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The countdown slot is intentionally generic, but it is still a one-off prop path through the deposit components. If we add more timer-adjacent states later, it may be worth consolidating this into a dedicated countdown presentation component.
 
+## 2026-05-10 - Layered Landing Hero Artwork
+
+### The Change
+- Rebuilt [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) around the designer-provided layered room artwork, replacing the placeholder doodles, floating cards, cursor orb, and token badges.
+- Added a reusable `HERO_LAYERS` configuration plus `HeroLayer` renderer with staged entrances, spring-smoothed pointer parallax, subtle scene tilt, reduced-motion handling, and smaller motion intensity on coarse/mobile pointers.
+
+### The Reasoning
+- The hero now uses the original 4096 x 2589 canvas ratio so every transparent PNG layer shares one aligned stage and preserves the designer composition.
+- Keeping movement strengths in layer config makes the depth model readable: the stable base barely moves, heavy bookcases stay restrained, and foreground objects/drawer carry the strongest but still subtle parallax.
+- Next `Image` is used inside motion wrappers so we keep optimized image loading while Framer Motion owns the 3D and pointer-following transforms.
+
+### The Tech Debt
+- The assets currently live under `apps/web/public/assets/landing`, so the component serves them from `/assets/landing/...` instead of the originally requested `/landing/...`. If the asset folder is moved later, update `HERO_ASSET_ROOT` rather than every layer entry.
+
+## 2026-05-10 - In-Scene Hero Title Layering
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the landing hero title is now a configured text layer inside the artwork stack rather than a separate heading block above the scene.
+- Removed the extra eyebrow copy, subtitle copy, and scroll indicator, and reordered the depth stack so `CORA` sits between `bookcase_2` and `bookcase_1` with its own entrance timing and parallax strength.
+
+### The Reasoning
+- Treating the title as just another layer keeps the composition faithful to the designer scene and creates the intended “embedded in the environment” feel instead of a conventional marketing hero layout.
+- Keeping text and image layers in the same reusable config makes the depth order, timing, and motion relationships explicit, which should make future composition tuning much less brittle.
+
+### The Tech Debt
+- The exact title placement is currently tuned with percentage positioning inside the shared 4096 x 2589 stage. If the designer revises the artwork crop or safe area, we should retune that anchor with final visual QA rather than assuming the current percentage will remain perfect.
+
+## 2026-05-10 - Static Base And Vertical Hero Parallax
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` is no longer part of the animated layer stack and is instead rendered as the section background, while the remaining scene layers now preload before their entrance sequence begins.
+- Refactored the hero interaction from tilt-plus-XY parallax to Pixelmon-style vertical-only parallax, removed the navbar offset from the hero canvas, and made the scene wrapper full-height so the table and drawer can live inside the initial viewport under the fixed nav.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to keep its non-scrolled state explicitly transparent while preserving the existing solid-on-scroll behavior and frame-cut brand styling.
+
+### The Reasoning
+- Making the base room art completely static gives the scene a stable camera anchor, which helps the layered bookcases, title, table, and foreground details feel like depth within one illustration instead of separate floating objects.
+- Waiting for all PNG layers to load before starting the staggered animation avoids the uneven “pop-in while decoding” look and makes the back-to-front settling sequence feel more intentional.
+- Vertical-only movement is a better fit for this environment art than full tilt because it preserves the room perspective and feels calmer, especially once the hero starts at `y = 0` behind the navbar.
+
+### The Tech Debt
+- The section now uses `background-size: cover` for the static base while the moving PNG layers still rely on shared absolute positioning. If final visual QA shows mismatch between the covered backdrop and the contained overlays at extreme aspect ratios, we may need one more composition pass to tighten their scaling relationship.
+
+## 2026-05-10 - Full-Bleed Hero Canvas And Counter-Parallax
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the layered scene canvas is now full-bleed at `100svh` with no horizontal page padding or max-width cap, allowing the artwork to fill the viewport edge to edge.
+- Restored `bookcase_3` as the backmost animated layer, added an `isBackground` flag for image-layer fit behavior, and changed image rendering from `fill` + shared `object-contain` to explicit absolute sizing with `cover` for background shelves and bottom-anchored `contain` for table/drawer/object layers.
+- Reworked the parallax math to use both `pointerX` and `pointerY` with counter-motion by depth, so background layers drift opposite the cursor, the title moves gently, and foreground layers follow the cursor for a stronger window-like depth effect.
+
+### The Reasoning
+- The previous capped canvas and centered layout were constraining the artwork too much, which made the scene feel like a framed component rather than a full landing-page environment.
+- Splitting background and foreground fit rules fixes the scaling problem where wide shelf layers could shrink awkwardly while the lower scene pieces still need to stay visually anchored to the floor line.
+- Counter-parallax creates a more convincing sense of depth than same-direction drift because it lets the room feel spatial without reintroducing the tilt behavior we intentionally removed.
+
+### The Tech Debt
+- The hero now depends more heavily on manual per-layer fit conventions (`isBackground` vs foreground defaults). If more layer types or special crops are added later, we may want to promote this into a slightly richer layer positioning schema instead of relying on a binary background flag.
+
+## 2026-05-10 - Hero Targeted Layer Fixes
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to stop applying horizontal parallax to the in-scene `CORA` title while keeping its lighter vertical motion.
+- Adjusted `bookcase_3` to render at `depth: 1` so it no longer disappears behind the static section background.
+- Changed all animated image layers to use `object-fit: contain`, with background shelves centered and foreground pieces bottom-anchored, removing the previous `cover` cropping on the shelf layers.
+
+### The Reasoning
+- The title clipping bug came from giving the text layer a nonzero X-direction during the initial spring state, which could shift it sideways before settling.
+- `bookcase_3` was effectively competing with the section background when rendered at `zIndex: 0`, so raising it one layer restores it as the first visible animated shelf plane.
+- The bookcase assets behave more like transparent composition layers than true viewport-filling backgrounds, so `contain` preserves their intended framing better than `cover`.
+
+### The Tech Debt
+- Depth numbers now matter for both rendering order and parallax direction rules. If we keep iterating on this scene, it may be worth separating visual stack order from motion grouping so tiny depth fixes do not also carry interaction semantics.
+
+## 2026-05-10 - Full-Cover Layered Hero Stage
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` is part of the same `HERO_LAYERS` stack as the rest of the room artwork and every image layer renders with `fill`, `object-cover`, and shared center positioning.
+- Removed the constrained flex/content wrapper and decorative gradient blocks from the hero, leaving a full-viewport absolute stage with subtle pointer tilt and parallax.
+- Mirrored the landing PNGs into [apps/web/public/landing](/d:/projects/Cora/apps/web/public/landing) so the runtime paths resolve as `/landing/base.png`, `/landing/bookcase_3.png`, `/landing/bookcase_2.png`, `/landing/bookcase_1.png`, `/landing/table.png`, `/landing/drawer.png`, and `/landing/objects.png`.
+
+### The Reasoning
+- The previous split between a covered section background and contained overlay images made the transparent layers scale differently, so the room composition looked boxed-in and misaligned.
+- Rendering every layer against one absolute viewport-cover stage keeps the designer canvas aligned while allowing the drawer and foreground objects to crop naturally at the hero edge.
+- Keeping the `CORA` title between `bookcase_2` and `bookcase_1` preserves the in-scene framing while using a smaller clamp and higher anchor so it remains readable.
+
+### The Tech Debt
+- The `/assets/landing` copies are still present in the public folder. Once no code references them, we can remove that duplicate asset path after confirming nothing outside the landing hero depends on it.
+
+## 2026-05-10 - Ratio-Preserved Hero Stage
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so the landing artwork now renders inside a `4096 / 2589` aspect-ratio stage that is `120svh` tall instead of covering a `100svh` viewport directly.
+- Changed the layered PNG rendering from `object-cover` to `object-contain`, removed the per-layer inset overscan, and adjusted the in-scene `CORA` title to `top-[39%]` with a slightly smaller responsive clamp.
+
+### The Reasoning
+- The exported designer layers all share the same full-canvas dimensions, so preserving that canvas ratio and containing each layer keeps the composition aligned without aggressively cropping the top wall or enlarging the bookcases.
+- Letting the hero be taller than one viewport gives the table and drawer room to sit low while keeping the intended empty wall space visible above the shelves.
+- Keeping parallax on the layer wrappers preserves the subtle Pixelmon-like depth while the sizing model now belongs to the shared stage instead of each individual image.
+
+### The Tech Debt
+- The current stage is tuned to `120svh`. If final visual QA on very wide or very short screens still feels too cropped or too roomy, the next adjustment should be the stage height/width formula rather than switching the layer images back to cover.
+
+## 2026-05-10 - Designer Canvas Hero Replacement
+
+### The Change
+- Replaced [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) with a clean layered scene that uses only `bookcase_3`, `bookcase_2`, the in-scene `CORA` title, `bookcase_1`, `table`, `drawer`, and `objects`.
+- Changed the hero stage to `w-screen` with `aspect-[4096/2589]`, letting the artwork height follow the designer canvas instead of forcing a fixed `100svh` or `120svh` crop.
+- Added staged entrance animation, subtle pointer-following parallax per layer, and a gentle whole-stage 3D tilt while preserving reduced-motion behavior.
+
+### The Reasoning
+- The designer exports share one 4096 x 2589 canvas, so every layer now fills the same absolute stage with `object-contain` and centered positioning to preserve alignment without cropping.
+- Removing `base.png`, old marketing copy, and scroll affordances keeps the hero focused on the provided composition and the single embedded `CORA` title.
+- The motion config keeps depth readable by giving farther shelves smaller movement and foreground objects slightly stronger drift without making the scene feel gimmicky.
+
+### The Tech Debt
+- Final visual QA should still confirm the title's exact overlap with `bookcase_1` across common viewport widths, since that placement depends on the designer layer artwork rather than layout text flow.
+
+## 2026-05-10 - Static Hero Base And Counter Motion
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to restore `/landing/base.png` as the backmost hero layer while keeping it static with `movement: 0`.
+- Added an explicit per-layer `direction` value so back layers and front layers drift in opposing directions during pointer hover.
+
+### The Reasoning
+- The base art should behave like the fixed room plate, giving the parallax layers a stable visual anchor instead of moving with the scene.
+- Opposing layer motion creates clearer depth than same-direction drift: the rear bookcases can slide one way while the foreground furniture and objects slide the other.
+
+### The Tech Debt
+- The exact direction strengths are still design-tunable. If the scene feels too elastic in QA, reduce the foreground `direction` magnitude before changing the shared pointer spring.
+
+## 2026-05-10 - Static Base Isolation And Hero Overscan
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so `base.png` now renders outside the hover-reactive layer stack instead of living inside the same moving scene wrappers.
+- Added a small shared image overscan to the landing hero PNG layers so subtle hover parallax does not expose dark empty edges around the artwork.
+- Increased the in-scene `CORA` title clamp so the outer letters sit more noticeably behind the bookshelf framing.
+
+### The Reasoning
+- The base looked like it was moving because it was still inside the stage that received hover tilt, even though its own per-layer movement was zero.
+- A tiny scale-up is the cleanest way to preserve the full-canvas composition feel while buying enough bleed to hide edge gaps during motion.
+- Making the title a little larger helps the shelf overlap read intentionally, so the word feels embedded in the scene rather than merely layered over it.
+
+### The Tech Debt
+- The overscan and title scale are both intentionally conservative tuning knobs. If the scene still shows edges or the shelf overlap feels off on certain viewports, the next pass should adjust those two values together before changing the broader layer layout.
+
+## 2026-05-10 - Landing Asset Path Cleanup
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to load the layered hero artwork from `/assets/landing/...` instead of `/landing/...`.
+- Removed the duplicate [apps/web/public/landing](/d:/projects/Cora/apps/web/public/landing) directory so `apps/web/public/assets/landing` is now the single source of truth for the room exports.
+
+### The Reasoning
+- In a Next app, `/assets/landing/...` maps directly to `apps/web/public/assets/landing/...`, so keeping only that directory makes the runtime path and filesystem layout line up cleanly.
+- The duplicate folder existed because the earlier hero implementation was switched to `/landing/...` runtime paths and the files were mirrored to match; that duplication is no longer necessary.
+
+### The Tech Debt
+- Older hero notes in this devlog still mention the temporary `/landing/...` mirroring step from earlier iterations. They remain historically true, but the current implementation now uses `/assets/landing/...`.
+
+## 2026-05-10 - Hero Layer Type Narrowing Fix
+
+### The Change
+- Updated [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) to add an `isImageLayer` type guard and use it when resolving the static base layer and preload image source list.
+
+### The Reasoning
+- `HeroLayer` is a text-or-image union, and the editor was correctly warning that `src` does not exist on text layers. Making the image narrowing explicit keeps the config flexible without papering over the type system.
+
+### The Tech Debt
+- The hero layer config is still a fairly compact union living in one file. If we keep extending the scene schema, it may be worth extracting the layer types and helpers so the rendering logic stays easy to scan.
+
+## 2026-05-11 - Hero Loading Expression Overlay
+
+### The Change
+- Added [LandingIntroLoader.tsx](/d:/projects/Cora/apps/web/src/components/landing/LandingIntroLoader.tsx) as a dedicated full-viewport intro screen that renders before the landing page itself.
+- Added [heroAssets.ts](/d:/projects/Cora/apps/web/src/components/landing/heroAssets.ts) to share the landing preload source list and scientist idle-expression asset helper.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) to hold back the navbar, hero, and rest of the landing page until the intro loader finishes.
+- Updated [page.tsx](/d:/projects/Cora/apps/web/src/app/page.tsx) again to mount the navbar on a short follow-up timer after the hero begins revealing, instead of only delaying the navbar animation.
+- Simplified [Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) so it only handles the room scene entrance now that asset preloading and the intro screen live outside it.
+- The intro uses each scientist's idle expression art as the sole loading indicator, with a subtle staggered bounce and a 1.5 second minimum hold.
+- Updated [Navbar.tsx](/d:/projects/Cora/apps/web/src/components/landing/Navbar.tsx) to use a fade-and-deblur entrance instead of a vertical slide, avoiding the fixed-nav top-position flash on mount.
+
+### The Reasoning
+- The hero-box loader was never truly centered in the viewport because it still lived inside the hero's aspect-ratio stage rather than owning the whole screen.
+- Rendering the intro first at the page level prevents the navbar and other landing chrome from appearing before the entrance beat has completed.
+- Mounting the navbar later at the page level works better than a Framer delay on the nav itself, because the nav is truly absent during the hero's first frames instead of existing offscreen and then animating in.
+- Reusing the real scientist expression assets keeps the wait state grounded in the game's visual language instead of falling back to generic UI loading patterns.
+- Letting the hero reveal start before the navbar mounts keeps the first frame from feeling crowded and lets the room establish itself before navigation competes for attention.
+- For a fixed navbar, a pure opacity/blur reveal is more reliable than animating vertical position on first mount, because there is no one-frame snap between the browser's pinned layout position and Framer's transform state.
+
+### The Tech Debt
+- The landing intro currently blocks the entire page until its preload list resolves. If we later add heavier media to the first viewport, we may want a more selective preload strategy so the entrance beat stays crisp.
 ## 2026-05-10 - MagicBlock UI Enhancement Layer
 
 ### The Change
@@ -4551,3 +4740,98 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Terminal status strings are duplicated across `BlinkChallengeAccept.tsx` and `LobbyScreen.tsx`. These should eventually be centralized in a shared constants file or type definition.
 
+## 2026-05-11 - Landing roster copy aligned with character specialties
+
+**The Change:** Updated [apps/web/src/components/landing/content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts) so the scientist names and copy match the real character definitions in `packages/shared-types/src/characterStats.ts`. Removed invented mechanics like shields, healing, named abilities, and attack-card amplification from the landing roster text.
+
+**The Reasoning:** The shared character stats file is the gameplay source of truth. The landing page should still feel flavorful, but it should only describe supported concepts: specialty category, 1.5x specialty multiplier, and the existing extra-point stacking behavior.
+
+**The Tech Debt:** `content.ts` still duplicates some character presentation data that could drift again later. A follow-up could derive more of this landing copy directly from shared character metadata or add a stricter content contract around allowed mechanic claims.
+
+## 2026-05-11 - How-it-works stage markers use character expressions
+
+**The Change:** Updated [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) to replace the numeric and completed-state markers with character `happy` expression portraits. Steps 1-3 now use Turing, Curie, and Einstein, and step 4 renders a compact three-character triangle cluster. The stage card badge now mirrors the same active marker.
+
+**The Reasoning:** Character portraits make the progression feel more connected to the roster and give the section a stronger in-world identity than generic numbers and checkmarks. Reusing the existing `happy` expression assets keeps the visual language consistent with other parts of the app.
+
+**The Tech Debt:** The stage-to-character mapping is currently local to `HowItWorks.tsx`. If we want the landing flow to stay centrally configurable, that mapping should move into landing content metadata.
+
+## 2026-05-11 - How-it-works rail restored to numeric active steps
+
+**The Change:** Refined [apps/web/src/components/landing/HowItWorks.tsx](/d:/projects/Cora/apps/web/src/components/landing/HowItWorks.tsx) so the top progress rail now keeps numeric `1-4` markers for current and upcoming steps, and only completed steps swap to character portraits. The three-character triangle remains only inside the active stage card for step 4.
+
+**The Reasoning:** This restores the clearer scan pattern from the original progress rail while still using character art as the visual reward for completed steps. It also avoids overloading the top rail with the step-4 triangle cluster.
+
+**The Tech Debt:** The rail marker and card marker now have intentionally different behaviors. If we keep iterating on this section, it may be worth formalizing those two display modes behind a shared marker config instead of branching inline.
+
+## 2026-05-11 - CTA floating cards use idle portraits
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the floating character cards now render each scientist's `idle` expression asset instead of the emoji inside a circular badge. Removed the extra secondary emoji line, leaving each floating card as portrait plus name.
+
+**The Reasoning:** The CTA section already leans on character presence, so using the real portrait assets makes the floating cards feel more integrated with the game world than decorative emoji. Removing the duplicate emoji also simplifies the composition and keeps the eye on the character art.
+
+**The Tech Debt:** `CtaBanner.tsx` now has its own small asset helper for idle portraits. If more landing sections keep reusing the same expression asset paths, we should centralize those helpers in shared landing utilities.
+
+## 2026-05-11 - CTA background reuses dim hero scene assets
+
+**The Change:** Updated [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) to reuse right-side landing hero art as a low-opacity CTA background layer. Added dimmed `bookcase_3` and `objects` scene assets behind the floating cards, and switched the floating portrait helper to the shared `getScientistIdleExpressionSrc` utility from `heroAssets.ts`.
+
+**The Reasoning:** Reusing the landing hero scene keeps the CTA visually connected to the rest of the page without overpowering the call-to-action. Keeping the art right-aligned and very low opacity preserves contrast for the copy while adding texture to the dark section.
+
+**The Tech Debt:** The CTA now chooses a subset of hero scene layers inline. If we keep reusing the landing environment in multiple sections, we may want a shared scene-fragment config instead of selecting individual asset files in each component.
+
+## 2026-05-11 - CTA background composition rebalanced
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits dimly on the left side of the CTA background, while `bookcase_3.png` is enlarged and anchored more prominently on the right.
+
+**The Reasoning:** Separating the two layers gives the background a nicer spread and keeps the larger structural silhouette on the right where it can frame the floating cards without stacking every asset in the same zone.
+
+**The Tech Debt:** The CTA background layout is now hand-tuned with percentage positioning. If we keep iterating on this scene treatment, it may be worth extracting these art-direction values into named constants or shared landing scene presets.
+
+## 2026-05-11 - CTA objects moved to far-left corner
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so `objects.png` now sits at the far-left bottom corner of the full CTA banner, on the green gradient itself, instead of inside the right-side hero-scene wrapper.
+
+**The Reasoning:** This better matches the intended composition: the objects act as a subtle counterweight on the opposite edge of the section, while the bookcase remains the dominant right-side backdrop.
+
+**The Tech Debt:** The left-corner placement is still tuned with section-relative percentages. If this CTA gets more responsive art direction later, these placements may need breakpoint-specific presets instead of one shared value set.
+
+## 2026-05-11 - CTA right-side objects enlarged
+
+**The Change:** Refined [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) so the larger `objects.png` layer now lives on the right side of the CTA again, while keeping the bigger footprint from the previous size adjustment. The bookcase remains the primary right-edge backdrop behind it.
+
+**The Reasoning:** This keeps the stronger object scale that read well, while aligning the composition with the preferred direction of concentrating the scene dressing on the right rather than splitting it across the banner.
+
+**The Tech Debt:** The right-side object and bookcase layers now overlap through hand-tuned percentages. If we keep polishing this art direction, it may be worth extracting a shared CTA scene layout config instead of adjusting individual absolute positions inline.
+
+## 2026-05-11 - CTA right-side objects scaled up further
+
+**The Change:** Increased the size of the right-side `objects.png` layer in [apps/web/src/components/landing/CtaBanner.tsx](/d:/projects/Cora/apps/web/src/components/landing/CtaBanner.tsx) again by expanding its width, height, minimum width, and responsive image sizing.
+
+**The Reasoning:** The previous right-side version had the correct placement but still read a little too quietly. Scaling it further makes the scene layer more legible without changing the overall CTA structure.
+
+**The Tech Debt:** The object scale is still managed with manual percentages and minimum widths. If we continue tuning this art direction, a shared set of responsive scene tokens would be easier to maintain than repeated inline values.
+
+## 2026-05-11 - Hero hover parallax smoothed
+
+**The Change:** Refined the hover motion in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) by softening the pointer-response curve around center, reducing vertical drift, and slowing the spring slightly for a smoother settle.
+
+**The Reasoning:** The original hover reacted a bit too linearly and felt twitchy near the resting position. Adding a gentler center response keeps the parallax alive while making the scene feel more intentional and less awkward.
+
+**The Tech Debt:** The hover feel is still tuned with inline motion constants. If we keep iterating on landing interactions, we may want shared motion tokens for parallax intensity and spring behavior.
+
+## 2026-05-11 - Hero scene lighting added
+
+**The Change:** Added two non-interactive lighting overlays in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx): a soft warm radial highlight through the middle-upper scene and a subtle dimming/vignette gradient above the interactive layers.
+
+**The Reasoning:** The hero art had good structure but still read a little flat overall. Layering a restrained highlight and shadow pass gives the composition more depth and focus without changing the existing artwork or layout.
+
+**The Tech Debt:** The lighting balance is still hard-coded in inline gradient values. If we keep art-directing the landing hero, those values may be better expressed as named scene tokens so they are easier to tune together.
+
+## 2026-05-11 - Hero hover parallax amplified
+
+**The Change:** Removed the pointer-following glow experiment from [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) and increased the existing hover parallax by expanding the transform range and tightening the spring response.
+
+**The Reasoning:** The glow was the wrong direction for the interaction, and the previous parallax pass still felt too restrained. Pushing the layer travel further while keeping the eased response makes the hover read more clearly without changing the scene composition.
+
+**The Tech Debt:** The stronger hover still depends on hand-tuned transform multipliers and spring values. If we keep iterating on hero motion, these interaction settings would be easier to maintain as shared landing motion tokens.
