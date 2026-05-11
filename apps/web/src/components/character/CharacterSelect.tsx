@@ -30,6 +30,7 @@ export type CharacterSelectProps = {
   opponentStatusSlot?: ReactNode;
   roomStatusSlot?: ReactNode;
   showDevModeToggle?: boolean;
+  compactCards?: boolean;
   onSelect: (characterId: string) => void;
 };
 
@@ -91,6 +92,7 @@ export function CharacterSelect({
   opponentStatusSlot,
   roomStatusSlot,
   showDevModeToggle = true,
+  compactCards = false,
   onSelect,
 }: CharacterSelectProps) {
   const [devMode, setDevMode] = useState(false);
@@ -116,7 +118,7 @@ export function CharacterSelect({
   }, [autoAssignedCharacter, selectedCharacter]);
 
   return (
-    <section className="flex flex-1 flex-col">
+    <section className={`flex flex-col ${compactCards ? "" : "flex-1"}`}>
       {showHeading && (
         <div className="mb-4">
           <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">
@@ -244,7 +246,7 @@ export function CharacterSelect({
         </div>
       )}
 
-      <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 ${compactCards ? "items-start" : "flex-1"}`}>
         {characters.map((character, index) => (
           <CharacterCard
             key={character.id}
@@ -253,6 +255,7 @@ export function CharacterSelect({
             autoAssigned={autoAssignedCharacterId === character.id}
             showNeutralDefault={canShowDefaultHint && neutralDefaultCharacterId === character.id}
             previewExpression="happy"
+            compact={compactCards}
             disabled={disabled}
             locked={locked}
             index={index}

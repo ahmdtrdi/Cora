@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
-import { ChallengeShareCard } from "@/components/challenge/ChallengeShareCard";
-import { createChallengeLink, createChallengeTweetIntent } from "@/lib/challenge/createChallengeLink";
-import { createChallengeCardFileName, renderChallengeCardJpg } from "@/lib/challenge/renderChallengeCardJpg";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import type { Arena } from "./LobbyScreen";
 
@@ -19,6 +16,9 @@ type LobbySetupProps = {
   wagerUsd: string;
   canPlay: boolean;
   onPlay: () => void;
+  onCreateBlinkChallenge: () => void;
+  blinkChallengeBusy: boolean;
+  hasActiveBlinkChallenge: boolean;
 };
 
 function truncateWallet(address: string) {
@@ -64,6 +64,9 @@ export function LobbySetup({
   wagerUsd,
   canPlay,
   onPlay,
+  onCreateBlinkChallenge,
+  blinkChallengeBusy,
+  hasActiveBlinkChallenge,
 }: LobbySetupProps) {
   const COMING_SOON_ARENA_ID = "mew";
   const COMING_SOON_ARENA_IDS = new Set(["bonk", COMING_SOON_ARENA_ID]);
@@ -102,8 +105,6 @@ export function LobbySetup({
   const incomingArenaImageUrl = arenaImageUrl !== displayedArenaImageUrl ? arenaImageUrl : null;
   const incomingArenaImageReady = incomingArenaImageUrl ? Boolean(loadedArenaImageUrls[incomingArenaImageUrl]) : false;
 
-  const [shareNotice, setShareNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
   const playabilityEnabled = walletConnected && Boolean(selectedArena) && !comingSoonArenaVisible;
   const { playability, loading, error } = useWalletArenaPlayability({
     address: walletConnected ? walletAddress : "",
@@ -112,21 +113,6 @@ export function LobbySetup({
     enabled: playabilityEnabled,
   });
 
-  const challengeLink = useMemo(() => {
-    if (!selectedArena || comingSoonArenaVisible) return null;
-    const origin = typeof window === "undefined" ? null : window.location.origin;
-    return createChallengeLink({
-      origin,
-      arenaId: selectedArena.id,
-      token: selectedArena.token,
-      wagerUsd,
-      refAddress: walletConnected ? walletAddress : null,
-    });
-  }, [selectedArena, wagerUsd, walletConnected, walletAddress, comingSoonArenaVisible]);
-
-  const shareDescription = selectedArenaDisplay
-    ? `Think fast in ${selectedArenaDisplay.label}. Scan or tap to challenge me.`
-    : "Pick an arena first, then share your challenge link.";
   const tokenBalanceLabel = selectedArenaDisplay ? `${selectedArenaDisplay.token} Balance` : "Token Balance";
   const tokenBalanceValue = !selectedArenaDisplay
     ? "--"
@@ -142,99 +128,6 @@ export function LobbySetup({
   const historyHref = selectedArena
     ? `/history?scope=arena&arena=${encodeURIComponent(selectedArena.id)}&token=${encodeURIComponent(selectedArena.token)}`
     : "/history?scope=arena&arena=sol&token=SOL";
-
-  async function onCopyChallengeLink() {
-    if (!challengeLink) {
-      setShareNotice({ text: "Select arena to generate challenge link.", tone: "error" });
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(challengeLink);
-      setShareNotice({ text: "Challenge link copied.", tone: "success" });
-    } catch {
-      setShareNotice({ text: "Copy failed. Please copy from the link field.", tone: "error" });
-    }
-  }
-
-  async function buildChallengeShareImageFile() {
-    if (!challengeLink || !selectedArena) return null;
-    try {
-      const blob = await renderChallengeCardJpg({
-        title: "Pre Challenge Me",
-        challengerName: "You",
-        challengerAddress: walletAddress,
-        statusLabel: "Open Challenge",
-        description: shareDescription,
-        token: selectedArena.token,
-        wagerUsd,
-        arenaLabel: selectedArena.label,
-        challengeLink,
-      });
-      const fileName = createChallengeCardFileName({
-        title: "Pre Challenge Me",
-        challengerName: "You",
-        challengerAddress: walletAddress,
-        statusLabel: "Open Challenge",
-        description: shareDescription,
-        token: selectedArena.token,
-        wagerUsd,
-        arenaLabel: selectedArena.label,
-        challengeLink,
-      });
-      return new File([blob], fileName, { type: "image/jpeg" });
-    } catch {
-      setShareNotice({ text: "Failed to generate JPG. Try again.", tone: "error" });
-      return null;
-    }
-  }
-
-  function downloadShareFile(file: File) {
-    const objectUrl = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = file.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(objectUrl);
-  }
-
-  async function onSaveChallengeJpg() {
-    const imageFile = await buildChallengeShareImageFile();
-    if (!imageFile) return;
-    downloadShareFile(imageFile);
-    setShareNotice({ text: "Saved challenge card JPG.", tone: "success" });
-  }
-
-  async function onShareChallengeToX() {
-    if (!challengeLink) {
-      setShareNotice({ text: "Select arena to generate challenge link.", tone: "error" });
-      return;
-    }
-    const shareText = selectedArena
-      ? `I am waiting in ${selectedArena.label}. Challenge me in CORA.`
-      : "Challenge me in CORA.";
-    const imageFile = await buildChallengeShareImageFile();
-
-    const intent = createChallengeTweetIntent(challengeLink, shareText);
-    const popup = window.open(intent, "_blank", "noopener,noreferrer");
-    if (!popup) {
-      setShareNotice({ text: "Popup blocked. Allow popups and retry.", tone: "error" });
-      return;
-    }
-    if (imageFile) {
-      downloadShareFile(imageFile);
-      setShareNotice({ text: "Opened X directly. JPG downloaded, attach it to the tweet.", tone: "success" });
-      return;
-    }
-    setShareNotice({ text: "Opened X directly.", tone: "success" });
-  }
-
-  useEffect(() => {
-    if (!shareNotice) return;
-    const id = setTimeout(() => setShareNotice(null), 5000);
-    return () => clearTimeout(id);
-  }, [shareNotice]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -582,44 +475,15 @@ export function LobbySetup({
 
         <button
           type="button"
-          onClick={() => setShareModalOpen(true)}
-          disabled={!selectedArena || comingSoonArenaVisible}
+          onClick={onCreateBlinkChallenge}
+          disabled={!selectedArena || comingSoonArenaVisible || !walletConnected || blinkChallengeBusy}
           className={`btn-game btn-game-secondary shrink-0 px-5 py-2 text-xs shadow-md ${
-            !selectedArena || comingSoonArenaVisible ? "opacity-50" : ""
+            !selectedArena || comingSoonArenaVisible || !walletConnected || blinkChallengeBusy ? "opacity-50" : ""
           }`}
         >
-          Blink Share
+          {blinkChallengeBusy ? "Opening Blink..." : hasActiveBlinkChallenge ? "View Active Blink" : "Create Blink Challenge"}
         </button>
       </div>
-
-      {shareModalOpen && (
-        <div className="fixed inset-0 z-[80] grid place-items-center bg-[rgba(10,15,12,0.85)] p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-3xl">
-            <button
-              type="button"
-              onClick={() => setShareModalOpen(false)}
-              className="btn-game btn-game-secondary absolute right-2 top-2 z-10 px-3 py-1.5 text-[10px]"
-            >
-              Close
-            </button>
-            <ChallengeShareCard
-              title="Pre Challenge Me"
-              challengerName="You"
-              challengerAddress={walletAddress}
-              arenaLabel={selectedArena?.label ?? "Not Selected"}
-              token={selectedArena?.token ?? "---"}
-              wagerUsd={wagerUsd}
-              challengeLink={challengeLink}
-              description={shareDescription}
-              statusLabel="Open Challenge"
-              onCopy={onCopyChallengeLink}
-              onSaveJpg={onSaveChallengeJpg}
-              onShareX={onShareChallengeToX}
-              notice={shareNotice}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

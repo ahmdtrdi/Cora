@@ -2,28 +2,45 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
 import { getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
+import {
+  confirmPrivateChallenge,
+  createPrivateChallenge,
+  getPrivateChallenge,
+  getWebChallengeUrl,
+  type PrivateChallengeStatus,
+} from "@/lib/matchmaking/privateChallenge";
 import { getRuntimeConfig } from "@/lib/config/runtimeModes";
+import { BlinkChallengePanel } from "@/components/challenge/BlinkChallengePanel";
+import { BlinkCharacterGate } from "@/components/challenge/BlinkCharacterGate";
+import { BlinkRoomJoiner } from "@/components/challenge/BlinkRoomJoiner";
+import { BlinkSurrenderBridge } from "@/components/challenge/BlinkSurrenderBridge";
 import { RoomPhaseShell } from "@/components/room/RoomPhaseShell";
 import { CharacterSelect as CharacterSelectPanel } from "@/components/character/CharacterSelect";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import {
+  readActiveBlinkChallengeSession,
   getMatchSessionAddress,
   getMatchSessionToken,
   isLiveMatchSession,
   readActiveMatchSession,
   readLobbyDraftSnapshot,
+  writeActiveBlinkChallengeSession,
+  clearActiveMatchRoomSession,
   writeActiveMatchSession,
   writeLobbyDraftSnapshot,
+  type ActiveBlinkChallengeSession,
   type ActiveMatchSession,
   type LobbyDraftSnapshot,
 } from "@/lib/session/matchSession";
+import { DepositIntentError } from "@/lib/solana/signDepositIntent";
+import { signBackendTransaction } from "@/lib/solana/signBackendTransaction";
 import type {
   CharacterOption,
   CharacterSelectionState,
@@ -104,11 +121,20 @@ const MATCHMAKING_TIMEOUT_MS = 45_000;
 const MATCHMAKING_PRESENCE_POLL_MS = 4_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
+const BLINK_CHALLENGE_POLL_MS = 2_500;
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
   animate: { opacity: 1, scale: 1 },
   exit: { opacity: 0, scale: 1.02 },
 };
+
+const BLINK_TERMINAL_STATUSES = new Set<PrivateChallengeStatus>(["EXPIRED", "FORFEITED", "COMPLETED"]);
+
+function toBaseUnitWager(wagerUsd: string) {
+  const value = Number.parseFloat(wagerUsd);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.floor(value * 1_000_000);
+}
 
 function shortenAddress(address: string) {
   if (address.length <= 12) return address;
@@ -157,7 +183,9 @@ export function LobbyScreen() {
   const runtimeConfig = getRuntimeConfig();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const wallet = useWallet();
+  const { publicKey } = wallet;
   const challengeMode = searchParams.get("challenge") === "1";
   const challengedBy = searchParams.get("ref");
   const requestedArena = searchParams.get("arena");
@@ -187,6 +215,14 @@ export function LobbyScreen() {
   const [activeMatchSurrenderSnapshot, setActiveMatchSurrenderSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderModalOpen, setActiveMatchSurrenderModalOpen] = useState(false);
   const [activeMatchToast, setActiveMatchToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [activeBlinkChallenge, setActiveBlinkChallenge] = useState<ActiveBlinkChallengeSession | null>(null);
+  const [blinkChallengePanelOpen, setBlinkChallengePanelOpen] = useState(false);
+  const [blinkChallengeBusy, setBlinkChallengeBusy] = useState(false);
+  const [blinkChallengeNotice, setBlinkChallengeNotice] = useState<{ text: string; tone: "success" | "error" } | null>(null);
+  const [blinkJoinSnapshot, setBlinkJoinSnapshot] = useState<ActiveBlinkChallengeSession | null>(null);
+  const [blinkCharacterSelectOpen, setBlinkCharacterSelectOpen] = useState(false);
+  const [blinkConfirmingOpen, setBlinkConfirmingOpen] = useState(false);
+  const [blinkSurrenderSnapshot, setBlinkSurrenderSnapshot] = useState<ActiveBlinkChallengeSession | null>(null);
   const [pendingErRecovery, setPendingErRecovery] = useState(false);
   const [erSettling, setErSettling] = useState(false);
   const matchmakingAbortRef = useRef<AbortController | null>(null);
@@ -198,6 +234,8 @@ export function LobbyScreen() {
   const draftHydratedRef = useRef(false);
   const activeRoomHydratedRef = useRef(false);
   const activeRoomLookupAbortRef = useRef<AbortController | null>(null);
+  const blinkChallengeHydratedRef = useRef(false);
+  const activeBlinkChallengeRef = useRef<ActiveBlinkChallengeSession | null>(null);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -236,6 +274,31 @@ export function LobbyScreen() {
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
   const walletAddr = walletAddress || "Not connected";
+  const activeBlinkStatus = activeBlinkChallenge?.status as PrivateChallengeStatus | undefined;
+  const hasBlockingBlinkChallenge =
+    Boolean(activeBlinkChallenge) &&
+    activeBlinkChallenge?.walletAddress === walletAddress &&
+    activeBlinkStatus !== undefined &&
+    !BLINK_TERMINAL_STATUSES.has(activeBlinkStatus);
+  const activeBlinkArena =
+    activeBlinkChallenge?.arenaId ? ARENAS.find((arena) => arena.id === activeBlinkChallenge.arenaId) ?? null : null;
+  const activeBlinkArenaLabel = activeBlinkArena?.label ?? "CORA Arena";
+  const activeBlinkStatusLabel =
+    activeBlinkStatus === "CHALLENGED"
+      ? "Accepted"
+      : activeBlinkStatus === "ACTIVE"
+        ? "Active"
+        : activeBlinkStatus === "FORFEITED"
+          ? "Forfeited"
+          : activeBlinkStatus === "EXPIRED"
+            ? "Expired"
+            : "Open Challenge";
+  const activeBlinkWaitingLabel =
+    activeBlinkStatus === "CHALLENGED"
+      ? "Rival accepted. Joining room..."
+      : activeBlinkStatus === "ACTIVE"
+        ? "Challenge active. Rejoining room..."
+        : "Waiting for a rival to accept.";
   const activeMatchBannerArena =
     activeMatchBannerSnapshot?.arenaId ? ARENAS.find((arena) => arena.id === activeMatchBannerSnapshot.arenaId) ?? null : null;
   const activeMatchBannerToken = getMatchSessionToken(activeMatchBannerSnapshot) ?? activeMatchBannerArena?.token ?? "SOL";
@@ -245,8 +308,8 @@ export function LobbyScreen() {
   const wagerNumber = Number(FIXED_WAGER_USD);
   const hasValidWager = Number.isFinite(wagerNumber) && wagerNumber > 0;
 
-  const canStart = walletConnected && Boolean(selectedArena) && hasValidWager;
-  const canQueue = Boolean(selectedScientist) && Boolean(selectedArena);
+  const canStart = walletConnected && Boolean(selectedArena) && hasValidWager && !hasBlockingBlinkChallenge;
+  const canQueue = Boolean(selectedScientist) && Boolean(selectedArena) && !hasBlockingBlinkChallenge;
   const waitingMissingContext = phase === "waiting" && (!selectedArena || !selectedScientist);
   const foundMissingContext =
     phase === "found" && (!selectedArena || !selectedScientist || !matchedRoomId);
@@ -345,6 +408,7 @@ export function LobbyScreen() {
     setMatchmakingError,
     setMatchmakingStage,
     setMatchmakingState,
+    setPendingErRecovery,
     setPhase,
     setSelectedArenaId,
     setSelectedScientist,
@@ -357,6 +421,155 @@ export function LobbyScreen() {
     setActiveMatchSurrenderSnapshot(null);
     setActiveMatchSurrenderModalOpen(false);
   }, []);
+
+  const clearActiveBlinkChallenge = useCallback((toastText?: string, tone: "success" | "error" = "success") => {
+    writeActiveBlinkChallengeSession(null);
+    setActiveBlinkChallenge(null);
+    setBlinkJoinSnapshot(null);
+    setBlinkCharacterSelectOpen(false);
+    setBlinkConfirmingOpen(false);
+    setBlinkSurrenderSnapshot(null);
+    setBlinkChallengePanelOpen(false);
+    if (toastText) setActiveMatchToast({ text: toastText, tone });
+  }, [
+    setActiveBlinkChallenge,
+    setActiveMatchToast,
+    setBlinkCharacterSelectOpen,
+    setBlinkConfirmingOpen,
+    setBlinkSurrenderSnapshot,
+    setBlinkChallengePanelOpen,
+    setBlinkJoinSnapshot,
+  ]);
+
+  const openBlinkJoin = useCallback((
+    challenge: ActiveBlinkChallengeSession,
+    presentation: "notification" | "select" | "confirm" = "notification",
+  ) => {
+    const nextArenaId =
+      challenge.arenaId && ARENAS.some((arena) => arena.id === challenge.arenaId)
+        ? challenge.arenaId
+        : selectedArenaId ?? "sol";
+    const nextScientistId = challenge.scientistId ?? selectedScientist?.id ?? "einstein";
+    const nextScientist =
+      SCIENTISTS.find((scientist) => scientist.id === nextScientistId) ??
+      SCIENTISTS.find((scientist) => scientist.id === "einstein") ??
+      SCIENTISTS[0] ??
+      null;
+
+    if (nextArenaId && nextArenaId !== selectedArenaId) setSelectedArenaId(nextArenaId);
+    if (nextScientist && nextScientist.id !== selectedScientist?.id) setSelectedScientist(nextScientist);
+
+    matchmakingAbortRef.current?.abort();
+    matchmakingAbortRef.current = null;
+    clearFoundTransitionTimers();
+    setMatchmakingState("idle");
+    setMatchmakingStage("finding");
+    setMatchmakingError(null);
+    setBlinkChallengePanelOpen(false);
+    setBlinkCharacterSelectOpen(presentation === "select");
+    setBlinkConfirmingOpen(presentation === "confirm");
+    setBlinkJoinSnapshot({
+      ...challenge,
+      arenaId: nextArenaId,
+      scientistId: nextScientist?.id ?? null,
+    });
+  }, [
+    clearFoundTransitionTimers,
+    selectedArenaId,
+    selectedScientist,
+    setBlinkCharacterSelectOpen,
+    setBlinkConfirmingOpen,
+    setBlinkChallengePanelOpen,
+    setBlinkJoinSnapshot,
+    setMatchmakingError,
+    setMatchmakingStage,
+    setMatchmakingState,
+    setSelectedArenaId,
+    setSelectedScientist,
+  ]);
+
+  const handleCreateBlinkChallenge = useCallback(async () => {
+    if (!walletAddress || !selectedArena) {
+      setBlinkChallengeNotice({ text: "Connect wallet and select an arena first.", tone: "error" });
+      return;
+    }
+    if (hasBlockingBlinkChallenge) {
+      setBlinkChallengePanelOpen(true);
+      return;
+    }
+
+    const wagerAmount = toBaseUnitWager(FIXED_WAGER_USD);
+    if (!wagerAmount) {
+      setBlinkChallengeNotice({ text: "Invalid wager amount.", tone: "error" });
+      return;
+    }
+
+    setBlinkChallengeBusy(true);
+    setBlinkChallengeNotice(null);
+    try {
+      const created = await createPrivateChallenge({
+        address: walletAddress,
+        tokenMint: selectedArena.token,
+        wagerAmount,
+      });
+      const signature = await signBackendTransaction({
+        connection,
+        wallet,
+        base64Transaction: created.transaction,
+      });
+      const confirmed = await confirmPrivateChallenge({
+        roomId: created.roomId,
+        address: walletAddress,
+        signature,
+        tokenMint: selectedArena.token,
+        wagerAmount,
+      });
+      const webChallengeUrl =
+        typeof window === "undefined" ? null : getWebChallengeUrl(window.location.origin, created.roomId);
+      const snapshot: ActiveBlinkChallengeSession = {
+        walletAddress,
+        roomId: created.roomId,
+        blinkUrl: created.blinkUrl,
+        webChallengeUrl,
+        createSignature: signature,
+        role: "playerA",
+        arenaId: selectedArena.id,
+        scientistId: selectedScientist?.id ?? null,
+        token: selectedArena.token,
+        wagerUsd: FIXED_WAGER_USD,
+        wagerAmount,
+        status: confirmed.status,
+        createdAt: new Date().toISOString(),
+      };
+      writeActiveBlinkChallengeSession(snapshot);
+      setActiveBlinkChallenge(snapshot);
+      setBlinkChallengePanelOpen(true);
+      setBlinkChallengeNotice({ text: "Blink challenge funded and live.", tone: "success" });
+    } catch (error) {
+      const message =
+        error instanceof DepositIntentError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Failed to create Blink challenge.";
+      setBlinkChallengeNotice({ text: message, tone: "error" });
+      setActiveMatchToast({ text: message, tone: "error" });
+    } finally {
+      setBlinkChallengeBusy(false);
+    }
+  }, [
+    connection,
+    hasBlockingBlinkChallenge,
+    selectedArena,
+    selectedScientist,
+    setActiveBlinkChallenge,
+    setActiveMatchToast,
+    setBlinkChallengeBusy,
+    setBlinkChallengeNotice,
+    setBlinkChallengePanelOpen,
+    wallet,
+    walletAddress,
+  ]);
 
   const handleRejoinActiveMatch = useCallback(() => {
     if (!activeMatchBannerSnapshot?.roomId) return;
@@ -402,6 +615,13 @@ export function LobbyScreen() {
   }, [clearActiveMatchBanner]);
 
   const startMatchmakingSearch = useCallback(async () => {
+    if (hasBlockingBlinkChallenge) {
+      setBlinkChallengePanelOpen(true);
+      setMatchmakingState("error");
+      setMatchmakingError("Clear or finish your active Blink challenge before entering normal queue.");
+      return;
+    }
+
     if (!walletAddress) {
       setMatchmakingState("error");
       setMatchmakingError("Connect wallet before entering queue.");
@@ -493,10 +713,12 @@ export function LobbyScreen() {
     }
   }, [
     walletAddress,
+    hasBlockingBlinkChallenge,
     selectedArena,
     selectedScientist,
     clearFoundTransitionTimers,
     openRecoveredRoom,
+    setBlinkChallengePanelOpen,
     setMatchmakingState,
     setMatchmakingError,
     setMatchedRoomId,
@@ -506,6 +728,11 @@ export function LobbyScreen() {
   ]);
 
   function beginMatchmaking() {
+    if (hasBlockingBlinkChallenge) {
+      setBlinkChallengePanelOpen(true);
+      setActiveMatchToast({ text: "Finish or clear your active Blink challenge before queueing.", tone: "error" });
+      return;
+    }
     setMatchmakingState("searching");
     setMatchmakingStage("finding");
     setMatchmakingError(null);
@@ -536,12 +763,123 @@ export function LobbyScreen() {
   }, []);
 
   useEffect(() => {
+    activeBlinkChallengeRef.current = activeBlinkChallenge;
+  }, [activeBlinkChallenge]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (blinkChallengeHydratedRef.current) return;
+    blinkChallengeHydratedRef.current = true;
+    const snapshot = readActiveBlinkChallengeSession();
+    if (!snapshot) return;
+    const normalized: ActiveBlinkChallengeSession = {
+      ...snapshot,
+      webChallengeUrl: snapshot.webChallengeUrl ?? getWebChallengeUrl(window.location.origin, snapshot.roomId),
+    };
+    writeActiveBlinkChallengeSession(normalized);
+    queueMicrotask(() => {
+      setActiveBlinkChallenge(normalized);
+      if (!normalized.status || !BLINK_TERMINAL_STATUSES.has(normalized.status as PrivateChallengeStatus)) {
+        setBlinkChallengePanelOpen(true);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     if (!activeMatchToast) return;
     const timeoutId = setTimeout(() => {
       setActiveMatchToast(null);
     }, 5000);
     return () => clearTimeout(timeoutId);
   }, [activeMatchToast]);
+
+  useEffect(() => {
+    if (!blinkChallengeNotice) return;
+    const timeoutId = setTimeout(() => setBlinkChallengeNotice(null), 6000);
+    return () => clearTimeout(timeoutId);
+  }, [blinkChallengeNotice]);
+
+  useEffect(() => {
+    if (!walletAddress || !activeBlinkChallenge) return;
+    if (activeBlinkChallenge.walletAddress === walletAddress) return;
+    queueMicrotask(() => setBlinkChallengePanelOpen(false));
+  }, [activeBlinkChallenge, walletAddress]);
+
+  useEffect(() => {
+    if (!activeBlinkChallenge?.roomId) return;
+    if (walletAddress && activeBlinkChallenge.walletAddress !== walletAddress) return;
+    const currentStatus = activeBlinkChallenge.status as PrivateChallengeStatus | undefined;
+    if (currentStatus && BLINK_TERMINAL_STATUSES.has(currentStatus)) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function refreshBlinkChallenge() {
+      const snapshot = activeBlinkChallengeRef.current;
+      if (!snapshot?.roomId) return;
+      try {
+        const latest = await getPrivateChallenge(snapshot.roomId, controller.signal);
+        if (cancelled) return;
+
+        const next: ActiveBlinkChallengeSession = {
+          ...snapshot,
+          status: latest.status,
+          expiresAt: latest.expiresAt,
+          joinDeadline: latest.joinDeadline,
+          token: snapshot.token ?? latest.tokenMint,
+        };
+
+        if (latest.status === "CHALLENGED" || latest.status === "ACTIVE") {
+          writeActiveBlinkChallengeSession(next);
+          setActiveBlinkChallenge(next);
+          const alreadyHandlingRoom =
+            blinkJoinSnapshot?.roomId === next.roomId && (blinkCharacterSelectOpen || blinkConfirmingOpen);
+          if (!alreadyHandlingRoom) {
+            openBlinkJoin(next);
+          }
+          return;
+        }
+
+        if (BLINK_TERMINAL_STATUSES.has(latest.status)) {
+          const text =
+            latest.status === "EXPIRED"
+              ? "Blink challenge expired."
+              : latest.status === "FORFEITED"
+                ? "Blink challenge forfeited."
+                : "Blink challenge completed.";
+          clearActiveBlinkChallenge(text, latest.status === "COMPLETED" ? "success" : "error");
+          return;
+        }
+
+        writeActiveBlinkChallengeSession(next);
+        setActiveBlinkChallenge(next);
+      } catch (error) {
+        if (controller.signal.aborted || cancelled) return;
+        console.warn("[BlinkChallenge] Status refresh failed", error);
+      }
+    }
+
+    void refreshBlinkChallenge();
+    const intervalId = setInterval(() => {
+      void refreshBlinkChallenge();
+    }, BLINK_CHALLENGE_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(intervalId);
+    };
+  }, [
+    activeBlinkChallenge?.roomId,
+    activeBlinkChallenge?.status,
+    activeBlinkChallenge?.walletAddress,
+    blinkCharacterSelectOpen,
+    blinkConfirmingOpen,
+    blinkJoinSnapshot?.roomId,
+    walletAddress,
+    openBlinkJoin,
+    clearActiveBlinkChallenge,
+  ]);
 
   useEffect(() => {
     if (phase !== "waiting") return;
@@ -760,6 +1098,38 @@ export function LobbyScreen() {
             }
 
             const latestSnapshot = readActiveMatchSession();
+            const isTerminalMatch = activeMatch.status ? BLINK_TERMINAL_STATUSES.has(activeMatch.status as PrivateChallengeStatus) : false;
+
+            if (isTerminalMatch) {
+              clearRecoveryToSetup();
+              return;
+            }
+
+            if (activeMatch.roomType === "private" && activeMatch.status === "depositing") {
+              clearActiveMatchRoomSession();
+              setPendingErRecovery(false);
+              setActiveMatchBannerSnapshot(null);
+              setMatchedRoomId(null);
+              setMatchedRole(null);
+              setMatchmakingState("idle");
+              setMatchmakingStage("finding");
+              setMatchmakingError(null);
+
+              const blinkSnapshot = activeBlinkChallengeRef.current;
+              if (activeMatch.role === "playerA" && blinkSnapshot?.roomId === activeMatch.roomId) {
+                openBlinkJoin(blinkSnapshot, latestSnapshot?.scientistId ? "confirm" : "select");
+                return;
+              }
+
+              if (activeMatch.role === "playerB") {
+                router.replace(`/challenge/${activeMatch.roomId}`);
+                return;
+              }
+
+              setPhase("setup");
+              return;
+            }
+
             if (activeMatch.status === "playing") {
               const liveSnapshot: ActiveRoomSnapshot = {
                 walletAddress,
@@ -843,7 +1213,7 @@ export function LobbyScreen() {
         activeRoomLookupAbortRef.current = null;
       }
     };
-  }, [walletAddress, phase, openRecoveredRoom, selectedArena, selectedArenaId, selectedScientist]);
+  }, [walletAddress, phase, openBlinkJoin, openRecoveredRoom, router, selectedArena, selectedArenaId, selectedScientist]);
 
   useEffect(() => {
     if (phase === "found" && pendingErRecovery) {
@@ -929,6 +1299,22 @@ export function LobbyScreen() {
           onTimeout={handleActiveMatchSurrenderTimeout}
         />
       )}
+      {blinkSurrenderSnapshot?.roomId && blinkSurrenderSnapshot.walletAddress && (
+        <BlinkSurrenderBridge
+          roomId={blinkSurrenderSnapshot.roomId}
+          address={blinkSurrenderSnapshot.walletAddress}
+          characterId={selectedScientist?.id ?? blinkSurrenderSnapshot.scientistId ?? null}
+          confirmSignature={blinkSurrenderSnapshot.createSignature}
+          onSettled={(message) => {
+            clearActiveBlinkChallenge(message ?? "Blink challenge surrendered.", "success");
+            writeActiveMatchSession(null);
+          }}
+          onError={(message) => {
+            setBlinkSurrenderSnapshot(null);
+            setActiveMatchToast({ text: message, tone: "error" });
+          }}
+        />
+      )}
       {activeMatchBannerSnapshot && (
         <div className="fixed inset-x-0 top-0 z-[90] p-3 md:p-4">
           <div
@@ -986,6 +1372,57 @@ export function LobbyScreen() {
             }}
           >
             <p className="font-gabarito text-sm font-bold text-[rgba(244,240,230,0.92)]">{activeMatchToast.text}</p>
+          </div>
+        </div>
+      )}
+      {blinkChallengePanelOpen && activeBlinkChallenge && (
+        <BlinkChallengePanel
+          challenge={activeBlinkChallenge}
+          arenaLabel={activeBlinkArenaLabel}
+          statusLabel={activeBlinkStatusLabel}
+          waitingLabel={activeBlinkWaitingLabel}
+          notice={blinkChallengeNotice}
+          canClear={Boolean(activeBlinkStatus && BLINK_TERMINAL_STATUSES.has(activeBlinkStatus))}
+          onClose={() => setBlinkChallengePanelOpen(false)}
+          onClear={() => clearActiveBlinkChallenge("Blink challenge cleared locally.", "success")}
+        />
+      )}
+      {blinkJoinSnapshot && !blinkConfirmingOpen && !blinkCharacterSelectOpen && (
+        <div className="fixed right-4 top-4 z-[88] w-[calc(100%-2rem)] max-w-md md:right-6 md:top-6">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{ border: "2px solid rgba(248,214,148,0.42)", background: "linear-gradient(145deg, #10231b 0%, #18392d 100%)" }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-1 h-3 w-3 shrink-0 animate-pulse rounded-full bg-[var(--tone-cream)]" />
+              <div className="min-w-0 flex-1">
+                <p className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em] text-[var(--tone-mint)]">
+                  Rival Accepted
+                </p>
+                <p className="mt-1 font-gabarito text-sm font-bold text-[var(--tone-cream)]">
+                  A rival accepted your Blink challenge.
+                </p>
+                <p className="mt-1 font-gabarito text-xs text-[rgba(244,240,230,0.72)]">
+                  View the challenge to confirm your presence and enter the match.
+                </p>
+                <p className="mt-2 truncate font-mono text-[11px] text-[rgba(244,240,230,0.58)]">
+                  Room {blinkJoinSnapshot.roomId} - {shortenAddress(blinkJoinSnapshot.walletAddress)}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingErRecovery(false);
+                      setBlinkCharacterSelectOpen(true);
+                      setBlinkConfirmingOpen(false);
+                    }}
+                    className="btn-game btn-game-secondary px-3 py-1.5 text-[10px]"
+                  >
+                    View Challenge
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1144,7 +1581,42 @@ export function LobbyScreen() {
         </RoomPhaseShell>
       )}
       {!isSelectingCharacterPreview && (
-        showPendingErRecovery ? (
+        blinkJoinSnapshot && blinkCharacterSelectOpen ? (
+          <BlinkCharacterGate
+            title="Choose your scientist"
+            subtitle="Your rival accepted. Pick your scientist before confirming presence and entering the room."
+            characters={characterOptions}
+            selectedCharacterId={selectedScientist?.id ?? null}
+            onSelect={(characterId) => {
+              const next = SCIENTISTS.find((scientist) => scientist.id === characterId) ?? null;
+              setSelectedScientist(next);
+            }}
+            onContinue={() => {
+              if (!selectedScientist) return;
+              setBlinkCharacterSelectOpen(false);
+              setBlinkConfirmingOpen(true);
+            }}
+            onSurrender={() => setBlinkSurrenderSnapshot(blinkJoinSnapshot)}
+          />
+        ) : blinkJoinSnapshot && blinkConfirmingOpen ? (
+          <BlinkRoomJoiner
+            roomId={blinkJoinSnapshot.roomId}
+            address={blinkJoinSnapshot.walletAddress}
+            role="playerA"
+            arenaId={blinkJoinSnapshot.arenaId ?? "sol"}
+            scientistId={selectedScientist?.id ?? blinkJoinSnapshot.scientistId ?? "einstein"}
+            token={blinkJoinSnapshot.token}
+            wagerUsd={blinkJoinSnapshot.wagerUsd ?? FIXED_WAGER_USD}
+            creatorConfirmSignature={blinkJoinSnapshot.createSignature}
+            title="Confirming your match..."
+            subtitle="Confirming your creator presence before entering the arena."
+            onBack={() => {
+              writeActiveMatchSession(null);
+              setBlinkConfirmingOpen(false);
+              setBlinkCharacterSelectOpen(true);
+            }}
+          />
+        ) : showPendingErRecovery ? (
           <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-3xl items-center justify-center px-4 py-8 md:px-6">
             <div
               className="game-card w-full p-6 text-center shadow-2xl md:p-8"
@@ -1165,6 +1637,23 @@ export function LobbyScreen() {
               <p className="mt-4 font-gabarito text-sm text-[rgba(244,240,230,0.78)]">
                 We&apos;re waiting for the latest room state before sending you back into the lobby.
               </p>
+              <button
+                type="button"
+                onClick={() => {
+                  clearActiveMatchRoomSession();
+                  setPendingErRecovery(false);
+                  setErSettling(false);
+                  setMatchedRoomId(null);
+                  setMatchedRole(null);
+                  setMatchmakingState("idle");
+                  setMatchmakingStage("finding");
+                  setMatchmakingError(null);
+                  setPhase("setup");
+                }}
+                className="btn-game btn-game-secondary mt-6 px-4 py-2 text-xs"
+              >
+                Back To Lobby
+              </button>
             </div>
           </div>
         ) : phaseContextIssue ? (
@@ -1244,6 +1733,9 @@ export function LobbyScreen() {
                       setPhase("character-select");
                     }
                   }}
+                  onCreateBlinkChallenge={handleCreateBlinkChallenge}
+                  blinkChallengeBusy={blinkChallengeBusy}
+                  hasActiveBlinkChallenge={hasBlockingBlinkChallenge}
                 />
               </motion.div>
             )}
