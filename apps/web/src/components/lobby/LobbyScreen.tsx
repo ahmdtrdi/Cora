@@ -117,8 +117,8 @@ type MatchmakingState = "idle" | "searching" | "timeout" | "error";
 type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
 const MATCHMAKING_TIMEOUT_MS = 45_000;
-const POST_MATCH_FOUND_VERIFY_MS = 1400;
-const POST_MATCH_FOUND_PREPARE_MS = 1000;
+const POST_MATCH_FOUND_VERIFY_MS = 150;
+const POST_MATCH_FOUND_PREPARE_MS = 150;
 const BLINK_CHALLENGE_POLL_MS = 2_500;
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
