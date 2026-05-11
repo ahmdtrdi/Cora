@@ -47,7 +47,15 @@ export class Network {
         this.applyPresence(room, payload);
       } else {
         // Pre-game state (waiting / depositing)
-        const opponentAddress = addresses.find(a => a !== address);
+        // Use room.playerA/playerB as source of truth for opponent identity,
+        // since room.clients may not have both WS connections yet.
+        const opponentAddress = (() => {
+          if (room.playerA && room.playerB) {
+            return address === room.playerA ? room.playerB : room.playerA;
+          }
+          // Fallback to checking connected clients
+          return addresses.find(a => a !== address);
+        })();
         payload = {
           status: room.status,
           player: {

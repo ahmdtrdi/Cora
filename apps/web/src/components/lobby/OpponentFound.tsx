@@ -4,8 +4,13 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import type { Transaction } from "@solana/web3.js";
 import type { Arena, Scientist } from "./LobbyScreen";
-import { DepositIntentError, signDepositIntent } from "@/lib/solana/signDepositIntent";
+import {
+  DepositIntentError,
+  prepareDepositIntentTransaction,
+  sendDepositIntentTransaction,
+} from "@/lib/solana/signDepositIntent";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useMatchSocket } from "@/hooks/useMatchSocket";
 import { DepositPanel } from "@/components/deposit/DepositPanel";
@@ -26,8 +31,9 @@ type OpponentFoundProps = {
 type SigningState = "idle" | "signing" | "waiting" | "error";
 
 const AGREEMENT_TIMEOUT_SECONDS = 30;
-const PHANTOM_SIGNING_WARNING_MS = 20_000;
-const SIGNING_TIMEOUT_MS = 45_000;
+const PHANTOM_SIGNING_WARNING_MS = 12_000;
+const SIGNING_TIMEOUT_MS = 28_000;
+const PREPARED_DEPOSIT_MAX_AGE_MS = 45_000;
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -65,10 +71,16 @@ export function OpponentFound({
   const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
+  const [battleLaunchCountdown, setBattleLaunchCountdown] = useState<number | null>(null);
   const hasConnectedOnceRef = useRef(false);
   const depositIntentConfirmedRef = useRef(false);
   const lastHandledDepositUnlockAtRef = useRef<number | null>(null);
   const cancelFiredRef = useRef(false);
+  const preparedDepositKeyRef = useRef<string | null>(null);
+  const preparedDepositPromiseRef = useRef<Promise<Transaction> | null>(null);
+  const preparedDepositTransactionRef = useRef<Transaction | null>(null);
+  const preparedDepositReadyAtRef = useRef<number | null>(null);
+  const preparedDepositAbortRef = useRef<AbortController | null>(null);
   const myHappyExpressionSrc = useMemo(
     () => `/assets/characters/${myScientist.id.trim().toLowerCase()}/exp/happy.png`,
     [myScientist.id],
@@ -92,6 +104,7 @@ export function OpponentFound({
     address: walletAddress,
     characterId: myScientist.id,
   });
+  const isBattleSnapshotReady = gameState?.status === "playing" && (gameState.hand?.length ?? 0) > 0;
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
   const socketRole =
@@ -110,6 +123,10 @@ export function OpponentFound({
     signingState !== "waiting" &&
     !isPlayerBWaitingUnlock &&
     !signed;
+  const depositPreparationKey =
+    wallet.publicKey && !signedDepositSignature
+      ? `${roomId}:${wallet.publicKey.toBase58()}:${arena.token}:${wagerUsd}`
+      : null;
   const reassignedRoomId =
     lastMatchFound?.roomId && lastMatchFound.roomId !== roomId ? lastMatchFound.roomId : null;
   const roomCancelledNotice = useMemo(
@@ -137,7 +154,17 @@ export function OpponentFound({
     Boolean(signedDepositSignature) &&
     !isPlayerBWaitingUnlock;
   const displayedMagicBlockUi =
-    playerHasSignedDeposit && !hasArenaPreparationSignal
+    battleLaunchCountdown !== null
+      ? {
+          ...magicBlockUi,
+          tone: "magicblock" as const,
+          badgeLabel: "Battle Ready",
+          title: `Starting in ${battleLaunchCountdown}`,
+          detail: "Final room sync complete. Keep this window open.",
+          progress: 100,
+          showPulse: false,
+        }
+      : playerHasSignedDeposit && !hasArenaPreparationSignal
       ? {
           ...magicBlockUi,
           tone: "standard" as const,
@@ -150,12 +177,88 @@ export function OpponentFound({
           showPulse: true,
         }
       : magicBlockUi;
-  const showArenaStatusStrip = playerHasSignedDeposit;
+  const showArenaStatusStrip = playerHasSignedDeposit || battleLaunchCountdown !== null;
   const isMagicBlockArenaLoading = displayedMagicBlockUi.tone === "magicblock";
   const isArenaProcessing = displayedMagicBlockUi.tone === "magicblock" || displayedMagicBlockUi.showPulse;
 
   useEffect(() => {
-    if (signingState === "waiting" && gameState?.status === "playing" && signedDepositSignature) {
+    if (!depositPreparationKey || !wallet.publicKey) {
+      preparedDepositAbortRef.current?.abort();
+      preparedDepositAbortRef.current = null;
+      preparedDepositPromiseRef.current = null;
+      preparedDepositTransactionRef.current = null;
+      preparedDepositReadyAtRef.current = null;
+      preparedDepositKeyRef.current = null;
+      return;
+    }
+
+    if (preparedDepositKeyRef.current === depositPreparationKey && preparedDepositPromiseRef.current) return;
+
+    preparedDepositAbortRef.current?.abort();
+    const abortController = new AbortController();
+    preparedDepositAbortRef.current = abortController;
+    preparedDepositKeyRef.current = depositPreparationKey;
+    preparedDepositTransactionRef.current = null;
+    preparedDepositReadyAtRef.current = null;
+    const startedAt = performance.now();
+
+    const promise = prepareDepositIntentTransaction({
+      wallet,
+      roomId,
+      token: arena.token,
+      wagerUsd,
+      signal: abortController.signal,
+    });
+
+    preparedDepositPromiseRef.current = promise;
+    promise
+      .then((transaction) => {
+        preparedDepositTransactionRef.current = transaction;
+        preparedDepositReadyAtRef.current = Date.now();
+        console.info("[OpponentFound] Deposit transaction prepared", {
+          roomId,
+          role: effectiveRole ?? "unknown",
+          ms: Math.round(performance.now() - startedAt),
+        });
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted) return;
+        console.warn("[OpponentFound] Deposit transaction prefetch failed", {
+          roomId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (preparedDepositPromiseRef.current === promise) {
+          preparedDepositPromiseRef.current = null;
+          preparedDepositTransactionRef.current = null;
+          preparedDepositReadyAtRef.current = null;
+          preparedDepositKeyRef.current = null;
+        }
+      });
+
+    return () => {
+      abortController.abort();
+      if (preparedDepositAbortRef.current === abortController) {
+        preparedDepositAbortRef.current = null;
+        preparedDepositPromiseRef.current = null;
+        preparedDepositTransactionRef.current = null;
+        preparedDepositReadyAtRef.current = null;
+        preparedDepositKeyRef.current = null;
+      }
+    };
+  }, [arena.token, depositPreparationKey, effectiveRole, roomId, wagerUsd]);
+
+  useEffect(() => {
+    if (!(signingState === "waiting" && isBattleSnapshotReady && signedDepositSignature)) {
+      const resetTimer = window.setTimeout(() => setBattleLaunchCountdown(null), 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+
+    const countdownTimers = [
+      window.setTimeout(() => setBattleLaunchCountdown(3), 0),
+      window.setTimeout(() => setBattleLaunchCountdown(2), 1000),
+      window.setTimeout(() => setBattleLaunchCountdown(1), 2000),
+    ];
+    const launchTimer = window.setTimeout(() => {
       writeActiveMatchSession({
         walletAddress,
         address: walletAddress,
@@ -179,10 +282,30 @@ export function OpponentFound({
         scientist: myScientist.id,
       });
       router.push(`/play?${params.toString()}`);
-      return;
-    }
+    }, 3000);
 
-    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing") return;
+    return () => {
+      for (const timerId of countdownTimers) {
+        window.clearTimeout(timerId);
+      }
+      window.clearTimeout(launchTimer);
+    };
+  }, [
+    signingState,
+    router,
+    walletAddress,
+    roomId,
+    arena.id,
+    arena.token,
+    wagerUsd,
+    myScientist.id,
+    signedDepositSignature,
+    isBattleSnapshotReady,
+    effectiveRole,
+  ]);
+
+  useEffect(() => {
+    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -203,10 +326,7 @@ export function OpponentFound({
     arena.token,
     wagerUsd,
     myScientist.id,
-    signedDepositSignature,
-    gameState?.status,
     isPlayerBWaitingUnlock,
-    effectiveRole,
   ]);
 
   useEffect(() => {
@@ -281,6 +401,28 @@ export function OpponentFound({
     return `${raw} ${logs}`.toLowerCase().includes("insufficient") || logs.includes("lamport") || logs.includes("0x1");
   }
 
+  function isWalletCancelledDepositError(error: unknown) {
+    if (error instanceof DepositIntentError) {
+      return error.code === "wallet_declined" || error.message === "signing_timeout" || error.message.includes("aborted");
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    const combined = `${error instanceof Error ? error.name : ""} ${raw}`.toLowerCase();
+    return (
+      combined.includes("rejected") ||
+      combined.includes("denied") ||
+      combined.includes("cancel") ||
+      combined.includes("signing_timeout") ||
+      combined.includes("user rejected") ||
+      combined.includes("aborted")
+    );
+  }
+
+  function isAbortedDepositPreparation(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.toLowerCase().includes("aborted");
+  }
+
   function classifyDepositError(error: unknown): string {
     if (error instanceof DepositIntentError) {
       switch (error.code) {
@@ -294,9 +436,11 @@ export function OpponentFound({
           return "Your wallet does not support transaction signing.";
         case "rpc_error":
           return "Transaction expired before it could be confirmed. Please retry.";
+        case "network_error":
+          return "Unable to reach the game server. Check your connection and retry.";
         case "unknown":
           if (error.message === "signing_timeout") {
-            return "Wallet approval timed out. If Phantom showed a warning, your balance may be too low. Retry or top up your wallet.";
+            return "Wallet approval timed out. Returning to lobby so you can queue again.";
           }
           break;
         default:
@@ -378,18 +522,62 @@ export function OpponentFound({
     setWalletApprovalTakingLong(false);
     setSigningState("signing");
 
+    const signingAbortController = new AbortController();
+    let signingTimeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const signingTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new DepositIntentError("unknown", "signing_timeout")), SIGNING_TIMEOUT_MS),
-      );
+      const signingTimeout = new Promise<never>((_, reject) => {
+        signingTimeoutId = setTimeout(() => {
+          signingAbortController.abort();
+          reject(new DepositIntentError("unknown", "signing_timeout"));
+        }, SIGNING_TIMEOUT_MS);
+      });
       const signature = await Promise.race([
-        signDepositIntent({
-          connection,
-          wallet,
-          roomId,
-          token: arena.token,
-          wagerUsd,
-        }),
+        (async () => {
+          let preparedTransaction: Transaction;
+          const preparedAge =
+            preparedDepositReadyAtRef.current === null ? Number.POSITIVE_INFINITY : Date.now() - preparedDepositReadyAtRef.current;
+          if (
+            preparedDepositKeyRef.current === depositPreparationKey &&
+            preparedDepositTransactionRef.current &&
+            preparedAge < PREPARED_DEPOSIT_MAX_AGE_MS
+          ) {
+            preparedTransaction = preparedDepositTransactionRef.current;
+          } else if (preparedDepositKeyRef.current === depositPreparationKey && preparedDepositPromiseRef.current) {
+            try {
+              preparedTransaction = await preparedDepositPromiseRef.current;
+            } catch (error) {
+              if (!isAbortedDepositPreparation(error) || signingAbortController.signal.aborted) {
+                throw error;
+              }
+              preparedDepositPromiseRef.current = null;
+              preparedDepositTransactionRef.current = null;
+              preparedDepositReadyAtRef.current = null;
+              preparedDepositKeyRef.current = null;
+              preparedTransaction = await prepareDepositIntentTransaction({
+                wallet,
+                roomId,
+                token: arena.token,
+                wagerUsd,
+                signal: signingAbortController.signal,
+              });
+            }
+          } else {
+            preparedTransaction = await prepareDepositIntentTransaction({
+              wallet,
+              roomId,
+              token: arena.token,
+              wagerUsd,
+              signal: signingAbortController.signal,
+            });
+          }
+
+          return sendDepositIntentTransaction({
+            connection,
+            wallet,
+            transaction: preparedTransaction,
+            signal: signingAbortController.signal,
+          });
+        })(),
         signingTimeout,
       ]);
 
@@ -400,21 +588,41 @@ export function OpponentFound({
       setSignedDepositSignature(signature);
       setSigningState("waiting");
     } catch (error) {
-      console.error("[OpponentFound] Deposit signing failed", {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorCode = error instanceof DepositIntentError ? error.code : "unknown";
+      const errorName = error instanceof Error ? error.name : typeof error;
+      const userCancelledDeposit = isWalletCancelledDepositError(error);
+      const logPayload = {
         roomId,
         role: effectiveRole ?? "unknown",
         connectionState,
-        error,
-      });
+        errorCode,
+        errorName,
+        errorMsg,
+      };
+      if (userCancelledDeposit) {
+        console.info(`[OpponentFound] Deposit signing cancelled: [${errorCode}] ${errorMsg}`, logPayload);
+      } else {
+        console.error(`[OpponentFound] Deposit signing failed: [${errorCode}] ${errorMsg}`, logPayload);
+      }
       const message = classifyDepositError(error);
-      const hasInsufficientFunds =
-        isInsufficientFundsError(error) ||
-        (error instanceof DepositIntentError && error.message === "signing_timeout");
+      const hasInsufficientFunds = isInsufficientFundsError(error);
       setSigningState("error");
       setErrorText(message);
       setErrorVisible(true);
       if (hasInsufficientFunds) {
         setInsufficientFunds(true);
+      }
+      if (userCancelledDeposit && !cancelFiredRef.current) {
+        cancelFiredRef.current = true;
+        cancelMatch();
+        window.setTimeout(() => {
+          onTimeout();
+        }, 900);
+      }
+    } finally {
+      if (signingTimeoutId) {
+        clearTimeout(signingTimeoutId);
       }
     }
   }
@@ -473,6 +681,7 @@ export function OpponentFound({
     if (connectionState === "error" || connectionState === "disconnected") return "Socket disconnected. Retry connection.";
     if (lastRoomCancelled) return getRoomCancelledMessage(lastRoomCancelled.reason);
     if (opponentFailedDepositAt) return "Opponent did not deposit in time. Returning to lobby.";
+    if (battleLaunchCountdown !== null) return `Battle starts in ${battleLaunchCountdown}...`;
     if (walletApprovalTakingLong) {
       return "Phantom approval has been open for a while. Close the old prompt if needed, then retry for a fresh transaction.";
     }
@@ -490,7 +699,8 @@ export function OpponentFound({
     if (signingState === "error") return "error";
     if (!wallet.publicKey) return "wallet_required";
     if (signingState === "signing") return "signing";
-    if (gameState?.status === "playing" && signedDepositSignature) return "confirmed";
+    if (battleLaunchCountdown !== null) return "confirmed";
+    if (isBattleSnapshotReady && signedDepositSignature) return "confirmed";
     if (signingState === "waiting") return "waiting_opponent";
     if (signedDepositSignature) return "submitted";
     return "idle";
@@ -769,7 +979,7 @@ export function OpponentFound({
                 Character revealed when battle starts.
               </p>
               <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                {opponentAddress ? shortWallet(opponentAddress) : `Room ${roomId}`}
+                {opponentAddress ? shortWallet(opponentAddress) : "Syncing rival..."}
               </p>
             </div>
           </div>
@@ -847,7 +1057,7 @@ export function OpponentFound({
                         }`}
                         style={{
                           width: isArenaProcessing ? "100%" : `${displayedMagicBlockUi.progress ?? 0}%`,
-                          background: isMagicBlockArenaLoading
+                          backgroundImage: isMagicBlockArenaLoading
                             ? "linear-gradient(90deg, #5f806d 0%, #9db496 35%, #e1f2d8 50%, #9db496 65%, #5f806d 100%)"
                             : isArenaProcessing
                               ? "linear-gradient(90deg, #ba6931 0%, #f8d694 35%, #fff6e0 50%, #f8d694 65%, #ba6931 100%)"

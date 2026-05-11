@@ -1,4 +1,5 @@
 import {
+  type BlockhashWithExpiryBlockHeight,
   Connection,
   PublicKey,
   Transaction,
@@ -22,6 +23,33 @@ type BuildDepositOptions = boolean | {
 };
 
 export class BlinkTransactionBuilder {
+  private static cachedBlockhash: { value: BlockhashWithExpiryBlockHeight; fetchedAt: number } | null = null;
+  private static pendingBlockhash: Promise<BlockhashWithExpiryBlockHeight> | null = null;
+  private static readonly BLOCKHASH_CACHE_MS = 20_000;
+
+  private static async getRecentBlockhash(conn: Connection): Promise<BlockhashWithExpiryBlockHeight> {
+    const now = Date.now();
+    if (
+      this.cachedBlockhash &&
+      now - this.cachedBlockhash.fetchedAt < this.BLOCKHASH_CACHE_MS
+    ) {
+      return this.cachedBlockhash.value;
+    }
+
+    if (!this.pendingBlockhash) {
+      this.pendingBlockhash = conn.getLatestBlockhash('confirmed')
+        .then((value) => {
+          this.cachedBlockhash = { value, fetchedAt: Date.now() };
+          return value;
+        })
+        .finally(() => {
+          this.pendingBlockhash = null;
+        });
+    }
+
+    return this.pendingBlockhash;
+  }
+
   /**
    * Builds an unsigned `create_open_challenge` transaction for the creator.
    * Creator funds the challenge escrow before any opponent is known.
@@ -37,7 +65,7 @@ export class BlinkTransactionBuilder {
 
     const RPC = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
     const conn = new Connection(RPC, 'confirmed');
-    const latest = await conn.getLatestBlockhash();
+    const latest = await this.getRecentBlockhash(conn);
 
     const [challengeStatePDA] = PublicKey.findProgramAddressSync(
       [Buffer.from(ESCROW_CONSTANTS.CHALLENGE_SEED), matchIdBytes],
@@ -134,7 +162,7 @@ export class BlinkTransactionBuilder {
 
     const RPC = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
     const conn = new Connection(RPC, 'confirmed');
-    const latest = await conn.getLatestBlockhash();
+    const latest = await this.getRecentBlockhash(conn);
 
     // Challenge PDAs (temporary, will be closed)
     const [challengeStatePDA] = PublicKey.findProgramAddressSync(
@@ -233,7 +261,7 @@ export class BlinkTransactionBuilder {
 
     const RPC = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
     const conn = new Connection(RPC, 'confirmed');
-    const latest = await conn.getLatestBlockhash();
+    const latest = await this.getRecentBlockhash(conn);
     const matchIdBytes = room.matchIdBytes;
 
     const [matchStatePDA] = PublicKey.findProgramAddressSync(

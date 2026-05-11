@@ -589,3 +589,66 @@ _Files touched:_ `apps/api/src/managers/room/Blockchain.ts`, `apps/api/src/manag
 
 **Tech Debt:**
 - None. Logic is fully stateless and aligns execution with the Solana contract's bitmask design.
+
+---
+
+## 20. Queue WebSocket Migration - Phantom Speedup & Room Sync Protection (2026-05-11)
+
+**The Change:**
+
+_Files touched:_
+
+- `apps/api/src/index.ts`
+- `apps/api/src/managers/RoomManager.ts`
+- `apps/api/src/managers/room/Lifecycle.ts`
+- `apps/api/src/managers/room/Network.ts`
+- `apps/api/src/managers/room/Queue.ts`
+- `apps/api/src/managers/room/Store.ts`
+- `apps/api/src/routes/match.ts`
+- `apps/api/src/routes/queueSocket.ts`
+- `apps/api/src/services/BlinkTransactionBuilder.ts`
+- `apps/api/test/RoomManager.test.ts`
+- `apps/web/src/components/lobby/LobbyScreen.tsx`
+- `apps/web/src/components/lobby/MatchmakingWaiting.tsx`
+- `apps/web/src/components/lobby/OpponentFound.tsx`
+- `apps/web/src/components/play/BattleScreen.tsx`
+- `apps/web/src/hooks/useMatchSocket.ts`
+- `apps/web/src/hooks/useQueueSocket.ts`
+- `apps/web/src/lib/solana/signDepositIntent.ts`
+- `packages/shared-types/src/websocket.ts`
+
+Replaced the public matchmaking long-poll flow with a dedicated `/queue` WebSocket, reduced Phantom deposit latency by prebuilding transactions before wallet approval, and hardened room recovery so reconnects and late joins can safely resync instead of getting stuck behind stale room state.
+
+**What changed:**
+
+1. **Queue moved to WebSocket events:** Added `/queue` as a dedicated WS route plus shared event types for `queueJoined`, `queueStatus`, `matchFound`, `queueLeft`, and `cancelQueue`.
+2. **Frontend queue hook:** Added `useQueueSocket()` and rewired `LobbyScreen` to use realtime queue updates instead of the old HTTP waiting flow and periodic presence self-heal.
+3. **Visible queue position:** The waiting UI now shows live queue position and depth from backend WS broadcasts.
+4. **O(1) room lookup:** Added a reverse player-to-room index in `Store` so reconnect and active-room checks do not need full room scans.
+5. **Safer public room recovery:** Before queueing, the backend now releases incomplete public deposit rooms and ignores zombie deposit rooms that no longer have timers, sockets, or deposits.
+6. **Zombie janitor:** Added a periodic public-room cleanup pass to destroy orphaned deposit rooms before they can trap players.
+7. **Late-join deposit recovery:** If player B reconnects after being unlocked but before confirming deposit, the server now re-sends `depositUnlocked`.
+8. **Snapshot-based room sync:** Added `requestSnapshot` handling on the room socket so the client can explicitly request a fresh room state and presence rebroadcast.
+9. **Match socket retry logic:** `useMatchSocket()` now retries room connection and snapshot recovery instead of failing permanently on the first transient close.
+10. **Single-start protection:** Added lifecycle guards so the engine cannot double-initialize when both deposits and reconnect events race each other.
+11. **Phantom prompt speedup:** Split deposit signing into `prepareDepositIntentTransaction()` and `sendDepositIntentTransaction()`, allowing the FE to prefetch the unsigned tx before the user clicks approve.
+12. **Removed extra RPC round-trip:** Dropped the explicit simulation before `sendTransaction` and increased error classification coverage for aborts, wallet cancellation, and backend/network failures.
+13. **Faster Blink tx building:** Added short-lived blockhash caching in `BlinkTransactionBuilder` so repeated transaction generation does not keep paying the full RPC latency cost.
+14. **Battle handoff polish:** The opponent-found flow now waits for a real playable room snapshot before launching the battle screen, with a short countdown once sync is ready.
+
+**The Reasoning:**
+
+- The biggest remaining queue fragility came from HTTP request lifetime and frontend guesswork around whether the player was still queued. A websocket-native queue replaces that uncertainty with explicit server-pushed state.
+- Phantom UX was being slowed down by work that happened too late in the click path. Preparing the transaction earlier makes wallet approval feel much faster, especially over tunnels or slower RPC links.
+- Room start and reconnect are now multi-step distributed flows: queue match, deposit unlock, socket join, engine init, and play snapshot. Once those phases overlap, explicit resync paths and lifecycle guards matter more than optimistic assumptions.
+
+**Test:**
+
+- Attempted: `bun test apps/api/test/RoomManager.test.ts`
+- Current result: blocked before test execution by an external Goldrush dependency returning `401 Invalid or missing API key`
+
+**Tech Debt:**
+
+- The old HTTP `/match` path still exists for compatibility. The queue is now websocket-native, but matchmaking entrypoints are temporarily split across both styles.
+- `RoomManager` lifecycle, reconnect, and cancellation logic is becoming state-machine-shaped. It works, but the branching surface is large enough that a formal statechart would reduce future regressions.
+- The RoomManager test suite still touches dependencies that expect external credentials. Those boundaries should be isolated so room lifecycle tests can run fully offline.

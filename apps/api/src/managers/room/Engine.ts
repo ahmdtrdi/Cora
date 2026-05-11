@@ -36,6 +36,11 @@ export class Engine {
 
     // Create ER session if MagicBlock is configured
     await this.manager.blockchain.createBattleSession(room);
+    if (this.manager.store.getRoom(room.id) !== room) {
+      engine.stop();
+      return;
+    }
+    room.status = 'playing';
 
     // Wire engine events to WebSocket broadcasts
     engine.on('timerSync', () => {

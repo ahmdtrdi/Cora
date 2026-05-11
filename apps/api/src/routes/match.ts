@@ -21,7 +21,13 @@ export function createMatchRouter(roomManager: RoomManager) {
     }
 
     const existingRoom = roomManager.queue.findActiveRoomForAddress(address);
+    const existingRoomId = existingRoom?.id;
     const roomId = await roomManager.queueMatch(address, c.req.raw.signal);
+
+    if (roomId === '__aborted__') {
+      return c.json({ error: 'Queue cancelled' }, 400);
+    }
+
     const room = roomManager.getRoom(roomId);
     const role =
       room?.playerA === address ? 'playerA' :
@@ -32,7 +38,7 @@ export function createMatchRouter(roomManager: RoomManager) {
       roomId,
       role,
       roomType: room?.roomType,
-      alreadyInRoom: Boolean(existingRoom),
+      alreadyInRoom: Boolean(existingRoomId && existingRoomId === roomId),
       status: room?.status,
     });
   });

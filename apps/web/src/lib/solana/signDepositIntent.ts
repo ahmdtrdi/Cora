@@ -14,6 +14,15 @@ type SignDepositIntentParams = {
   roomId: string;
   token: string;
   wagerUsd: string;
+  signal?: AbortSignal;
+};
+
+type PrepareDepositIntentParams = Omit<SignDepositIntentParams, "connection">;
+type SendDepositIntentParams = {
+  connection: Connection;
+  wallet: WalletContextState;
+  transaction: Transaction;
+  signal?: AbortSignal;
 };
 
 type SignSettlementReleaseIntentParams = {
@@ -30,6 +39,7 @@ export class DepositIntentError extends Error {
     | "wallet_declined"
     | "insufficient_balance"
     | "rpc_error"
+    | "network_error"
     | "unknown";
 
   constructor(
@@ -39,11 +49,13 @@ export class DepositIntentError extends Error {
       | "wallet_declined"
       | "insufficient_balance"
       | "rpc_error"
+      | "network_error"
       | "unknown",
     message: string,
   ) {
     super(message);
     this.code = code;
+    this.name = "DepositIntentError";
   }
 }
 
@@ -93,6 +105,20 @@ function mapWalletError(error: unknown): DepositIntentError {
   const message = error instanceof Error ? error.message : "Unknown wallet error";
   const lowered = message.toLowerCase();
   const combined = `${lowered} ${logs}`;
+  if (lowered.includes("aborted") || (error instanceof Error && error.name.toLowerCase().includes("abort"))) {
+    return new DepositIntentError("unknown", "signing_timeout");
+  }
+
+  // Network / fetch failures — the tunnel is down or backend unreachable
+  if (
+    lowered.includes("failed to fetch") ||
+    lowered.includes("networkerror") ||
+    lowered.includes("network request failed") ||
+    lowered.includes("load failed") ||
+    (error instanceof TypeError && lowered.includes("fetch"))
+  ) {
+    return new DepositIntentError("network_error", "Unable to reach the game server. Check your connection and retry.");
+  }
 
   if (combined.includes("rejected") || combined.includes("denied") || combined.includes("cancel")) {
     return new DepositIntentError("wallet_declined", "Wallet request was declined.");
@@ -139,6 +165,12 @@ function mapWalletError(error: unknown): DepositIntentError {
   }
 
   return new DepositIntentError("unknown", message);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new DepositIntentError("unknown", "signing_timeout");
+  }
 }
 
 async function signMemoIntent({
@@ -200,18 +232,37 @@ export async function signDepositIntent({
   roomId,
   token,
   wagerUsd,
+  signal,
 }: SignDepositIntentParams): Promise<string> {
+  const transaction = await prepareDepositIntentTransaction({
+    wallet,
+    roomId,
+    token,
+    wagerUsd,
+    signal,
+  });
+
+  return sendDepositIntentTransaction({
+    connection,
+    wallet,
+    transaction,
+    signal,
+  });
+}
+
+export async function prepareDepositIntentTransaction({
+  wallet,
+  roomId,
+  token,
+  wagerUsd,
+  signal,
+}: PrepareDepositIntentParams): Promise<Transaction> {
   if (!wallet.publicKey) {
     throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
   }
-  if (!wallet.sendTransaction) {
-    throw new DepositIntentError(
-      "wallet_signing_not_supported",
-      "Connected wallet does not support transaction signing.",
-    );
-  }
 
   try {
+    throwIfAborted(signal);
     const apiBase = resolveApiBaseUrl();
     console.info("[signDepositIntent] Requesting backend deposit transaction", {
       roomId,
@@ -220,13 +271,15 @@ export async function signDepositIntent({
       apiBase,
       account: wallet.publicKey.toBase58(),
     });
+
     const res = await fetch(`${apiBase}/api/actions/challenge?roomId=${roomId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
+      signal,
+      body: JSON.stringify({
         account: wallet.publicKey.toBase58(),
         tokenMint: token,
-        wagerAmount: Math.floor(parseFloat(wagerUsd) * 1_000_000) 
+        wagerAmount: Math.floor(parseFloat(wagerUsd) * 1_000_000),
       }),
     });
 
@@ -247,49 +300,53 @@ export async function signDepositIntent({
     }
 
     const { transaction: base64Tx } = await res.json();
+    throwIfAborted(signal);
     console.info("[signDepositIntent] Backend transaction received", {
       hasTransaction: Boolean(base64Tx),
     });
     const txBuffer = Buffer.from(base64Tx, "base64");
     const transaction = Transaction.from(txBuffer);
 
-    // Latest blockhash should have been attached by the server, but let's be safe
-    const latest = await connection.getLatestBlockhash("confirmed");
-    transaction.recentBlockhash = latest.blockhash;
     transaction.feePayer = wallet.publicKey;
+    return transaction;
+  } catch (error) {
+    throw mapWalletError(error);
+  }
+}
 
-    const simulation = await connection.simulateTransaction(transaction);
-    if (simulation.value.err) {
-      const logs = Array.isArray(simulation.value.logs) ? simulation.value.logs.join(" ") : "";
-      const combined = `${JSON.stringify(simulation.value.err)} ${logs}`;
-      if (isSimulationInsufficientBalanceSignal(combined)) {
-        throw new DepositIntentError("insufficient_balance", "Insufficient Balance");
-      }
-      throw new DepositIntentError("unknown", "Transaction simulation failed");
-    }
+export async function sendDepositIntentTransaction({
+  connection,
+  wallet,
+  transaction,
+  signal,
+}: SendDepositIntentParams): Promise<string> {
+  if (!wallet.publicKey) {
+    throw new DepositIntentError("wallet_not_connected", "Connect wallet before signing.");
+  }
+  if (!wallet.sendTransaction) {
+    throw new DepositIntentError(
+      "wallet_signing_not_supported",
+      "Connected wallet does not support transaction signing.",
+    );
+  }
+
+  try {
+
+    // NOTE: Simulation removed — sendTransaction performs preflight simulation
+    // automatically (preflightCommitment: "confirmed"). This removes one full
+    // RPC round-trip before Phantom opens, which is critical over tunnels.
 
     console.info("[signDepositIntent] About to call wallet.sendTransaction", {
       feePayer: wallet.publicKey.toBase58(),
-      blockhash: latest.blockhash,
+      blockhash: transaction.recentBlockhash,
     });
+    throwIfAborted(signal);
     const signature = await wallet.sendTransaction(transaction, connection, {
       preflightCommitment: "confirmed",
-      maxRetries: 0,
+      maxRetries: 2,
     });
 
-    const confirmation = await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: latest.blockhash,
-        lastValidBlockHeight: latest.lastValidBlockHeight,
-      },
-      "confirmed",
-    );
-
-    if (confirmation.value.err) {
-      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
-    }
-
+    // Return the signature immediately — don't block on confirmation.
     return signature;
   } catch (error) {
     throw mapWalletError(error);

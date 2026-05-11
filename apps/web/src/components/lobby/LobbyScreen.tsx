@@ -9,6 +9,7 @@ import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
 import { getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
+import { useQueueSocket } from "@/hooks/useQueueSocket";
 import {
   getPrivateChallenge,
   getWebChallengeUrl,
@@ -116,7 +117,6 @@ type MatchmakingState = "idle" | "searching" | "timeout" | "error";
 type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
 const MATCHMAKING_TIMEOUT_MS = 45_000;
-const MATCHMAKING_PRESENCE_POLL_MS = 4_000;
 const POST_MATCH_FOUND_VERIFY_MS = 1400;
 const POST_MATCH_FOUND_PREPARE_MS = 1000;
 const BLINK_CHALLENGE_POLL_MS = 2_500;
@@ -233,13 +233,15 @@ export function LobbyScreen() {
   const userCancelledRef = useRef(false);
   const foundTransitionTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const autoRequeueStartedRef = useRef(false);
-  const queueSelfHealInFlightRef = useRef(false);
   const draftHydratedRef = useRef(false);
   const activeRoomHydratedRef = useRef(false);
   const activeRoomLookupAbortRef = useRef<AbortController | null>(null);
   const blinkChallengeHydratedRef = useRef(false);
   const activeBlinkChallengeRef = useRef<ActiveBlinkChallengeSession | null>(null);
   const lastBlinkBrowserNoticeRoomRef = useRef<string | null>(null);
+
+  // WebSocket-based queue (replaces HTTP long-poll)
+  const queueSocket = useQueueSocket();
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -767,20 +769,30 @@ export function LobbyScreen() {
   ]);
 
   function beginMatchmaking() {
+    if (!walletAddress) {
+      setMatchmakingState("error");
+      setMatchmakingError("Connect wallet before entering queue.");
+      return;
+    }
     if (hasBlockingBlinkChallenge) {
       setBlinkChallengePanelOpen(true);
       setActiveMatchToast({ text: "Finish or clear your active Blink challenge before queueing.", tone: "error" });
       return;
     }
+    userCancelledRef.current = false;
     setMatchmakingState("searching");
     setMatchmakingStage("finding");
     setMatchmakingError(null);
+    setMatchedRoomId(null);
+    setMatchedRole(null);
     setPhase("waiting");
-    void startMatchmakingSearch();
+    queueSocket.connect(walletAddress);
   }
 
   function cancelMatchmaking() {
     userCancelledRef.current = true;
+    queueSocket.cancel();
+    // Also abort any legacy HTTP request if still in flight
     matchmakingAbortRef.current?.abort();
     clearFoundTransitionTimers();
     writeActiveMatchSession(null);
@@ -790,6 +802,48 @@ export function LobbyScreen() {
     setMatchmakingError(null);
     setPhase("character-select");
   }
+
+  // React to WS queue match result
+  useEffect(() => {
+    if (!queueSocket.matchResult) return;
+    if (userCancelledRef.current) return;
+
+    const { roomId, role } = queueSocket.matchResult;
+    const requestId = ++matchmakingRequestIdRef.current;
+
+    setMatchedRoomId(roomId);
+    setMatchedRole(role ?? null);
+    setMatchmakingState("searching");
+    setMatchmakingStage("verifying");
+    clearFoundTransitionTimers();
+
+    const verifyTimer = setTimeout(() => {
+      if (requestId !== matchmakingRequestIdRef.current) return;
+      setMatchmakingStage("preparing");
+
+      const prepareTimer = setTimeout(() => {
+        if (requestId !== matchmakingRequestIdRef.current) return;
+        setMatchmakingState("idle");
+        setPhase("found");
+      }, POST_MATCH_FOUND_PREPARE_MS);
+      foundTransitionTimeoutsRef.current.push(prepareTimer);
+    }, POST_MATCH_FOUND_VERIFY_MS);
+
+    foundTransitionTimeoutsRef.current.push(verifyTimer);
+  }, [queueSocket.matchResult, clearFoundTransitionTimers]);
+
+  // React to WS queue state changes (expired / error)
+  useEffect(() => {
+    if (queueSocket.queueState === 'expired') {
+      setMatchmakingState("timeout");
+      setMatchmakingStage("finding");
+      setMatchmakingError("No opponent found yet. Retry to keep searching.");
+    } else if (queueSocket.queueState === 'error' && !userCancelledRef.current) {
+      setMatchmakingState("error");
+      setMatchmakingStage("finding");
+      setMatchmakingError("Queue connection lost. Retry to reconnect.");
+    }
+  }, [queueSocket.queueState]);
 
   useEffect(() => {
     return () => {
@@ -831,6 +885,10 @@ export function LobbyScreen() {
     }, 5000);
     return () => clearTimeout(timeoutId);
   }, [activeMatchToast]);
+
+  // NOTE: Presence polling removed — WS queue provides real-time status.
+  // The getMatchPresenceForAddress API is still used for boot-time recovery
+  // in the active-room lookup effect above.
 
   useEffect(() => {
     if (!blinkChallengeNotice) return;
@@ -925,83 +983,16 @@ export function LobbyScreen() {
   ]);
 
   useEffect(() => {
-    if (phase !== "waiting") return;
-    if (matchmakingState !== "searching") return;
-    if (!walletAddress) return;
-
-    let cancelled = false;
-
-    const pollPresence = async () => {
-      try {
-        const presence = await getMatchPresenceForAddress(walletAddress);
-        if (cancelled) return;
-
-        if (presence.inRoom && presence.roomId) {
-          openRecoveredRoom({
-            roomId: presence.roomId,
-            role: presence.role ?? null,
-            status: presence.status ?? null,
-            arenaId: selectedArena?.id ?? null,
-            token: selectedArena?.token ?? null,
-            wagerUsd: FIXED_WAGER_USD,
-            scientistId: selectedScientist?.id ?? null,
-          });
-          return;
-        }
-
-        if (presence.queued || queueSelfHealInFlightRef.current) {
-          return;
-        }
-
-        queueSelfHealInFlightRef.current = true;
-        console.warn("[LobbyScreen] Queue presence lost on backend; restarting matchmaking request.");
-        matchmakingAbortRef.current?.abort();
-        await startMatchmakingSearch();
-      } catch (error) {
-        if (!cancelled) {
-          console.warn("[LobbyScreen] Queue presence check failed.", error);
-        }
-      } finally {
-        queueSelfHealInFlightRef.current = false;
-      }
-    };
-
-    void pollPresence();
-    const intervalId = setInterval(() => {
-      void pollPresence();
-    }, MATCHMAKING_PRESENCE_POLL_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-      queueSelfHealInFlightRef.current = false;
-    };
-  }, [
-    matchmakingState,
-    openRecoveredRoom,
-    phase,
-    selectedArena?.id,
-    selectedArena?.token,
-    selectedScientist?.id,
-    startMatchmakingSearch,
-    walletAddress,
-  ]);
-
-  useEffect(() => {
     if (!resumeQueue || autoRequeueStartedRef.current) return;
     if (phase !== "character-select") return;
     if (!canQueue || matchmakingState !== "idle") return;
 
     const timeoutId = setTimeout(() => {
       autoRequeueStartedRef.current = true;
-      setMatchmakingState("searching");
-      setMatchmakingStage("finding");
-      setMatchmakingError(null);
-      setPhase("waiting");
-      void startMatchmakingSearch();
+      beginMatchmaking();
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [resumeQueue, phase, canQueue, matchmakingState, startMatchmakingSearch]);
+  }, [resumeQueue, phase, canQueue, matchmakingState, walletAddress]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1895,8 +1886,10 @@ export function LobbyScreen() {
                   state={matchmakingState === "idle" ? "searching" : matchmakingState}
                   stage={matchmakingStage}
                   errorMessage={matchmakingError}
+                  queuePosition={queueSocket.queueStatus?.position ?? null}
+                  queueDepth={queueSocket.queueStatus?.queueDepth ?? null}
                   onRetry={() => {
-                    void startMatchmakingSearch();
+                    beginMatchmaking();
                   }}
                   onCancel={cancelMatchmaking}
                 />
@@ -1943,5 +1936,3 @@ export function LobbyScreen() {
     </div>
   );
 }
-
-

@@ -268,7 +268,7 @@ export function BattleScreen() {
     cancelMatch,
     surrender,
     reconnect,
-  } = useMatchSocket({ roomId, address });
+  } = useMatchSocket({ roomId, address, characterId: activeMatchSession?.scientistId ?? undefined });
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -779,10 +779,11 @@ export function BattleScreen() {
   const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
   const roundText = `Round ${currentRound}/${maxRounds}`;
   const remainingMatchClock = formatMatchClock(gameState?.timer?.remainingMs);
+  const hasMatchSocket = Boolean(socketUrl);
   const isSocketRecovering = connectionState === "connecting" || connectionState === "reconnecting";
   const hasSocketIssue = connectionState === "error" || connectionState === "disconnected";
-  const isRoomStateLoading = !gameState && isSocketRecovering;
-  const isRoomUnavailable = !gameState && hasSocketIssue;
+  const isRoomStateLoading = hasMatchSocket && !gameState && isSocketRecovering;
+  const isRoomUnavailable = Boolean(lastSocketIssueAt) && hasMatchSocket && !gameState && hasSocketIssue;
   const presenceOpponentConnected =
     opponent?.address && lastPresenceUpdate?.players
       ? lastPresenceUpdate.players[opponent.address]?.isConnected
@@ -797,9 +798,7 @@ export function BattleScreen() {
     connectionState !== "connected" &&
     !isMatchComplete &&
     !isRoomCancelled;
-  const isPlayStateReady = status === "playing" || status === "settling" || isMatchComplete;
-  const shouldShowPlayStateGate = !isPlayStateReady;
-  const showRoomGateModal = (isRoomStateLoading || shouldShowPlayStateGate) && !showOpponentAwayStatus && !showDisconnectedOverlay;
+  const showRoomGateModal = isRoomUnavailable && !showOpponentAwayStatus && !showDisconnectedOverlay;
   const roomGateTitle = isRoomStateLoading
     ? "Syncing Room State"
     : isRoomUnavailable

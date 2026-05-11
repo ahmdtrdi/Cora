@@ -6,6 +6,7 @@ import { submitSettlementTransaction } from '../../utils/settlement';
 
 export class Lifecycle {
   private DEPOSIT_TIMEOUT_MS = 30_000;
+  private startingRooms = new Set<string>();
 
   constructor(private manager: RoomManager) {}
 
@@ -19,6 +20,7 @@ export class Lifecycle {
     room.playerA = playerAPubkey;
     room.tokenMint = tokenMint;
     room.wagerAmount = wagerAmount;
+    this.manager.store.trackPlayer(playerAPubkey, roomId);
 
     console.log(`[Private] Room ${roomId} created for Player A: ${playerAPubkey}`);
     this.armDepositTimeout(room, playerAPubkey);
@@ -37,6 +39,7 @@ export class Lifecycle {
 
     room.playerB = playerBPubkey;
     room.playerMeta.set(playerBPubkey, { hasDeposited: false, characterId: 'einstein' });
+    this.manager.store.trackPlayer(playerBPubkey, roomId);
     console.log(`[Private] Player B ${playerBPubkey} joined room ${roomId}`);
     return 'ok';
   }
@@ -108,15 +111,24 @@ export class Lifecycle {
       if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false) && playerAConnected && playerBConnected) {
         for (const t of room.depositTimeouts.values()) clearTimeout(t);
         room.depositTimeouts.clear();
-        room.status = 'playing';
         console.log(`Room ${roomId}: Late join triggered game start — both already deposited!`);
-        this.manager.engine.initializeEngine(room);
+        this.startGameWhenReady(room);
         return;
       }
     }
 
     this.manager.network.broadcastGameState(room);
     this.manager.network.broadcastPresence(room);
+
+    if (room.status === 'depositing' && address === room.playerB && room.playerBUnlocked) {
+      const meta = room.playerMeta.get(address);
+      if (!meta?.hasDeposited) {
+        this.manager.network.safeSend(ws, {
+          type: 'depositUnlocked',
+          payload: { roomId: room.id },
+        } satisfies WsMessage);
+      }
+    }
   }
 
   public leaveRoom(roomId: string, address: string, ws?: RoomSocket) {
@@ -268,10 +280,20 @@ export class Lifecycle {
         return;
       }
 
-      room.status = 'playing';
       console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
-      this.manager.engine.initializeEngine(room);
+      this.startGameWhenReady(room);
     }
+  }
+
+  private startGameWhenReady(room: Room): void {
+    if (room.engine || this.startingRooms.has(room.id)) return;
+
+    this.startingRooms.add(room.id);
+    void this.manager.engine.initializeEngine(room).catch((err) => {
+      console.error(`[RoomLifecycle] Failed to initialize game engine for room ${room.id}:`, err);
+    }).finally(() => {
+      this.startingRooms.delete(room.id);
+    });
   }
 
   public armDepositTimeout(room: Room, address: string): void {
@@ -294,10 +316,13 @@ export class Lifecycle {
   ): void {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
-    const shouldRequeueInnocent = room.status !== 'depositing';
     const reason = options?.reason ?? 'deposit_timeout';
 
-    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'}`);
+    // Check if the innocent player had deposited — if so, trigger a refund before re-queue
+    const innocentMeta = innocentAddress ? room.playerMeta.get(innocentAddress) : null;
+    const innocentHadDeposited = innocentMeta?.hasDeposited ?? false;
+
+    console.log(`[Cancel] Room ${roomId} cancelled. Innocent: ${innocentAddress ?? 'none'} (deposited: ${innocentHadDeposited})`);
 
     for (const timer of room.depositTimeouts.values()) clearTimeout(timer);
     room.depositTimeouts.clear();
@@ -311,22 +336,37 @@ export class Lifecycle {
     });
 
     if (innocentAddress) {
+      // Refund the innocent player's deposit if they had already deposited
+      if (innocentHadDeposited) {
+        console.log(`[Cancel] Refunding innocent player ${innocentAddress} deposit for room ${roomId}.`);
+        this.manager.blockchain.refundMatch(room, 'server_error');
+      }
+
       const client = room.clients.get(innocentAddress);
       const innocentWs = client?.ws;
 
       if (innocentWs) {
         this.manager.network.safeSend(innocentWs, { type: 'opponentFailedDeposit', payload: {} } satisfies WsMessage);
-        if (shouldRequeueInnocent) {
-          this.manager.queue.requeueInnocent(innocentAddress, innocentWs);
-        } else {
-          console.log(`[Cancel] Room ${roomId} ended during depositing. Skipping re-queue for ${innocentAddress}.`);
-        }
       } else {
         console.log(`[Cancel] ${innocentAddress} already disconnected — skipping re-queue.`);
       }
     }
 
+    this.closeRoomSockets(room, 'Match cancelled');
     this.destroyRoom(roomId);
+  }
+
+  private closeRoomSockets(room: Room, reason: string): void {
+    for (const [address, client] of room.clients) {
+      if (!client.ws) continue;
+      try {
+        client.ws.close(1000, reason);
+        client.ws = null;
+        client.lastSeenAt = Date.now();
+      } catch (error) {
+        console.warn(`[RoomLifecycle] Failed to close room socket for ${address} in ${room.id}:`, error);
+      }
+    }
   }
 
   public destroyRoom(roomId: string): void {
