@@ -21,7 +21,7 @@ describe("set_card_manifest", () => {
       isPlayerA: true,
       entries: [
         { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
-        { effectType: TEST_CONSTANTS.effectHeal, maxValue: 30 },
+        { effectType: TEST_CONSTANTS.effectHeal, maxValue: TEST_CONSTANTS.maxEffectValue },
       ],
     });
     await setCardManifest({
@@ -38,7 +38,7 @@ describe("set_card_manifest", () => {
     expect(Array.from(session.cardManifestA.slice(0, 6))).to.deep.equal(
       packManifest([
         { effectType: TEST_CONSTANTS.effectAttack, maxValue: TEST_CONSTANTS.maxEffectValue },
-        { effectType: TEST_CONSTANTS.effectHeal, maxValue: 30 },
+        { effectType: TEST_CONSTANTS.effectHeal, maxValue: TEST_CONSTANTS.maxEffectValue },
       ])
     );
     expect(Array.from(session.cardManifestB.slice(0, 3))).to.deep.equal(
