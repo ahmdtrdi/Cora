@@ -840,6 +840,31 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 
 ---
 
+## Entry 25 — 2026-05-11: Inline-Manifest Heal Test Drift After Effect Ceiling Rebalance
+
+### The Change
+
+- `packages/battle-anchor-032/tests/42-apply-effect-inline-manifest.test.ts` — Updated the heal-flow scenario to use `TEST_CONSTANTS.maxEffectValue` instead of the stale pre-rebalance `40`, and corrected the post-heal expectation to cap back at `INITIAL_HEALTH`.
+- `packages/battle-anchor-032/tests/40-set-card-manifest.test.ts` — Replaced hardcoded heal manifest `30` with `TEST_CONSTANTS.maxEffectValue`.
+- `packages/battle-anchor-032/tests/43-surrender-match.test.ts` — Replaced hardcoded heal manifest `30` with `TEST_CONSTANTS.maxEffectValue`.
+
+### The Reasoning
+
+1. The failing `apply_effect` test was not exposing a smart-contract bug. The contract correctly rejected `final_value=40` because the committed inline manifest and `MAX_EFFECT_VALUE` were both rebalanced down to `30`.
+2. The stale test was still asserting the old balance model: damage `40`, heal `30`, final HP `90`. Under the new ceiling, the same scenario becomes damage `30`, heal `30`, final HP capped back to `100`.
+3. Moving the tests to `TEST_CONSTANTS.maxEffectValue` reduces future drift the next time gameplay balance changes.
+
+### Verification
+
+- [x] `anchor test`
+- [x] Result: `77 passing`, `16 pending`
+
+### The Tech Debt
+
+- [ ] A few ER/MagicBlock tests still use literal `30` for attack assertions or inputs. They are valid today, but should be normalized to shared constants if we want future balance changes to be cheaper.
+
+---
+
 ## Entry 25 — 2026-05-10: Blink Escrow Plan Revision for Soft-to-True Cutover
 
 ### The Change
