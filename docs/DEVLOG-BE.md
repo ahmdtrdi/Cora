@@ -689,3 +689,23 @@
 - [ ] **confirmTransaction timeout:** `connection.confirmTransaction` uses the default timeout (~30s). For production, consider using `confirmTransaction` with `lastValidBlockHeight` for more reliable timeout behavior.
 - [ ] **Pre-existing test failures:** 8 `RoomManager.test.ts` failures remain (engine is null due to missing questions API in test environment). These predate this change.
 - [ ] **Reclaim challenge:** The `reclaim_challenge` instruction is supported by the contract but not yet wired in the backend. If a creator's challenge expires on-chain before anyone accepts, the creator can reclaim via a frontend-only flow.
+
+## 2026-05-11 - Fix: Preserve hasDeposited on WebSocket Join
+
+### The Change
+- Fixed `joinRoom` in `Lifecycle.ts` to preserve `hasDeposited: true`
+  when a player joins a hydrated private Blink room.
+- Previously, `hydrateBlinkRoomInternal` correctly set both players to
+  `hasDeposited: true` after `accept_challenge`, but `joinRoom` overwrote
+  it back to `false` on new connections.
+- Both players now enter `playing` state automatically when both connect
+  to a hydrated room, without needing to send `confirmDeposit`.
+
+### The Reasoning
+- After `accept_challenge`, both wagers are locked on-chain. The WebSocket
+  join is presence confirmation only, not a deposit gate. The metadata
+  must reflect the on-chain reality.
+- The FE had a workaround (resending deposit signature via `confirmDeposit`
+  after join). That workaround can remain as a harmless safety net but the
+  root cause is now fixed on the backend.
+
