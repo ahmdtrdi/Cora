@@ -4811,3 +4811,27 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 **The Reasoning:** The previous right-side version had the correct placement but still read a little too quietly. Scaling it further makes the scene layer more legible without changing the overall CTA structure.
 
 **The Tech Debt:** The object scale is still managed with manual percentages and minimum widths. If we continue tuning this art direction, a shared set of responsive scene tokens would be easier to maintain than repeated inline values.
+
+## 2026-05-11 - Hero hover parallax smoothed
+
+**The Change:** Refined the hover motion in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) by softening the pointer-response curve around center, reducing vertical drift, and slowing the spring slightly for a smoother settle.
+
+**The Reasoning:** The original hover reacted a bit too linearly and felt twitchy near the resting position. Adding a gentler center response keeps the parallax alive while making the scene feel more intentional and less awkward.
+
+**The Tech Debt:** The hover feel is still tuned with inline motion constants. If we keep iterating on landing interactions, we may want shared motion tokens for parallax intensity and spring behavior.
+
+## 2026-05-11 - Hero scene lighting added
+
+**The Change:** Added two non-interactive lighting overlays in [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx): a soft warm radial highlight through the middle-upper scene and a subtle dimming/vignette gradient above the interactive layers.
+
+**The Reasoning:** The hero art had good structure but still read a little flat overall. Layering a restrained highlight and shadow pass gives the composition more depth and focus without changing the existing artwork or layout.
+
+**The Tech Debt:** The lighting balance is still hard-coded in inline gradient values. If we keep art-directing the landing hero, those values may be better expressed as named scene tokens so they are easier to tune together.
+
+## 2026-05-11 - Hero hover parallax amplified
+
+**The Change:** Removed the pointer-following glow experiment from [apps/web/src/components/landing/Hero.tsx](/d:/projects/Cora/apps/web/src/components/landing/Hero.tsx) and increased the existing hover parallax by expanding the transform range and tightening the spring response.
+
+**The Reasoning:** The glow was the wrong direction for the interaction, and the previous parallax pass still felt too restrained. Pushing the layer travel further while keeping the eased response makes the hover read more clearly without changing the scene composition.
+
+**The Tech Debt:** The stronger hover still depends on hand-tuned transform multipliers and spring values. If we keep iterating on hero motion, these interaction settings would be easier to maintain as shared landing motion tokens.

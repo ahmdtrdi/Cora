@@ -38,6 +38,7 @@ type HeroTextLayer = {
 type HeroLayer = HeroImageLayer | HeroTextLayer;
 
 const HERO_IMAGE_OVERSCAN = 1.03;
+const HERO_POINTER_INPUT_RANGE = [0, 0.36, 0.5, 0.64, 1];
 
 const HERO_LAYERS: HeroLayer[] = [
   {
@@ -169,10 +170,19 @@ function HeroLayerView({
 }) {
   const movement = shouldReduceMotion ? 0 : layer.movement * motionScale;
   const directedMovement = movement * layer.direction;
-  const x = useTransform(pointerX, [0, 1], [-directedMovement, directedMovement]);
-  const y = useTransform(pointerY, [0, 1], [
-    -directedMovement * 0.42,
-    directedMovement * 0.42,
+  const x = useTransform(pointerX, HERO_POINTER_INPUT_RANGE, [
+    -directedMovement * 1.08,
+    -directedMovement * 0.34,
+    0,
+    directedMovement * 0.34,
+    directedMovement * 1.08,
+  ]);
+  const y = useTransform(pointerY, HERO_POINTER_INPUT_RANGE, [
+    -directedMovement * 0.38,
+    -directedMovement * 0.14,
+    0,
+    directedMovement * 0.14,
+    directedMovement * 0.38,
   ]);
   const initialState = shouldReduceMotion
     ? { opacity: 0 }
@@ -258,14 +268,14 @@ export function Hero() {
   );
   const interactiveLayers = HERO_LAYERS.filter((layer) => layer.name !== "base");
   const pointerX = useSpring(rawX, {
-    damping: 30,
-    stiffness: 110,
-    mass: 0.6,
+    damping: 34,
+    stiffness: 104,
+    mass: 0.76,
   });
   const pointerY = useSpring(rawY, {
-    damping: 30,
-    stiffness: 110,
-    mass: 0.6,
+    damping: 34,
+    stiffness: 104,
+    mass: 0.76,
   });
 
   useEffect(() => {
@@ -337,6 +347,27 @@ export function Hero() {
             />
           </motion.div>
         )}
+
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            zIndex: 2,
+            background:
+              "radial-gradient(58% 48% at 50% 28%, rgba(246,214,149,0.2) 0%, rgba(246,214,149,0.12) 24%, rgba(246,214,149,0.05) 42%, rgba(246,214,149,0) 72%)",
+            mixBlendMode: "screen",
+          }}
+        />
+
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            zIndex: 8,
+            background:
+              "linear-gradient(180deg, rgba(2,5,4,0.16) 0%, rgba(2,5,4,0.02) 26%, rgba(2,5,4,0) 42%, rgba(2,5,4,0.12) 68%, rgba(2,5,4,0.34) 100%), radial-gradient(84% 76% at 50% 54%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.16) 100%)",
+          }}
+        />
 
         {interactiveLayers.map((layer) => (
           <HeroLayerView
