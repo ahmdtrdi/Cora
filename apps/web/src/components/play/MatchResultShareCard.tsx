@@ -8,6 +8,8 @@ type MatchResultShareCardProps = {
   wagerUsd: string;
   playerCharacterName: string;
   opponentCharacterName: string;
+  playerAddressLabel: string;
+  opponentAddressLabel: string;
   playerExpressionSrc?: string | null;
   opponentExpressionSrc?: string | null;
   roundsLabel: string;
@@ -19,11 +21,13 @@ type MatchResultShareCardProps = {
 function PortraitCard({
   label,
   characterName,
+  addressLabel,
   expressionSrc,
   fallback,
 }: {
   label: string;
   characterName: string;
+  addressLabel: string;
   expressionSrc?: string | null;
   fallback: string;
 }) {
@@ -42,6 +46,7 @@ function PortraitCard({
         </div>
         <div className="min-w-0">
           <p className="truncate font-caprasimo text-2xl leading-none text-[#1f1b18]">{characterName}</p>
+          <p className="mt-2 truncate font-mono text-[11px] text-[rgba(44,39,36,0.68)]">{addressLabel}</p>
         </div>
       </div>
     </div>
@@ -63,6 +68,8 @@ export function MatchResultShareCard({
   wagerUsd,
   playerCharacterName,
   opponentCharacterName,
+  playerAddressLabel,
+  opponentAddressLabel,
   playerExpressionSrc,
   opponentExpressionSrc,
   roundsLabel,
@@ -80,18 +87,22 @@ export function MatchResultShareCard({
     >
       <div className="rounded-[20px] border border-[rgba(34,34,34,0.2)] bg-[rgba(255,252,246,0.74)] p-4 md:p-5">
         <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.22em] text-[rgba(34,34,34,0.6)]">Cora Match Result</p>
-        <p className="mt-2 w-full text-balance font-caprasimo text-[2.35rem] leading-[0.92] text-[#1f1b18] md:text-[4rem]">{title}</p>
+        <p className="mt-2 w-full max-w-none text-balance font-caprasimo text-[2.35rem] leading-[0.92] text-[#1f1b18] md:text-[3.8rem]">
+          {title}
+        </p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <PortraitCard
             label="Your Scientist"
             characterName={playerCharacterName}
+            addressLabel={playerAddressLabel}
             expressionSrc={playerExpressionSrc}
             fallback={playerCharacterName.slice(0, 1)}
           />
           <PortraitCard
             label="Rival Scientist"
             characterName={opponentCharacterName}
+            addressLabel={opponentAddressLabel}
             expressionSrc={opponentExpressionSrc}
             fallback={opponentCharacterName.slice(0, 1)}
           />

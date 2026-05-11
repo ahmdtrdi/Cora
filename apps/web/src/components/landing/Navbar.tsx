@@ -7,6 +7,7 @@ import {
   useMotionValueEvent,
   useScroll,
 } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
 
 const links = [
@@ -36,11 +37,15 @@ export function Navbar() {
       style={solid ? { backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)", backgroundColor: "rgba(99, 99, 99, 0.55)" } : { backgroundColor: "transparent" }}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-        <Link href="/" className="group flex items-center gap-3" aria-label="Cora home">
-          <span className="frame-cut frame-cut-sm grid h-9 w-9 place-items-center border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-black text-[var(--accent-primary)] transition-all duration-200 group-hover:border-[var(--accent-primary)] group-hover:bg-[var(--accent-primary-dim)]">
-            C
-          </span>
-          <span className="font-caprasimo text-xl leading-none tracking-tight text-white" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>CORA</span>
+        <Link href="/" className="group flex items-center" aria-label="Cora home">
+          <Image
+            src="/assets/logo/landscape_warm.png"
+            alt="Cora"
+            width={175}
+            height={44}
+            priority
+            className="h-9 w-auto md:h-10"
+          />
         </Link>
 
         <div
@@ -74,6 +79,8 @@ export function Navbar() {
 
         <Link
           href="/connect"
+          target="_blank"
+          rel="noreferrer"
           className="btn-game btn-game-primary font-gabarito !px-5 !py-2 !text-sm"
           style={{ borderWidth: "2px" }}
         >

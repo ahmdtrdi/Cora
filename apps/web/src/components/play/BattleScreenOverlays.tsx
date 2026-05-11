@@ -83,6 +83,8 @@ type BattleScreenOverlaysProps = {
   regularMatchShareTitle: string;
   playerCharacterName: string;
   opponentCharacterName: string;
+  playerAddressLabel: string;
+  opponentAddressLabel: string;
   playerResultExpressionSrc: string | null;
   opponentResultExpressionSrc: string | null;
   challengeShareTitle: string;
@@ -141,6 +143,8 @@ export function BattleScreenOverlays({
   regularMatchShareTitle,
   playerCharacterName,
   opponentCharacterName,
+  playerAddressLabel,
+  opponentAddressLabel,
   playerResultExpressionSrc,
   opponentResultExpressionSrc,
   challengeShareTitle,
@@ -608,26 +612,27 @@ export function BattleScreenOverlays({
 
       {shareModalOpen && shouldShowResultOverlay && (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
-          <div className="relative w-full max-w-3xl">
-            <button
-              type="button"
-              onClick={resetShareView}
-              className="absolute right-1 top-1 z-10 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
-              style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
-            >
-              Close
-            </button>
+          <div className="w-full max-w-3xl">
             {!createdBlinkChallenge && (
               <div className="space-y-4">
-                <p className="px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
-                  Save the finished match as a result poster, or turn this win into a rematch Blink.
-                </p>
+                <div className="flex justify-end px-1">
+                  <button
+                    type="button"
+                    onClick={resetShareView}
+                    className="z-10 shrink-0 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                    style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
+                  >
+                    Close
+                  </button>
+                </div>
                 <MatchResultShareCard
                   title={regularMatchShareTitle}
                   arenaLabel={arenaLabel}
                   wagerUsd={wagerUsd}
                   playerCharacterName={playerCharacterName}
                   opponentCharacterName={opponentCharacterName}
+                  playerAddressLabel={playerAddressLabel}
+                  opponentAddressLabel={opponentAddressLabel}
                   playerExpressionSrc={playerResultExpressionSrc}
                   opponentExpressionSrc={opponentResultExpressionSrc}
                   roundsLabel={`${playerRoundsWon}-${opponentRoundsWon}`}
@@ -679,9 +684,16 @@ export function BattleScreenOverlays({
 
             {createdBlinkChallenge && (
               <div className="space-y-3">
-                <p className="px-1 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
-                  Share the Blink URL to open the challenge in supported apps or the browser challenge page.
-                </p>
+                <div className="flex justify-end px-1">
+                  <button
+                    type="button"
+                    onClick={resetShareView}
+                    className="z-10 shrink-0 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                    style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
+                  >
+                    Close
+                  </button>
+                </div>
                 <ChallengeShareCard
                   title={challengeShareTitle}
                   challengerAddress={address}
