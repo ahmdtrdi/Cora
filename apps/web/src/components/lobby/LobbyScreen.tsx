@@ -76,7 +76,7 @@ export const SCIENTISTS: Scientist[] = [
   {
     id: "curie",
     name: "Marie Curie",
-    base: "The Radium Reactor",
+    base: "The Laboratory",
     accentColor: "#ba6931",
     portraitBg: "linear-gradient(160deg, #3d1f0a 0%, #5c2e12 60%, #210e04 100%)",
     initial: "C",

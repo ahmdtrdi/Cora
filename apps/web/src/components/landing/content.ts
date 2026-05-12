@@ -60,7 +60,7 @@ export const LANDING_SCIENTISTS: ScientistProfile[] = [
     detail:
       "Specializes in logical questions. Correct logical answers trigger a 1.5x specialty multiplier, making her strongest when the category matches her specialty.",
     archetype: "Logician",
-    baseConcept: "Radium Reactor",
+    baseConcept: "The Laboratory",
     baseEmoji: "☢️",
     emoji: "🧪",
     accent: "secondary",
@@ -135,9 +135,9 @@ export const LANDING_STAGES: LandingStage[] = [
 ];
 
 export const LANDING_TICKER_ITEMS: LandingTickerItem[] = [
-  { label: "Einstein", detail: "Relativity Lab ready", accent: "primary" },
-  { label: "Curie", detail: "Radium Reactor charged", accent: "secondary" },
-  { label: "Turing", detail: "Cipher Engine active", accent: "primary" },
+  { label: "Einstein", detail: "Equation Board ready", accent: "primary" },
+  { label: "Curie", detail: "Laboratory charged", accent: "secondary" },
+  { label: "Turing", detail: "Computer active", accent: "primary" },
   { label: "Arena", detail: "2 minds matched", accent: "neutral" },
   { label: "Vault", detail: "Wager locked", accent: "secondary" },
   { label: "Battle", detail: "3 rounds live", accent: "primary" },

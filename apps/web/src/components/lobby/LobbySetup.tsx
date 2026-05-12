@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { HistoryButton } from "@/components/history/HistoryButton";
 import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import type { Arena } from "./LobbyScreen";
@@ -127,10 +128,6 @@ export function LobbySetup({
         : error || !playability?.reliable
           ? "Unavailable"
           : (playability.tokenBalance ?? "--");
-  const historyHref = selectedArena
-    ? `/history?scope=arena&arena=${encodeURIComponent(selectedArena.id)}&token=${encodeURIComponent(selectedArena.token)}`
-    : "/history?scope=arena&arena=sol&token=SOL";
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const preloads = [NULL_ARENA_IMAGE_URL, SOL_ARENA_IMAGE_URL, BONK_ARENA_IMAGE_URL, MEW_ARENA_IMAGE_URL];
@@ -225,17 +222,7 @@ export function LobbySetup({
           </div>
         </div>
 
-        <Link
-          href={historyHref}
-          className="frame-cut frame-cut-sm inline-flex items-center px-3 py-2 font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-cream)] opacity-90 shadow-lg transition-colors hover:bg-[rgba(29,52,41,0.98)]"
-          style={{
-            border: "2px solid var(--tone-bark)",
-            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
-            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
-          }}
-        >
-          View History
-        </Link>
+        <HistoryButton label="History Coming Soon" />
       </header>
 
       <div
