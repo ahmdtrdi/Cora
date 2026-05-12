@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const thumbnailBackground = `
   radial-gradient(circle at 18% 22%, rgba(186, 105, 49, 0.35), transparent 40%),
@@ -10,8 +10,15 @@ const thumbnailBackground = `
   linear-gradient(0deg, rgba(15, 26, 20, 0.9), rgba(15, 26, 20, 0.9))
 `;
 
+const gameplayVideoUrl =
+  "https://res.cloudinary.com/dnnn036jy/video/upload/q_auto/f_auto/v1778563860/GameplayVideo_x1dcyl.mp4";
+const gameplayPosterUrl =
+  "https://res.cloudinary.com/dnnn036jy/video/upload/so_0,q_auto,f_auto/v1778563860/GameplayVideo_x1dcyl.jpg";
+
 export function VideoSlot() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isMuted, setIsMuted] = useState(false);
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -27,6 +34,31 @@ export function VideoSlot() {
   const boxY = useTransform(scrollYProgress, [0.2, 0.58], ["8%", "0%"]);
   const boxBgScale = useTransform(scrollYProgress, [0.2, 0.58], [1.26, 1]);
   const boxExitY = useTransform(scrollYProgress, [0.74, 1], ["0%", "-8%"]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = false;
+    setIsMuted(false);
+
+    video.play().catch(() => {
+      video.muted = true;
+      setIsMuted(true);
+      void video.play().catch(() => {
+        // Ignore autoplay failures. The controls stay available for user interaction.
+      });
+    });
+  }, []);
+
+  function toggleMute() {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const nextMuted = !video.muted;
+    video.muted = nextMuted;
+    setIsMuted(nextMuted);
+  }
 
   return (
     <section
@@ -74,20 +106,29 @@ export function VideoSlot() {
             <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(to_bottom,rgba(15,26,20,0.82),rgba(15,26,20,0.96))]" />
 
             <div className="relative z-10 p-4 md:p-8">
-              <div className="frame-cut grid aspect-video w-full place-items-center border-2 border-[var(--color-border)] bg-[var(--color-surface-alt)]">
-                <div className="px-6 text-center">
-                  <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border-2 border-[var(--accent-primary)] bg-[var(--accent-primary-dim)]">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M8 5v14l11-7L8 5z" fill="var(--accent-primary)" />
-                    </svg>
-                  </div>
-                  <p className="font-caprasimo text-xl text-[var(--foreground)] md:text-2xl">
-                    Arena gameplay coming soon
-                  </p>
-                  <p className="font-gabarito mt-2 text-sm text-[var(--color-muted)]">
-                    Full battle demo • Scientists vs Scientists
-                  </p>
-                </div>
+              <div className="frame-cut relative aspect-video w-full overflow-hidden border-2 border-[var(--color-border)] bg-[var(--color-surface-alt)]">
+                <video
+                  ref={videoRef}
+                  className="h-full w-full object-cover"
+                  poster={gameplayPosterUrl}
+                  muted={isMuted}
+                  playsInline
+                  autoPlay
+                  loop
+                  preload="metadata"
+                  aria-label="Arena gameplay demo"
+                >
+                  <source src={gameplayVideoUrl} type="video/mp4" />
+                </video>
+                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(15,26,20,0.04),rgba(15,26,20,0.18))]" />
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full border border-[rgba(255,248,232,0.22)] bg-[rgba(13,24,17,0.82)] px-4 py-2 font-gabarito text-xs font-bold uppercase tracking-[0.18em] text-[var(--tone-cream)] transition hover:bg-[rgba(13,24,17,0.92)]"
+                  aria-label={isMuted ? "Unmute gameplay video" : "Mute gameplay video"}
+                >
+                  <span aria-hidden="true">{isMuted ? "Sound Off" : "Sound On"}</span>
+                </button>
               </div>
             </div>
           </motion.div>

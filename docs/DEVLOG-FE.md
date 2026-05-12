@@ -5729,3 +5729,18 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - `OpponentFound` now has another mobile-vs-desktop overflow split similar to the lobby character screen. If more setup-phase screens keep hitting this issue, we should likely formalize a shared “scroll on mobile, lock on desktop” pattern for these full-screen pre-battle states instead of solving each one independently.
+## 2026-05-12 - Landing video slot wired, Curie base renamed, and history page held as Devnet coming soon
+
+### The Change
+- Wired the landing replay section to a real gameplay video in [VideoSlot.tsx](/d:/projects/Cora/apps/web/src/components/landing/VideoSlot.tsx), replacing the placeholder state with an embedded Cloudinary-hosted demo clip and first-frame poster behavior.
+- Standardized Marie Curie's base naming to `The Laboratory` in the active frontend content surfaces, including [content.ts](/d:/projects/Cora/apps/web/src/components/landing/content.ts), [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), and [page.tsx](/d:/projects/Cora/apps/web/src/app/dev/room-states/page.tsx).
+- Kept the dedicated history route in a coming-soon state in [page.tsx](/d:/projects/Cora/apps/web/src/app/history/page.tsx) because the full history experience is still gated by Devnet-backed data readiness.
+
+### The Reasoning
+- The landing page needed a real motion asset in the replay slot so the section stops reading like a stub and starts demonstrating actual product feel.
+- `The Laboratory` is a cleaner and more consistent base label for Curie across landing, lobby, and dev surfaces than the earlier variant naming.
+- History is better framed as intentionally coming soon rather than feeling partially broken while Devnet history/indexing remains incomplete.
+
+### The Tech Debt
+- The landing video is currently wired directly to a hosted asset URL inside the component. If we expect to swap clips often, we should move the media source and poster into environment/config-driven content.
+- The history page messaging is accurate for the current Devnet state, but once indexed history becomes stable we should replace the placeholder route with the full records experience and remove the temporary hold copy.
