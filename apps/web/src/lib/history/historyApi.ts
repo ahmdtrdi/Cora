@@ -11,8 +11,6 @@ type HistoryEndpointPayload = {
   history?: unknown[];
 };
 
-const HISTORY_FALLBACK_MODE = (process.env.NEXT_PUBLIC_HISTORY_FALLBACK_MODE ?? "mock").trim().toLowerCase();
-
 function trimTrailingSlash(input: string) {
   return input.replace(/\/+$/, "");
 }
@@ -121,53 +119,6 @@ function normalizePlayability(payload: unknown): WalletPlayability {
   };
 }
 
-function shouldUseMockFallback() {
-  return HISTORY_FALLBACK_MODE === "mock";
-}
-
-function shouldUseEmptyFallback() {
-  return HISTORY_FALLBACK_MODE === "empty";
-}
-
-function createMockHistory(override: { arenaId: string; token: string }): MatchHistoryItem[] {
-  const now = Date.now();
-  return [
-    {
-      id: `${override.arenaId}-recent-1`,
-      signature: "5R6q...J8k2",
-      timestamp: new Date(now - 1000 * 60 * 38).toISOString(),
-      arenaId: override.arenaId,
-      token: override.token,
-      wagerUsd: "1.00",
-      result: "win",
-      opponent: "3xj2...eT9k",
-      settlementStatus: "settled",
-    },
-    {
-      id: `${override.arenaId}-recent-2`,
-      signature: "7Nzf...Q2br",
-      timestamp: new Date(now - 1000 * 60 * 95).toISOString(),
-      arenaId: override.arenaId,
-      token: override.token,
-      wagerUsd: "1.00",
-      result: "loss",
-      opponent: "5Vh1...gPw8",
-      settlementStatus: "settled",
-    },
-    {
-      id: `${override.arenaId}-recent-3`,
-      signature: "4ddP...rK61",
-      timestamp: new Date(now - 1000 * 60 * 180).toISOString(),
-      arenaId: override.arenaId,
-      token: override.token,
-      wagerUsd: "1.00",
-      result: "unknown",
-      opponent: "9cwY...7hAs",
-      settlementStatus: "pending",
-    },
-  ];
-}
-
 async function readJson(path: string): Promise<unknown> {
   const apiBaseUrl = resolveApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -193,18 +144,8 @@ export async function getArenaHistory(arenaId: string): Promise<MatchHistoryItem
   const safeArenaId = arenaId || "unknown";
   const fallback = { arenaId: safeArenaId, token: safeArenaId.toUpperCase() };
 
-  try {
-    const payload = await readJson(`/api/history/arena/${encodeURIComponent(safeArenaId)}`);
-    return normalizeHistoryPayload(payload, fallback);
-  } catch (error) {
-    if (shouldUseEmptyFallback()) {
-      return [];
-    }
-    if (shouldUseMockFallback()) {
-      return createMockHistory(fallback);
-    }
-    throw new Error(error instanceof Error ? error.message : "History unavailable. Try again later.");
-  }
+  const payload = await readJson(`/api/history/arena/${encodeURIComponent(safeArenaId)}`);
+  return normalizeHistoryPayload(payload, fallback);
 }
 
 export async function getWalletHistory(address: string): Promise<MatchHistoryItem[]> {
@@ -215,18 +156,8 @@ export async function getWalletHistory(address: string): Promise<MatchHistoryIte
     return [];
   }
 
-  try {
-    const payload = await readJson(`/api/history/wallet/${encodeURIComponent(safeAddress)}`);
-    return normalizeHistoryPayload(payload, fallback);
-  } catch (error) {
-    if (shouldUseEmptyFallback()) {
-      return [];
-    }
-    if (shouldUseMockFallback()) {
-      return createMockHistory(fallback);
-    }
-    throw new Error(error instanceof Error ? error.message : "History unavailable. Try again later.");
-  }
+  const payload = await readJson(`/api/history/wallet/${encodeURIComponent(safeAddress)}`);
+  return normalizeHistoryPayload(payload, fallback);
 }
 
 export async function getWalletArenaPlayability(params: WalletPlayabilityParams): Promise<WalletPlayability> {
@@ -249,10 +180,7 @@ export async function getWalletArenaPlayability(params: WalletPlayabilityParams)
       `/api/history/wallet/${encodeURIComponent(safeAddress)}/playability?${query.toString()}`,
     );
     return normalizePlayability(payload);
-  } catch (error) {
-    if (!shouldUseMockFallback() && !shouldUseEmptyFallback()) {
-      throw new Error(error instanceof Error ? error.message : "Unable to inspect wallet right now.");
-    }
+  } catch {
     return {
       playable: true,
       reason: `Unable to inspect ${params.token} balance right now.`,
