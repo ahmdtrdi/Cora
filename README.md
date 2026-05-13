@@ -1,5 +1,7 @@
 <div align="center">
 
+<p><i>⚠️ CORA is still on Devnet. Fund your wallet with Devnet SOL from a faucet before trying the app.</i></p>
+
 <img src="docs/assets/header.png" alt="CORA" width="560">
 
 <h3 align="center">Wager your mind. Settle on-chain.</h3>
