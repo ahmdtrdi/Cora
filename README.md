@@ -1,12 +1,18 @@
-# <div align="center">
+<div align="center">
 
-<img src="apps/web/public/assets/logo/landscape.png" alt="CORA" width="560">
+<img src="docs/assets/header.png" alt="CORA" width="560">
 
 <h3 align="center">Wager your mind. Settle on-chain.</h3>
 
 <p align="center">
   <a href="#tech-stack">
     <img alt="Solana" src="https://img.shields.io/badge/Solana-Escrow%20%2B%20Settlement-14F195?style=for-the-badge&logo=solana&logoColor=000000">
+  </a>
+  <a href="#tech-stack">
+    <img alt="RPCFast" src="https://img.shields.io/badge/RPCFast-Solana%20RPC%20Lane-0B1220?style=for-the-badge">
+  </a>
+  <a href="#tech-stack">
+    <img alt="GoldRush" src="https://img.shields.io/badge/GoldRush-Blockchain%20Data-FFB300?style=for-the-badge">
   </a>
   <a href="#architecture">
     <img alt="MagicBlock" src="https://img.shields.io/badge/MagicBlock-ER%20Battle%20State-111111?style=for-the-badge">
@@ -78,7 +84,7 @@ When MagicBlock is enabled, CORA can create battle sessions, commit inline manif
 |---|---|
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Framer Motion, Solana Wallet Adapter, TanStack Query |
 | Backend | Bun, Hono, WebSockets, TypeScript |
-| On-Chain / Web3 | Solana, Anchor, SPL Token, Solana Actions / Blinks, MagicBlock Ephemeral Rollups |
+| On-Chain / Web3 | Solana, Anchor, SPL Token, Solana Actions / Blinks, RPCFast, MagicBlock Ephemeral Rollups |
 | Data / Services | Supabase, GoldRush / Covalent |
 
 ## Repo Map
@@ -113,7 +119,7 @@ npm install
 | Step | Action |
 |---|---|
 | 1 | Install dependencies from the repo root with `npm install` |
-| 2 | Configure `apps/api/.env` and `apps/web/.env.local` with Solana, Supabase, and optional MagicBlock settings |
+| 2 | Configure `apps/api/.env` and `apps/web/.env.local` with Solana / RPCFast, Supabase, and optional MagicBlock settings |
 | 3 | Start the backend with `cd apps/api` then `bun run dev` |
 | 4 | Start the frontend in a second terminal with `cd apps/web` then `npm run dev` |
 | 5 | Open `http://localhost:3000` for the web app and `http://localhost:8080` for the backend |
