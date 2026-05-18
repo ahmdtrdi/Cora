@@ -103,12 +103,10 @@ export class Lifecycle {
       console.log(`Room ${roomId} has 2 players. Transitioning to depositing!`);
     }
 
-    if (room.status === 'depositing' && room.clients.size === 2 && room.playerA && room.playerB) {
+    if (room.status === 'depositing' && room.playerA && room.playerB) {
       const metaA = room.playerMeta.get(room.playerA);
       const metaB = room.playerMeta.get(room.playerB);
-      const playerAConnected = Boolean(room.clients.get(room.playerA)?.ws);
-      const playerBConnected = Boolean(room.clients.get(room.playerB)?.ws);
-      if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false) && playerAConnected && playerBConnected) {
+      if ((metaA?.hasDeposited ?? false) && (metaB?.hasDeposited ?? false) && this.hasRequiredPlayerConnections(room)) {
         for (const t of room.depositTimeouts.values()) clearTimeout(t);
         room.depositTimeouts.clear();
         console.log(`Room ${roomId}: Late join triggered game start — both already deposited!`);
@@ -270,10 +268,7 @@ export class Lifecycle {
       for (const t of room.depositTimeouts.values()) clearTimeout(t);
       room.depositTimeouts.clear();
 
-      const playerAConnected = Boolean(room.clients.get(room.playerA)?.ws);
-      const playerBConnected = Boolean(room.clients.get(room.playerB)?.ws);
-
-      if (!playerAConnected || !playerBConnected) {
+      if (!this.hasRequiredPlayerConnections(room)) {
         console.log(`Room ${room.id}: Both deposited but not all sockets are connected. Waiting for reconnect.`);
         this.manager.network.broadcastGameState(room);
         this.manager.network.broadcastPresence(room);
@@ -294,6 +289,15 @@ export class Lifecycle {
     }).finally(() => {
       this.startingRooms.delete(room.id);
     });
+  }
+
+  private hasRequiredPlayerConnections(room: Room): boolean {
+    if (!room.playerA || !room.playerB) return false;
+
+    const playerAConnected = Boolean(room.clients.get(room.playerA)?.ws);
+    const playerBConnected = room.playerB === room.botAddress || Boolean(room.clients.get(room.playerB)?.ws);
+
+    return playerAConnected && playerBConnected;
   }
 
   public armDepositTimeout(room: Room, address: string): void {
@@ -337,7 +341,7 @@ export class Lifecycle {
 
     if (innocentAddress) {
       // Refund the innocent player's deposit if they had already deposited
-      if (innocentHadDeposited) {
+      if (innocentHadDeposited && room.roomType !== 'bot') {
         console.log(`[Cancel] Refunding innocent player ${innocentAddress} deposit for room ${roomId}.`);
         this.manager.blockchain.refundMatch(room, 'server_error');
       }
@@ -379,6 +383,7 @@ export class Lifecycle {
     room.depositTimeouts.clear();
 
     this.clearAllOpenedCards(room);
+    this.manager.engine.stopBot(room);
 
     if (room.engine) {
       room.engine.stop();
@@ -430,7 +435,9 @@ export class Lifecycle {
 
     room.status = 'settling';
     this.manager.network.broadcastGameState(room);
-    this.manager.blockchain.settleMatch(room, winnerAddress);
+    if (room.roomType !== 'bot') {
+      this.manager.blockchain.settleMatch(room, winnerAddress);
+    }
 
     const result: MatchResult = {
       winnerAddress,
@@ -440,6 +447,7 @@ export class Lifecycle {
       finalHealth: {},
       finalRoundsWon: {},
       finalCorrectAnswers: {},
+      isBotMatch: room.roomType === 'bot',
     };
 
     this.manager.network.broadcastToRoom(room, {

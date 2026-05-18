@@ -297,7 +297,7 @@ export class Blockchain {
 
     const keypair = getServerKeypair();
     const playerAConnected = Boolean(room.playerA && room.clients.get(room.playerA)?.ws);
-    const playerBConnected = Boolean(room.playerB && room.clients.get(room.playerB)?.ws);
+    const playerBConnected = Boolean(room.playerB && (room.playerB === room.botAddress || room.clients.get(room.playerB)?.ws));
 
     if (playerAConnected && playerBConnected) {
       await magicBlockService.resolveRoundByState({
@@ -385,6 +385,8 @@ export class Blockchain {
 
     room.erLifecycleStatus = 'committing';
     room.status = 'settling';
+    this.manager.engine.stopBot(room);
+    this.manager.lifecycle.clearAllOpenedCards(room);
     this.manager.network.broadcastGameState(room);
 
     const keypair = getServerKeypair();
@@ -522,6 +524,7 @@ export class Blockchain {
       verdict => verdict.verdict === 'suspicious' || verdict.verdict === 'rejected',
     );
     const erProof = this.buildErProofPayload(room);
+    const isBotMatch = room.roomType === 'bot';
 
     if (finalState.status === 'Finished' && finalState.winner) {
       const reason = finalState.endReason === END_REASON_SINGLE_PLAYER_TIMEOUT
@@ -530,7 +533,11 @@ export class Blockchain {
           ? 'surrender'
           : 'hp_zero';
 
-      this.settleMatch(room, finalState.winner);
+      if (isBotMatch) {
+        console.log(`[BotMatch] ER result finalized for ${room.id}; skipping escrow settlement.`);
+      } else {
+        this.settleMatch(room, finalState.winner);
+      }
       this.manager.network.broadcastToRoom(room, {
         type: 'matchResult',
         payload: {
@@ -543,7 +550,8 @@ export class Blockchain {
           finalHealth,
           finalRoundsWon,
           finalCorrectAnswers,
-          antiCheatWarning,
+          antiCheatWarning: isBotMatch ? false : antiCheatWarning,
+          isBotMatch,
           erProof,
         } satisfies MatchResult,
       });
@@ -551,7 +559,11 @@ export class Blockchain {
     }
 
     const refundReason = finalState.endReason === END_REASON_SERVER_CANCELLED ? 'server_error' : 'draw';
-    this.refundMatch(room, refundReason);
+    if (isBotMatch) {
+      console.log(`[BotMatch] ER result finalized for ${room.id}; skipping escrow refund.`);
+    } else {
+      this.refundMatch(room, refundReason);
+    }
     this.manager.network.broadcastToRoom(room, {
       type: 'matchResult',
       payload: {
@@ -561,7 +573,8 @@ export class Blockchain {
         finalHealth,
         finalRoundsWon,
         finalCorrectAnswers,
-        antiCheatWarning,
+        antiCheatWarning: isBotMatch ? false : antiCheatWarning,
+        isBotMatch,
         erProof,
       } satisfies MatchResult,
     });
@@ -600,10 +613,12 @@ export class Blockchain {
       finalHealth: engine?.getHealth() ?? {},
       finalRoundsWon: engine?.getRoundsWon() ?? {},
       finalCorrectAnswers: engine?.getCorrectAnswers() ?? {},
+      isBotMatch: room.roomType === 'bot',
       erProof: this.buildErProofPayload(room),
     };
 
     engine?.setExternalAuthority(false);
+    this.manager.engine.stopBot(room);
     this.manager.lifecycle.clearAllOpenedCards(room);
     engine?.stop();
 

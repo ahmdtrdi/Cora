@@ -8,7 +8,7 @@ import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
-import { getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
+import { createBotMatch, getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
 import { useQueueSocket } from "@/hooks/useQueueSocket";
 import {
   getPrivateChallenge,
@@ -117,6 +117,7 @@ type MatchmakingState = "idle" | "searching" | "timeout" | "error";
 type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
 const MATCHMAKING_TIMEOUT_MS = 45_000;
+const BOT_OFFER_DELAY_MS = 15_000;
 // OpponentFound owns deposit transaction prefetching, so keep the cosmetic
 // matched-state handoff almost instant. Otherwise Phantom feels late.
 const POST_MATCH_FOUND_VERIFY_MS = 0;
@@ -211,6 +212,9 @@ export function LobbyScreen() {
   const [matchmakingState, setMatchmakingState] = useState<MatchmakingState>("idle");
   const [matchmakingStage, setMatchmakingStage] = useState<MatchmakingStage>("finding");
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
+  const [botOfferOpen, setBotOfferOpen] = useState(false);
+  const [botOfferDismissed, setBotOfferDismissed] = useState(false);
+  const [botMatchBusy, setBotMatchBusy] = useState(false);
   const [activeMatchBannerSnapshot, setActiveMatchBannerSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderSnapshot, setActiveMatchSurrenderSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderModalOpen, setActiveMatchSurrenderModalOpen] = useState(false);
@@ -770,6 +774,64 @@ export function LobbyScreen() {
     setPhase,
   ]);
 
+  async function startBotMatch() {
+    if (!walletAddress) {
+      setMatchmakingState("error");
+      setMatchmakingError("Connect wallet before starting a bot match.");
+      return;
+    }
+    if (!selectedArena || !selectedScientist) {
+      setMatchmakingState("error");
+      setMatchmakingError("Choose an arena and scientist before starting a bot match.");
+      return;
+    }
+
+    userCancelledRef.current = true;
+    setBotMatchBusy(true);
+    setBotOfferOpen(false);
+    setBotOfferDismissed(true);
+    setMatchmakingState("searching");
+    setMatchmakingStage("preparing");
+    setMatchmakingError(null);
+    clearFoundTransitionTimers();
+    queueSocket.cancel();
+    matchmakingAbortRef.current?.abort();
+
+    const controller = new AbortController();
+    matchmakingAbortRef.current = controller;
+    const requestId = ++matchmakingRequestIdRef.current;
+
+    try {
+      const result = await createBotMatch({
+        address: walletAddress,
+        tokenMint: selectedArena.token,
+        wagerAmount: toBaseUnitWager(FIXED_WAGER_USD),
+        characterId: selectedScientist.id,
+        signal: controller.signal,
+      });
+
+      if (requestId !== matchmakingRequestIdRef.current) return;
+
+      setMatchedRoomId(result.roomId);
+      setMatchedRole(result.role ?? "playerA");
+      setMatchmakingState("idle");
+      setMatchmakingStage("finding");
+      setPhase("found");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message = error instanceof Error ? error.message : "Failed to start bot match.";
+      setMatchmakingState("error");
+      setMatchmakingStage("finding");
+      setMatchmakingError(message);
+      setPhase("waiting");
+    } finally {
+      if (matchmakingAbortRef.current === controller) {
+        matchmakingAbortRef.current = null;
+      }
+      setBotMatchBusy(false);
+    }
+  }
+
   function beginMatchmaking() {
     if (!walletAddress) {
       setMatchmakingState("error");
@@ -785,6 +847,8 @@ export function LobbyScreen() {
     setMatchmakingState("searching");
     setMatchmakingStage("finding");
     setMatchmakingError(null);
+    setBotOfferOpen(false);
+    setBotOfferDismissed(false);
     setMatchedRoomId(null);
     setMatchedRole(null);
     setPhase("waiting");
@@ -797,6 +861,8 @@ export function LobbyScreen() {
     // Also abort any legacy HTTP request if still in flight
     matchmakingAbortRef.current?.abort();
     clearFoundTransitionTimers();
+    setBotOfferOpen(false);
+    setBotOfferDismissed(false);
     writeActiveMatchSession(null);
     setMatchedRole(null);
     setMatchmakingState("idle");
@@ -846,6 +912,32 @@ export function LobbyScreen() {
       setMatchmakingError("Queue connection lost. Retry to reconnect.");
     }
   }, [queueSocket.queueState]);
+
+  useEffect(() => {
+    if (
+      phase !== "waiting" ||
+      matchmakingState !== "searching" ||
+      matchmakingStage !== "finding" ||
+      botOfferDismissed ||
+      botMatchBusy ||
+      matchedRoomId
+    ) {
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      setBotOfferOpen(true);
+    }, BOT_OFFER_DELAY_MS);
+
+    return () => clearTimeout(timerId);
+  }, [
+    botMatchBusy,
+    botOfferDismissed,
+    matchedRoomId,
+    matchmakingStage,
+    matchmakingState,
+    phase,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1645,6 +1737,41 @@ export function LobbyScreen() {
           </div>
         </div>
       )}
+      {botOfferOpen && phase === "waiting" && (
+        <div className="fixed inset-0 z-[88] grid place-items-center bg-[rgba(2,6,5,0.72)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-md p-5 text-center shadow-2xl md:p-6"
+            style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
+          >
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Play with bot?</p>
+            <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
+              Queue is taking longer than usual. You can start a practice match now, with no Solana payout or loss.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBotOfferOpen(false);
+                  setBotOfferDismissed(true);
+                }}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                style={{ border: "1px solid rgba(248,214,148,0.32)", color: "var(--tone-cream)", background: "rgba(19,32,26,0.9)" }}
+              >
+                Keep Queueing
+              </button>
+              <button
+                type="button"
+                onClick={startBotMatch}
+                disabled={botMatchBusy}
+                className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ border: "1px solid rgba(157,180,150,0.44)", color: "var(--tone-cream)", background: "rgba(39,65,55,0.96)" }}
+              >
+                {botMatchBusy ? "Starting..." : "Play With Bot"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {isSelectingCharacterPreview && selectedArena && (
         <RoomPhaseShell
           phase="selecting_character"
@@ -1894,6 +2021,8 @@ export function LobbyScreen() {
                     beginMatchmaking();
                   }}
                   onCancel={cancelMatchmaking}
+                  onPlayBot={startBotMatch}
+                  playBotBusy={botMatchBusy}
                 />
               </motion.div>
             )}

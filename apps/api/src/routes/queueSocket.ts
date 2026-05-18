@@ -40,7 +40,7 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
 
           roomManager.network.safeSend(ws, {
             type: 'matchFound',
-            payload: { roomId: activeRoom.id, role, opponentAddress: opponentAddress ?? '' },
+            payload: { roomId: activeRoom.id, role, opponentAddress: opponentAddress ?? '', roomType: activeRoom.roomType },
           } satisfies WsMessage);
 
           console.log(`[QueueWS] ${address.slice(0, 6)}.. already in room ${activeRoom.id}, sent matchFound`);

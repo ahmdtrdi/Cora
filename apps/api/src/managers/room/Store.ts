@@ -23,6 +23,7 @@ export class Store {
       roomType: 'public',
       playerA: null,
       playerB: null,
+      botAddress: null,
       playerBUnlocked: false,
       tokenMint: null,
       wagerAmount: null,

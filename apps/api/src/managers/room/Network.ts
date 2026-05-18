@@ -125,7 +125,7 @@ export class Network {
     const payload: PresenceUpdateData = { players: {} };
     for (const [address, client] of room.clients) {
       payload.players[address] = {
-        isConnected: Boolean(client.ws),
+        isConnected: address === room.botAddress || Boolean(client.ws),
         lastSeenAt: client.lastSeenAt,
       };
     }
@@ -135,10 +135,11 @@ export class Network {
   private applyPresence(room: Room, state: GameState): void {
     const playerClient = room.clients.get(state.player.address);
     const opponentClient = room.clients.get(state.opponent.address);
+    const opponentIsBot = room.botAddress !== null && state.opponent.address === room.botAddress;
 
     state.player.isConnected = Boolean(playerClient?.ws);
     state.player.lastSeenAt = playerClient?.lastSeenAt;
-    state.opponent.isConnected = Boolean(opponentClient?.ws);
+    state.opponent.isConnected = opponentIsBot || Boolean(opponentClient?.ws);
     state.opponent.lastSeenAt = opponentClient?.lastSeenAt;
   }
 

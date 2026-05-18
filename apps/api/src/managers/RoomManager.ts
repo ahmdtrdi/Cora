@@ -1,6 +1,7 @@
-import { Connection } from '@solana/web3.js';
+import { Connection, Keypair } from '@solana/web3.js';
 import type { WsMessage } from '@shared/websocket';
 import { deriveMatchId } from '@shared/escrow';
+import { CHARACTER_DEFS } from '@shared/characterStats';
 import { Store } from './room/Store';
 import { Network } from './room/Network';
 import { Lifecycle } from './room/Lifecycle';
@@ -104,6 +105,48 @@ export class RoomManager {
 
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
     return this.queue.queueMatch(address, signal);
+  }
+
+  public createBotMatch(
+    address: string,
+    options: { tokenMint?: string | null; wagerAmount?: bigint | null; characterId?: string | null } = {},
+  ): Room {
+    this.queue.removeAddress(address);
+    this.queue.releaseUnfundedPublicDepositRoom(address);
+
+    const activeRoom = this.queue.findActiveRoomForAddress(address);
+    if (activeRoom) return activeRoom;
+
+    const roomId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const botAddress = Keypair.generate().publicKey.toBase58();
+    const room = this.store.createRoom(roomId);
+    const botCharacterId = this.randomBotCharacterId();
+
+    room.status = 'depositing';
+    room.roomType = 'bot';
+    room.playerA = address;
+    room.playerB = botAddress;
+    room.botAddress = botAddress;
+    room.playerBUnlocked = true;
+    room.tokenMint = options.tokenMint ?? null;
+    room.wagerAmount = options.wagerAmount ?? 0n;
+    room.wagerUsdValue = '0.00';
+    room.playerMeta.set(address, {
+      hasDeposited: true,
+      characterId: options.characterId && CHARACTER_DEFS[options.characterId] ? options.characterId : 'einstein',
+    });
+    room.playerMeta.set(botAddress, {
+      hasDeposited: true,
+      characterId: botCharacterId,
+    });
+    room.clients.set(botAddress, {
+      ws: null,
+      lastSeenAt: Date.now(),
+    });
+    this.store.trackPlayer(address, roomId);
+
+    console.log(`[BotMatch] Created bot room ${roomId}: ${address.slice(0, 6)}.. vs ${botAddress.slice(0, 6)}.. (${botCharacterId})`);
+    return room;
   }
 
   public joinRoom(roomId: string, address: string, ws: RoomSocket, characterId: string = 'einstein') {
@@ -284,6 +327,11 @@ export class RoomManager {
 
     void this.blockchain.fetchWagerUsd(room);
     return room;
+  }
+
+  private randomBotCharacterId(): string {
+    const characterIds = Object.keys(CHARACTER_DEFS);
+    return characterIds[Math.floor(Math.random() * characterIds.length)] ?? 'einstein';
   }
 }
 

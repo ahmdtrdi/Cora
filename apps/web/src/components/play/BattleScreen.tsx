@@ -695,6 +695,11 @@ export function BattleScreen() {
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
   const matchResultReason = matchSummaryResult?.reason ?? matchInvalidated?.reason ?? null;
+  const isBotMatch =
+    roomId.startsWith("bot-") ||
+    gameState?.roomType === "bot" ||
+    matchSummaryResult?.isBotMatch === true ||
+    matchInvalidated?.isBotMatch === true;
   const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
   const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
   const didOpponentSurrender =
@@ -742,8 +747,12 @@ export function BattleScreen() {
             ? "The match ended evenly. Settlement is being resolved."
             : winnerAddress
               ? winnerAddress === address
-                ? "Victory secured."
-                : "Rival took this round."
+                ? isBotMatch
+                  ? "Practice win recorded. No Solana payout is awarded for bot matches."
+                  : "Victory secured."
+                : isBotMatch
+                  ? "Practice loss recorded. You did not lose Solana against the bot."
+                  : "Rival took this round."
               : "Match results are being finalized."
   const settlementStatus = isRoomCancelled
     ? "Cancelled"
@@ -2484,6 +2493,7 @@ export function BattleScreen() {
         onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
         settlementText={settlementText}
         settlementSubtitle={settlementSubtitle}
+        isBotMatch={isBotMatch}
         settlementOutcomeKind={settlementOutcomeKind}
         settlementEmojiMood={settlementEmojiMood}
         settlementExpressionSrc={settlementExpressionSrc}

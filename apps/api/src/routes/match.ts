@@ -43,6 +43,51 @@ export function createMatchRouter(roomManager: RoomManager) {
     });
   });
 
+  router.post('/bot', async (c) => {
+    let address: string;
+    let rawTokenMint: string | undefined;
+    let wagerAmount: number | undefined;
+    let characterId: string | undefined;
+
+    try {
+      const body = await c.req.json();
+      address = body.address;
+      rawTokenMint = body.tokenMint;
+      wagerAmount = body.wagerAmount;
+      characterId = body.characterId;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    if (!address) {
+      return c.json({ error: 'Address is required' }, 400);
+    }
+
+    const tokenMint = rawTokenMint ? resolveTokenMint(rawTokenMint) : null;
+    if (rawTokenMint && !tokenMint) {
+      return c.json({ error: `Unknown token "${rawTokenMint}" - provide a symbol (SOL, BONK, USDC) or a valid mint address.` }, 400);
+    }
+
+    const room = roomManager.createBotMatch(address, {
+      tokenMint,
+      wagerAmount: wagerAmount !== undefined ? BigInt(wagerAmount) : 0n,
+      characterId,
+    });
+    const role =
+      room.playerA === address ? 'playerA' :
+      room.playerB === address ? 'playerB' :
+      undefined;
+    const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
+
+    return c.json({
+      roomId: room.id,
+      role,
+      opponentAddress,
+      roomType: room.roomType,
+      status: room.status,
+    });
+  });
+
   router.get('/active/:address', (c) => {
     const address = c.req.param('address');
     const room = roomManager.queue.findActiveRoomForAddress(address);

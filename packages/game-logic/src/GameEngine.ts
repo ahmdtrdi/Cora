@@ -580,6 +580,15 @@ export class GameEngine {
   }
 
   /**
+   * Server-only hand snapshot, including correct answers for automated opponents.
+   */
+  getServerHandForPlayer(address: string): EngineCard[] {
+    const player = this.players.get(address);
+    if (!player) return [];
+    return player.hand.map(card => ({ ...card }));
+  }
+
+  /**
    * Get all player addresses.
    */
   getPlayerAddresses(): [string, string] {

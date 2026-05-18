@@ -670,3 +670,37 @@ _Files touched:_ `packages/game-logic/src/GameEngine.ts`, `packages/shared-types
 **The Reasoning:**
 
 - Damage balance should have one source of truth. Lowering base attack damage without updating ER manifests or the program ceiling would keep oversized attack slots registered on-chain and make future balance changes easier to miss.
+
+---
+
+## 22. Bot Practice Matches - Queue Fallback With ER Gameplay (2026-05-18)
+
+**The Change:**
+
+_Files touched:_ `packages/shared-types/src/websocket.ts`, `packages/game-logic/src/GameEngine.ts`, `apps/api/src/managers/RoomManager.ts`, `apps/api/src/managers/room/*`, `apps/api/src/routes/match.ts`, `apps/web/src/lib/matchmaking/queueMatch.ts`, `apps/web/src/hooks/useQueueSocket.ts`, `apps/web/src/hooks/useMatchSocket.ts`, `apps/web/src/components/lobby/*`, `apps/web/src/components/deposit/depositTypes.ts`, `apps/web/src/components/play/BattleScreen.tsx`, `apps/web/src/components/play/BattleScreenOverlays.tsx`
+
+- Added a `bot` room type and `POST /match/bot` endpoint. The endpoint removes the player from the public queue, creates a room with a generated valid bot pubkey, randomly assigns the bot character, and marks both participants as deposited so the room can enter setup without Phantom signing.
+- Bot matches still initialize the normal `GameEngine` and MagicBlock ER setup when ER is configured. Settlement/refund/anti-cheat payout branches are skipped for bot rooms because no escrow is funded.
+- Added a server-side bot loop that opens cards, answers after a human-like delay, prefers attack cards, and uses heal cards when damaged. Bot accuracy is intentionally moderate so it can fight back without feeling like a perfect answer machine.
+- Added a queue screen "Play With Bot" button and a slow-queue prompt after 15 seconds offering "Play With Bot" or "Keep Queueing".
+- Updated the deposit handoff UI so bot rooms skip deposit signing, show practice/arena-prep messaging, and launch battle once a playable room snapshot arrives.
+- Updated result and surrender copy so winning against a bot says no Solana is awarded, while losing/surrendering says no Solana was lost.
+
+**The Reasoning:**
+
+- Bot rooms reuse the same room socket, engine, card, and ER paths as human matches, which keeps gameplay behavior close to production and avoids a separate practice-mode engine.
+- The bot uses a real generated Solana pubkey because the ER battle session expects player addresses even though no bot wallet signs or receives payout.
+- Payout logic is explicitly skipped at the backend instead of relying on frontend wording. This prevents accidental settlement attempts for unfunded practice rooms.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p packages/game-logic/tsconfig.json --noEmit`
+- `bun test packages/game-logic/test/GameEngine.test.ts` (`21 pass`; first sandboxed run hit EPERM reading `characterStats.ts`, approved rerun passed)
+- `npm run build --workspace=web`
+
+**Tech Debt:**
+
+- Bot tuning constants are currently server-local. If practice mode becomes a product feature, move bot difficulty profiles into a config surface and expose easy/normal/hard.
+- There is no dedicated API room lifecycle test for bot rooms yet. The current API test suite still has external-service coupling, so an offline RoomManager boundary test should be added once those dependencies are isolated.

@@ -1,6 +1,8 @@
 import type { GameStatus } from '@shared/websocket';
 import { GameEngine } from '@cora/game-logic';
 
+export type RoomType = 'public' | 'private' | 'bot';
+
 export interface RoomSocket {
   send(data: string): void;
   close(code?: number, reason?: string): void;
@@ -66,11 +68,13 @@ export interface Room {
   engine: GameEngine | null;
   /** Tracks which card each player has currently opened (one at a time per player) */
   openedCards: Map<string, OpenedCard>;
-  /** 'private' rooms are created via /match/private for Blinks; 'public' rooms come from the FIFO queue */
-  roomType: 'public' | 'private';
+  /** 'private' rooms are created via /match/private, 'public' via FIFO, 'bot' via practice queue fallback */
+  roomType: RoomType;
   /** Role-assigned player addresses — set at pairing time, never from URL params */
   playerA: string | null;
   playerB: string | null;
+  /** Server-controlled opponent address for bot practice matches. */
+  botAddress: string | null;
   /** Whether Player B has been sent their deposit_wager transaction yet (sequential unlock) */
   playerBUnlocked: boolean;
   /** SPL token mint for this match — stored server-side, never derived from client input */

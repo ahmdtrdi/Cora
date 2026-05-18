@@ -130,7 +130,7 @@ export class Queue {
       const opponentAddress = address === activeRoom.playerA ? activeRoom.playerB : activeRoom.playerA;
       this.manager.network.safeSend(queueWs, {
         type: 'matchFound',
-        payload: { roomId: activeRoom.id, role, opponentAddress: opponentAddress ?? '' },
+        payload: { roomId: activeRoom.id, role, opponentAddress: opponentAddress ?? '', roomType: activeRoom.roomType },
       } satisfies WsMessage);
       this.printQueueState('RECONNECT (WS)', `${this.shortAddr(address)} already in room ${activeRoom.id}`);
       return;
@@ -171,7 +171,7 @@ export class Queue {
       if (playerAEntry.queueWs) {
         this.manager.network.safeSend(playerAEntry.queueWs, {
           type: 'matchFound',
-          payload: { roomId, role: 'playerA', opponentAddress: address },
+          payload: { roomId, role: 'playerA', opponentAddress: address, roomType: room.roomType },
         } satisfies WsMessage);
       }
       playerAEntry.resolve(roomId);
@@ -179,7 +179,7 @@ export class Queue {
       // Notify current player (Player B) via their queue WS
       this.manager.network.safeSend(queueWs, {
         type: 'matchFound',
-        payload: { roomId, role: 'playerB', opponentAddress: playerAEntry.address },
+        payload: { roomId, role: 'playerB', opponentAddress: playerAEntry.address, roomType: room.roomType },
       } satisfies WsMessage);
 
       this.broadcastQueuePositions();
@@ -196,7 +196,7 @@ export class Queue {
         if (queueItem.queueWs) {
           this.manager.network.safeSend(queueItem.queueWs, {
             type: 'matchFound',
-            payload: { roomId, role: 'playerA', opponentAddress: address },
+            payload: { roomId, role: 'playerA', opponentAddress: address, roomType: 'public' },
           } satisfies WsMessage);
         }
       },
@@ -259,6 +259,26 @@ export class Queue {
       item.resolve('__aborted__');
       this.printQueueState('CANCELLED (WS)', `${this.shortAddr(address)} left matchmaking`);
     }
+  }
+
+  public removeAddress(address: string, reason: 'cancelled' | 'ttl_expired' | 'error' = 'cancelled'): boolean {
+    const item = this.queue.find((candidate) => candidate.address === address);
+    if (!item) return false;
+
+    if (item.queueWs) {
+      this.manager.network.safeSend(item.queueWs, {
+        type: 'queueLeft',
+        payload: { reason },
+      } satisfies WsMessage);
+    }
+
+    this.clearQueueTimers(item);
+    const removed = this.removeQueueItem(item);
+    if (removed) {
+      item.resolve('__aborted__');
+      this.printQueueState('REMOVED', `${this.shortAddr(address)} left queue (${reason})`);
+    }
+    return removed;
   }
 
   private bindAbort(
