@@ -749,3 +749,35 @@ _Files touched:_ `apps/web/src/components/lobby/LobbyScreen.tsx`, `apps/web/src/
 
 - Fixed guest mode persistence after a completed bot match. Returning to `/lobby` now rehydrates guest mode from the stored generated guest address when no wallet is connected.
 - If the user later connects Phantom while not already in a guest match, the lobby switches back to wallet mode so full queue/deposit/Blink flows unlock normally.
+
+---
+
+## 24. Bot Practice Question Pool Separation (2026-05-19)
+
+**The Change:**
+
+_Files touched:_ `apps/api/src/questions.ts`, `apps/api/src/managers/room/Engine.ts`, `apps/api/test/questions.test.ts`, `apps/web/src/components/lobby/OpponentFound.tsx`, `apps/web/src/components/play/BattleScreen.tsx`
+
+- Added `loadPracticeQuestions()` so bot matches load only `data/questions/pool.json`.
+- Updated bot room engine initialization to skip the Supabase `get_match_deck` path entirely, while public/private real matches still use the existing Supabase-backed question flow.
+- Added a focused API test proving practice questions are loaded from `pool.json` only.
+- Updated the practice wallet notices in both the bot handoff and battle screen to explain that bot questions use the practice pool, not the real match deck, and invite players to log in with a wallet for the full CORA experience.
+
+**The Reasoning:**
+
+- Bot practice should be useful for onboarding without exposing or reusing the real competitive deck from Supabase.
+- Keeping the split at engine initialization preserves the normal room/socket/gameplay path while changing only the question source for `roomType === "bot"`.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- `bun test apps/api/test/questions.test.ts` (`5 pass`; first sandboxed run hit EPERM reading `packages/shared-types/src/question.ts`, approved rerun passed)
+
+**Tech Debt:**
+
+- Real match JSON fallback still uses the legacy all-files local loader. If Supabase fallback needs to mirror production more tightly, split `questions.json` into its own real-match fallback loader too.
+
+**Copy Follow-up (2026-05-19):**
+
+- Shortened the bot practice wallet notice in `OpponentFound.tsx` and `BattleScreen.tsx` to a compact practice-mode warning with a wallet CTA.
