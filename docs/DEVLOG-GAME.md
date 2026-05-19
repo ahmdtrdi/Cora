@@ -808,3 +808,32 @@ _Files touched:_ `apps/web/src/components/lobby/LobbyScreen.tsx`, `apps/api/src/
 **Tech Debt:**
 
 - `RoomManager.test.ts` still imports paths that touch external Goldrush configuration before tests can run. The room-manager test harness needs dependency isolation so lifecycle tests can run offline.
+
+---
+
+## 26. Practice Pool Deduplication And Expansion (2026-05-19)
+
+**The Change:**
+
+_Files touched:_ `data/questions/pool.json`, `apps/api/src/managers/room/Blockchain.ts`, `apps/api/.env.example`, `apps/api/test/questions.test.ts`
+
+- Replaced the duplicate-heavy practice pool with 128 unique bot-practice questions.
+- Kept the same question schema as `questions.json`: `id`, `category`, `questionText`, four `options`, one correct `score`, and `explanation`.
+- Balanced the pool across `sequence`, `logical`, and `math` categories while keeping the difficulty easier than the competitive deck.
+- Raised the MagicBlock inline manifest default/guidance to 128 pre-registered card slots so longer bot matches do not run past the committed ER manifest window.
+- Updated the local ignored API env's `CORA_BATTLE_PRE_REGISTER_CARD_LIMIT` value to 128 for the current dev setup.
+- Added an API regression test that asserts the practice pool has 128 questions, no duplicate IDs/text, and no exact `questionText` overlap with `questions.json`.
+
+**The Reasoning:**
+
+- Guest-vs-bot practice can consume more than the old 20/24 committed ER manifest slots during longer matches. A larger pool plus a larger manifest window gives MagicBlock setup enough unique card slots and removes repeated question fatigue.
+- Keeping practice content distinct from `questions.json` preserves the separation between onboarding practice and the real competitive deck.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit --tsBuildInfoFile .codex-api-check.tsbuildinfo`
+- `bun test apps/api/test/questions.test.ts` (`6 pass`; sandboxed runs still hit EPERM reading `packages/shared-types/src/question.ts`, approved rerun passed)
+
+**Tech Debt:**
+
+- `GameEngine` still pre-generates up to 100 cards per match even though the practice pool now contains 128 questions. If we want every practice question to be reachable in one match, raise the engine queue cap and re-check ER account limits together.
