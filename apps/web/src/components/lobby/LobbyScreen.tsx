@@ -119,6 +119,7 @@ type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
 const MATCHMAKING_TIMEOUT_MS = 45_000;
 const BOT_OFFER_DELAY_MS = 15_000;
+const BOT_MATCH_START_TIMEOUT_MS = 10_000;
 // OpponentFound owns deposit transaction prefetching, so keep the cosmetic
 // matched-state handoff almost instant. Otherwise Phantom feels late.
 const POST_MATCH_FOUND_VERIFY_MS = 0;
@@ -870,6 +871,11 @@ export function LobbyScreen() {
     const controller = new AbortController();
     matchmakingAbortRef.current = controller;
     const requestId = ++matchmakingRequestIdRef.current;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, BOT_MATCH_START_TIMEOUT_MS);
 
     try {
       const result = await createBotMatch({
@@ -892,7 +898,18 @@ export function LobbyScreen() {
       });
       setPhase("found");
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        if (!timedOut) return;
+
+        const message = "Bot took too long to respond. Tap Play With Bot again.";
+        setMatchmakingState("timeout");
+        setMatchmakingStage("finding");
+        setMatchmakingError(message);
+        setActiveMatchToast({ text: message, tone: "error" });
+        setPhase(isGuestMode ? "character-select" : "waiting");
+        return;
+      }
+
       const message = error instanceof Error ? error.message : "Failed to start bot match.";
       setMatchmakingState("error");
       setMatchmakingStage("finding");
@@ -903,6 +920,7 @@ export function LobbyScreen() {
       if (matchmakingAbortRef.current === controller) {
         matchmakingAbortRef.current = null;
       }
+      clearTimeout(timeoutId);
       setBotMatchBusy(false);
     }
   }

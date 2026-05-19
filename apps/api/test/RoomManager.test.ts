@@ -165,6 +165,31 @@ describe('RoomManager', () => {
 
   // ─── Join Room ───────────────────────────────────────────────
 
+  describe('createBotMatch', () => {
+    test('replaces a stale settling bot room for the same player', () => {
+      const firstRoom = manager.createBotMatch('playerA', { characterId: 'einstein' });
+      firstRoom.status = 'settling';
+
+      const nextRoom = manager.createBotMatch('playerA', { characterId: 'turing' });
+
+      expect(nextRoom.id).not.toBe(firstRoom.id);
+      expect(nextRoom.roomType).toBe('bot');
+      expect(nextRoom.playerA).toBe('playerA');
+      expect(manager.getRoom(firstRoom.id)).toBeUndefined();
+    });
+
+    test('replaces an unjoined bot deposit room after a client retry', () => {
+      const firstRoom = manager.createBotMatch('playerA', { characterId: 'einstein' });
+
+      const nextRoom = manager.createBotMatch('playerA', { characterId: 'curie' });
+
+      expect(nextRoom.id).not.toBe(firstRoom.id);
+      expect(nextRoom.roomType).toBe('bot');
+      expect(nextRoom.playerA).toBe('playerA');
+      expect(manager.getRoom(firstRoom.id)).toBeUndefined();
+    });
+  });
+
   describe('joinRoom', () => {
     test('first player joins and gets gameStateUpdate', () => {
       manager.createRoom('room-join');

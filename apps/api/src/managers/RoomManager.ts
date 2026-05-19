@@ -115,7 +115,14 @@ export class RoomManager {
     this.queue.releaseUnfundedPublicDepositRoom(address);
 
     const activeRoom = this.queue.findActiveRoomForAddress(address);
-    if (activeRoom) return activeRoom;
+    if (activeRoom) {
+      if (this.canReplaceBotRoom(activeRoom, address)) {
+        console.warn(`[BotMatch] Replacing stale bot room ${activeRoom.id} for ${address.slice(0, 6)}..`);
+        this.lifecycle.destroyRoom(activeRoom.id);
+      } else {
+        return activeRoom;
+      }
+    }
 
     const roomId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const botAddress = Keypair.generate().publicKey.toBase58();
@@ -332,6 +339,16 @@ export class RoomManager {
   private randomBotCharacterId(): string {
     const characterIds = Object.keys(CHARACTER_DEFS);
     return characterIds[Math.floor(Math.random() * characterIds.length)] ?? 'einstein';
+  }
+
+  private canReplaceBotRoom(room: Room, address: string): boolean {
+    if (room.roomType !== 'bot') return false;
+    if (room.status === 'settling' || room.status === 'finished') return true;
+    if (room.engine && !room.engine.isActive()) return true;
+
+    const playerIsHuman = address === room.playerA || address === room.playerB;
+    const humanSocketConnected = playerIsHuman && Boolean(room.clients.get(address)?.ws);
+    return room.status === 'depositing' && !humanSocketConnected;
   }
 }
 
