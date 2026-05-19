@@ -1315,8 +1315,8 @@ export function BattleScreen() {
       id: "bot:generated-practice-wallets",
       title: "Practice Wallets",
       message: guestMatchesSession
-        ? "Your guest address and the bot address are generated practice addresses, not real wallets. They only let CORA's ER game state run this match."
-        : "The bot address is generated for practice, not a real wallet. It only lets CORA's ER game state run this match.",
+        ? "Practice mode: temporary addresses and practice questions. Connect wallet for real matches."
+        : "Practice mode: temporary bot address and practice questions. Connect wallet for real matches.",
       tone: "warning",
       autoDismissMs: 14000,
     });

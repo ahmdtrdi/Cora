@@ -1,7 +1,7 @@
 import { GameEngine } from '@cora/game-logic';
 import type { EngineCard, PlayCardResult } from '@cora/game-logic';
 import type { MatchResult } from '@shared/websocket';
-import { fetchMatchQuestions } from '../../questions';
+import { fetchMatchQuestions, loadPracticeQuestions } from '../../questions';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
 
@@ -30,8 +30,10 @@ export class Engine {
       { address: addresses[1], characterId: room.playerMeta.get(addresses[1])?.characterId || 'einstein' }
     ];
     
-    // Fetch unique questions per match from Supabase (with JSON fallback)
-    const questions = await fetchMatchQuestions();
+    const questions =
+      room.roomType === 'bot'
+        ? loadPracticeQuestions()
+        : await fetchMatchQuestions();
 
     if (questions.length === 0) {
       console.error(`No questions loaded! Cannot start match in room ${room.id}.`);

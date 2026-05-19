@@ -1,5 +1,7 @@
 import { test, expect, describe, beforeEach } from 'bun:test';
-import { loadQuestions, reloadQuestions } from '../src/questions';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { loadPracticeQuestions, loadQuestions, reloadQuestions } from '../src/questions';
 
 describe('questions loader', () => {
   beforeEach(() => {
@@ -48,5 +50,14 @@ describe('questions loader', () => {
     expect(q1).not.toBe(q2);
     // But same content
     expect(q1.length).toBe(q2.length);
+  });
+
+  test('practice questions load only pool.json', () => {
+    const poolPath = join(import.meta.dir, '..', '..', '..', 'data', 'questions', 'pool.json');
+    const pool = JSON.parse(readFileSync(poolPath, 'utf-8')) as unknown[];
+    const questions = loadPracticeQuestions();
+
+    expect(questions.length).toBe(pool.length);
+    expect(questions.map((q) => q.id)).toEqual(pool.map((q) => (q as { id: string }).id));
   });
 });
