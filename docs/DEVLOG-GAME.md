@@ -781,3 +781,30 @@ _Files touched:_ `apps/api/src/questions.ts`, `apps/api/src/managers/room/Engine
 **Copy Follow-up (2026-05-19):**
 
 - Shortened the bot practice wallet notice in `OpponentFound.tsx` and `BattleScreen.tsx` to a compact practice-mode warning with a wallet CTA.
+
+---
+
+## 25. Bot Match Retry Recovery (2026-05-19)
+
+**The Change:**
+
+_Files touched:_ `apps/web/src/components/lobby/LobbyScreen.tsx`, `apps/api/src/managers/RoomManager.ts`, `apps/api/test/RoomManager.test.ts`
+
+- Added a 10-second timeout to the lobby `Play With Bot` request. If `/match/bot` does not respond in time, the request aborts, the busy state unlocks, and the player can press `Play With Bot` again.
+- Updated bot room creation so stale bot rooms are replaced instead of reused when they are settling, already inactive, or were created but never joined by the human player.
+- Added focused RoomManager coverage for replacing stale settling bot rooms and unjoined bot rooms after a client retry.
+
+**The Reasoning:**
+
+- Creating a bot room should be a fast API response; 10 seconds is enough to cover slow local tunnels without leaving the button locked forever.
+- Bot rooms have no escrow payout/loss, so replacing stale practice rooms is safer than routing the player back into a room that is already ending or waiting for delayed cleanup.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- Attempted `bun test apps/api/test/RoomManager.test.ts --test-name-pattern createBotMatch`; blocked before tests by the existing Goldrush dependency error: `401 Invalid or missing API key`.
+
+**Tech Debt:**
+
+- `RoomManager.test.ts` still imports paths that touch external Goldrush configuration before tests can run. The room-manager test harness needs dependency isolation so lifecycle tests can run offline.
