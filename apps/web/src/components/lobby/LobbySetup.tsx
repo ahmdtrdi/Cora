@@ -11,6 +11,8 @@ import type { Arena } from "./LobbyScreen";
 type LobbySetupProps = {
   walletAddress: string;
   walletConnected: boolean;
+  guestMode: boolean;
+  guestAddress: string | null;
   arenas: Arena[];
   selectedArenaId: string | null;
   onSelectArena: (arenaId: string) => void;
@@ -60,6 +62,8 @@ function ArenaIcon({ token, active }: { token: string; active: boolean }) {
 export function LobbySetup({
   walletAddress,
   walletConnected,
+  guestMode,
+  guestAddress,
   arenas,
   selectedArenaId,
   onSelectArena,
@@ -93,6 +97,8 @@ export function LobbySetup({
   const comingSoonArenaVisible = selectedArenaId !== null && COMING_SOON_ARENA_IDS.has(selectedArenaId);
   const actionDisabled = comingSoonArenaVisible || !canPlay;
   const actionLabel = comingSoonArenaVisible ? "Coming Soon" : "Pick Scientist";
+  const guestAddressLabel = guestAddress ? `Guest ${truncateWallet(guestAddress)}` : "Guest";
+  const identityLabel = guestMode ? guestAddressLabel : walletConnected ? truncateWallet(walletAddress) : "Wallet not connected";
   let arenaImageUrl = NULL_ARENA_IMAGE_URL;
   if (selectedArenaDisplay?.token === "SOL") {
     arenaImageUrl = SOL_ARENA_IMAGE_URL;
@@ -108,7 +114,7 @@ export function LobbySetup({
   const incomingArenaImageUrl = arenaImageUrl !== displayedArenaImageUrl ? arenaImageUrl : null;
   const incomingArenaImageReady = incomingArenaImageUrl ? Boolean(loadedArenaImageUrls[incomingArenaImageUrl]) : false;
 
-  const playabilityEnabled = walletConnected && Boolean(selectedArena) && !comingSoonArenaVisible;
+  const playabilityEnabled = !guestMode && walletConnected && Boolean(selectedArena) && !comingSoonArenaVisible;
   const { playability, loading, error } = useWalletArenaPlayability({
     address: walletConnected ? walletAddress : "",
     arenaId: selectedArena?.id ?? "",
@@ -121,6 +127,8 @@ export function LobbySetup({
     ? "--"
     : comingSoonArenaVisible
       ? "Coming Soon"
+    : guestMode
+      ? "Practice only"
     : !walletConnected
       ? "--"
       : loading
@@ -190,7 +198,7 @@ export function LobbySetup({
         >
           <div className="h-6 w-6 rounded-full border border-[var(--tone-teal)] bg-[var(--tone-clay)]" />
           <p className="font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)]">
-            {walletConnected ? truncateWallet(walletAddress) : "Wallet not connected"}
+            {identityLabel}
           </p>
         </div>
 
@@ -217,7 +225,7 @@ export function LobbySetup({
             }}
           >
             <span className="font-gabarito text-xs font-bold uppercase tracking-wider text-[var(--tone-mint)] opacity-90">
-              {tokenBalanceLabel}: {tokenBalanceValue}
+              {guestMode ? "Guest Mode" : `${tokenBalanceLabel}: ${tokenBalanceValue}`}
             </span>
           </div>
         </div>
@@ -438,7 +446,7 @@ export function LobbySetup({
               {!selectedArenaDisplay && (
                 <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80">Select a token to continue</p>
               )}
-              {selectedArenaDisplay && !walletConnected && (
+              {selectedArenaDisplay && !walletConnected && !guestMode && (
                 <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80">Connect wallet to draft</p>
               )}
               <motion.button
@@ -464,10 +472,18 @@ export function LobbySetup({
 
       <div className="mt-4 flex w-full flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          {!walletConnected && (
+          {!walletConnected && !guestMode && (
             <>
               <p className="font-gabarito text-xs text-[#6f3a28]">
                 Connect wallet to unlock queue and deposit signing.
+              </p>
+              <HydratedWalletButton />
+            </>
+          )}
+          {!walletConnected && guestMode && (
+            <>
+              <p className="font-gabarito text-xs text-[#6f3a28]">
+                You entered as guest. Please connect your wallet to unlock deposits and all possibilities of CORA.
               </p>
               <HydratedWalletButton />
             </>

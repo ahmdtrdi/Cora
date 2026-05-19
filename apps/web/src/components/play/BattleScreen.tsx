@@ -21,6 +21,7 @@ import {
   clearMatchSessionState,
   getMatchSessionAddress,
   getMatchSessionToken,
+  isGuestBotMatchSession,
   readActiveDepositIntent,
   readActiveMatchSession,
   writeActiveBlinkChallengeSession,
@@ -241,17 +242,19 @@ export function BattleScreen() {
   const wallet = useWallet();
   const { publicKey } = wallet;
 
-  const address = publicKey?.toBase58() ?? "";
+  const connectedWalletAddress = publicKey?.toBase58() ?? "";
   const matchSessionAddress = getMatchSessionAddress(activeMatchSession);
   const roomMatchesSession = Boolean(roomIdParam && activeMatchSession?.roomId === roomIdParam);
-  const walletMatchesSession = Boolean(address && matchSessionAddress && address === matchSessionAddress);
-  const canUseMatchSession = matchSessionHydrated && roomMatchesSession && walletMatchesSession;
+  const guestMatchesSession = isGuestBotMatchSession(activeMatchSession) && Boolean(matchSessionAddress);
+  const walletMatchesSession = Boolean(connectedWalletAddress && matchSessionAddress && connectedWalletAddress === matchSessionAddress);
+  const canUseMatchSession = matchSessionHydrated && roomMatchesSession && (walletMatchesSession || guestMatchesSession);
+  const address = canUseMatchSession && guestMatchesSession ? matchSessionAddress : connectedWalletAddress;
   const roomId = canUseMatchSession ? activeMatchSession?.roomId ?? "" : "";
   const arenaId = canUseMatchSession ? activeMatchSession?.arenaId ?? arenaIdParam ?? "sol" : arenaIdParam ?? "sol";
   const arenaToken = ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = canUseMatchSession ? activeMatchSession?.wagerUsd ?? FIXED_WAGER_USD : FIXED_WAGER_USD;
   const preSignedDepositSig = canUseMatchSession ? readActiveDepositIntent(roomId, address) : null;
-  const requiresWalletConnect = !address;
+  const requiresWalletConnect = matchSessionHydrated && !address && !guestMatchesSession;
   const playGuardError = !roomIdParam
     ? "Missing roomId. Return to lobby and enter the match from the found flow."
     : !matchSessionHydrated
@@ -260,9 +263,9 @@ export function BattleScreen() {
         ? "Missing local match session. Return to lobby and enter the match from the found flow."
         : activeMatchSession.roomId !== roomIdParam
           ? "This play link does not match your active local match session."
-          : !matchSessionAddress
-            ? "Local match session is missing a wallet address. Return to lobby and rejoin the match."
-            : address && matchSessionAddress !== address
+        : !matchSessionAddress
+          ? "Local match session is missing a player address. Return to lobby and rejoin the match."
+          : !guestMatchesSession && connectedWalletAddress && matchSessionAddress !== connectedWalletAddress
               ? "Connected wallet does not match the wallet that started this match."
               : null;
 
@@ -695,6 +698,11 @@ export function BattleScreen() {
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
   const matchResultReason = matchSummaryResult?.reason ?? matchInvalidated?.reason ?? null;
+  const isBotMatch =
+    roomId.startsWith("bot-") ||
+    gameState?.roomType === "bot" ||
+    matchSummaryResult?.isBotMatch === true ||
+    matchInvalidated?.isBotMatch === true;
   const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
   const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
   const didOpponentSurrender =
@@ -742,8 +750,12 @@ export function BattleScreen() {
             ? "The match ended evenly. Settlement is being resolved."
             : winnerAddress
               ? winnerAddress === address
-                ? "Victory secured."
-                : "Rival took this round."
+                ? isBotMatch
+                  ? "Practice win recorded. No Solana payout is awarded for bot matches."
+                  : "Victory secured."
+                : isBotMatch
+                  ? "Practice loss recorded. You did not lose Solana against the bot."
+                  : "Rival took this round."
               : "Match results are being finalized."
   const settlementStatus = isRoomCancelled
     ? "Cancelled"
@@ -1079,6 +1091,8 @@ export function BattleScreen() {
       wagerUsd,
       address,
       walletAddress: address,
+      roomType: isBotMatch ? "bot" : activeMatchSession?.roomType ?? null,
+      isGuest: guestMatchesSession,
       status: "playing",
       canSurrenderByState,
     });
@@ -1296,8 +1310,19 @@ export function BattleScreen() {
       autoDismissMs: 0,
     });
   }
+  if (isBotMatch && !isMatchComplete) {
+    alerts.push({
+      id: "bot:generated-practice-wallets",
+      title: "Practice Wallets",
+      message: guestMatchesSession
+        ? "Practice mode: temporary addresses and practice questions. Connect wallet for real matches."
+        : "Practice mode: temporary bot address and practice questions. Connect wallet for real matches.",
+      tone: "warning",
+      autoDismissMs: 14000,
+    });
+  }
 
-  const missingPreSignedDeposit = status === "depositing" && connectionState === "connected" && !preSignedDepositSig;
+  const missingPreSignedDeposit = !isBotMatch && status === "depositing" && connectionState === "connected" && !preSignedDepositSig;
   if (missingPreSignedDeposit) {
     alerts.push({
       id: "deposit:missing_pre_signed_intent",
@@ -1493,7 +1518,7 @@ export function BattleScreen() {
   }
 
   async function onCreateBlinkFromResult() {
-    if (!address) {
+    if (guestMatchesSession || !connectedWalletAddress) {
       setShareNotice({ text: "Connect wallet before creating a Blink challenge.", tone: "error" });
       return;
     }
@@ -1509,7 +1534,7 @@ export function BattleScreen() {
       const snapshot = await createBlinkChallengeSession({
         connection,
         wallet,
-        walletAddress: address,
+        walletAddress: connectedWalletAddress,
         tokenMint: arenaToken,
         wagerAmount,
         wagerUsd,
@@ -2484,6 +2509,7 @@ export function BattleScreen() {
         onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
         settlementText={settlementText}
         settlementSubtitle={settlementSubtitle}
+        isBotMatch={isBotMatch}
         settlementOutcomeKind={settlementOutcomeKind}
         settlementEmojiMood={settlementEmojiMood}
         settlementExpressionSrc={settlementExpressionSrc}

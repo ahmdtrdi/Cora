@@ -4,7 +4,7 @@ import { ConnectWalletScreen } from "@/components/connect/ConnectWalletScreen";
 
 export const metadata: Metadata = {
   title: "CORA - Connect Wallet",
-  description: "Connect Phantom wallet to enter lobby and sign deposits.",
+  description: "Connect Phantom for wager matches or enter guest bot practice.",
 };
 
 export default function ConnectPage() {

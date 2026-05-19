@@ -9,6 +9,7 @@ interface MatchFoundResult {
   roomId: string;
   role: 'playerA' | 'playerB';
   opponentAddress: string;
+  roomType?: 'public' | 'private' | 'bot';
 }
 
 interface UseQueueSocketReturn {

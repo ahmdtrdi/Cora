@@ -59,6 +59,7 @@ type BattleScreenOverlaysProps = {
   onCloseSurrenderModal: () => void;
   settlementText: string;
   settlementSubtitle: string;
+  isBotMatch: boolean;
   settlementOutcomeKind: SettlementOutcomeKind;
   settlementEmojiMood: SettlementEmojiMood;
   settlementExpressionSrc: SettlementExpressionSrc;
@@ -119,6 +120,7 @@ export function BattleScreenOverlays({
   canSurrenderMatch,
   onCloseSurrenderModal,
   settlementText,
+  isBotMatch,
   settlementOutcomeKind,
   settlementEmojiMood,
   settlementExpressionSrc,
@@ -181,8 +183,13 @@ export function BattleScreenOverlays({
       : null;
   const tokenLabel = arenaToken?.trim() ? arenaToken.toUpperCase() : "TOKEN";
 
-  const payoutHighlight =
-    settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
+  const payoutHighlight = isBotMatch
+    ? settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
+      ? "Because this was a bot match, you do not receive Solana."
+      : settlementOutcomeKind === "lose" || settlementOutcomeKind === "player_surrender"
+        ? "You did not lose Solana because this was a bot match."
+        : "Bot match completed with no Solana payout or loss."
+    : settlementOutcomeKind === "win" || settlementOutcomeKind === "opponent_surrender"
       ? payoutUsdDisplay
         ? `You win the ${payoutUsdDisplay} wager in ${tokenLabel}`
         : `You win the ${tokenLabel} wager`
@@ -320,8 +327,9 @@ export function BattleScreenOverlays({
           >
             <p className="font-caprasimo text-3xl text-[var(--tone-cream)] md:text-4xl">Surrender match?</p>
             <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.86)]">
-              Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will
-              return to lobby.
+              {isBotMatch
+                ? "Surrendering ends this bot match. You will not lose Solana, and you will return to lobby."
+                : "Surrendering means you forfeit this match. Your rival will receive the wager after settlement. You will return to lobby."}
             </p>
             <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button

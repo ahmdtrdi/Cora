@@ -26,6 +26,7 @@ type OpponentFoundProps = {
   matchRole?: "playerA" | "playerB" | null;
   arena: Arena;
   wagerUsd: string;
+  isGuest?: boolean;
   onTimeout: () => void;
 };
 
@@ -57,6 +58,7 @@ export function OpponentFound({
   matchRole,
   arena,
   wagerUsd,
+  isGuest = false,
   onTimeout,
 }: OpponentFoundProps) {
   const router = useRouter();
@@ -109,6 +111,7 @@ export function OpponentFound({
     address: walletAddress,
     characterId: myScientist.id,
   });
+  const isBotMatch = roomId.startsWith("bot-") || gameState?.roomType === "bot";
   const isBattleSnapshotReady = gameState?.status === "playing" && (gameState.hand?.length ?? 0) > 0;
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
@@ -121,15 +124,16 @@ export function OpponentFound({
     effectiveRole === "playerB" && !depositUnlockedAt && !signedDepositSignature && signingState !== "signing";
   const isPlayerAWaitingForPlayerB =
     effectiveRole === "playerA" && signingState === "waiting" && Boolean(signedDepositSignature);
-  const shouldShowCountdown = !isPlayerBWaitingUnlock && signingState !== "waiting";
+  const shouldShowCountdown = !isBotMatch && !isPlayerBWaitingUnlock && signingState !== "waiting";
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
     signingState !== "signing" &&
     signingState !== "waiting" &&
+    !isBotMatch &&
     !isPlayerBWaitingUnlock &&
     !signed;
   const depositPreparationKey =
-    wallet.publicKey && !signedDepositSignature
+    wallet.publicKey && !signedDepositSignature && !isBotMatch
       ? `${roomId}:${wallet.publicKey.toBase58()}:${arena.token}:${wagerUsd}`
       : null;
   const reassignedRoomId =
@@ -169,6 +173,16 @@ export function OpponentFound({
           progress: 100,
           showPulse: false,
         }
+      : isBotMatch && !hasArenaPreparationSignal
+      ? {
+          ...magicBlockUi,
+          tone: "magicblock" as const,
+          badgeLabel: "Practice Arena",
+          title: "Preparing bot match",
+          detail: "No deposit needed. Syncing the fast arena.",
+          progress: 45,
+          showPulse: true,
+        }
       : playerHasSignedDeposit && !hasArenaPreparationSignal
       ? {
           ...magicBlockUi,
@@ -182,7 +196,7 @@ export function OpponentFound({
           showPulse: true,
         }
       : magicBlockUi;
-  const showArenaStatusStrip = playerHasSignedDeposit || battleLaunchCountdown !== null;
+  const showArenaStatusStrip = isBotMatch || playerHasSignedDeposit || battleLaunchCountdown !== null;
   const isMagicBlockArenaLoading = displayedMagicBlockUi.tone === "magicblock";
   const isArenaProcessing = displayedMagicBlockUi.tone === "magicblock" || displayedMagicBlockUi.showPulse;
 
@@ -271,7 +285,11 @@ export function OpponentFound({
   }, [battleLaunchCountdown]);
 
   useEffect(() => {
-    if (!(signingState === "waiting" && isBattleSnapshotReady && signedDepositSignature)) {
+    const readyForBattle = isBotMatch
+      ? isBattleSnapshotReady
+      : signingState === "waiting" && isBattleSnapshotReady && Boolean(signedDepositSignature);
+
+    if (!readyForBattle) {
       const resetTimer = window.setTimeout(() => setBattleLaunchCountdown(null), 0);
       return () => window.clearTimeout(resetTimer);
     }
@@ -287,6 +305,8 @@ export function OpponentFound({
         address: walletAddress,
         roomId,
         role: effectiveRole ?? null,
+        roomType: isBotMatch ? "bot" : null,
+        isGuest,
         arenaId: arena.id,
         scientistId: myScientist.id,
         status: "playing",
@@ -294,11 +314,13 @@ export function OpponentFound({
         arenaToken: arena.token,
         wagerUsd,
       });
-      writeActiveDepositIntent({
-        roomId,
-        address: walletAddress,
-        signature: signedDepositSignature,
-      });
+      if (signedDepositSignature) {
+        writeActiveDepositIntent({
+          roomId,
+          address: walletAddress,
+          signature: signedDepositSignature,
+        });
+      }
       const params = new URLSearchParams({
         roomId,
         arena: arena.id,
@@ -325,10 +347,12 @@ export function OpponentFound({
     signedDepositSignature,
     isBattleSnapshotReady,
     effectiveRole,
+    isBotMatch,
+    isGuest,
   ]);
 
   useEffect(() => {
-    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
+    if (isBotMatch || isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -350,6 +374,7 @@ export function OpponentFound({
     wagerUsd,
     myScientist.id,
     isPlayerBWaitingUnlock,
+    isBotMatch,
   ]);
 
   useEffect(() => {
@@ -689,6 +714,11 @@ export function OpponentFound({
     if (insufficientFunds) {
       return `Top up your ${arena.token} wallet to cover $${wagerUsd} wager + ~0.001 SOL in fees, then retry.`;
     }
+    if (isBotMatch) {
+      if (battleLaunchCountdown !== null) return `Practice battle starts in ${battleLaunchCountdown}...`;
+      if (isBattleSnapshotReady) return "Bot match ready. Starting battle.";
+      return "No deposit needed for bot matches. Preparing the fast arena.";
+    }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (isPlayerBWaitingUnlock) {
       if (isDisconnected) {
@@ -722,6 +752,7 @@ export function OpponentFound({
     if (insufficientFunds) return "insufficient_funds";
     if (opponentFailedDepositAt) return "opponent_failed";
     if (signingState === "error") return "error";
+    if (isBotMatch) return isBattleSnapshotReady || battleLaunchCountdown !== null ? "confirmed" : "practice";
     if (!wallet.publicKey) return "wallet_required";
     if (signingState === "signing") return "signing";
     if (battleLaunchCountdown !== null) return "confirmed";
@@ -734,6 +765,7 @@ export function OpponentFound({
   function getPrimaryButtonLabel() {
     const isDisconnected = connectionState === "error" || connectionState === "disconnected";
     const isReconnecting = connectionState === "reconnecting";
+    if (isBotMatch) return "Preparing Bot Match...";
     if (isPlayerBWaitingUnlock) {
       if (isDisconnected) return "Disconnected...";
       if (isReconnecting) return "Reconnecting...";
@@ -794,6 +826,26 @@ export function OpponentFound({
           >
             <p className="font-caprasimo text-base text-[#f8d694]">Match cancelled</p>
             <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">{roomCancelledNotice}</p>
+          </div>
+        </div>
+      )}
+      {isBotMatch && (
+        <div className="fixed left-1/2 top-6 z-[75] w-full max-w-xl -translate-x-1/2 px-4">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(248,214,148,0.55)",
+              background: "linear-gradient(145deg, rgba(13,24,20,0.96) 0%, rgba(25,43,35,0.96) 100%)",
+            }}
+          >
+            <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
+              Practice wallet notice
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+              {isGuest
+                ? "Practice mode: temporary addresses and practice questions. Connect wallet for real matches."
+                : "Practice mode: temporary bot address and practice questions. Connect wallet for real matches."}
+            </p>
           </div>
         </div>
       )}
@@ -910,11 +962,13 @@ export function OpponentFound({
         {arena.label} · ${wagerUsd} {arena.token}
       </p>
       <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
-        Rival Locked
+        {isBotMatch ? "Bot Rival Locked" : "Rival Locked"}
       </h1>
-      <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
-        Sign the deposit before the timer expires.
-      </p>
+      {!isBotMatch && (
+        <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+          Sign the deposit before the timer expires.
+        </p>
+      )}
       </div>
 
       <div className="mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
@@ -1020,6 +1074,7 @@ export function OpponentFound({
           }}
         >
           <DepositPanel
+            title={isBotMatch ? "Bot practice match" : undefined}
             token={arena.token}
             wagerUsd={wagerUsd}
             status={getDepositStatus()}
@@ -1045,7 +1100,7 @@ export function OpponentFound({
             signature={signedDepositSignature}
             canPrimaryAction={canAttemptSign}
             primaryActionLabel={getPrimaryButtonLabel()}
-            onPrimaryAction={onSignDeposit}
+            onPrimaryAction={isBotMatch ? undefined : onSignDeposit}
             statusStripSlot={
               showArenaStatusStrip ? (
                 <div className="mx-auto flex min-h-[58px] w-full max-w-xl items-center justify-center">
@@ -1097,7 +1152,7 @@ export function OpponentFound({
               ) : null
             }
             walletSlot={
-              !wallet.publicKey ? (
+              !wallet.publicKey && !isGuest ? (
                 <div className="pt-1">
                   <HydratedWalletButton />
                 </div>

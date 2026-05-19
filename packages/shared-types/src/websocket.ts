@@ -72,8 +72,8 @@ export interface GameState {
   wagerAmount: string;
   /** Wager USD value */
   wagerUsdValue?: string;
-  /** Public or private match */
-  roomType: 'public' | 'private';
+  /** Public, private, or bot practice match */
+  roomType: 'public' | 'private' | 'bot';
   /** True when public combat fields are backed by MagicBlock ER authority */
   erEnabled?: boolean;
   /** Current ER lifecycle/status for proof-aware clients */
@@ -151,7 +151,7 @@ export interface QueueStatusData {
 export type ServerToClientEvents = {
   opponentFailedDeposit: (data: {}) => void;
   roomCancelled: (data: { cancelledBy?: string | null; reason: 'player_cancelled' | 'deposit_timeout' | 'disconnect' }) => void;
-  matchFound: (data: { roomId: string; role: 'playerA' | 'playerB'; opponentAddress: string }) => void;
+  matchFound: (data: { roomId: string; role: 'playerA' | 'playerB'; opponentAddress: string; roomType?: 'public' | 'private' | 'bot' }) => void;
   depositUnlocked: (data: { roomId: string }) => void;
   gameStateUpdate: (state: GameState) => void;
   settlementAuthorization: (result: MatchResultPayload) => void;
@@ -184,6 +184,8 @@ export interface MatchResult {
   finalCorrectAnswers?: Record<string, number>;
   surrenderedAddress?: string;
   antiCheatWarning?: boolean; // True if the match was suspicious but still settled
+  /** True when this was a practice match against the server bot, with no wager payout/loss. */
+  isBotMatch?: boolean;
   erProof?: ErProofPayload;
 }
 

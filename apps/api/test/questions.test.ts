@@ -1,5 +1,7 @@
 import { test, expect, describe, beforeEach } from 'bun:test';
-import { loadQuestions, reloadQuestions } from '../src/questions';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { loadPracticeQuestions, loadQuestions, reloadQuestions } from '../src/questions';
 
 describe('questions loader', () => {
   beforeEach(() => {
@@ -48,5 +50,37 @@ describe('questions loader', () => {
     expect(q1).not.toBe(q2);
     // But same content
     expect(q1.length).toBe(q2.length);
+  });
+
+  test('practice questions load only pool.json', () => {
+    const poolPath = join(import.meta.dir, '..', '..', '..', 'data', 'questions', 'pool.json');
+    const pool = JSON.parse(readFileSync(poolPath, 'utf-8')) as unknown[];
+    const questions = loadPracticeQuestions();
+
+    expect(questions.length).toBe(pool.length);
+    expect(questions.map((q) => q.id)).toEqual(pool.map((q) => (q as { id: string }).id));
+  });
+
+  test('practice pool is unique and separate from competitive questions', () => {
+    const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+    const practiceQuestions = loadPracticeQuestions();
+    const competitivePath = join(import.meta.dir, '..', '..', '..', 'data', 'questions', 'questions.json');
+    const competitiveQuestions = JSON.parse(readFileSync(competitivePath, 'utf-8')) as Array<{ questionText: string }>;
+    const competitiveQuestionTexts = new Set(competitiveQuestions.map((q) => normalize(q.questionText)));
+    const practiceIds = new Set<string>();
+    const practiceQuestionTexts = new Set<string>();
+
+    expect(practiceQuestions).toHaveLength(128);
+
+    for (const question of practiceQuestions) {
+      const normalizedText = normalize(question.questionText);
+
+      expect(practiceIds.has(question.id)).toBe(false);
+      expect(practiceQuestionTexts.has(normalizedText)).toBe(false);
+      expect(competitiveQuestionTexts.has(normalizedText)).toBe(false);
+
+      practiceIds.add(question.id);
+      practiceQuestionTexts.add(normalizedText);
+    }
   });
 });

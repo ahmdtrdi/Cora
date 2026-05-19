@@ -34,6 +34,7 @@ interface MatchFoundPayload {
   roomId: string;
   role?: string;
   opponentAddress?: string;
+  roomType?: 'public' | 'private' | 'bot';
 }
 
 interface RoomCancelledPayload {

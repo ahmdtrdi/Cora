@@ -4,36 +4,25 @@ import type { Question } from '@shared/question';
 import { validateQuestion } from '@shared/question';
 import { supabase } from './services/supabase';
 
+const QUESTIONS_DIR = join(import.meta.dir, '..', '..', '..', 'data', 'questions');
+const PRACTICE_POOL_FILE = 'pool.json';
+
 /**
  * Load and validate all question JSON files from the data/questions directory.
  * Called once at server startup and cached in memory.
  */
 let cachedQuestions: Question[] | null = null;
+let cachedPracticeQuestions: Question[] | null = null;
 
 export function loadQuestions(): Question[] {
   if (cachedQuestions) return cachedQuestions;
 
-  const questionsDir = join(import.meta.dir, '..', '..', '..', 'data', 'questions');
-  const files = readdirSync(questionsDir).filter(f => f.endsWith('.json'));
+  const files = readdirSync(QUESTIONS_DIR).filter(f => f.endsWith('.json'));
 
   const allQuestions: Question[] = [];
 
   for (const file of files) {
-    const filePath = join(questionsDir, file);
-    try {
-      const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
-      const questions: unknown[] = Array.isArray(raw) ? raw : [raw];
-
-      for (const q of questions) {
-        if (validateQuestion(q)) {
-          allQuestions.push(q);
-        } else {
-          console.warn(`Invalid question in ${file}:`, q);
-        }
-      }
-    } catch (err) {
-      console.error(`Failed to load questions from ${file}:`, err);
-    }
+    allQuestions.push(...loadQuestionsFromFile(file));
   }
 
   console.log(`Loaded ${allQuestions.length} questions from ${files.length} file(s).`);
@@ -42,11 +31,45 @@ export function loadQuestions(): Question[] {
 }
 
 /**
+ * Load only the public practice pool used by bot matches.
+ * This keeps practice questions separate from the Supabase-backed real match deck.
+ */
+export function loadPracticeQuestions(): Question[] {
+  if (cachedPracticeQuestions) return cachedPracticeQuestions;
+
+  cachedPracticeQuestions = loadQuestionsFromFile(PRACTICE_POOL_FILE);
+  console.log(`Loaded ${cachedPracticeQuestions.length} practice questions from ${PRACTICE_POOL_FILE}.`);
+  return cachedPracticeQuestions;
+}
+
+/**
  * Force reload questions from disk (useful for dev hot-reload).
  */
 export function reloadQuestions(): Question[] {
   cachedQuestions = null;
+  cachedPracticeQuestions = null;
   return loadQuestions();
+}
+
+function loadQuestionsFromFile(file: string): Question[] {
+  const filePath = join(QUESTIONS_DIR, file);
+  try {
+    const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
+    const questions: unknown[] = Array.isArray(raw) ? raw : [raw];
+
+    const validQuestions: Question[] = [];
+    for (const q of questions) {
+      if (validateQuestion(q)) {
+        validQuestions.push(q);
+      } else {
+        console.warn(`Invalid question in ${file}:`, q);
+      }
+    }
+    return validQuestions;
+  } catch (err) {
+    console.error(`Failed to load questions from ${file}:`, err);
+    return [];
+  }
 }
 
 /**
