@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { Keypair } from "@solana/web3.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
@@ -123,6 +124,7 @@ const BOT_OFFER_DELAY_MS = 15_000;
 const POST_MATCH_FOUND_VERIFY_MS = 0;
 const POST_MATCH_FOUND_PREPARE_MS = 0;
 const BLINK_CHALLENGE_POLL_MS = 2_500;
+const GUEST_ADDRESS_STORAGE_KEY = "cora:guest-address";
 const PHASE_VARIANTS = {
   initial: { opacity: 0, scale: 0.98 },
   animate: { opacity: 1, scale: 1 },
@@ -140,6 +142,28 @@ function toBaseUnitWager(wagerUsd: string) {
 function shortenAddress(address: string) {
   if (address.length <= 12) return address;
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
+function readStoredGuestAddress() {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.sessionStorage.getItem(GUEST_ADDRESS_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredGuestAddress(address: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(GUEST_ADDRESS_STORAGE_KEY, address);
+  } catch {
+    // Session storage is a convenience; the active match session still carries the address.
+  }
+}
+
+function generateGuestAddress() {
+  return Keypair.generate().publicKey.toBase58();
 }
 
 type ActiveRoomSnapshot = ActiveMatchSession;
@@ -193,6 +217,7 @@ export function LobbyScreen() {
   const requestedToken = searchParams.get("token");
   const requestedWager = searchParams.get("wager");
   const requestedScientist = searchParams.get("scientist");
+  const requestedGuest = searchParams.get("guest") === "1";
   const previewPhase = searchParams.get("previewPhase");
   const previewSelectStateParam = searchParams.get("previewSelectState");
   const previewOpponentStatusParam = searchParams.get("previewOpponentStatus");
@@ -215,6 +240,8 @@ export function LobbyScreen() {
   const [botOfferOpen, setBotOfferOpen] = useState(false);
   const [botOfferDismissed, setBotOfferDismissed] = useState(false);
   const [botMatchBusy, setBotMatchBusy] = useState(false);
+  const [guestAddress, setGuestAddress] = useState("");
+  const [loginMode, setLoginMode] = useState<"wallet" | "guest">(() => (requestedGuest ? "guest" : "wallet"));
   const [activeMatchBannerSnapshot, setActiveMatchBannerSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderSnapshot, setActiveMatchSurrenderSnapshot] = useState<ActiveRoomSnapshot | null>(null);
   const [activeMatchSurrenderModalOpen, setActiveMatchSurrenderModalOpen] = useState(false);
@@ -248,6 +275,27 @@ export function LobbyScreen() {
 
   // WebSocket-based queue (replaces HTTP long-poll)
   const queueSocket = useQueueSocket();
+
+  const ensureGuestAddress = useCallback(() => {
+    const existingAddress = guestAddress || readStoredGuestAddress();
+    if (existingAddress) {
+      if (existingAddress !== guestAddress) {
+        setGuestAddress(existingAddress);
+      }
+      return existingAddress;
+    }
+
+    const nextAddress = generateGuestAddress();
+    writeStoredGuestAddress(nextAddress);
+    setGuestAddress(nextAddress);
+    return nextAddress;
+  }, [guestAddress]);
+
+  useEffect(() => {
+    if (!requestedGuest) return;
+    ensureGuestAddress();
+    setLoginMode("guest");
+  }, [ensureGuestAddress, requestedGuest]);
 
   const selectedArena = useMemo(
     () => ARENAS.find((arena) => arena.id === selectedArenaId) ?? null,
@@ -285,7 +333,27 @@ export function LobbyScreen() {
 
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
-  const walletAddr = walletAddress || "Not connected";
+  const isGuestMode = loginMode === "guest";
+  const matchmakerAddress = isGuestMode ? guestAddress : walletAddress;
+  const walletAddr = matchmakerAddress || (isGuestMode ? "Guest" : "Not connected");
+
+  useEffect(() => {
+    const storedGuestAddress = readStoredGuestAddress();
+    if (!storedGuestAddress) return;
+
+    setGuestAddress(storedGuestAddress);
+    if (!walletAddress && loginMode === "wallet" && !matchedRoomId) {
+      setLoginMode("guest");
+    }
+  }, [loginMode, matchedRoomId, walletAddress]);
+
+  useEffect(() => {
+    if (!walletAddress || loginMode !== "guest") return;
+    if (matchedRoomId || phase === "waiting" || phase === "found") return;
+
+    setLoginMode("wallet");
+  }, [loginMode, matchedRoomId, phase, walletAddress]);
+
   const activeBlinkStatus = activeBlinkChallenge?.status as PrivateChallengeStatus | undefined;
   const hasBlockingBlinkChallenge =
     Boolean(activeBlinkChallenge) &&
@@ -320,8 +388,8 @@ export function LobbyScreen() {
   const wagerNumber = Number(FIXED_WAGER_USD);
   const hasValidWager = Number.isFinite(wagerNumber) && wagerNumber > 0;
 
-  const canStart = walletConnected && Boolean(selectedArena) && hasValidWager && !hasBlockingBlinkChallenge;
-  const canQueue = Boolean(selectedScientist) && Boolean(selectedArena) && !hasBlockingBlinkChallenge;
+  const canStart = (walletConnected || isGuestMode) && Boolean(selectedArena) && hasValidWager && (isGuestMode || !hasBlockingBlinkChallenge);
+  const canQueue = Boolean(selectedScientist) && Boolean(selectedArena) && (isGuestMode || !hasBlockingBlinkChallenge);
   const waitingMissingContext = phase === "waiting" && (!selectedArena || !selectedScientist);
   const foundMissingContext =
     phase === "found" && (!selectedArena || !selectedScientist || !matchedRoomId);
@@ -775,9 +843,11 @@ export function LobbyScreen() {
   ]);
 
   async function startBotMatch() {
-    if (!walletAddress) {
+    const playerAddress = isGuestMode ? ensureGuestAddress() : walletAddress;
+
+    if (!playerAddress) {
       setMatchmakingState("error");
-      setMatchmakingError("Connect wallet before starting a bot match.");
+      setMatchmakingError("Connect wallet or play as guest before starting a bot match.");
       return;
     }
     if (!selectedArena || !selectedScientist) {
@@ -803,7 +873,7 @@ export function LobbyScreen() {
 
     try {
       const result = await createBotMatch({
-        address: walletAddress,
+        address: playerAddress,
         tokenMint: selectedArena.token,
         wagerAmount: toBaseUnitWager(FIXED_WAGER_USD),
         characterId: selectedScientist.id,
@@ -816,6 +886,10 @@ export function LobbyScreen() {
       setMatchedRole(result.role ?? "playerA");
       setMatchmakingState("idle");
       setMatchmakingStage("finding");
+      setActiveMatchToast({
+        text: isGuestMode ? "Bot found. Guest and bot practice addresses generated." : "Bot found. Practice address generated for the bot.",
+        tone: "success",
+      });
       setPhase("found");
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -823,7 +897,8 @@ export function LobbyScreen() {
       setMatchmakingState("error");
       setMatchmakingStage("finding");
       setMatchmakingError(message);
-      setPhase("waiting");
+      setActiveMatchToast({ text: message, tone: "error" });
+      setPhase(isGuestMode ? "character-select" : "waiting");
     } finally {
       if (matchmakingAbortRef.current === controller) {
         matchmakingAbortRef.current = null;
@@ -833,6 +908,11 @@ export function LobbyScreen() {
   }
 
   function beginMatchmaking() {
+    if (isGuestMode) {
+      void startBotMatch();
+      return;
+    }
+
     if (!walletAddress) {
       setMatchmakingState("error");
       setMatchmakingError("Connect wallet before entering queue.");
@@ -1122,6 +1202,13 @@ export function LobbyScreen() {
     if (!snapshot) return;
 
     queueMicrotask(() => {
+      const snapshotAddress = getMatchSessionAddress(snapshot);
+      if (snapshot.isGuest && snapshotAddress) {
+        writeStoredGuestAddress(snapshotAddress);
+        setGuestAddress(snapshotAddress);
+        setLoginMode("guest");
+      }
+
       if (!selectedArenaId && snapshot.arenaId && ARENAS.some((arena) => arena.id === snapshot.arenaId)) {
         setSelectedArenaId(snapshot.arenaId);
       }
@@ -1396,12 +1483,15 @@ export function LobbyScreen() {
   }, [matchedRoomId, phaseContextIssue, walletAddress]);
 
   useEffect(() => {
-    if (!walletAddress || !matchedRoomId) return;
+    const sessionAddress = isGuestMode ? guestAddress : walletAddress;
+    if (!sessionAddress || !matchedRoomId) return;
     writeActiveMatchSession({
-      walletAddress,
-      address: walletAddress,
+      walletAddress: sessionAddress,
+      address: sessionAddress,
       roomId: matchedRoomId,
       role: matchedRole,
+      roomType: matchedRoomId.startsWith("bot-") ? "bot" : null,
+      isGuest: isGuestMode,
       arenaId: selectedArena?.id ?? null,
       scientistId: selectedScientist?.id ?? null,
       status: phase === "found" ? "depositing" : null,
@@ -1409,7 +1499,7 @@ export function LobbyScreen() {
       arenaToken: selectedArena?.token ?? null,
       wagerUsd: FIXED_WAGER_USD,
     });
-  }, [walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
+  }, [guestAddress, isGuestMode, walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
 
   return (
     <div
@@ -1722,7 +1812,7 @@ export function LobbyScreen() {
           </div>
         </div>
       )}
-      {!walletConnected && (phase === "waiting" || phase === "found") && (
+      {!walletConnected && !isGuestMode && (phase === "waiting" || phase === "found") && (
         <div className="fixed left-4 top-4 z-[70] w-full max-w-sm md:left-6 md:top-6">
           <div
             className="frame-cut px-3 py-2 shadow-xl backdrop-blur-md"
@@ -1953,6 +2043,8 @@ export function LobbyScreen() {
                 <LobbySetup
                   walletAddress={walletAddr}
                   walletConnected={walletConnected}
+                  guestMode={isGuestMode}
+                  guestAddress={guestAddress || null}
                   arenas={ARENAS}
                   selectedArenaId={selectedArenaId}
                   onSelectArena={setSelectedArenaId}
@@ -1993,6 +2085,8 @@ export function LobbyScreen() {
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
                   walletAddress={walletAddr}
+                  continueLabel={isGuestMode ? "Play With Bot" : "Enter Queue"}
+                  continueBusy={botMatchBusy}
                 />
               </motion.div>
             )}
@@ -2043,6 +2137,7 @@ export function LobbyScreen() {
                   matchRole={matchedRole}
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
+                  isGuest={isGuestMode}
                   onTimeout={() => {
                     // Fully reset matchmaking state — abort any hanging HTTP request,
                     // clear timers, and go back to character-select so the user can

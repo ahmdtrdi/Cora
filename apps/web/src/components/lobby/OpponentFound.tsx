@@ -26,6 +26,7 @@ type OpponentFoundProps = {
   matchRole?: "playerA" | "playerB" | null;
   arena: Arena;
   wagerUsd: string;
+  isGuest?: boolean;
   onTimeout: () => void;
 };
 
@@ -57,6 +58,7 @@ export function OpponentFound({
   matchRole,
   arena,
   wagerUsd,
+  isGuest = false,
   onTimeout,
 }: OpponentFoundProps) {
   const router = useRouter();
@@ -303,6 +305,8 @@ export function OpponentFound({
         address: walletAddress,
         roomId,
         role: effectiveRole ?? null,
+        roomType: isBotMatch ? "bot" : null,
+        isGuest,
         arenaId: arena.id,
         scientistId: myScientist.id,
         status: "playing",
@@ -344,6 +348,7 @@ export function OpponentFound({
     isBattleSnapshotReady,
     effectiveRole,
     isBotMatch,
+    isGuest,
   ]);
 
   useEffect(() => {
@@ -824,6 +829,26 @@ export function OpponentFound({
           </div>
         </div>
       )}
+      {isBotMatch && (
+        <div className="fixed left-1/2 top-6 z-[75] w-full max-w-xl -translate-x-1/2 px-4">
+          <div
+            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(248,214,148,0.55)",
+              background: "linear-gradient(145deg, rgba(13,24,20,0.96) 0%, rgba(25,43,35,0.96) 100%)",
+            }}
+          >
+            <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
+              Practice wallet notice
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+              {isGuest
+                ? "Your guest address and the bot address are generated practice addresses, not real wallets. They only let CORA's ER game state run this match."
+                : "The bot address is generated for practice, not a real wallet. It only lets CORA's ER game state run this match."}
+            </p>
+          </div>
+        </div>
+      )}
       {errorVisible && errorText && (
         <div className="fixed right-4 top-4 z-[70] w-full max-w-sm md:right-6 md:top-6">
           <div
@@ -939,9 +964,11 @@ export function OpponentFound({
       <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
         {isBotMatch ? "Bot Rival Locked" : "Rival Locked"}
       </h1>
-      <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
-        {isBotMatch ? "No deposit needed. Preparing your practice battle." : "Sign the deposit before the timer expires."}
-      </p>
+      {!isBotMatch && (
+        <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+          Sign the deposit before the timer expires.
+        </p>
+      )}
       </div>
 
       <div className="mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
@@ -1125,7 +1152,7 @@ export function OpponentFound({
               ) : null
             }
             walletSlot={
-              !wallet.publicKey ? (
+              !wallet.publicKey && !isGuest ? (
                 <div className="pt-1">
                   <HydratedWalletButton />
                 </div>

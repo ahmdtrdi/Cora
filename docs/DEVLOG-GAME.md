@@ -704,3 +704,48 @@ _Files touched:_ `packages/shared-types/src/websocket.ts`, `packages/game-logic/
 
 - Bot tuning constants are currently server-local. If practice mode becomes a product feature, move bot difficulty profiles into a config surface and expose easy/normal/hard.
 - There is no dedicated API room lifecycle test for bot rooms yet. The current API test suite still has external-service coupling, so an offline RoomManager boundary test should be added once those dependencies are isolated.
+
+---
+
+## 23. Guest Practice Login - Bot-Only Access (2026-05-18)
+
+**The Change:**
+
+_Files touched:_ `apps/web/src/components/lobby/LobbyScreen.tsx`, `apps/web/src/components/lobby/LobbySetup.tsx`, `apps/web/src/components/lobby/CharacterSelect.tsx`, `apps/web/src/components/lobby/OpponentFound.tsx`, `apps/web/src/components/play/BattleScreen.tsx`, `apps/web/src/lib/session/matchSession.ts`
+
+- Added a guest lobby mode that generates a temporary Solana-format public address in the browser and stores it with the local active match session.
+- Guest mode bypasses normal public queue entry and starts only `/match/bot`; wallet, deposit, and Blink flows remain wallet-only.
+- Updated `/play` session gating so a guest can enter only when the local session is marked `isGuest: true` and `roomType: "bot"`.
+- Added top-of-screen practice wallet notices in the bot found handoff and battle screen. Guest copy explains that both the guest address and bot address are generated practice addresses used only for CORA's ER game state.
+
+**The Reasoning:**
+
+- Reusing bot rooms keeps guest practice on the same engine, socket, and ER gameplay path without weakening real wager flows.
+- The guest address is stored only as a local practice identity. It is intentionally not treated as an authenticated wallet and cannot enter public matchmaking or create funded challenges.
+- The play-screen guard is explicit about `isGuest + bot` so a generated address cannot accidentally become a general login method.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- `npm run build --workspace=web`
+
+**Tech Debt:**
+
+- Guest identity is session-local and browser-only. If guest retention becomes important, add a clearer account upgrade path from guest practice to wallet login.
+
+**Follow-up (2026-05-18):**
+
+- Added the guest entry point to `/connect` via `ConnectWalletScreen`, not only the lobby setup screen. The connect page now stores a generated guest address and opens `/lobby?guest=1`, where the lobby initializes directly in guest-practice mode.
+- Updated connect page copy/metadata so Phantom is clearly for wager features while guest mode is bot-only practice.
+
+**Follow-up (2026-05-19):**
+
+- Removed the leftover lobby-level "Play As Guest" CTA and guest-address footer after a user has already entered guest mode from `/connect`.
+- Replaced the lobby footer copy with: "You entered as guest. Please connect your wallet to unlock deposits and all possibilities of CORA."
+- Suppressed wallet-disconnected and wallet-select UI during guest bot setup, since guest play intentionally has no wallet.
+- Removed the duplicate top subtitle from bot match setup; the no-deposit/practice preparation copy remains in the lower status panel.
+
+**Follow-up 2 (2026-05-19):**
+
+- Fixed guest mode persistence after a completed bot match. Returning to `/lobby` now rehydrates guest mode from the stored generated guest address when no wallet is connected.
+- If the user later connects Phantom while not already in a guest match, the lobby switches back to wallet mode so full queue/deposit/Blink flows unlock normally.

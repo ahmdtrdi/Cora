@@ -14,6 +14,8 @@ export type ActiveMatchSession = {
   address?: string | null;
   roomId: string;
   role?: "playerA" | "playerB" | null;
+  roomType?: "public" | "private" | "bot" | null;
+  isGuest?: boolean;
   arenaId?: string | null;
   scientistId?: string | null;
   status?: string | null;
@@ -116,6 +118,11 @@ export function normalizeActiveMatchSession(value: unknown): ActiveMatchSession 
           : null,
     roomId,
     role: snapshot.role === "playerA" || snapshot.role === "playerB" ? snapshot.role : null,
+    roomType:
+      snapshot.roomType === "public" || snapshot.roomType === "private" || snapshot.roomType === "bot"
+        ? snapshot.roomType
+        : null,
+    isGuest: snapshot.isGuest === true,
     arenaId: typeof snapshot.arenaId === "string" ? snapshot.arenaId : null,
     scientistId: typeof snapshot.scientistId === "string" ? snapshot.scientistId : null,
     status: typeof snapshot.status === "string" ? snapshot.status : null,
@@ -170,6 +177,10 @@ export function getMatchSessionAddress(snapshot: ActiveMatchSession | null) {
 export function getMatchSessionToken(snapshot: ActiveMatchSession | null) {
   if (!snapshot) return null;
   return snapshot.token?.trim() || snapshot.arenaToken?.trim() || null;
+}
+
+export function isGuestBotMatchSession(snapshot: ActiveMatchSession | null) {
+  return snapshot?.isGuest === true && snapshot.roomType === "bot";
 }
 
 export function isLiveMatchSession(snapshot: ActiveMatchSession | null) {

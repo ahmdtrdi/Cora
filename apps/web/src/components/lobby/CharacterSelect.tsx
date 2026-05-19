@@ -14,6 +14,8 @@ type CharacterSelectProps = {
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
+  continueLabel?: string;
+  continueBusy?: boolean;
 };
 
 function trimWallet(address: string) {
@@ -32,6 +34,8 @@ export function CharacterSelect({
   arena,
   wagerUsd,
   walletAddress,
+  continueLabel = "Enter Queue",
+  continueBusy = false,
 }: CharacterSelectProps) {
   const characters: CharacterOption[] = scientists.map((scientist) => ({
     ...scientist,
@@ -106,10 +110,10 @@ export function CharacterSelect({
           <button
             type="button"
             onClick={onContinue}
-            disabled={!selected}
-            className={`btn-game btn-game-primary min-w-[172px] px-5 py-2 text-xs shadow-xl ${!selected ? "opacity-50 grayscale" : ""}`}
+            disabled={!selected || continueBusy}
+            className={`btn-game btn-game-primary min-w-[172px] px-5 py-2 text-xs shadow-xl ${!selected || continueBusy ? "opacity-50 grayscale" : ""}`}
           >
-            Enter Queue
+            {continueBusy ? "Starting..." : continueLabel}
           </button>
         </div>
       </div>
