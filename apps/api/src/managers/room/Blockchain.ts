@@ -29,9 +29,19 @@ const REGISTERED_MAX_HEAL_EFFECT_VALUE = Math.min(GAMEPLAY_MAX_HEAL_EFFECT_VALUE
  * Maximum cards per player to pre-commit in the inline manifest.
  * Must be <= 128 (MAX_CARD_SLOTS on-chain).
  */
+const MAX_ER_MANIFEST_CARD_SLOTS = 128;
+const DEFAULT_ER_MANIFEST_CARD_LIMIT = MAX_ER_MANIFEST_CARD_SLOTS;
+const configuredErManifestCardLimit = Number(
+  process.env.CORA_BATTLE_PRE_REGISTER_CARD_LIMIT ?? DEFAULT_ER_MANIFEST_CARD_LIMIT,
+);
 const ER_MANIFEST_CARD_LIMIT = Math.max(
-  5,
-  Math.min(128, Number(process.env.CORA_BATTLE_PRE_REGISTER_CARD_LIMIT ?? 20)),
+  GameEngine.HAND_SIZE,
+  Math.min(
+    MAX_ER_MANIFEST_CARD_SLOTS,
+    Number.isFinite(configuredErManifestCardLimit)
+      ? Math.floor(configuredErManifestCardLimit)
+      : DEFAULT_ER_MANIFEST_CARD_LIMIT,
+  ),
 );
 
 const ER_SETUP_FEE_CUSHION_LAMPORTS = Math.max(

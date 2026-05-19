@@ -60,4 +60,27 @@ describe('questions loader', () => {
     expect(questions.length).toBe(pool.length);
     expect(questions.map((q) => q.id)).toEqual(pool.map((q) => (q as { id: string }).id));
   });
+
+  test('practice pool is unique and separate from competitive questions', () => {
+    const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+    const practiceQuestions = loadPracticeQuestions();
+    const competitivePath = join(import.meta.dir, '..', '..', '..', 'data', 'questions', 'questions.json');
+    const competitiveQuestions = JSON.parse(readFileSync(competitivePath, 'utf-8')) as Array<{ questionText: string }>;
+    const competitiveQuestionTexts = new Set(competitiveQuestions.map((q) => normalize(q.questionText)));
+    const practiceIds = new Set<string>();
+    const practiceQuestionTexts = new Set<string>();
+
+    expect(practiceQuestions).toHaveLength(128);
+
+    for (const question of practiceQuestions) {
+      const normalizedText = normalize(question.questionText);
+
+      expect(practiceIds.has(question.id)).toBe(false);
+      expect(practiceQuestionTexts.has(normalizedText)).toBe(false);
+      expect(competitiveQuestionTexts.has(normalizedText)).toBe(false);
+
+      practiceIds.add(question.id);
+      practiceQuestionTexts.add(normalizedText);
+    }
+  });
 });

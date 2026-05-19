@@ -1,8 +1,1212 @@
 [
   {
-    "id": "q1_0",
+    "id": "q_practice_sequence_001",
+    "category": "sequence",
+    "questionText": "what number comes next after 4, 8, 12, 16, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "18",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "19",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "20",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "24",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 4, so 16 + 4 = 20."
+  },
+  {
+    "id": "q_practice_sequence_002",
+    "category": "sequence",
+    "questionText": "what number comes next after 5, 10, 15, 20, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "25",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "30",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "35",
+        "score": false
+      }
+    ],
+    "explanation": "The numbers go up by 5 each time."
+  },
+  {
+    "id": "q_practice_sequence_003",
+    "category": "sequence",
+    "questionText": "what number comes next after 12, 10, 8, 6, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "2",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "4",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "5",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "8",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 2, so 6 - 2 = 4."
+  },
+  {
+    "id": "q_practice_sequence_004",
+    "category": "sequence",
+    "questionText": "what number comes next after 1, 3, 5, 7, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "8",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "9",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "10",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "11",
+        "score": false
+      }
+    ],
+    "explanation": "These are consecutive odd numbers."
+  },
+  {
+    "id": "q_practice_sequence_005",
+    "category": "sequence",
+    "questionText": "what number comes next after 2, 5, 8, 11, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "13",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "14",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "15",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 3."
+  },
+  {
+    "id": "q_practice_sequence_006",
+    "category": "sequence",
+    "questionText": "what number comes next after 20, 17, 14, 11, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "8",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "9",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "10",
+        "score": false
+      }
+    ],
+    "explanation": "The pattern subtracts 3 each time."
+  },
+  {
+    "id": "q_practice_sequence_007",
+    "category": "sequence",
+    "questionText": "what number comes next after 6, 12, 18, 24, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "28",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "30",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "32",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "36",
+        "score": false
+      }
+    ],
+    "explanation": "Each number increases by 6."
+  },
+  {
+    "id": "q_practice_sequence_008",
+    "category": "sequence",
+    "questionText": "what number comes next after 3, 9, 15, 21, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "25",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "27",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "30",
+        "score": false
+      }
+    ],
+    "explanation": "The sequence adds 6 each time."
+  },
+  {
+    "id": "q_practice_sequence_009",
+    "category": "sequence",
+    "questionText": "what number comes next after 30, 25, 20, 15, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "5",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "10",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "20",
+        "score": false
+      }
+    ],
+    "explanation": "The sequence decreases by 5 each step."
+  },
+  {
+    "id": "q_practice_sequence_010",
+    "category": "sequence",
+    "questionText": "what number comes next after 7, 14, 21, 28, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "32",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "34",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "35",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "42",
+        "score": false
+      }
+    ],
+    "explanation": "These are multiples of 7."
+  },
+  {
+    "id": "q_practice_sequence_011",
+    "category": "sequence",
+    "questionText": "what number comes next after 9, 18, 27, 36, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "42",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "44",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "45",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "54",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 9."
+  },
+  {
+    "id": "q_practice_sequence_012",
+    "category": "sequence",
+    "questionText": "what number comes next after 2, 4, 6, 8, 10, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "11",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "12",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "16",
+        "score": false
+      }
+    ],
+    "explanation": "The sequence counts up by 2."
+  },
+  {
+    "id": "q_practice_sequence_013",
+    "category": "sequence",
+    "questionText": "what number comes next after 11, 22, 33, 44, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "50",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "54",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "55",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "66",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 11."
+  },
+  {
+    "id": "q_practice_sequence_014",
+    "category": "sequence",
+    "questionText": "what number comes next after 1, 2, 4, 8, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "16",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "18",
+        "score": false
+      }
+    ],
+    "explanation": "Each number doubles."
+  },
+  {
+    "id": "q_practice_sequence_015",
+    "category": "sequence",
+    "questionText": "what number comes next after 40, 36, 32, 28, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "22",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "24",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "26",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 4."
+  },
+  {
+    "id": "q_practice_sequence_016",
+    "category": "sequence",
+    "questionText": "what number comes next after 13, 16, 19, 22, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "25",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "26",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "27",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 3."
+  },
+  {
+    "id": "q_practice_sequence_017",
+    "category": "sequence",
+    "questionText": "what number comes next after 4, 9, 14, 19, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "21",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "23",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "24",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "29",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 5."
+  },
+  {
+    "id": "q_practice_sequence_018",
+    "category": "sequence",
+    "questionText": "what number comes next after 50, 45, 40, 35, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "25",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "30",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "32",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "40",
+        "score": false
+      }
+    ],
+    "explanation": "The pattern subtracts 5."
+  },
+  {
+    "id": "q_practice_sequence_019",
+    "category": "sequence",
+    "questionText": "what number comes next after 8, 16, 24, 32, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "36",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "38",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "40",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "48",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 8."
+  },
+  {
+    "id": "q_practice_sequence_020",
+    "category": "sequence",
+    "questionText": "what number comes next after 3, 6, 12, 24, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "36",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "42",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "48",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "54",
+        "score": false
+      }
+    ],
+    "explanation": "Each number is doubled."
+  },
+  {
+    "id": "q_practice_sequence_021",
+    "category": "sequence",
+    "questionText": "what number comes next after 15, 18, 21, 24, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "26",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "27",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "28",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "30",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 3."
+  },
+  {
+    "id": "q_practice_sequence_022",
+    "category": "sequence",
+    "questionText": "what number comes next after 100, 90, 80, 70, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "50",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "60",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "65",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "80",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 10."
+  },
+  {
+    "id": "q_practice_sequence_023",
+    "category": "sequence",
+    "questionText": "what number comes next after 6, 7, 9, 12, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "15",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "16",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "18",
+        "score": false
+      }
+    ],
+    "explanation": "The increases are +1, +2, +3, so the next increase is +4."
+  },
+  {
+    "id": "q_practice_sequence_024",
+    "category": "sequence",
+    "questionText": "what number comes next after 10, 12, 15, 19, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "22",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "23",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "24",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "25",
+        "score": false
+      }
+    ],
+    "explanation": "The increases are +2, +3, +4, then +5."
+  },
+  {
+    "id": "q_practice_sequence_025",
+    "category": "sequence",
+    "questionText": "what number comes next after 1, 4, 7, 10, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "13",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "16",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 3."
+  },
+  {
+    "id": "q_practice_sequence_026",
+    "category": "sequence",
+    "questionText": "what number comes next after 18, 15, 12, 9, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "3",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "5",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "6",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "7",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 3."
+  },
+  {
+    "id": "q_practice_sequence_027",
+    "category": "sequence",
+    "questionText": "what number comes next after 5, 15, 25, 35, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "40",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "45",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "50",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "55",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 10."
+  },
+  {
+    "id": "q_practice_sequence_028",
+    "category": "sequence",
+    "questionText": "what number comes next after 2, 6, 10, 14, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "16",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "18",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "24",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 4."
+  },
+  {
+    "id": "q_practice_sequence_029",
+    "category": "sequence",
+    "questionText": "what number comes next after 12, 24, 36, 48, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "54",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "60",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "66",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "72",
+        "score": false
+      }
+    ],
+    "explanation": "These are multiples of 12."
+  },
+  {
+    "id": "q_practice_sequence_030",
+    "category": "sequence",
+    "questionText": "what number comes next after 25, 30, 35, 40, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "42",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "44",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "45",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "50",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 5."
+  },
+  {
+    "id": "q_practice_sequence_031",
+    "category": "sequence",
+    "questionText": "what number comes next after 1, 5, 9, 13, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "15",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "16",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "17",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "18",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 4."
+  },
+  {
+    "id": "q_practice_sequence_032",
+    "category": "sequence",
+    "questionText": "what number comes next after 16, 14, 12, 10, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "6",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "8",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "12",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 2."
+  },
+  {
+    "id": "q_practice_sequence_033",
+    "category": "sequence",
+    "questionText": "what number comes next after 2, 3, 5, 8, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "10",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "11",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "12",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "13",
+        "score": false
+      }
+    ],
+    "explanation": "The increases are +1, +2, +3, so the next increase is +4."
+  },
+  {
+    "id": "q_practice_sequence_034",
+    "category": "sequence",
+    "questionText": "what number comes next after 21, 24, 27, 30, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "31",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "32",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "33",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "36",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 3."
+  },
+  {
+    "id": "q_practice_sequence_035",
+    "category": "sequence",
+    "questionText": "what number comes next after 64, 32, 16, 8, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "2",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "4",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "6",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "8",
+        "score": false
+      }
+    ],
+    "explanation": "Each number is divided by 2."
+  },
+  {
+    "id": "q_practice_sequence_036",
+    "category": "sequence",
+    "questionText": "what number comes next after 9, 11, 13, 15, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "16",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "17",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "18",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "19",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 2."
+  },
+  {
+    "id": "q_practice_sequence_037",
+    "category": "sequence",
+    "questionText": "what number comes next after 14, 21, 28, 35, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "40",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "41",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "42",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "49",
+        "score": false
+      }
+    ],
+    "explanation": "These are multiples of 7."
+  },
+  {
+    "id": "q_practice_sequence_038",
+    "category": "sequence",
+    "questionText": "what number comes next after 4, 6, 10, 16, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "22",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "24",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "26",
+        "score": false
+      }
+    ],
+    "explanation": "The increases are +2, +4, +6, so the next increase is +8."
+  },
+  {
+    "id": "q_practice_sequence_039",
+    "category": "sequence",
+    "questionText": "what number comes next after 45, 40, 35, 30, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "25",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "27",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "35",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 5."
+  },
+  {
+    "id": "q_practice_sequence_040",
+    "category": "sequence",
+    "questionText": "what number comes next after 3, 12, 21, 30, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "36",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "38",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "39",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "42",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 9."
+  },
+  {
+    "id": "q_practice_sequence_041",
+    "category": "sequence",
+    "questionText": "what number comes next after 1, 10, 19, 28, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "34",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "36",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "37",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "40",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 9."
+  },
+  {
+    "id": "q_practice_sequence_042",
+    "category": "sequence",
+    "questionText": "what number comes next after 2, 8, 14, 20, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "25",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "26",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "28",
+        "score": false
+      }
+    ],
+    "explanation": "Each step adds 6."
+  },
+  {
+    "id": "q_practice_sequence_043",
+    "category": "sequence",
+    "questionText": "what number comes next after 80, 70, 60, 50, ...?",
+    "options": [
+      {
+        "id": "A",
+        "text": "30",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "35",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "40",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "45",
+        "score": false
+      }
+    ],
+    "explanation": "Each step subtracts 10."
+  },
+  {
+    "id": "q_practice_logical_001",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "All blue tickets are valid. Mia has a blue ticket. Is Mia's ticket valid?",
     "options": [
       {
         "id": "A",
@@ -16,49 +1220,301 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only on weekends",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "If every blue ticket is valid and Mia has one, her ticket is valid."
   },
   {
-    "id": "q2_0",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_002",
+    "category": "logical",
+    "questionText": "Every square has four sides. This shape is a square. How many sides does it have?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "3",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "4",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "5",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be known",
+        "score": false
+      }
+    ],
+    "explanation": "A square always has four sides."
+  },
+  {
+    "id": "q_practice_logical_003",
+    "category": "logical",
+    "questionText": "If it rains, Lina carries an umbrella. It is raining. What should Lina carry?",
+    "options": [
+      {
+        "id": "A",
+        "text": "A hat",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "An umbrella",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "A book",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Nothing",
+        "score": false
+      }
+    ],
+    "explanation": "The condition says rain leads to carrying an umbrella."
+  },
+  {
+    "id": "q_practice_logical_004",
+    "category": "logical",
+    "questionText": "No cats in the shelter are dogs. Pixel is a cat in the shelter. Is Pixel a dog?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Sometimes",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "A cat in that shelter cannot be a dog."
+  },
+  {
+    "id": "q_practice_logical_005",
+    "category": "logical",
+    "questionText": "All apples in the basket are red. Sam picks an apple from the basket. What color is it?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Green",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "Yellow",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "Red",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "Blue",
+        "score": false
+      }
+    ],
+    "explanation": "Every apple in the basket is red."
+  },
+  {
+    "id": "q_practice_logical_006",
+    "category": "logical",
+    "questionText": "If a card is gold, it gives bonus points. This card is gold. What does it give?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Bonus points",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "No points",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "A penalty",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "A new card",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "The stated rule applies to gold cards."
   },
   {
-    "id": "q1_1",
+    "id": "q_practice_logical_007",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "Every team member wears a badge. Rafi is a team member. What must Rafi wear?",
+    "options": [
+      {
+        "id": "A",
+        "text": "A badge",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "A helmet",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "A scarf",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Nothing",
+        "score": false
+      }
+    ],
+    "explanation": "Team membership guarantees wearing a badge."
+  },
+  {
+    "id": "q_practice_logical_008",
+    "category": "logical",
+    "questionText": "No expired coupons work. This coupon is expired. Will it work?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Only online",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "Expired coupons are stated not to work."
+  },
+  {
+    "id": "q_practice_logical_009",
+    "category": "logical",
+    "questionText": "If the switch is on, the lamp glows. The switch is on. What happens to the lamp?",
+    "options": [
+      {
+        "id": "A",
+        "text": "It glows",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "It breaks",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "It moves",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "It disappears",
+        "score": false
+      }
+    ],
+    "explanation": "The rule says an on switch makes the lamp glow."
+  },
+  {
+    "id": "q_practice_logical_010",
+    "category": "logical",
+    "questionText": "All library books have labels. This item is a library book. What does it have?",
+    "options": [
+      {
+        "id": "A",
+        "text": "A label",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "A lock",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "A battery",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "A ticket",
+        "score": false
+      }
+    ],
+    "explanation": "All items in that group have labels."
+  },
+  {
+    "id": "q_practice_logical_011",
+    "category": "logical",
+    "questionText": "Every bird in the picture is white. A bird from the picture is selected. What color is it?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Black",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "Blue",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "White",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "Green",
+        "score": false
+      }
+    ],
+    "explanation": "The selected bird comes from a group where every bird is white."
+  },
+  {
+    "id": "q_practice_logical_012",
+    "category": "logical",
+    "questionText": "If Nia finishes homework, she can play. Nia finished homework. Can she play?",
     "options": [
       {
         "id": "A",
@@ -72,49 +1528,49 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only tomorrow",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "The condition for playing has been met."
   },
   {
-    "id": "q2_1",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_013",
+    "category": "logical",
+    "questionText": "No closed store accepts customers. The store is closed. Does it accept customers?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "$0.10",
+        "text": "Yes",
         "score": false
       },
       {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
         "id": "C",
-        "text": "$0.15",
+        "text": "Only one customer",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "Closed stores are stated not to accept customers."
   },
   {
-    "id": "q1_2",
+    "id": "q_practice_logical_014",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "All even numbers are divisible by 2. 18 is even. Is 18 divisible by 2?",
     "options": [
       {
         "id": "A",
@@ -128,49 +1584,49 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only if positive",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "18 belongs to the group of even numbers."
   },
   {
-    "id": "q2_2",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_015",
+    "category": "logical",
+    "questionText": "If a password is correct, the door opens. The password is correct. What happens?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
+        "text": "The door opens",
         "score": true
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "The door locks",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "The lights turn off",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Nothing follows",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "The rule directly connects a correct password to opening the door."
   },
   {
-    "id": "q1_3",
+    "id": "q_practice_logical_016",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "Every pencil in the box is sharp. Tia takes a pencil from the box. Is it sharp?",
     "options": [
       {
         "id": "A",
@@ -184,49 +1640,77 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only if blue",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "All pencils in the box are sharp."
   },
   {
-    "id": "q2_3",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_017",
+    "category": "logical",
+    "questionText": "No plastic cups are made of glass. This cup is plastic. Is it made of glass?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Both",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "Plastic cups are excluded from being glass in the statement."
+  },
+  {
+    "id": "q_practice_logical_018",
+    "category": "logical",
+    "questionText": "If a player scores 10 points, they earn a star. A player scores 10 points. What do they earn?",
+    "options": [
+      {
+        "id": "A",
+        "text": "A star",
         "score": true
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "A coin",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "A warning",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Nothing",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "The score meets the rule for earning a star."
   },
   {
-    "id": "q1_4",
+    "id": "q_practice_logical_019",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "All morning classes start before noon. This is a morning class. Does it start before noon?",
     "options": [
       {
         "id": "A",
@@ -240,49 +1724,105 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only on Monday",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "Morning classes are defined here as starting before noon."
   },
   {
-    "id": "q2_4",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_020",
+    "category": "logical",
+    "questionText": "If the cup is full, no more water fits. The cup is full. Can more water fit?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "$0.10",
+        "text": "Yes",
         "score": false
       },
       {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
         "id": "C",
-        "text": "$0.15",
+        "text": "Only cold water",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "The statement says a full cup cannot fit more water."
   },
   {
-    "id": "q1_5",
+    "id": "q_practice_logical_021",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "Every triangle has three corners. This shape is a triangle. How many corners does it have?",
+    "options": [
+      {
+        "id": "A",
+        "text": "2",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "3",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "4",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "5",
+        "score": false
+      }
+    ],
+    "explanation": "A triangle has three corners."
+  },
+  {
+    "id": "q_practice_logical_022",
+    "category": "logical",
+    "questionText": "No silent alarm makes a sound. This alarm is silent. Does it make a sound?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Only once",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "Silent alarms are stated not to make a sound."
+  },
+  {
+    "id": "q_practice_logical_023",
+    "category": "logical",
+    "questionText": "If a number ends in 0, it is divisible by 10. 40 ends in 0. Is 40 divisible by 10?",
     "options": [
       {
         "id": "A",
@@ -296,49 +1836,161 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only if small",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "The number matches the stated divisibility rule."
   },
   {
-    "id": "q2_5",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_024",
+    "category": "logical",
+    "questionText": "All clean plates are on the rack. This plate is clean. Where is it?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
+        "text": "On the rack",
         "score": true
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "In the oven",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "Under the table",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Outside",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "Every clean plate is on the rack."
   },
   {
-    "id": "q1_6",
+    "id": "q_practice_logical_025",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "If the light is green, cars may go. The light is green. What may cars do?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Stop forever",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "Go",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Turn into bikes",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Wait all day",
+        "score": false
+      }
+    ],
+    "explanation": "The rule says green means cars may go."
+  },
+  {
+    "id": "q_practice_logical_026",
+    "category": "logical",
+    "questionText": "Every checked bag has a tag. This bag is checked. What does it have?",
+    "options": [
+      {
+        "id": "A",
+        "text": "A tag",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "A map",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "A snack",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "A lock only",
+        "score": false
+      }
+    ],
+    "explanation": "Checked bags are stated to have tags."
+  },
+  {
+    "id": "q_practice_logical_027",
+    "category": "logical",
+    "questionText": "No empty box contains toys. This box is empty. Does it contain toys?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Only small toys",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "An empty box contains no toys."
+  },
+  {
+    "id": "q_practice_logical_028",
+    "category": "logical",
+    "questionText": "If the timer reaches zero, the round ends. The timer reaches zero. What happens?",
+    "options": [
+      {
+        "id": "A",
+        "text": "The round ends",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "The round restarts",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "Cards double",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Nothing",
+        "score": false
+      }
+    ],
+    "explanation": "The rule directly states the round ends."
+  },
+  {
+    "id": "q_practice_logical_029",
+    "category": "logical",
+    "questionText": "All students in the club signed up. Joko is in the club. Did Joko sign up?",
     "options": [
       {
         "id": "A",
@@ -352,49 +2004,161 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only online",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "Every club student signed up."
   },
   {
-    "id": "q2_6",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_030",
+    "category": "logical",
+    "questionText": "No cold soup is hot. This soup is cold. Is it hot?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Both at once",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "The statement rules out cold soup being hot."
+  },
+  {
+    "id": "q_practice_logical_031",
+    "category": "logical",
+    "questionText": "If a route is blocked, drivers must detour. The route is blocked. What must drivers do?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Detour",
         "score": true
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "Speed up",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "Park",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Ignore it",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "Blocked route implies detour."
   },
   {
-    "id": "q1_7",
+    "id": "q_practice_logical_032",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "Every saved file has a name. This file is saved. What does it have?",
+    "options": [
+      {
+        "id": "A",
+        "text": "A name",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "A password",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "A picture",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "A score",
+        "score": false
+      }
+    ],
+    "explanation": "Saved files are stated to have names."
+  },
+  {
+    "id": "q_practice_logical_033",
+    "category": "logical",
+    "questionText": "No square is a circle. This shape is a square. Is it a circle?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Only if small",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "A square cannot be a circle under the statement."
+  },
+  {
+    "id": "q_practice_logical_034",
+    "category": "logical",
+    "questionText": "If a plant gets water, it can grow. The plant gets water. What can it do?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Grow",
+        "score": true
+      },
+      {
+        "id": "B",
+        "text": "Turn into stone",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "Shrink only",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Vanish",
+        "score": false
+      }
+    ],
+    "explanation": "Water satisfies the condition for growth."
+  },
+  {
+    "id": "q_practice_logical_035",
+    "category": "logical",
+    "questionText": "All recipe steps are numbered. This is a recipe step. Is it numbered?",
     "options": [
       {
         "id": "A",
@@ -408,49 +2172,105 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only the first one",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "Every step in the group is numbered."
   },
   {
-    "id": "q2_7",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_036",
+    "category": "logical",
+    "questionText": "No locked chest is open. This chest is locked. Is it open?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Half open",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "Locked chests are stated not to be open."
+  },
+  {
+    "id": "q_practice_logical_037",
+    "category": "logical",
+    "questionText": "If a message is unread, it appears bold. This message is unread. How does it appear?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Bold",
         "score": true
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "Hidden",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "Red only",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Deleted",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "Unread messages are stated to appear bold."
   },
   {
-    "id": "q1_8",
+    "id": "q_practice_logical_038",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "Every weekend day is not a school day in this rule. Saturday is a weekend day. Is Saturday a school day here?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Yes",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "Only morning",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "Cannot be determined",
+        "score": false
+      }
+    ],
+    "explanation": "The rule says weekend days are not school days."
+  },
+  {
+    "id": "q_practice_logical_039",
+    "category": "logical",
+    "questionText": "All clean towels are folded. This towel is clean. Is it folded?",
     "options": [
       {
         "id": "A",
@@ -464,49 +2284,49 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only if dry",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "Every clean towel is folded."
   },
   {
-    "id": "q2_8",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_040",
+    "category": "logical",
+    "questionText": "No offline game needs the internet. This game is offline. Does it need the internet?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "$0.10",
+        "text": "Yes",
         "score": false
       },
       {
+        "id": "B",
+        "text": "No",
+        "score": true
+      },
+      {
         "id": "C",
-        "text": "$0.15",
+        "text": "Only at night",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "Offline games are stated not to need the internet."
   },
   {
-    "id": "q1_9",
+    "id": "q_practice_logical_041",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "If the gate is open, visitors can enter. The gate is open. Can visitors enter?",
     "options": [
       {
         "id": "A",
@@ -520,603 +2340,1247 @@
       },
       {
         "id": "C",
-        "text": "Cannot be determined",
+        "text": "Only staff",
         "score": false
       },
       {
         "id": "D",
-        "text": "Maybe",
+        "text": "Cannot be determined",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "The open gate meets the condition for entry."
   },
   {
-    "id": "q2_9",
-    "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "id": "q_practice_logical_042",
+    "category": "logical",
+    "questionText": "Every valid receipt shows a date. This receipt is valid. What does it show?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
+        "text": "A date",
         "score": true
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "A drawing",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "A password",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "A map",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "All valid receipts show dates."
   },
   {
-    "id": "q1_10",
+    "id": "q_practice_logical_043",
     "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
+    "questionText": "No broken clock keeps correct time. This clock is broken. Does it keep correct time?",
     "options": [
       {
         "id": "A",
         "text": "Yes",
-        "score": true
+        "score": false
       },
       {
         "id": "B",
         "text": "No",
-        "score": false
+        "score": true
       },
       {
         "id": "C",
+        "text": "Only twice",
+        "score": false
+      },
+      {
+        "id": "D",
         "text": "Cannot be determined",
         "score": false
-      },
-      {
-        "id": "D",
-        "text": "Maybe",
-        "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "The statement says broken clocks do not keep correct time."
   },
   {
-    "id": "q2_10",
+    "id": "q_practice_math_001",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is 7 + 5?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "10",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "11",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "$0.95",
-        "score": false
-      }
-    ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
-  },
-  {
-    "id": "q1_11",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
+        "text": "12",
         "score": true
       },
       {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
         "id": "D",
-        "text": "Maybe",
+        "text": "13",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "7 plus 5 equals 12."
   },
   {
-    "id": "q2_11",
+    "id": "q_practice_math_002",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is 14 - 6?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "6",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "7",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "$0.95",
-        "score": false
-      }
-    ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
-  },
-  {
-    "id": "q1_12",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
+        "text": "8",
         "score": true
       },
       {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
         "id": "D",
-        "text": "Maybe",
+        "text": "9",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "14 minus 6 equals 8."
   },
   {
-    "id": "q2_12",
+    "id": "q_practice_math_003",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is 3 x 4?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "7",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "10",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "$0.95",
-        "score": false
-      }
-    ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
-  },
-  {
-    "id": "q1_13",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
+        "text": "12",
         "score": true
       },
       {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
         "id": "D",
-        "text": "Maybe",
+        "text": "16",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "3 groups of 4 make 12."
   },
   {
-    "id": "q2_13",
+    "id": "q_practice_math_004",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is 24 divided by 6?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "$0.10",
+        "text": "3",
         "score": false
       },
       {
+        "id": "B",
+        "text": "4",
+        "score": true
+      },
+      {
         "id": "C",
-        "text": "$0.15",
+        "text": "5",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "6",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "24 / 6 = 4."
   },
   {
-    "id": "q1_14",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "Maybe",
-        "score": false
-      }
-    ],
-    "explanation": "Transitive property."
-  },
-  {
-    "id": "q2_14",
+    "id": "q_practice_math_005",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "A box has 5 red balls and 3 blue balls. How many balls are there?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "$0.10",
+        "text": "7",
         "score": false
       },
       {
+        "id": "B",
+        "text": "8",
+        "score": true
+      },
+      {
         "id": "C",
-        "text": "$0.15",
+        "text": "9",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "10",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "5 + 3 = 8."
   },
   {
-    "id": "q1_15",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "Maybe",
-        "score": false
-      }
-    ],
-    "explanation": "Transitive property."
-  },
-  {
-    "id": "q2_15",
+    "id": "q_practice_math_006",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "Mira has 10 coins and spends 4. How many coins remain?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "$0.10",
+        "text": "5",
         "score": false
       },
       {
+        "id": "B",
+        "text": "6",
+        "score": true
+      },
+      {
         "id": "C",
-        "text": "$0.15",
+        "text": "7",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "8",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "10 - 4 = 6."
   },
   {
-    "id": "q1_16",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
-        "score": true
-      },
-      {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "Maybe",
-        "score": false
-      }
-    ],
-    "explanation": "Transitive property."
-  },
-  {
-    "id": "q2_16",
+    "id": "q_practice_math_007",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is half of 18?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "6",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "8",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "$0.95",
-        "score": false
-      }
-    ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
-  },
-  {
-    "id": "q1_17",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
+        "text": "9",
         "score": true
       },
       {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
         "id": "D",
-        "text": "Maybe",
+        "text": "12",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "Half means divide by 2, and 18 / 2 = 9."
   },
   {
-    "id": "q2_17",
+    "id": "q_practice_math_008",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is double 11?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "20",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "21",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "$0.95",
-        "score": false
-      }
-    ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
-  },
-  {
-    "id": "q1_18",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
+        "text": "22",
         "score": true
       },
       {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
         "id": "D",
-        "text": "Maybe",
+        "text": "24",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "Double 11 is 22."
   },
   {
-    "id": "q2_18",
+    "id": "q_practice_math_009",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is 9 + 8?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "15",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "16",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
-        "score": false
-      },
-      {
-        "id": "D",
-        "text": "$0.95",
-        "score": false
-      }
-    ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
-  },
-  {
-    "id": "q1_19",
-    "category": "logical",
-    "questionText": "If all bloops are razzies and all razzies are lazzies, are all bloops lazzies?",
-    "options": [
-      {
-        "id": "A",
-        "text": "Yes",
+        "text": "17",
         "score": true
       },
       {
-        "id": "B",
-        "text": "No",
-        "score": false
-      },
-      {
-        "id": "C",
-        "text": "Cannot be determined",
-        "score": false
-      },
-      {
         "id": "D",
-        "text": "Maybe",
+        "text": "18",
         "score": false
       }
     ],
-    "explanation": "Transitive property."
+    "explanation": "9 + 8 = 17."
   },
   {
-    "id": "q2_19",
+    "id": "q_practice_math_010",
     "category": "math",
-    "questionText": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
+    "questionText": "What is 20 - 7?",
     "options": [
       {
         "id": "A",
-        "text": "$0.05",
-        "score": true
+        "text": "11",
+        "score": false
       },
       {
         "id": "B",
-        "text": "$0.10",
+        "text": "12",
         "score": false
       },
       {
         "id": "C",
-        "text": "$0.15",
+        "text": "13",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "14",
+        "score": false
+      }
+    ],
+    "explanation": "20 - 7 = 13."
+  },
+  {
+    "id": "q_practice_math_011",
+    "category": "math",
+    "questionText": "What is 5 x 5?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "25",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "30",
+        "score": false
+      }
+    ],
+    "explanation": "5 times 5 equals 25."
+  },
+  {
+    "id": "q_practice_math_012",
+    "category": "math",
+    "questionText": "What is 36 divided by 9?",
+    "options": [
+      {
+        "id": "A",
+        "text": "3",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "4",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "5",
         "score": false
       },
       {
         "id": "D",
-        "text": "$0.95",
+        "text": "6",
         "score": false
       }
     ],
-    "explanation": "If ball is $0.05, bat is $1.05. Total $1.10."
+    "explanation": "36 / 9 = 4."
+  },
+  {
+    "id": "q_practice_math_013",
+    "category": "math",
+    "questionText": "A pen costs 4 tokens. How many tokens for 3 pens?",
+    "options": [
+      {
+        "id": "A",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "10",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "12",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "16",
+        "score": false
+      }
+    ],
+    "explanation": "3 pens cost 3 x 4 = 12 tokens."
+  },
+  {
+    "id": "q_practice_math_014",
+    "category": "math",
+    "questionText": "There are 12 slices of pizza and 4 friends share them equally. How many slices each?",
+    "options": [
+      {
+        "id": "A",
+        "text": "2",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "3",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "4",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "6",
+        "score": false
+      }
+    ],
+    "explanation": "12 divided by 4 friends is 3 slices each."
+  },
+  {
+    "id": "q_practice_math_015",
+    "category": "math",
+    "questionText": "What is 15 + 9?",
+    "options": [
+      {
+        "id": "A",
+        "text": "22",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "23",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "24",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "25",
+        "score": false
+      }
+    ],
+    "explanation": "15 + 9 = 24."
+  },
+  {
+    "id": "q_practice_math_016",
+    "category": "math",
+    "questionText": "What is 30 - 12?",
+    "options": [
+      {
+        "id": "A",
+        "text": "16",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "17",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "18",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "20",
+        "score": false
+      }
+    ],
+    "explanation": "30 - 12 = 18."
+  },
+  {
+    "id": "q_practice_math_017",
+    "category": "math",
+    "questionText": "What is 6 x 3?",
+    "options": [
+      {
+        "id": "A",
+        "text": "15",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "18",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "21",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "24",
+        "score": false
+      }
+    ],
+    "explanation": "6 times 3 equals 18."
+  },
+  {
+    "id": "q_practice_math_018",
+    "category": "math",
+    "questionText": "What is 40 divided by 8?",
+    "options": [
+      {
+        "id": "A",
+        "text": "4",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "5",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "6",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "8",
+        "score": false
+      }
+    ],
+    "explanation": "40 / 8 = 5."
+  },
+  {
+    "id": "q_practice_math_019",
+    "category": "math",
+    "questionText": "A player scores 6 points in round one and 7 in round two. What is the total?",
+    "options": [
+      {
+        "id": "A",
+        "text": "11",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "13",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "14",
+        "score": false
+      }
+    ],
+    "explanation": "6 + 7 = 13."
+  },
+  {
+    "id": "q_practice_math_020",
+    "category": "math",
+    "questionText": "A jar has 16 candies. 5 are eaten. How many are left?",
+    "options": [
+      {
+        "id": "A",
+        "text": "9",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "10",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "11",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "12",
+        "score": false
+      }
+    ],
+    "explanation": "16 - 5 = 11."
+  },
+  {
+    "id": "q_practice_math_021",
+    "category": "math",
+    "questionText": "What is 25 + 5?",
+    "options": [
+      {
+        "id": "A",
+        "text": "28",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "29",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "30",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "35",
+        "score": false
+      }
+    ],
+    "explanation": "25 + 5 = 30."
+  },
+  {
+    "id": "q_practice_math_022",
+    "category": "math",
+    "questionText": "What is 18 - 9?",
+    "options": [
+      {
+        "id": "A",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "8",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "9",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "10",
+        "score": false
+      }
+    ],
+    "explanation": "18 - 9 = 9."
+  },
+  {
+    "id": "q_practice_math_023",
+    "category": "math",
+    "questionText": "What is 4 x 7?",
+    "options": [
+      {
+        "id": "A",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "26",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "28",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "32",
+        "score": false
+      }
+    ],
+    "explanation": "4 times 7 equals 28."
+  },
+  {
+    "id": "q_practice_math_024",
+    "category": "math",
+    "questionText": "What is 45 divided by 5?",
+    "options": [
+      {
+        "id": "A",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "8",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "9",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "10",
+        "score": false
+      }
+    ],
+    "explanation": "45 / 5 = 9."
+  },
+  {
+    "id": "q_practice_math_025",
+    "category": "math",
+    "questionText": "A pack has 4 cards. How many cards are in 6 packs?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "22",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "24",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "26",
+        "score": false
+      }
+    ],
+    "explanation": "6 packs of 4 cards make 24 cards."
+  },
+  {
+    "id": "q_practice_math_026",
+    "category": "math",
+    "questionText": "Rani reads 8 pages on Monday and 8 on Tuesday. How many pages total?",
+    "options": [
+      {
+        "id": "A",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "15",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "16",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "18",
+        "score": false
+      }
+    ],
+    "explanation": "8 + 8 = 16."
+  },
+  {
+    "id": "q_practice_math_027",
+    "category": "math",
+    "questionText": "What is 50 - 20?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "25",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "30",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "35",
+        "score": false
+      }
+    ],
+    "explanation": "50 - 20 = 30."
+  },
+  {
+    "id": "q_practice_math_028",
+    "category": "math",
+    "questionText": "What is 12 + 13?",
+    "options": [
+      {
+        "id": "A",
+        "text": "23",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "25",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "26",
+        "score": false
+      }
+    ],
+    "explanation": "12 + 13 = 25."
+  },
+  {
+    "id": "q_practice_math_029",
+    "category": "math",
+    "questionText": "What is 8 x 2?",
+    "options": [
+      {
+        "id": "A",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "15",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "16",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "18",
+        "score": false
+      }
+    ],
+    "explanation": "8 times 2 equals 16."
+  },
+  {
+    "id": "q_practice_math_030",
+    "category": "math",
+    "questionText": "What is 27 divided by 3?",
+    "options": [
+      {
+        "id": "A",
+        "text": "6",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "8",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "9",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "12",
+        "score": false
+      }
+    ],
+    "explanation": "27 / 3 = 9."
+  },
+  {
+    "id": "q_practice_math_031",
+    "category": "math",
+    "questionText": "A ticket costs 9 coins. How much for 2 tickets?",
+    "options": [
+      {
+        "id": "A",
+        "text": "16",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "17",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "18",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "20",
+        "score": false
+      }
+    ],
+    "explanation": "2 tickets cost 2 x 9 = 18 coins."
+  },
+  {
+    "id": "q_practice_math_032",
+    "category": "math",
+    "questionText": "There are 21 markers split equally into 7 cups. How many markers per cup?",
+    "options": [
+      {
+        "id": "A",
+        "text": "2",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "3",
+        "score": true
+      },
+      {
+        "id": "C",
+        "text": "4",
+        "score": false
+      },
+      {
+        "id": "D",
+        "text": "7",
+        "score": false
+      }
+    ],
+    "explanation": "21 divided by 7 is 3."
+  },
+  {
+    "id": "q_practice_math_033",
+    "category": "math",
+    "questionText": "What is 19 + 6?",
+    "options": [
+      {
+        "id": "A",
+        "text": "23",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "25",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "26",
+        "score": false
+      }
+    ],
+    "explanation": "19 + 6 = 25."
+  },
+  {
+    "id": "q_practice_math_034",
+    "category": "math",
+    "questionText": "What is 28 - 14?",
+    "options": [
+      {
+        "id": "A",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "13",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "14",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "15",
+        "score": false
+      }
+    ],
+    "explanation": "28 - 14 = 14."
+  },
+  {
+    "id": "q_practice_math_035",
+    "category": "math",
+    "questionText": "What is 7 x 3?",
+    "options": [
+      {
+        "id": "A",
+        "text": "18",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "21",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "24",
+        "score": false
+      }
+    ],
+    "explanation": "7 times 3 equals 21."
+  },
+  {
+    "id": "q_practice_math_036",
+    "category": "math",
+    "questionText": "What is 32 divided by 4?",
+    "options": [
+      {
+        "id": "A",
+        "text": "6",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "8",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "9",
+        "score": false
+      }
+    ],
+    "explanation": "32 / 4 = 8."
+  },
+  {
+    "id": "q_practice_math_037",
+    "category": "math",
+    "questionText": "A team wins 3 stars per level. How many stars after 5 levels?",
+    "options": [
+      {
+        "id": "A",
+        "text": "12",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "14",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "15",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "18",
+        "score": false
+      }
+    ],
+    "explanation": "5 levels at 3 stars each gives 15 stars."
+  },
+  {
+    "id": "q_practice_math_038",
+    "category": "math",
+    "questionText": "Dewi has 22 stickers and gives away 10. How many remain?",
+    "options": [
+      {
+        "id": "A",
+        "text": "10",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "11",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "12",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "13",
+        "score": false
+      }
+    ],
+    "explanation": "22 - 10 = 12."
+  },
+  {
+    "id": "q_practice_math_039",
+    "category": "math",
+    "questionText": "What is 11 + 11?",
+    "options": [
+      {
+        "id": "A",
+        "text": "20",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "21",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "22",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "23",
+        "score": false
+      }
+    ],
+    "explanation": "11 + 11 = 22."
+  },
+  {
+    "id": "q_practice_math_040",
+    "category": "math",
+    "questionText": "What is 35 - 15?",
+    "options": [
+      {
+        "id": "A",
+        "text": "15",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "18",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "20",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "25",
+        "score": false
+      }
+    ],
+    "explanation": "35 - 15 = 20."
+  },
+  {
+    "id": "q_practice_math_041",
+    "category": "math",
+    "questionText": "What is 9 x 3?",
+    "options": [
+      {
+        "id": "A",
+        "text": "24",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "26",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "27",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "30",
+        "score": false
+      }
+    ],
+    "explanation": "9 times 3 equals 27."
+  },
+  {
+    "id": "q_practice_math_042",
+    "category": "math",
+    "questionText": "What is 48 divided by 6?",
+    "options": [
+      {
+        "id": "A",
+        "text": "6",
+        "score": false
+      },
+      {
+        "id": "B",
+        "text": "7",
+        "score": false
+      },
+      {
+        "id": "C",
+        "text": "8",
+        "score": true
+      },
+      {
+        "id": "D",
+        "text": "9",
+        "score": false
+      }
+    ],
+    "explanation": "48 / 6 = 8."
   }
 ]
