@@ -14,6 +14,7 @@ type CharacterSelectProps = {
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
+  isGuest?: boolean;
   continueLabel?: string;
   continueBusy?: boolean;
 };
@@ -34,12 +35,14 @@ export function CharacterSelect({
   arena,
   wagerUsd,
   walletAddress,
+  isGuest = false,
   continueLabel = "Enter Queue",
   continueBusy = false,
 }: CharacterSelectProps) {
   const characters: CharacterOption[] = scientists.map((scientist) => ({
     ...scientist,
   }));
+  const walletLabel = isGuest ? `Guest ${trimWallet(walletAddress)}` : trimWallet(walletAddress);
 
   return (
     <RoomPhaseShell
@@ -65,7 +68,7 @@ export function CharacterSelect({
             className="frame-cut frame-cut-sm px-3 py-1.5 font-mono text-[11px] font-semibold tracking-wide text-[var(--tone-cream)] shadow-sm"
             style={{ border: "2px solid var(--tone-bark)", background: "var(--tone-forest)" }}
           >
-            {trimWallet(walletAddress)}
+            {walletLabel}
           </span>
         </div>
       }

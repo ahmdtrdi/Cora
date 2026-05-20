@@ -119,6 +119,16 @@ function shortenAddress(address?: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function playerIdentityLabel(address: string | undefined, isGuest: boolean) {
+  const shortAddress = shortenAddress(address);
+  return isGuest && shortAddress !== "Unknown" ? `Guest ${shortAddress}` : shortAddress;
+}
+
+function rivalIdentityLabel(address: string | undefined, isBot: boolean) {
+  const shortAddress = shortenAddress(address);
+  return isBot && shortAddress !== "Unknown" ? `Bot ${shortAddress}` : shortAddress;
+}
+
 function formatMatchClock(remainingMs?: number) {
   if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
     return "03:00";
@@ -751,10 +761,10 @@ export function BattleScreen() {
             : winnerAddress
               ? winnerAddress === address
                 ? isBotMatch
-                  ? "Practice win recorded. No Solana payout is awarded for bot matches."
+                  ? "Practice win. No Solana payout in no-stakes rounds."
                   : "Victory secured."
                 : isBotMatch
-                  ? "Practice loss recorded. You did not lose Solana against the bot."
+                  ? "Practice loss. You did not lose Solana."
                   : "Rival took this round."
               : "Match results are being finalized."
   const settlementStatus = isRoomCancelled
@@ -883,11 +893,11 @@ export function BattleScreen() {
     }
     : null;
   const opponentIdentityLabel = opponent?.address
-    ? shortenAddress(opponent.address)
+    ? rivalIdentityLabel(opponent.address, isBotMatch)
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const playerAddressLabel = address ? shortenAddress(address) : "Unknown";
+  const playerAddressLabel = playerIdentityLabel(address, guestMatchesSession);
   const regularMatchShareTitle = didWin ? "I just won in a CORA match" : "I just battled in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
@@ -1313,10 +1323,10 @@ export function BattleScreen() {
   if (isBotMatch && !isMatchComplete) {
     alerts.push({
       id: "bot:generated-practice-wallets",
-      title: "Practice Wallets",
+      title: "Practice Mode",
       message: guestMatchesSession
-        ? "Practice mode: temporary addresses and practice questions. Connect wallet for real matches."
-        : "Practice mode: temporary bot address and practice questions. Connect wallet for real matches.",
+        ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
+        : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches.",
       tone: "warning",
       autoDismissMs: 14000,
     });
@@ -1686,7 +1696,7 @@ export function BattleScreen() {
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {playerRoundsWon}</span>
               </p>
               {address && (
-                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{shortenAddress(address)}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{playerAddressLabel}</p>
               )}
             </div>
             <p className="font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>

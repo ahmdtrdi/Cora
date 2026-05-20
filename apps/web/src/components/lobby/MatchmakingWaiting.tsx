@@ -12,6 +12,7 @@ type MatchmakingWaitingProps = {
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
+  isGuest?: boolean;
   state: "searching" | "timeout" | "error";
   stage: "finding" | "verifying" | "preparing";
   errorMessage?: string | null;
@@ -21,8 +22,6 @@ type MatchmakingWaitingProps = {
   queueDepth?: number | null;
   onRetry: () => void;
   onCancel: () => void;
-  onPlayBot: () => void;
-  playBotBusy?: boolean;
 };
 
 const SEGMENTS = ["Finding Opponent", "Verifying Wallet", "Preparing Arena"] as const;
@@ -48,6 +47,7 @@ export function MatchmakingWaiting({
   arena,
   wagerUsd,
   walletAddress,
+  isGuest = false,
   state,
   stage,
   errorMessage,
@@ -55,8 +55,6 @@ export function MatchmakingWaiting({
   queueDepth,
   onRetry,
   onCancel,
-  onPlayBot,
-  playBotBusy = false,
 }: MatchmakingWaitingProps) {
   const [activeLoopProgress, setActiveLoopProgress] = useState(0);
   const [flavorIdx, setFlavorIdx] = useState(0);
@@ -114,20 +112,11 @@ export function MatchmakingWaiting({
           : null;
   const isFailureState = state === "timeout" || state === "error";
   const matchedOpponent = opponentScientist ?? null;
+  const walletLabel = isGuest ? `Guest ${shortWallet(walletAddress)}` : shortWallet(walletAddress);
 
   return (
     <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
-      <div className="mb-4 flex w-full justify-end gap-2">
-        <button
-          type="button"
-          onClick={onPlayBot}
-          disabled={playBotBusy}
-          className={`btn-game btn-game-primary px-4 py-2 text-[11px] shadow-sm ${
-            playBotBusy ? "cursor-not-allowed opacity-60" : ""
-          }`}
-        >
-          {playBotBusy ? "Starting Bot..." : "Play With Bot"}
-        </button>
+      <div className="mb-4 flex w-full justify-end">
         <button
           type="button"
           onClick={onCancel}
@@ -190,7 +179,7 @@ export function MatchmakingWaiting({
               </span>
               <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{scientist.name}</p>
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{scientist.base}</p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{walletLabel}</p>
             </div>
           </div>
         </div>
