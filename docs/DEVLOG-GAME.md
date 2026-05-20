@@ -837,3 +837,81 @@ _Files touched:_ `data/questions/pool.json`, `apps/api/src/managers/room/Blockch
 **Tech Debt:**
 
 - `GameEngine` still pre-generates up to 100 cards per match even though the practice pool now contains 128 questions. If we want every practice question to be reachable in one match, raise the engine queue cap and re-check ER account limits together.
+
+---
+
+## 27. Bot Practice Card Open Desync Recovery (2026-05-20)
+
+**The Bug:**
+
+A bot-practice player could get stuck after the backend logged:
+
+`Player <address> tried to play card <cardId> without opening it first in room bot-...`
+
+The room engine required every `playCard` to match a tracked `openedCards` entry. If the frontend had already moved into answer UI but the backend had lost, rejected, or cleared the `openCard` state, `handlePlayCard()` returned silently. The card was not played, no `playCardResult` or `cardExpired` event was sent, and the frontend stayed locked waiting for a terminal card event.
+
+**The Change:**
+
+_Files touched:_ `apps/api/src/managers/room/Engine.ts`, `apps/api/test/RoomManager.test.ts`
+
+- Added backend recovery for bot-practice rooms: if `playCard` arrives without tracked open state but the card is still in the player's current hand, the backend processes the answer instead of dead-ending the UI.
+- Kept public/private matches strict: playing without opening still does not apply damage/heal, but now sends `cardExpired` plus a fresh game-state snapshot so the client unlocks.
+- Re-sends the current countdown when a player tries to open a card while one is already open, helping reconnect or duplicate-open cases resync.
+- Clears stale opened-card records when the tracked card is no longer in the player's hand, so stale backend state cannot block future opens.
+- Added RoomManager regression coverage for the strict public path and the bot-practice recovery path.
+
+**The Reasoning:**
+
+- The bug was a backend/client state desync, not a wrong answer validation issue. The unsafe part was the silent return: the UI needs a terminal event for every attempted answer.
+- Practice bot rooms have no wager, so recovering a missing `openCard` by accepting the still-in-hand answer is better UX and low risk.
+- Real wager rooms keep the server-side open-before-play invariant, but now fail closed with a client-unlocking event instead of freezing.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit` passed.
+- Attempted `bun test apps/api/test/RoomManager.test.ts --test-name-pattern playCard`; blocked before test execution because Bun in this local environment cannot resolve `@solana/web3.js` from `RoomManager.ts`, even though Node/npm can resolve the installed package.
+
+**Tech Debt:**
+
+- `RoomManager.test.ts` still needs dependency isolation from Solana/MagicBlock imports so room lifecycle tests can run under Bun without loading the full blockchain stack.
+
+---
+
+## 28. Card Open ACK And Rejection Contract For FE (2026-05-20)
+
+**The Change:**
+
+_Files touched:_ `packages/shared-types/src/websocket.ts`, `apps/api/src/managers/room/Engine.ts`, `apps/api/test/RoomManager.test.ts`
+
+- Added `openCardAccepted` server event with `{ cardId, remainingMs }`.
+- Added `cardActionRejected` server event with `{ action, reason, cardId?, activeCardId?, recoverable, message }`.
+- Added explicit rejection reasons: `game_not_active`, `invalid_payload`, `not_in_hand`, `already_open`, `not_opened`, and `different_card_open`.
+- `openCard` now behaves as the server-side check-and-open request. FE does not need a separate pre-check request.
+- Successful opens still emit `cardCountdown` for backward compatibility, but FE can now treat `openCardAccepted` as the real modal/answer-enable ACK.
+- Rejected opens/plays emit `cardActionRejected`, a fresh game-state snapshot when useful, and a legacy `cardExpired` with `reason: "rejected"` so the current FE can still unlock during migration.
+- Real public/private matches remain fail-closed: rejected `playCard` does not mutate the engine hand, does not apply damage/heal, and does not consume a MagicBlock ER slot.
+- Bot practice still recovers a missing open state when the answered card is still in the server hand, keeping no-stakes practice smooth.
+
+**The Reasoning:**
+
+- The frontend should not add a separate "is this card open?" request because that adds latency and still races. The existing `openCard` request should be the authoritative ACK boundary.
+- `cardCountdown` was an implicit ACK. `openCardAccepted` gives FE a clean signal: enable answers only after this event for the clicked card.
+- `cardActionRejected` lets FE show honest sync-copy such as "Card sync lost. Please reopen the card." instead of treating every rejection as a timeout.
+
+**FE Implementation Notes:**
+
+- On card click: send `openCard`, set a lightweight pending/syncing state, and do not enable answer buttons yet.
+- On `openCardAccepted` matching the pending card: open/enable the answer UI and start displaying `remainingMs`.
+- On `cardActionRejected`: close pending/active answer UI, show `payload.message`, refresh from the next `gameStateUpdate`, and let the player reopen.
+- On `cardExpired`: treat omitted `reason` or `reason: "timeout"` as a true timeout. Treat `reason: "rejected"` as a legacy unlock signal and avoid counting it as a player timeout once `cardActionRejected` is handled.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit --tsBuildInfoFile .codex-api-check.tsbuildinfo` passed.
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit --tsBuildInfoFile .codex-web-check.tsbuildinfo` passed.
+- Attempted `node_modules/.bin/tsc.cmd -p packages/shared-types/tsconfig.json --noEmit`; skipped because `packages/shared-types` has no `tsconfig.json`.
+- Attempted `bun test apps/api/test/RoomManager.test.ts --test-name-pattern "card|playCard|openCard"`; blocked before test execution because Bun cannot resolve `@solana/web3.js` from `RoomManager.ts` in this local environment.
+
+**Tech Debt:**
+
+- After FE fully handles `cardActionRejected`, we can remove the transitional `cardExpired(reason: "rejected")` compatibility event.
