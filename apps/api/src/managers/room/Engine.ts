@@ -1,6 +1,6 @@
 import { GameEngine } from '@cora/game-logic';
 import type { EngineCard, PlayCardResult } from '@cora/game-logic';
-import type { MatchResult } from '@shared/websocket';
+import type { CardActionRejectedData, CardActionRejectedReason, MatchResult } from '@shared/websocket';
 import { fetchMatchQuestions, loadPracticeQuestions } from '../../questions';
 import { Room } from './types';
 import type { RoomManager } from '../RoomManager';
@@ -250,40 +250,70 @@ export class Engine {
   }
 
   public handleOpenCard(room: Room, address: string, cardId: string) {
-    if (!room.engine || !room.engine.isActive()) return;
-    if (!cardId) return;
+    if (!cardId) {
+      this.rejectCardAction(room, address, {
+        action: 'openCard',
+        reason: 'invalid_payload',
+        recoverable: true,
+      });
+      return;
+    }
+    if (!room.engine || !room.engine.isActive()) {
+      this.rejectCardAction(room, address, {
+        action: 'openCard',
+        reason: 'game_not_active',
+        cardId,
+        recoverable: false,
+      });
+      return;
+    }
 
     const existing = room.openedCards.get(address);
     if (existing) {
-      console.warn(`Player ${address} already has card ${existing.cardId} open in room ${room.id}. Ignoring.`);
-      return;
+      if (!this.isCardInHand(room, address, existing.cardId)) {
+        console.warn(`Clearing stale opened card ${existing.cardId} for ${address} in room ${room.id}.`);
+        this.manager.lifecycle.clearOpenedCard(room, address);
+      } else if (existing.cardId === cardId) {
+        const remainingMs = this.getRemainingAnswerMs(existing.openedAt);
+        this.sendOpenCardAccepted(room, address, existing.cardId, remainingMs);
+        this.sendCountdown(room, address, existing.cardId, remainingMs);
+        return;
+      } else {
+        console.warn(`Player ${address} already has card ${existing.cardId} open in room ${room.id}. Ignoring.`);
+        this.rejectCardAction(room, address, {
+          action: 'openCard',
+          reason: 'already_open',
+          cardId,
+          activeCardId: existing.cardId,
+          recoverable: true,
+        });
+        this.sendCountdown(room, address, existing.cardId, this.getRemainingAnswerMs(existing.openedAt));
+        return;
+      }
     }
 
     const playerState = room.engine.getStateForPlayer(address);
     const cardInHand = playerState.hand.find(c => c.id === cardId);
     if (!cardInHand) {
       console.warn(`Card ${cardId} not found in ${address}'s hand. Ignoring openCard.`);
+      this.rejectCardAction(room, address, {
+        action: 'openCard',
+        reason: 'not_in_hand',
+        cardId,
+        recoverable: true,
+      });
+      this.manager.network.broadcastGameState(room);
       return;
     }
 
     const openedAt = Date.now();
     console.log(`Player ${address} opened card ${cardId} in room ${room.id}. 10s countdown started.`);
 
-    const client = room.clients.get(address);
-    this.manager.network.safeSend(client?.ws, {
-      type: 'cardCountdown',
-      payload: { cardId, remainingMs: this.CARD_ANSWER_TIMEOUT_MS },
-    });
-
     const countdownInterval = setInterval(() => {
       const elapsed = Date.now() - openedAt;
       const remaining = Math.max(0, this.CARD_ANSWER_TIMEOUT_MS - elapsed);
 
-      const c = room.clients.get(address);
-      this.manager.network.safeSend(c?.ws, {
-        type: 'cardCountdown',
-        payload: { cardId, remainingMs: remaining },
-      });
+      this.sendCountdown(room, address, cardId, remaining);
     }, this.CARD_COUNTDOWN_TICK_MS);
 
     const timeoutHandle = setTimeout(() => {
@@ -296,6 +326,8 @@ export class Engine {
       countdownInterval,
       timeoutHandle,
     });
+    this.sendOpenCardAccepted(room, address, cardId, this.CARD_ANSWER_TIMEOUT_MS);
+    this.sendCountdown(room, address, cardId, this.CARD_ANSWER_TIMEOUT_MS);
   }
 
   public async expireCard(room: Room, address: string, cardId: string) {
@@ -320,28 +352,63 @@ export class Engine {
       room.engine.playCard(address, cardId, '__timeout__');
     }
 
-    const client = room.clients.get(address);
-    this.manager.network.safeSend(client?.ws, {
-      type: 'cardExpired',
-      payload: { cardId },
-    });
+    this.sendCardExpired(room, address, cardId, 'timeout');
 
     this.manager.network.broadcastScoreUpdate(room);
   }
 
   public async handlePlayCard(room: Room, address: string, payload: { cardId?: string; selectedOptionId?: string }) {
-    if (!room.engine || !room.engine.isActive()) return;
-
-    const { cardId, selectedOptionId } = payload;
-    if (!cardId || !selectedOptionId) return;
-
-    const opened = room.openedCards.get(address);
-    if (!opened || opened.cardId !== cardId) {
-      console.warn(`Player ${address} tried to play card ${cardId} without opening it first in room ${room.id}.`);
+    if (!room.engine || !room.engine.isActive()) {
+      this.rejectCardAction(room, address, {
+        action: 'playCard',
+        reason: 'game_not_active',
+        cardId: payload.cardId,
+        recoverable: false,
+      });
       return;
     }
 
-    this.manager.lifecycle.clearOpenedCard(room, address);
+    const { cardId, selectedOptionId } = payload;
+    if (!cardId || !selectedOptionId) {
+      this.rejectCardAction(room, address, {
+        action: 'playCard',
+        reason: 'invalid_payload',
+        cardId,
+        recoverable: true,
+      });
+      return;
+    }
+
+    const opened = room.openedCards.get(address);
+    if (!opened || opened.cardId !== cardId) {
+      const canRecoverPracticePlay = room.roomType === 'bot'
+        && !opened
+        && this.isCardInHand(room, address, cardId);
+
+      if (!canRecoverPracticePlay) {
+        const reason: CardActionRejectedReason = opened ? 'different_card_open' : 'not_opened';
+        const logReason = opened
+          ? `while card ${opened.cardId} is open`
+          : 'without opening it first';
+        console.warn(`Player ${address} tried to play card ${cardId} ${logReason} in room ${room.id}.`);
+        this.rejectCardAction(room, address, {
+          action: 'playCard',
+          reason,
+          cardId,
+          activeCardId: opened?.cardId,
+          recoverable: true,
+        });
+        this.manager.network.broadcastGameState(room);
+        return;
+      }
+
+      console.warn(
+        `[RoomEngineManager] Recovering bot-practice play for ${address}: ` +
+        `card ${cardId} was answered without tracked open state in room ${room.id}.`,
+      );
+    } else {
+      this.manager.lifecycle.clearOpenedCard(room, address);
+    }
 
     console.log(`Player ${address} played card ${cardId} with answer ${selectedOptionId} in room ${room.id}`);
 
@@ -568,5 +635,81 @@ export class Engine {
 
   private randomItem<T>(items: T[]): T {
     return items[Math.floor(Math.random() * items.length)];
+  }
+
+  private sendOpenCardAccepted(room: Room, address: string, cardId: string, remainingMs: number): void {
+    const client = room.clients.get(address);
+    this.manager.network.safeSend(client?.ws, {
+      type: 'openCardAccepted',
+      payload: { cardId, remainingMs },
+    });
+  }
+
+  private sendCountdown(room: Room, address: string, cardId: string, remainingMs: number): void {
+    const client = room.clients.get(address);
+    this.manager.network.safeSend(client?.ws, {
+      type: 'cardCountdown',
+      payload: { cardId, remainingMs },
+    });
+  }
+
+  private sendCardExpired(
+    room: Room,
+    address: string,
+    cardId: string,
+    reason: 'timeout' | 'rejected' = 'timeout',
+  ): void {
+    const client = room.clients.get(address);
+    this.manager.network.safeSend(client?.ws, {
+      type: 'cardExpired',
+      payload: { cardId, reason },
+    });
+  }
+
+  private rejectCardAction(
+    room: Room,
+    address: string,
+    rejection: Omit<CardActionRejectedData, 'message'>,
+  ): void {
+    const payload: CardActionRejectedData = {
+      ...rejection,
+      message: this.getCardActionRejectedMessage(rejection.reason),
+    };
+    const client = room.clients.get(address);
+    this.manager.network.safeSend(client?.ws, {
+      type: 'cardActionRejected',
+      payload,
+    });
+
+    if (rejection.cardId) {
+      this.sendCardExpired(room, address, rejection.cardId, 'rejected');
+    }
+  }
+
+  private getCardActionRejectedMessage(reason: CardActionRejectedReason): string {
+    switch (reason) {
+      case 'game_not_active':
+        return 'This battle is not accepting card actions right now.';
+      case 'invalid_payload':
+        return 'Card action was incomplete. Please try again.';
+      case 'not_in_hand':
+        return 'Card sync was lost. Please reopen a card.';
+      case 'already_open':
+        return 'Another card is already open.';
+      case 'not_opened':
+        return 'Card was not open on the server. Please reopen it.';
+      case 'different_card_open':
+        return 'A different card is open on the server. Please resync and try again.';
+      default:
+        return 'Card action was rejected. Please try again.';
+    }
+  }
+
+  private getRemainingAnswerMs(openedAt: number): number {
+    return Math.max(0, this.CARD_ANSWER_TIMEOUT_MS - (Date.now() - openedAt));
+  }
+
+  private isCardInHand(room: Room, address: string, cardId: string): boolean {
+    return room.engine?.getServerHandForPlayer(address).some((card) => card.id === cardId) ?? false;
   }
 }

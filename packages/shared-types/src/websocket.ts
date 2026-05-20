@@ -90,9 +90,38 @@ export interface CardCountdownData {
   remainingMs: number;
 }
 
+export interface OpenCardAcceptedData {
+  cardId: string;
+  /** Remaining time in ms for this card's answer window */
+  remainingMs: number;
+}
+
+export type CardActionRejectedReason =
+  | 'game_not_active'
+  | 'invalid_payload'
+  | 'not_in_hand'
+  | 'already_open'
+  | 'not_opened'
+  | 'different_card_open';
+
+export interface CardActionRejectedData {
+  action: 'openCard' | 'playCard';
+  reason: CardActionRejectedReason;
+  /** Card requested by the client, when one was provided. */
+  cardId?: string;
+  /** Currently server-open card, when the rejection was caused by another open card. */
+  activeCardId?: string;
+  /** True when the client should refresh state and let the player try again. */
+  recoverable: boolean;
+  /** Short UI-safe explanation for toast/copy. */
+  message: string;
+}
+
 export interface CardExpiredData {
   /** The card that timed out */
   cardId: string;
+  /** Omitted by older servers; treat omitted as a normal timeout. */
+  reason?: 'timeout' | 'rejected';
 }
 
 export interface ScoreUpdateData {
@@ -163,6 +192,8 @@ export type ServerToClientEvents = {
   phaseChange: (phase: GamePhase) => void;
   roundOver: (data: RoundOverData) => void;
   playCardResult: (result: { correct: boolean; damage: number; heal: number; multiplier: number; cardType: CardType }) => void;
+  openCardAccepted: (data: OpenCardAcceptedData) => void;
+  cardActionRejected: (data: CardActionRejectedData) => void;
   cardCountdown: (data: CardCountdownData) => void;
   cardExpired: (data: CardExpiredData) => void;
   scoreUpdate: (data: ScoreUpdateData) => void;
