@@ -16,6 +16,7 @@ export type ActiveMatchSession = {
   role?: "playerA" | "playerB" | null;
   roomType?: "public" | "private" | "bot" | null;
   isGuest?: boolean;
+  isTutorial?: boolean;
   arenaId?: string | null;
   scientistId?: string | null;
   status?: string | null;
@@ -123,6 +124,7 @@ export function normalizeActiveMatchSession(value: unknown): ActiveMatchSession 
         ? snapshot.roomType
         : null,
     isGuest: snapshot.isGuest === true,
+    isTutorial: snapshot.isTutorial === true,
     arenaId: typeof snapshot.arenaId === "string" ? snapshot.arenaId : null,
     scientistId: typeof snapshot.scientistId === "string" ? snapshot.scientistId : null,
     status: typeof snapshot.status === "string" ? snapshot.status : null,

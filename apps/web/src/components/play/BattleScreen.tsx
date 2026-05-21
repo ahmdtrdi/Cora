@@ -20,7 +20,6 @@ import { createMatchResultCardFileName, renderMatchResultCardPng } from "@/lib/c
 import {
   clearMatchSessionState,
   getMatchSessionAddress,
-  getMatchSessionToken,
   isGuestBotMatchSession,
   readActiveDepositIntent,
   readActiveMatchSession,
@@ -517,8 +516,10 @@ export function BattleScreen() {
       lastCardActionRejected.activeCardId === activeCardId;
 
     if (affectsActiveCard) {
-      resetActiveCard();
-      showGameNotice(lastCardActionRejected.message || "Card sync lost. Please reopen the card.", "action", 2800);
+      queueMicrotask(() => {
+        resetActiveCard();
+        showGameNotice(lastCardActionRejected.message || "Card sync lost. Please reopen the card.", "action", 2800);
+      });
     }
   }, [activeCardId, lastCardActionRejected, resetActiveCard, showGameNotice]);
 
@@ -528,21 +529,23 @@ export function BattleScreen() {
     lastProcessedExpiredAtRef.current = lastCardExpired.at;
 
     if (lastCardExpired.reason === "rejected") {
-      resetActiveCard();
+      queueMicrotask(() => resetActiveCard());
       return;
     }
 
-    setOutcomes((prev) => [
-      ...prev,
-      {
-        cardId: lastCardExpired.cardId,
-        outcome: "timeout",
-        at: lastCardExpired.at,
-      },
-    ]);
-    playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
-    showGameNotice("No damage this turn.");
-    resetActiveCard();
+    queueMicrotask(() => {
+      setOutcomes((prev) => [
+        ...prev,
+        {
+          cardId: lastCardExpired.cardId,
+          outcome: "timeout",
+          at: lastCardExpired.at,
+        },
+      ]);
+      playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
+      showGameNotice("No damage this turn.");
+      resetActiveCard();
+    });
   }, [lastCardExpired, resetActiveCard, showGameNotice]);
 
   useEffect(() => {

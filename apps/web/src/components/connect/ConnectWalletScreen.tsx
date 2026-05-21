@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Keypair } from "@solana/web3.js";
+import { IntroOverlay } from "@/components/lobby/IntroOverlay";
 
 const GUEST_ADDRESS_STORAGE_KEY = "cora:guest-address";
 
@@ -31,6 +32,14 @@ export function ConnectWalletScreen() {
   const { setVisible: setWalletModalVisible } = useWalletModal();
   const [guestBusy, setGuestBusy] = useState(false);
   const [walletBusy, setWalletBusy] = useState(false);
+  const [introOverlayOpen, setIntroOverlayOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return !window.localStorage.getItem("cora:introSeen");
+    } catch {
+      return false;
+    }
+  });
   const connected = Boolean(publicKey);
   const address = publicKey?.toBase58() ?? "";
 
@@ -40,6 +49,15 @@ export function ConnectWalletScreen() {
     if (!next.startsWith("/")) return "/lobby";
     return next;
   }, [searchParams]);
+
+  const handleCloseIntro = useCallback(() => {
+    setIntroOverlayOpen(false);
+    try {
+      window.localStorage.setItem("cora:introSeen", "1");
+    } catch {
+      // The intro is non-critical; blocked storage should not block arena entry.
+    }
+  }, []);
 
   function enterAsGuest() {
     if (guestBusy) return;
@@ -216,6 +234,7 @@ export function ConnectWalletScreen() {
           </div>
         </div>
       </section>
+      <IntroOverlay isOpen={introOverlayOpen} onClose={handleCloseIntro} />
     </main>
   );
 }

@@ -52,9 +52,16 @@ export function useQueueSocket(): UseQueueSocketReturn {
   // This avoids the stale-closure problem where onclose captures
   // the queueState/matchResult values from the render when openSocket was called.
   const queueStateRef = useRef<QueueState>(queueState);
-  queueStateRef.current = queueState;
   const matchResultRef = useRef<MatchFoundResult | null>(matchResult);
-  matchResultRef.current = matchResult;
+  const openSocketRef = useRef<(address: string) => void>(() => {});
+
+  useEffect(() => {
+    queueStateRef.current = queueState;
+  }, [queueState]);
+
+  useEffect(() => {
+    matchResultRef.current = matchResult;
+  }, [matchResult]);
 
   const wsBaseUrl = trimTrailingSlash(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080');
 
@@ -150,7 +157,7 @@ export function useQueueSocket(): UseQueueSocketReturn {
         setQueueState('connecting');
         reconnectTimerRef.current = setTimeout(() => {
           if (addressRef.current) {
-            openSocket(addressRef.current);
+            openSocketRef.current(addressRef.current);
           }
         }, RECONNECT_DELAY_MS);
       } else {
@@ -168,6 +175,10 @@ export function useQueueSocket(): UseQueueSocketReturn {
       }
     };
   }, [wsBaseUrl, cleanup]);
+
+  useEffect(() => {
+    openSocketRef.current = openSocket;
+  }, [openSocket]);
 
   const connect = useCallback((address: string) => {
     addressRef.current = address;

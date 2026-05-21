@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -23,6 +22,7 @@ type LobbySetupProps = {
   onCreateBlinkChallenge: () => void;
   blinkChallengeBusy: boolean;
   hasActiveBlinkChallenge: boolean;
+  onTryFreeTutorial: () => void;
 };
 
 function truncateWallet(address: string) {
@@ -74,6 +74,7 @@ export function LobbySetup({
   onCreateBlinkChallenge,
   blinkChallengeBusy,
   hasActiveBlinkChallenge,
+  onTryFreeTutorial,
 }: LobbySetupProps) {
   const { wallet: selectedWallet, connect, connecting } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
@@ -99,7 +100,7 @@ export function LobbySetup({
   } satisfies Arena;
   const selectedArenaDisplay = selectedArena ?? (selectedArenaId === COMING_SOON_ARENA_ID ? mewArena : null);
   const comingSoonArenaVisible = selectedArenaId !== null && COMING_SOON_ARENA_IDS.has(selectedArenaId);
-  const actionDisabled = comingSoonArenaVisible || !canPlay;
+  const actionDisabled = comingSoonArenaVisible || !walletConnected || !canPlay;
   const actionLabel = comingSoonArenaVisible ? "Coming Soon" : "Pick Scientist";
   const guestAddressLabel = guestAddress ? `Guest ${truncateWallet(guestAddress)}` : "Guest";
   const identityLabel = guestMode ? guestAddressLabel : walletConnected ? truncateWallet(walletAddress) : "Wallet not connected";
@@ -171,7 +172,7 @@ export function LobbySetup({
       };
       image.src = url;
     }
-  }, []);
+  }, [BONK_ARENA_IMAGE_URL, MEW_ARENA_IMAGE_URL, NULL_ARENA_IMAGE_URL, SOL_ARENA_IMAGE_URL]);
 
   useEffect(() => {
     if (!incomingArenaImageUrl || typeof window === "undefined") return;
@@ -256,7 +257,7 @@ export function LobbySetup({
       </header>
 
       <div
-        className="game-card mt-2 flex w-full flex-col overflow-hidden shadow-2xl md:flex-row"
+        className="game-card game-card-static mt-2 flex w-full flex-col overflow-hidden shadow-2xl md:flex-row"
         style={{
           border: "3px solid var(--tone-bark)",
           background: "linear-gradient(180deg, #e7d8bb 0%, #dccaa7 100%)",
@@ -430,6 +431,7 @@ export function LobbySetup({
             />
           )}
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_28%,rgba(0,0,0,0.58)_100%)]" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[38%] bg-[linear-gradient(180deg,rgba(8,15,12,0)_0%,rgba(8,15,12,0.46)_62%,rgba(8,15,12,0.68)_100%)]" />
           <div className="arena-grid pointer-events-none absolute inset-0 opacity-20 mix-blend-overlay" />
           {selectedArena && (
             <div
@@ -464,29 +466,45 @@ export function LobbySetup({
           </div>
 
           <div className="relative z-10 mt-auto flex w-full flex-col items-end justify-end pt-12">
-            <div className="flex w-full shrink-0 flex-col items-center md:w-auto md:items-end">
-              {!selectedArenaDisplay && (
-                <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80">Select a token to continue</p>
+            <div className="flex w-full shrink-0 flex-col items-center gap-3 md:w-auto md:items-end">
+              {!selectedArenaDisplay ? (
+                <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80 text-center md:text-right">
+                  Select a token to wager, or try free tutorial
+                </p>
+              ) : (
+                !walletConnected && !guestMode && (
+                  <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80 text-center md:text-right">
+                    Connect wallet to draft, or try free tutorial
+                  </p>
+                )
               )}
-              {selectedArenaDisplay && !walletConnected && !guestMode && (
-                <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80">Connect wallet to draft</p>
-              )}
-              <motion.button
-                whileHover={!actionDisabled ? { y: -2 } : undefined}
-                whileTap={!actionDisabled ? { scale: 0.98 } : undefined}
-                type="button"
-                onClick={() => {
-                  if (!actionDisabled) {
-                    onPlay();
-                  }
-                }}
-                disabled={actionDisabled}
-                className={`btn-game btn-game-primary w-full px-10 py-4 text-base shadow-2xl transition-all md:w-auto ${
-                  actionDisabled ? "cursor-not-allowed opacity-50 grayscale" : ""
-                }`}
-              >
-                {actionLabel}
-              </motion.button>
+              <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+                <motion.button
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={onTryFreeTutorial}
+                  className="btn-game btn-game-secondary w-full px-8 py-4 text-base shadow-2xl transition-all md:w-auto border border-[var(--tone-mint,#cbefc1)]/30 text-[var(--tone-mint,#cbefc1)] bg-[var(--tone-mint,#cbefc1)]/5"
+                >
+                  Try Free Tutorial
+                </motion.button>
+                <motion.button
+                  whileHover={!actionDisabled ? { y: -2 } : undefined}
+                  whileTap={!actionDisabled ? { scale: 0.98 } : undefined}
+                  type="button"
+                  onClick={() => {
+                    if (!actionDisabled) {
+                      onPlay();
+                    }
+                  }}
+                  disabled={actionDisabled}
+                  className={`btn-game btn-game-primary w-full px-10 py-4 text-base shadow-2xl transition-all md:w-auto ${
+                    actionDisabled ? "cursor-not-allowed opacity-50 grayscale" : ""
+                  }`}
+                >
+                  {actionLabel}
+                </motion.button>
+              </div>
             </div>
           </div>
         </section>
