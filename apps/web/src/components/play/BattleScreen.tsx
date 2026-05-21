@@ -769,6 +769,8 @@ export function BattleScreen() {
     gameState?.roomType === "bot" ||
     matchSummaryResult?.isBotMatch === true ||
     matchInvalidated?.isBotMatch === true;
+  const displayPlayerAddress = activeMatchSession?.displayAddress?.trim() || address;
+  const displayPlayerAsGuest = activeMatchSession?.displayAsGuest ?? guestMatchesSession;
   const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
   const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
   const didOpponentSurrender =
@@ -954,7 +956,7 @@ export function BattleScreen() {
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const playerAddressLabel = playerIdentityLabel(address, guestMatchesSession);
+  const playerAddressLabel = playerIdentityLabel(displayPlayerAddress, displayPlayerAsGuest);
   const regularMatchShareTitle = didWin ? "I just won in a CORA match" : "I just battled in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
@@ -1158,6 +1160,8 @@ export function BattleScreen() {
       wagerUsd,
       address,
       walletAddress: address,
+      displayAddress: displayPlayerAddress,
+      displayAsGuest: displayPlayerAsGuest,
       roomType: isBotMatch ? "bot" : activeMatchSession?.roomType ?? null,
       isGuest: guestMatchesSession,
       status: "playing",
@@ -1381,7 +1385,7 @@ export function BattleScreen() {
     alerts.push({
       id: "bot:generated-practice-wallets",
       title: "Practice Mode",
-      message: guestMatchesSession
+      message: displayPlayerAsGuest
         ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
         : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches.",
       tone: "warning",

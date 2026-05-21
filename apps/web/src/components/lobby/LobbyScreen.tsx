@@ -339,8 +339,12 @@ export function LobbyScreen() {
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
   const isGuestMode = loginMode === "guest";
-  const matchmakerAddress = isGuestMode ? guestAddress : walletAddress;
-  const walletAddr = matchmakerAddress || (isGuestMode ? "Guest" : "Not connected");
+  const usesGuestIdentity = isGuestMode || isTutorialMode;
+  const matchmakerAddress = usesGuestIdentity ? guestAddress : walletAddress;
+  const walletAddr = matchmakerAddress || (usesGuestIdentity ? "Guest" : "Not connected");
+  const showsWalletIdentityInTutorial = isTutorialMode && Boolean(walletAddress);
+  const displayWalletAddr = showsWalletIdentityInTutorial ? walletAddress : walletAddr;
+  const displayWalletAsGuest = usesGuestIdentity && !showsWalletIdentityInTutorial;
 
   useEffect(() => {
     const storedGuestAddress = readStoredGuestAddress();
@@ -355,11 +359,12 @@ export function LobbyScreen() {
   }, [loginMode, matchedRoomId, walletAddress]);
 
   useEffect(() => {
+    if (isTutorialMode) return;
     if (!walletAddress || loginMode !== "guest") return;
     if (matchedRoomId || phase === "waiting" || phase === "found") return;
 
     queueMicrotask(() => setLoginMode("wallet"));
-  }, [loginMode, matchedRoomId, phase, walletAddress]);
+  }, [isTutorialMode, loginMode, matchedRoomId, phase, walletAddress]);
 
   const activeBlinkStatus = activeBlinkChallenge?.status as PrivateChallengeStatus | undefined;
   const hasBlockingBlinkChallenge =
@@ -857,7 +862,7 @@ export function LobbyScreen() {
       return;
     }
 
-    const tempAddress = generateGuestAddress();
+    const tutorialAddress = ensureGuestAddress();
 
     userCancelledRef.current = true;
     setBotMatchBusy(true);
@@ -879,7 +884,7 @@ export function LobbyScreen() {
 
     try {
       const result = await createBotMatch({
-        address: tempAddress,
+        address: tutorialAddress,
         tokenMint: "SOL",
         wagerAmount: toBaseUnitWager(FIXED_WAGER_USD),
         characterId: selectedScientist.id,
@@ -898,8 +903,10 @@ export function LobbyScreen() {
       });
 
       writeActiveMatchSession({
-        walletAddress: tempAddress,
-        address: tempAddress,
+        walletAddress: tutorialAddress,
+        address: tutorialAddress,
+        displayAddress: walletAddress || tutorialAddress,
+        displayAsGuest: !walletAddress,
         roomId: result.roomId,
         role: result.role ?? "playerA",
         roomType: "bot",
@@ -913,13 +920,7 @@ export function LobbyScreen() {
         wagerUsd: FIXED_WAGER_USD,
       });
 
-      const params = new URLSearchParams({
-        roomId: result.roomId,
-        arena: "sol",
-        tutorial: "1",
-        scientist: selectedScientist.id,
-      });
-      router.replace(`/play?${params.toString()}`);
+      setPhase("found");
     } catch (error) {
       if (controller.signal.aborted) {
         if (!timedOut) return;
@@ -947,8 +948,8 @@ export function LobbyScreen() {
     }
   }, [
     selectedScientist,
-    router,
     clearFoundTransitionTimers,
+    ensureGuestAddress,
     queueSocket,
     setActiveMatchToast,
     setBotMatchBusy,
@@ -958,6 +959,7 @@ export function LobbyScreen() {
     setMatchmakingStage,
     setMatchmakingState,
     setPhase,
+    walletAddress,
   ]);
 
   useEffect(() => {
@@ -1570,6 +1572,8 @@ export function LobbyScreen() {
   }, [matchedRoomId, phaseContextIssue, walletAddress]);
 
   useEffect(() => {
+    if (isTutorialMode) return;
+
     const sessionAddress = isGuestMode ? guestAddress : walletAddress;
     if (!sessionAddress || !matchedRoomId) return;
     writeActiveMatchSession({
@@ -1586,7 +1590,7 @@ export function LobbyScreen() {
       arenaToken: selectedArena?.token ?? null,
       wagerUsd: FIXED_WAGER_USD,
     });
-  }, [guestAddress, isGuestMode, walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
+  }, [guestAddress, isGuestMode, isTutorialMode, walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
 
   return (
     <div
@@ -2177,8 +2181,9 @@ export function LobbyScreen() {
                   }}
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
-                  walletAddress={walletAddr}
+                  walletAddress={displayWalletAddr}
                   isGuest={isGuestMode || isTutorialMode}
+                  displayAsGuest={displayWalletAsGuest}
                   continueLabel={isTutorialMode ? "Start Tutorial" : isGuestMode ? "Practice Now" : "Enter Queue"}
                   continueBusy={botMatchBusy}
                 />
@@ -2226,11 +2231,13 @@ export function LobbyScreen() {
                 <OpponentFound
                   myScientist={selectedScientist}
                   myWallet={walletAddr}
+                  displayWalletAddress={displayWalletAddr}
+                  displayAsGuest={displayWalletAsGuest}
                   roomId={matchedRoomId}
                   matchRole={matchedRole}
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
-                  isGuest={isGuestMode}
+                  isGuest={usesGuestIdentity}
                   onTimeout={() => {
                     // Fully reset matchmaking state — abort any hanging HTTP request,
                     // clear timers, and go back to character-select so the user can

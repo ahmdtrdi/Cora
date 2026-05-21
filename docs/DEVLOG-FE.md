@@ -5909,3 +5909,50 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - `.game-card-static` now carries a lobby-tuned glow value. If more wrapper-only cards appear, consider a named component-level card variant instead of utility opt-outs.
 
+## 2026-05-21 - Preserve Tutorial Match Address
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the generic matched-room session writer does not run while the free tutorial flow is active.
+
+### The Reasoning
+- `startTutorialMatch` creates a bot room using a temporary no-wallet guest address and writes that exact address into the active match session before routing to `/play`. The generic lobby session effect could run afterward and overwrite the same room with the connected wallet or stored guest identity, causing the play socket to join as the wrong address and leaving the bot room stuck waiting for its original player.
+
+### The Tech Debt
+- Tutorial mode still depends on local lobby state to protect the session write. If match session handling grows further, extract a dedicated tutorial session helper so normal wager recovery and tutorial handoff cannot share the same write path by accident.
+
+## 2026-05-21 - Route Tutorial Through Opponent Found
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the free tutorial creates the bot room, stores the tutorial guest address, then moves into the existing `found` phase instead of routing directly to `/play`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so guest/tutorial flows use the provided guest address for the match socket even when a wallet is connected.
+
+### The Reasoning
+- The normal matchmaking flow uses `OpponentFound` to connect to the room, wait for the server battle snapshot, show the prep/countdown UI, and only then enter `/play`. Tutorial should mimic that path so `/play` loads with ready server state instead of showing an in-battle waiting message.
+
+### The Tech Debt
+- `OpponentFound` now handles both wager deposits and no-wager bot prep. If practice-specific prep grows, split the status copy/control logic into smaller mode-specific helpers while keeping the shared matched-screen shell.
+
+## 2026-05-21 - Keep Connected-Wallet Tutorial on Guest Identity
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so tutorial mode uses the guest identity for lobby display, bot match creation, and the `OpponentFound` socket handoff even when a wallet is connected.
+- Prevented the connected-wallet auto-switch effect from flipping `loginMode` out of guest while the tutorial flow is active.
+
+### The Reasoning
+- The free tutorial is intentionally a no-wager guest-style match. A connected wallet could previously make the UI look like guest mode while still passing the wallet address into the matched/prep flow, which caused the server to wait for the original tutorial guest address.
+
+### The Tech Debt
+- `isTutorialMode` and `isGuestMode` now intentionally overlap in the lobby. If more practice modes appear, introduce a clearer `identityMode` or match-entry state machine instead of combining booleans.
+
+## 2026-05-21 - Split Tutorial Transport And Display Identity
+
+### The Change
+- Added optional display identity fields to [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so a match can keep one address for socket/session transport and another for UI display.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx), and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so connected-wallet tutorial shows the real wallet while still using the hidden tutorial guest address for the no-deposit bot room.
+
+### The Reasoning
+- Free tutorial needs the generated guest address to keep the no-wager bot socket stable, but a connected user should still see their wallet identity in character select, opponent found, and battle. Splitting display identity from transport identity gives that UX without turning tutorial into a real wallet wager flow.
+
+### The Tech Debt
+- The display identity is currently stored as optional fields on the local match session. If the app later needs richer profile display names or wallet aliases, move this into a dedicated player presentation model.
+

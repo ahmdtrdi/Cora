@@ -12,6 +12,8 @@ export type LobbyDraftSnapshot = {
 export type ActiveMatchSession = {
   walletAddress?: string | null;
   address?: string | null;
+  displayAddress?: string | null;
+  displayAsGuest?: boolean;
   roomId: string;
   role?: "playerA" | "playerB" | null;
   roomType?: "public" | "private" | "bot" | null;
@@ -117,6 +119,8 @@ export function normalizeActiveMatchSession(value: unknown): ActiveMatchSession 
         : typeof snapshot.walletAddress === "string"
           ? snapshot.walletAddress
           : null,
+    displayAddress: typeof snapshot.displayAddress === "string" ? snapshot.displayAddress : null,
+    displayAsGuest: typeof snapshot.displayAsGuest === "boolean" ? snapshot.displayAsGuest : undefined,
     roomId,
     role: snapshot.role === "playerA" || snapshot.role === "playerB" ? snapshot.role : null,
     roomType:

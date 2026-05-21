@@ -15,6 +15,7 @@ type CharacterSelectProps = {
   wagerUsd: string;
   walletAddress: string;
   isGuest?: boolean;
+  displayAsGuest?: boolean;
   continueLabel?: string;
   continueBusy?: boolean;
 };
@@ -36,13 +37,14 @@ export function CharacterSelect({
   wagerUsd,
   walletAddress,
   isGuest = false,
+  displayAsGuest = isGuest,
   continueLabel = "Enter Queue",
   continueBusy = false,
 }: CharacterSelectProps) {
   const characters: CharacterOption[] = scientists.map((scientist) => ({
     ...scientist,
   }));
-  const walletLabel = isGuest ? `Guest ${trimWallet(walletAddress)}` : trimWallet(walletAddress);
+  const walletLabel = displayAsGuest ? `Guest ${trimWallet(walletAddress)}` : trimWallet(walletAddress);
 
   return (
     <RoomPhaseShell

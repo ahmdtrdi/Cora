@@ -27,6 +27,8 @@ type OpponentFoundProps = {
   arena: Arena;
   wagerUsd: string;
   isGuest?: boolean;
+  displayWalletAddress?: string;
+  displayAsGuest?: boolean;
   onTimeout: () => void;
 };
 
@@ -67,6 +69,8 @@ export function OpponentFound({
   arena,
   wagerUsd,
   isGuest = false,
+  displayWalletAddress,
+  displayAsGuest = isGuest,
   onTimeout,
 }: OpponentFoundProps) {
   const router = useRouter();
@@ -100,9 +104,9 @@ export function OpponentFound({
     [myScientist.id],
   );
 
-  const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
-  const displayWalletAddress = isGuest ? myWallet : walletAddress;
-  const displayWalletLabel = identityLabel(displayWalletAddress, isGuest);
+  const walletAddress = isGuest ? myWallet : wallet.publicKey?.toBase58() ?? myWallet;
+  const visibleWalletAddress = displayWalletAddress ?? (isGuest ? myWallet : walletAddress);
+  const displayWalletLabel = identityLabel(visibleWalletAddress, displayAsGuest);
   usePreloadedAudio(OPPONENT_FOUND_PRELOADED_AUDIO);
   const signed = signingState === "waiting";
   const {
@@ -313,6 +317,8 @@ export function OpponentFound({
       writeActiveMatchSession({
         walletAddress,
         address: walletAddress,
+        displayAddress: visibleWalletAddress,
+        displayAsGuest,
         roomId,
         role: effectiveRole ?? null,
         roomType: isBotMatch ? "bot" : null,
@@ -349,6 +355,8 @@ export function OpponentFound({
     signingState,
     router,
     walletAddress,
+    visibleWalletAddress,
+    displayAsGuest,
     roomId,
     arena.id,
     arena.token,
@@ -852,7 +860,7 @@ export function OpponentFound({
               Practice mode
             </p>
             <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
-              {isGuest
+              {displayAsGuest
                 ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
                 : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches."}
             </p>
