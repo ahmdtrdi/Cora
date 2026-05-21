@@ -966,3 +966,68 @@ All constants, seeds, timeouts, fees, and message formats verified consistent ac
 - [ ] `MASTER.md` still describes a simpler 2-transaction escrow story; Blink remains an intentional async exception that may need product-doc cleanup later.
 - [ ] `anchor build` warns that the Anchor CLI is `0.32.1` while the crate uses `anchor-lang = 1.0.1`. It built successfully here, but version pinning in `Anchor.toml` would reduce future environment drift.
 - [ ] `packages/shared-types/src/escrow.ts` had stale timeout constants before this change. They are now aligned with Rust, but FE/BE should be made aware because any logic that assumed `300 / 1800` seconds was already drifted from the actual program.
+
+---
+
+## Entry 27 — 2026-05-21: Multi-Environment Staging/Production Architecture & Workspace Restructuring Prep
+
+### The Change
+
+**Application Configuration:**
+- `apps/api/src/config/solana.ts` — Updated the `CORA_ESCROW_PROGRAM_ID` to be loaded dynamically from `process.env.CORA_ESCROW_PROGRAM_ID` with a default devnet fallback.
+- `apps/api/.env.example` — Added commented environment configuration support for the new `CORA_ESCROW_PROGRAM_ID` variable.
+- `.gitignore` — Added `/keys/` directory to prevent private keys from ever being committed to GitHub.
+
+**Environment Isolation:**
+- Created `/keys/production/` and backed up the existing stable Devnet production keypairs for `solana_program` and `cora_battle`.
+- Created `/keys/staging/` and generated two brand-new keypairs for staging deployments on Devnet.
+
+### The Reasoning
+
+1. **Active iteration on `develop` branch must not impact stable `main`.** By separating staging and production keypairs/Program IDs on Devnet, we can verify new game loops and state changes without disrupting the running MVP client interface.
+2. **Anchor workspaces cannot be fully unified.** We analyzed a workspace unification but rejected it due to critical version dependencies: the escrow program is built on Anchor `0.30` while `cora-battle` requires Anchor `0.32.1` for MagicBlock ER SDK support. Instead, keeping separate sub-workspaces inside `packages/contracts/solana/` provides the ultimate modular separation of concerns.
+3. **Application layers are now environment-agnostic.** By abstracting the Escrow Program ID to backend environment variables (similar to `CORA_BATTLE_PROGRAM_ID` in the MagicBlock service), the client and core APIs are completely decoupled from hardcoded cluster addresses.
+
+### Verification
+
+- [x] Configured `.gitignore` block successfully tested with `git status` (staging/production keys are correctly ignored).
+- [x] New staging keypairs generated successfully and printed:
+  * **Staging Escrow Program ID:** `4CfVnPMud644u1tGr42q69qXXcqeJfsg37PCgTCSgBz7`
+  * **Staging Battle Program ID:** `CTaQH1R43JRtZ6aeSUYxsNAvJi1r1hBR3ps8usgPgJGt`
+- [x] Stable production keypairs safely copied to `/keys/production/`.
+
+### The Tech Debt
+
+- [ ] Path loaders for IDLs and build output mappings will need a minor path refactoring once directories are renamed to `packages/contracts/solana/cora-escrow` and `packages/contracts/solana/cora-battle`.
+
+---
+
+## Entry 28 — 2026-05-21: Multi-Chain Monorepo Directory Restructuring Completed
+
+### The Change
+
+**Directory Reorganization:**
+- `packages/solana-program` ➔ Relocated via `git mv` to `packages/contracts/solana/cora-escrow`.
+- `packages/battle-anchor-032` ➔ Relocated via `git mv` to `packages/contracts/solana/cora-battle`.
+- `packages/contracts/evm/.gitkeep` ➔ Created a placeholder to establish the Solidity EVM smart contract folder structure.
+- `packages/chain-adapter/.gitkeep` ➔ Created a placeholder to establish the clean multi-chain abstraction layer.
+
+**Workspace & Dependency Bindings:**
+- `package.json` ➔ Updated workspaces array to include `"packages/contracts/solana/*"` so yarn/bun workspace resolutions continue to work post-migration.
+- `apps/api/src/services/magicblock.ts` ➔ Updated relative target paths for `loadCoraBattleIdl()` to map to the new `cora-battle` workspace build outputs.
+- Triggered `bun install` at monorepo root to link the restructured workspaces.
+
+### The Reasoning
+
+1. **Perfect alignment with multi-chain standards.** Relocating smart contracts to the nested structure under `packages/contracts/` prepares the Cora ecosystem for a clean EVM expansion in the future.
+2. **Maintained double-version compiler isolation.** Because `cora-escrow` runs on Anchor `0.30` and `cora-battle` runs on Anchor `0.32.1`, they are kept as separate independent Anchor workspaces inside `packages/contracts/solana/` rather than a unified Cargo workspace. This completely avoids cross-dependency build conflicts.
+3. **Preserved file git history.** Performing all file movements strictly via `git mv` ensures all previous commits and development tracks are preserved cleanly inside git.
+
+### Verification
+
+- [x] Workspace linking completed and resolved successfully via `bun install`.
+- [x] Verified `packages/contracts/solana/cora-escrow` compiles cleanly post-relocation (`anchor build` exit code `0`).
+- [x] Verified `packages/contracts/solana/cora-battle` compiles cleanly post-relocation (`anchor build` exit code `0`).
+- [x] Verified `apps/api` MagicBlock IDL absolute and relative URL paths align correctly.
+
+
