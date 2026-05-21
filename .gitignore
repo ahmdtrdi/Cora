@@ -31,3 +31,6 @@ production_readiness.md
 SPRINT_CORA.md
 # Questions Database
 data/questions/*.json
+
+# Local Keypairs (Staging / Production)
+keys/
