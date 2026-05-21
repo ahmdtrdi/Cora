@@ -976,7 +976,7 @@ export function LobbyScreen() {
     if (typeof window !== "undefined") {
       window.localStorage.setItem("cora:introSeen", "1");
     }
-  }, []);
+  }, [setIntroOverlayOpen]);
 
   const beginMatchmaking = useCallback(() => {
     if (isGuestMode) {
@@ -2150,6 +2150,7 @@ export function LobbyScreen() {
                   blinkChallengeBusy={blinkChallengeBusy}
                   hasActiveBlinkChallenge={hasBlockingBlinkChallenge}
                   onTryFreeTutorial={startTutorialFlow}
+                  onReplayIntro={() => setIntroOverlayOpen(true)}
                 />
               </motion.div>
             )}

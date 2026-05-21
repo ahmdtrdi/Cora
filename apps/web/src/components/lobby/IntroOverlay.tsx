@@ -46,6 +46,7 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
   // Dynamic asset availability check
   useEffect(() => {
     if (!isOpen) return;
+    queueMicrotask(() => setCurrentStep(0));
     const checkAssets = async () => {
       const results: Record<string, boolean> = {};
       for (const panel of PANELS) {

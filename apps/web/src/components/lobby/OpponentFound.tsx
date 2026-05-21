@@ -86,6 +86,7 @@ export function OpponentFound({
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
   const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
+  const [depositReminderOpen, setDepositReminderOpen] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const [battleLaunchCountdown, setBattleLaunchCountdown] = useState<number | null>(null);
   const hasConnectedOnceRef = useRef(false);
@@ -569,6 +570,7 @@ export function OpponentFound({
   }, [connectionState]);
 
   async function onSignDeposit() {
+    setDepositReminderOpen(false);
     console.info("[OpponentFound] Deposit click", {
       roomId,
       role: effectiveRole ?? "unknown",
@@ -695,6 +697,16 @@ export function OpponentFound({
     }
   }
 
+  function onRequestDeposit() {
+    if (!canAttemptSign) return;
+    setDepositReminderOpen(true);
+  }
+
+  function onConfirmDepositReminder() {
+    if (!canAttemptSign) return;
+    void onSignDeposit();
+  }
+
   function onCancelMatch() {
     // Ref guard prevents multiple rapid clicks from firing onTimeout() more than once
     // before the component unmounts (state updates are async, refs are synchronous).
@@ -794,7 +806,7 @@ export function OpponentFound({
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
-    return "Sign Deposit";
+    return "Deposit";
   }
 
 
@@ -974,6 +986,57 @@ export function OpponentFound({
           </div>
         </div>
       )}
+      {depositReminderOpen && canAttemptSign && !isBotMatch && (
+        <div className="fixed inset-0 z-[90] grid place-items-center bg-[rgba(2,6,5,0.78)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-md p-5 text-center shadow-2xl md:p-6"
+            style={{
+              border: "1px solid rgba(248,214,148,0.42)",
+              background: "linear-gradient(145deg, rgba(13,24,20,0.98) 0%, rgba(22,35,29,0.98) 100%)",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.46)",
+            }}
+          >
+            <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
+              Deposit rule reminder
+            </p>
+            <p className="mt-2 font-caprasimo text-3xl leading-tight text-[var(--tone-cream)]">
+              Confirm wager deposit
+            </p>
+            <p className="mt-4 font-gabarito text-sm text-[rgba(244,240,230,0.88)]">
+              Wager: <span className="font-black text-[var(--tone-cream)]">${wagerUsd}</span> on{" "}
+              <span className="font-black text-[var(--tone-cream)]">{arena.token}</span> arena.
+            </p>
+            <p className="mt-2 rounded-xl border border-[rgba(248,214,148,0.18)] bg-[rgba(248,214,148,0.08)] px-3 py-2 font-gabarito text-sm text-[#f1dfc1]">
+              Winner takes the settled pot; surrendering or leaving can forfeit your wager.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setDepositReminderOpen(false)}
+                className="btn-game btn-game-secondary px-5 py-3 text-xs"
+                style={{
+                  borderColor: "rgba(248,214,148,0.34)",
+                  background: "rgba(248,214,148,0.08)",
+                  boxShadow: "0 4px 0 rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08)",
+                  color: "rgba(255,246,224,0.92)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmDepositReminder}
+                disabled={!canAttemptSign}
+                className={`btn-game btn-game-primary px-4 py-2 text-xs shadow-xl ${
+                  canAttemptSign ? "" : "cursor-not-allowed opacity-55"
+                }`}
+              >
+                Confirm Deposit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-shrink-0 text-center">
       <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
@@ -1118,7 +1181,7 @@ export function OpponentFound({
             signature={signedDepositSignature}
             canPrimaryAction={canAttemptSign}
             primaryActionLabel={getPrimaryButtonLabel()}
-            onPrimaryAction={isBotMatch ? undefined : onSignDeposit}
+            onPrimaryAction={isBotMatch ? undefined : onRequestDeposit}
             statusStripSlot={
               showArenaStatusStrip ? (
                 <div className="mx-auto flex min-h-[58px] w-full max-w-xl items-center justify-center">

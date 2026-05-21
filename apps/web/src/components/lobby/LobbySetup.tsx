@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { HistoryButton } from "@/components/history/HistoryButton";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import type { Arena } from "./LobbyScreen";
 
@@ -23,6 +22,7 @@ type LobbySetupProps = {
   blinkChallengeBusy: boolean;
   hasActiveBlinkChallenge: boolean;
   onTryFreeTutorial: () => void;
+  onReplayIntro: () => void;
 };
 
 function truncateWallet(address: string) {
@@ -60,6 +60,58 @@ function ArenaIcon({ token, active }: { token: string; active: boolean }) {
   );
 }
 
+function HeaderPill({
+  children,
+  tone = "info",
+  disabled = false,
+  onClick,
+}: {
+  children: ReactNode;
+  tone?: "info" | "action" | "disabled";
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  const isButton = Boolean(onClick);
+  const toneStyle =
+    tone === "action"
+      ? {
+          border: "2px solid rgba(248,214,148,0.34)",
+          background: "linear-gradient(180deg, rgba(111,58,40,0.88) 0%, rgba(72,39,25,0.92) 100%)",
+          boxShadow: "inset 0 1px 0 rgba(248,214,148,0.18), 0 10px 24px rgba(0,0,0,0.22)",
+          color: "#f8d694",
+        }
+      : tone === "disabled"
+        ? {
+            border: "2px solid rgba(88,88,82,0.72)",
+            background: "linear-gradient(180deg, rgba(34,38,34,0.9) 0%, rgba(24,28,24,0.95) 100%)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+            color: "rgba(244,240,230,0.62)",
+          }
+        : {
+            border: "2px solid var(--tone-bark)",
+            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
+            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2), 0 10px 24px rgba(0,0,0,0.22)",
+            color: "var(--tone-mint)",
+          };
+  const className = `frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 font-gabarito text-xs font-bold uppercase tracking-wider shadow-lg transition ${
+    isButton && !disabled ? "hover:-translate-y-0.5 hover:brightness-110" : ""
+  } ${disabled ? "cursor-not-allowed grayscale" : ""}`;
+
+  if (isButton) {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} className={className} style={toneStyle}>
+        {children}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className} style={toneStyle}>
+      {children}
+    </div>
+  );
+}
+
 export function LobbySetup({
   walletAddress,
   walletConnected,
@@ -75,6 +127,7 @@ export function LobbySetup({
   blinkChallengeBusy,
   hasActiveBlinkChallenge,
   onTryFreeTutorial,
+  onReplayIntro,
 }: LobbySetupProps) {
   const { wallet: selectedWallet, connect, connecting } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
@@ -211,21 +264,15 @@ export function LobbySetup({
   return (
     <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 md:px-6 md:py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div
-          className="frame-cut frame-cut-sm inline-flex items-center gap-3 px-3 py-2 shadow-lg"
-          style={{
-            border: "2px solid var(--tone-bark)",
-            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
-            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
-          }}
-        >
-          <div className="h-6 w-6 rounded-full border border-[var(--tone-teal)] bg-[var(--tone-clay)]" />
-          <p className="font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)]">
-            {identityLabel}
-          </p>
-        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <HeaderPill>
+            <span className="h-4 w-4 rounded-full border border-[var(--tone-teal)] bg-[var(--tone-clay)]" />
+            <span className="font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)]">
+              {identityLabel}
+            </span>
+          </HeaderPill>
 
-        <div className="inline-flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div
             className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
             style={{
@@ -252,8 +299,16 @@ export function LobbySetup({
             </span>
           </div>
         </div>
+        </div>
 
-        <HistoryButton label="History Coming Soon" />
+        <div className="flex flex-wrap items-center gap-2">
+          <HeaderPill tone="action" onClick={onReplayIntro}>
+            Replay Intro
+          </HeaderPill>
+          <HeaderPill tone="disabled" disabled>
+            History Coming Soon
+          </HeaderPill>
+        </div>
       </header>
 
       <div

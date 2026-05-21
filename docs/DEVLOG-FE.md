@@ -5991,3 +5991,61 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - Connected-state spacing is still tuned in the component with conditional margin classes. If the connect card gains more states, extract small header/status subcomponents.
 
+## 2026-05-21 - Lobby Replay Intro Utility
+
+### The Change
+- Added a `Replay Intro` lobby utility action wired to reopen the existing [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) without resetting intro localStorage.
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so wallet, wager, balance, replay intro, and history share the same clipped pill language, with warm action coloring for replay and muted disabled styling for history.
+
+### The Reasoning
+- Users may want to revisit onboarding after landing in the lobby. Keeping replay as a top utility action makes it discoverable without competing with arena selection or tutorial/practice CTAs.
+
+### The Tech Debt
+- The lobby header pill helper is local to `LobbySetup`. If other screens need the same pill treatment, promote it into a shared UI component.
+
+## 2026-05-21 - Match Wallet Pill Height
+
+### The Change
+- Reduced the wallet identity marker size in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the wallet pill matches the wager and balance pill height.
+
+### The Reasoning
+- The previous marker made the wallet pill visually taller than the rest of the lobby header controls. Keeping all pills aligned makes the header read as one consistent utility strip.
+
+### The Tech Debt
+- Header pill sizing is still manually tuned in `LobbySetup`; shared pill tokens would make future adjustments less repetitive.
+
+## 2026-05-21 - Soften Replay Intro Pill
+
+### The Change
+- Reduced the warm outline and highlight strength on the `Replay Intro` header pill in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- Replay Intro is a helpful utility action, but it should sit below the main lobby actions visually. Softer treatment keeps it discoverable without over-commanding the header.
+
+### The Tech Debt
+- Header action tones are still inline style objects; promote them to shared tokens if more header utilities are added.
+
+## 2026-05-21 - Reset Intro Replay Step
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so opening the overlay always resets to the first panel.
+
+### The Reasoning
+- Replay Intro should behave like a fresh replay, not resume from wherever the user last closed the onboarding.
+
+### The Tech Debt
+- Intro step state still lives inside the overlay. If parent screens ever need deep-linking to a specific intro step, expose an initial step prop instead.
+
+## 2026-05-22 - Real Match Deposit Reminder
+
+### The Change
+- Added a pre-sign deposit reminder modal to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) for the real matchmaking flow.
+- Changed the idle primary action copy from `Sign Deposit` to `Deposit`; pressing it now opens the reminder, and `Confirm Deposit` starts the existing Phantom signing path.
+- Finalized the reminder UI with centered content, a compact wager line, a single readable warning, and a light warm cancel action.
+
+### The Reasoning
+- The reminder needs to appear before Phantom opens, but the stable signing/socket logic should stay untouched. The modal gates only the UI click path and still calls the existing `onSignDeposit` handler, preserving transaction preparation, `Opening Phantom...`, deposit confirmation, and timeout behavior.
+
+### The Tech Debt
+- The reminder copy is local to `OpponentFound`. If Blink deposits or other wager entry points need the same rule reminder later, extract a shared deposit reminder component.
+
