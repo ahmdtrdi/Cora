@@ -5744,3 +5744,37 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The landing video is currently wired directly to a hosted asset URL inside the component. If we expect to swap clips often, we should move the media source and poster into environment/config-driven content.
 - The history page messaging is accurate for the current Devnet state, but once indexed history becomes stable we should replace the placeholder route with the full records experience and remove the temporary hold copy.
+
+## 2026-05-20 - Connect screen wallet and guest entry hierarchy clarified
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so `Connect Wallet` and `Enter As Guest` are sibling entry actions on the connect screen.
+- Replaced the raw wallet adapter button on this screen with a local wallet action that either opens the wallet modal or connects the selected wallet, keeping Phantom as provider context instead of a competing top-level CTA.
+- Tightened guest and practice copy across connect, lobby, handoff, battle notice, surrender, and result surfaces so user-facing text says `practice round`, `practice rival`, or `no-stakes round` instead of implementation-flavored `bot match` and generated-address wording.
+- Added a quiet `Disconnect Wallet` action to the connected `/connect` state so users can still undo an auto-synced wallet after the embedded wallet dropdown was removed from this screen.
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the wallet and Blink actions sit on the same footer row, with the guest/wallet helper text spanning below them, and the wallet action uses the same CORA `btn-game-primary` styling as lobby progression buttons instead of the default wallet adapter pill.
+- Updated guest identity pills in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx), and [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so guest addresses consistently render with a `Guest` prefix, matching the lobby setup identity pill.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so post-match share cards and the in-battle player identity line also render guest practice addresses with the `Guest` prefix.
+- Updated bot rival identity labels in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so practice rival addresses render with a `Bot` prefix anywhere they feed the lobby handoff, battle HUD, share card, or share-copy text.
+- Removed the always-visible `Practice Now` action from [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx), leaving the slow-queue overlay as the dedicated practice fallback prompt.
+
+### The Reasoning
+- The connect screen has two real product paths: wallet-backed CORA with queue/deposits/rewards, and guest bot practice. Presenting Phantom beside those paths made the hierarchy read like three modes instead of one provider inside the wallet path.
+- Keeping both actions in the existing centered arena panel preserves the current visual language while making the decision clearer for new users.
+
+### The Tech Debt
+- The custom wallet action is intentionally scoped to the connect screen. Other surfaces still use the shared `HydratedWalletButton`, so if this hierarchy becomes the standard wallet entry pattern, we should promote it into a reusable component.
+
+## 2026-05-21 - Server-acknowledged card opening in battle UI
+
+### The Change
+- Updated [useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) to expose the new backend `openCardAccepted` and `cardActionRejected` events.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so clicking a card still opens the question shell immediately, but answer buttons remain disabled until the matching `openCardAccepted` event or legacy matching `cardCountdown` arrives.
+- Added `cardActionRejected` handling that resets the active card and shows the backend message, plus `cardExpired(reason: "rejected")` handling that unlocks without treating the event as a real timeout.
+
+### The Reasoning
+- The previous card flow trusted the client-side open state too early. If the backend rejected or lost the open state, the player could answer into a silent backend rejection and get stuck.
+- Waiting for the server ACK before enabling answers preserves the authoritative open-before-play contract while keeping the UX responsive: players see the card shell right away, then answers become available as soon as the server confirms.
+
+### The Tech Debt
+- The battle UI still uses a local `Opening card...` pending state rather than a dedicated visual treatment. If this state becomes noticeable over real network conditions, add a small animated sync affordance to the question card instead of relying only on disabled answers and `...` countdown copy.

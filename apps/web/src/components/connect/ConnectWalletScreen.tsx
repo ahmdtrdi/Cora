@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Keypair } from "@solana/web3.js";
-import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 
 const GUEST_ADDRESS_STORAGE_KEY = "cora:guest-address";
 
@@ -27,8 +27,10 @@ function writeStoredGuestAddress(address: string) {
 export function ConnectWalletScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { publicKey } = useWallet();
+  const { publicKey, wallet, connect, disconnect, connecting, disconnecting } = useWallet();
+  const { setVisible: setWalletModalVisible } = useWalletModal();
   const [guestBusy, setGuestBusy] = useState(false);
+  const [walletBusy, setWalletBusy] = useState(false);
   const connected = Boolean(publicKey);
   const address = publicKey?.toBase58() ?? "";
 
@@ -44,6 +46,24 @@ export function ConnectWalletScreen() {
     setGuestBusy(true);
     writeStoredGuestAddress(Keypair.generate().publicKey.toBase58());
     router.push("/lobby?guest=1");
+  }
+
+  async function connectWallet() {
+    if (walletBusy || connecting) return;
+
+    if (!wallet) {
+      setWalletModalVisible(true);
+      return;
+    }
+
+    setWalletBusy(true);
+    try {
+      await connect();
+    } catch {
+      // Wallet cancellation should leave the user on the connect screen without breaking the flow.
+    } finally {
+      setWalletBusy(false);
+    }
   }
 
   return (
@@ -119,20 +139,44 @@ export function ConnectWalletScreen() {
               Enter the Arena
             </h1>
             <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
-              Connect Phantom for wager matches, or enter guest practice against the bot.
+              Connect a wallet for wager matches, or try a no-stakes practice round.
             </p>
 
             <div className="mt-8 flex flex-col items-center gap-5">
-              <HydratedWalletButton />
               {!connected && (
-                <button
-                  type="button"
-                  onClick={enterAsGuest}
-                  disabled={guestBusy}
-                  className={`btn-game btn-game-secondary w-full min-w-[200px] ${guestBusy ? "cursor-not-allowed opacity-60" : ""}`}
-                >
-                  {guestBusy ? "Opening Guest Lobby..." : "Play As Guest"}
-                </button>
+                <div className="grid w-full gap-3 sm:grid-cols-2">
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={connectWallet}
+                      disabled={walletBusy || connecting}
+                      className={`btn-game btn-game-primary min-h-[56px] w-full px-4 text-sm ${
+                        walletBusy || connecting ? "cursor-not-allowed opacity-60" : ""
+                      }`}
+                    >
+                      {walletBusy || connecting ? "Connecting..." : "Connect Wallet"}
+                    </button>
+                    <p className="font-gabarito text-[11px] leading-snug text-[#8fa897]">
+                      Full queue, deposits, Blinks, and Solana rewards.
+                    </p>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={enterAsGuest}
+                      disabled={guestBusy}
+                      className={`btn-game btn-game-secondary min-h-[56px] w-full px-4 text-sm ${
+                        guestBusy ? "cursor-not-allowed opacity-60" : ""
+                      }`}
+                    >
+                      {guestBusy ? "Opening..." : "Enter As Guest"}
+                    </button>
+                    <p className="font-gabarito text-[11px] leading-snug text-[#8fa897]">
+                      Try CORA first. No wallet, deposit, or Solana payout.
+                    </p>
+                  </div>
+                </div>
               )}
               
               {connected ? (
@@ -148,11 +192,23 @@ export function ConnectWalletScreen() {
                   >
                     Enter Lobby
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void disconnect();
+                    }}
+                    disabled={disconnecting}
+                    className={`font-gabarito text-xs font-bold uppercase tracking-[0.16em] text-[rgba(244,240,230,0.58)] underline decoration-dotted underline-offset-4 transition hover:text-[rgba(244,240,230,0.88)] ${
+                      disconnecting ? "cursor-not-allowed opacity-60" : ""
+                    }`}
+                  >
+                    {disconnecting ? "Disconnecting..." : "Disconnect Wallet"}
+                  </button>
                 </div>
               ) : (
                 <div className="mt-2 rounded-lg border border-[rgba(186,105,49,0.2)] bg-[rgba(186,105,49,0.05)] p-4 shadow-inner">
                   <p className="font-gabarito text-xs leading-relaxed text-[var(--tone-cream)] opacity-70">
-                    Guest mode skips wallet connection and can only play bot practice. Connect Phantom for queue, deposits, Blinks, and history.
+                    Guest practice lets you try CORA without a wallet. Connect later for queue, deposits, Blinks, and history.
                   </p>
                 </div>
               )}

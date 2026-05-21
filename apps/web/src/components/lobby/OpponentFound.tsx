@@ -45,6 +45,14 @@ function shortWallet(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function identityLabel(address: string, isGuest: boolean) {
+  return isGuest ? `Guest ${shortWallet(address)}` : shortWallet(address);
+}
+
+function rivalIdentityLabel(address: string, isBot: boolean) {
+  return isBot ? `Bot ${shortWallet(address)}` : shortWallet(address);
+}
+
 function getRoomCancelledMessage(reason?: "player_cancelled" | "deposit_timeout" | "disconnect") {
   if (reason === "deposit_timeout") return "Deposit timed out. Returning to lobby.";
   if (reason === "disconnect") return "Match cancelled before battle start. Returning to lobby.";
@@ -93,6 +101,8 @@ export function OpponentFound({
   );
 
   const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
+  const displayWalletAddress = isGuest ? myWallet : walletAddress;
+  const displayWalletLabel = identityLabel(displayWalletAddress, isGuest);
   usePreloadedAudio(OPPONENT_FOUND_PRELOADED_AUDIO);
   const signed = signingState === "waiting";
   const {
@@ -178,8 +188,8 @@ export function OpponentFound({
           ...magicBlockUi,
           tone: "magicblock" as const,
           badgeLabel: "Practice Arena",
-          title: "Preparing bot match",
-          detail: "No deposit needed. Syncing the fast arena.",
+          title: "Preparing practice round",
+          detail: "No deposit needed. Setting up the arena.",
           progress: 45,
           showPulse: true,
         }
@@ -716,8 +726,8 @@ export function OpponentFound({
     }
     if (isBotMatch) {
       if (battleLaunchCountdown !== null) return `Practice battle starts in ${battleLaunchCountdown}...`;
-      if (isBattleSnapshotReady) return "Bot match ready. Starting battle.";
-      return "No deposit needed for bot matches. Preparing the fast arena.";
+      if (isBattleSnapshotReady) return "Practice round ready. Starting battle.";
+      return "No deposit needed. Preparing your practice round.";
     }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (isPlayerBWaitingUnlock) {
@@ -765,7 +775,7 @@ export function OpponentFound({
   function getPrimaryButtonLabel() {
     const isDisconnected = connectionState === "error" || connectionState === "disconnected";
     const isReconnecting = connectionState === "reconnecting";
-    if (isBotMatch) return "Preparing Bot Match...";
+    if (isBotMatch) return "Preparing Practice...";
     if (isPlayerBWaitingUnlock) {
       if (isDisconnected) return "Disconnected...";
       if (isReconnecting) return "Reconnecting...";
@@ -839,12 +849,12 @@ export function OpponentFound({
             }}
           >
             <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
-              Practice wallet notice
+              Practice mode
             </p>
             <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
               {isGuest
-                ? "Practice mode: temporary addresses and practice questions. Connect wallet for real matches."
-                : "Practice mode: temporary bot address and practice questions. Connect wallet for real matches."}
+                ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
+                : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches."}
             </p>
           </div>
         </div>
@@ -962,7 +972,7 @@ export function OpponentFound({
         {arena.label} · ${wagerUsd} {arena.token}
       </p>
       <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
-        {isBotMatch ? "Bot Rival Locked" : "Rival Locked"}
+        {isBotMatch ? "Practice Rival Locked" : "Rival Locked"}
       </h1>
       {!isBotMatch && (
         <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
@@ -1014,7 +1024,7 @@ export function OpponentFound({
               </span>
               <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
               <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{displayWalletLabel}</p>
             </div>
           </div>
         </div>
@@ -1058,7 +1068,7 @@ export function OpponentFound({
                 Character revealed when battle starts.
               </p>
               <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                {opponentAddress ? shortWallet(opponentAddress) : "Syncing rival..."}
+                {opponentAddress ? rivalIdentityLabel(opponentAddress, isBotMatch) : "Syncing rival..."}
               </p>
             </div>
           </div>
@@ -1074,7 +1084,7 @@ export function OpponentFound({
           }}
         >
           <DepositPanel
-            title={isBotMatch ? "Bot practice match" : undefined}
+            title={isBotMatch ? "Practice round" : undefined}
             token={arena.token}
             wagerUsd={wagerUsd}
             status={getDepositStatus()}

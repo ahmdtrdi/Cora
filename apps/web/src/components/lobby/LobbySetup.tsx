@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { HistoryButton } from "@/components/history/HistoryButton";
-import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import type { Arena } from "./LobbyScreen";
 
@@ -74,6 +75,9 @@ export function LobbySetup({
   blinkChallengeBusy,
   hasActiveBlinkChallenge,
 }: LobbySetupProps) {
+  const { wallet: selectedWallet, connect, connecting } = useWallet();
+  const { setVisible: setWalletModalVisible } = useWalletModal();
+  const [walletBusy, setWalletBusy] = useState(false);
   const ARENA_ASSET_VERSION = "2026-05-12-arena-refresh-1";
   const COMING_SOON_ARENA_ID = "mew";
   const COMING_SOON_ARENA_IDS = new Set(["bonk", COMING_SOON_ARENA_ID]);
@@ -121,6 +125,24 @@ export function LobbySetup({
     token: selectedArena?.token ?? "SOL",
     enabled: playabilityEnabled,
   });
+
+  async function openWalletEntry() {
+    if (walletBusy || connecting) return;
+
+    if (!selectedWallet) {
+      setWalletModalVisible(true);
+      return;
+    }
+
+    setWalletBusy(true);
+    try {
+      await connect();
+    } catch {
+      // Wallet cancellation should keep the player in the lobby without breaking setup.
+    } finally {
+      setWalletBusy(false);
+    }
+  }
 
   const tokenBalanceLabel = selectedArenaDisplay ? `${selectedArenaDisplay.token} Balance` : "Token Balance";
   const tokenBalanceValue = !selectedArenaDisplay
@@ -470,36 +492,42 @@ export function LobbySetup({
         </section>
       </div>
 
-      <div className="mt-4 flex w-full flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          {!walletConnected && !guestMode && (
-            <>
-              <p className="font-gabarito text-xs text-[#6f3a28]">
-                Connect wallet to unlock queue and deposit signing.
-              </p>
-              <HydratedWalletButton />
-            </>
-          )}
-          {!walletConnected && guestMode && (
-            <>
-              <p className="font-gabarito text-xs text-[#6f3a28]">
-                You entered as guest. Please connect your wallet to unlock deposits and all possibilities of CORA.
-              </p>
-              <HydratedWalletButton />
-            </>
-          )}
+      <div className="mt-4 flex w-full flex-col gap-2">
+        <div className="flex w-full flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center">
+            {!walletConnected && (
+              <button
+                type="button"
+                onClick={openWalletEntry}
+                disabled={walletBusy || connecting}
+                className={`btn-game btn-game-primary px-6 py-3 text-xs shadow-md ${
+                  walletBusy || connecting ? "cursor-not-allowed opacity-60" : ""
+                }`}
+              >
+                {walletBusy || connecting ? "Connecting..." : selectedWallet ? "Connect Wallet" : "Select Wallet"}
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onCreateBlinkChallenge}
+            disabled={!selectedArena || comingSoonArenaVisible || !walletConnected || blinkChallengeBusy}
+            className={`btn-game btn-game-secondary shrink-0 px-5 py-2 text-xs shadow-md ${
+              !selectedArena || comingSoonArenaVisible || !walletConnected || blinkChallengeBusy ? "opacity-50" : ""
+            }`}
+          >
+            {blinkChallengeBusy ? "Opening Blink..." : hasActiveBlinkChallenge ? "View Active Blink" : "Create Blink Challenge"}
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={onCreateBlinkChallenge}
-          disabled={!selectedArena || comingSoonArenaVisible || !walletConnected || blinkChallengeBusy}
-          className={`btn-game btn-game-secondary shrink-0 px-5 py-2 text-xs shadow-md ${
-            !selectedArena || comingSoonArenaVisible || !walletConnected || blinkChallengeBusy ? "opacity-50" : ""
-          }`}
-        >
-          {blinkChallengeBusy ? "Opening Blink..." : hasActiveBlinkChallenge ? "View Active Blink" : "Create Blink Challenge"}
-        </button>
+        {!walletConnected && (
+          <p className="w-full font-gabarito text-xs leading-relaxed text-[var(--tone-cream)] opacity-80">
+            {guestMode
+              ? "You are in guest practice. Connect a wallet when you are ready for deposits, Blinks, and the full CORA experience."
+              : "Connect a wallet to unlock queue and deposit signing."}
+          </p>
+        )}
       </div>
     </div>
   );

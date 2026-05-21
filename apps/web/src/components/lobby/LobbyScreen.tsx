@@ -848,12 +848,12 @@ export function LobbyScreen() {
 
     if (!playerAddress) {
       setMatchmakingState("error");
-      setMatchmakingError("Connect wallet or play as guest before starting a bot match.");
+      setMatchmakingError("Connect a wallet or enter as guest before starting practice.");
       return;
     }
     if (!selectedArena || !selectedScientist) {
       setMatchmakingState("error");
-      setMatchmakingError("Choose an arena and scientist before starting a bot match.");
+      setMatchmakingError("Choose an arena and scientist before starting practice.");
       return;
     }
 
@@ -893,7 +893,7 @@ export function LobbyScreen() {
       setMatchmakingState("idle");
       setMatchmakingStage("finding");
       setActiveMatchToast({
-        text: isGuestMode ? "Bot found. Guest and bot practice addresses generated." : "Bot found. Practice address generated for the bot.",
+        text: isGuestMode ? "Practice rival found. Entering the arena." : "Practice rival found. Entering the arena.",
         tone: "success",
       });
       setPhase("found");
@@ -901,7 +901,7 @@ export function LobbyScreen() {
       if (controller.signal.aborted) {
         if (!timedOut) return;
 
-        const message = "Bot took too long to respond. Tap Play With Bot again.";
+        const message = "Practice took too long to start. Tap Practice Now again.";
         setMatchmakingState("timeout");
         setMatchmakingStage("finding");
         setMatchmakingError(message);
@@ -910,7 +910,7 @@ export function LobbyScreen() {
         return;
       }
 
-      const message = error instanceof Error ? error.message : "Failed to start bot match.";
+      const message = error instanceof Error ? error.message : "Failed to start practice.";
       setMatchmakingState("error");
       setMatchmakingStage("finding");
       setMatchmakingError(message);
@@ -1851,9 +1851,9 @@ export function LobbyScreen() {
             className="frame-cut w-full max-w-md p-5 text-center shadow-2xl md:p-6"
             style={{ border: "1px solid rgba(248,214,148,0.42)", background: "rgba(13,24,20,0.96)" }}
           >
-            <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Play with bot?</p>
+            <p className="font-caprasimo text-3xl text-[var(--tone-cream)]">Practice now?</p>
             <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.84)]">
-              Queue is taking longer than usual. You can start a practice match now, with no Solana payout or loss.
+              Queue is taking longer than usual. You can warm up in a no-stakes round with no Solana won or lost.
             </p>
             <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
@@ -1874,7 +1874,7 @@ export function LobbyScreen() {
                 className="frame-cut frame-cut-sm px-4 py-2 font-gabarito text-xs font-extrabold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ border: "1px solid rgba(157,180,150,0.44)", color: "var(--tone-cream)", background: "rgba(39,65,55,0.96)" }}
               >
-                {botMatchBusy ? "Starting..." : "Play With Bot"}
+                {botMatchBusy ? "Starting..." : "Practice Now"}
               </button>
             </div>
           </div>
@@ -2103,7 +2103,8 @@ export function LobbyScreen() {
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
                   walletAddress={walletAddr}
-                  continueLabel={isGuestMode ? "Play With Bot" : "Enter Queue"}
+                  isGuest={isGuestMode}
+                  continueLabel={isGuestMode ? "Practice Now" : "Enter Queue"}
                   continueBusy={botMatchBusy}
                 />
               </motion.div>
@@ -2124,6 +2125,7 @@ export function LobbyScreen() {
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
                   walletAddress={walletAddr}
+                  isGuest={isGuestMode}
                   state={matchmakingState === "idle" ? "searching" : matchmakingState}
                   stage={matchmakingStage}
                   errorMessage={matchmakingError}
@@ -2133,8 +2135,6 @@ export function LobbyScreen() {
                     beginMatchmaking();
                   }}
                   onCancel={cancelMatchmaking}
-                  onPlayBot={startBotMatch}
-                  playBotBusy={botMatchBusy}
                 />
               </motion.div>
             )}

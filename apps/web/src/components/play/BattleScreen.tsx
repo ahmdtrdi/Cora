@@ -119,6 +119,16 @@ function shortenAddress(address?: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function playerIdentityLabel(address: string | undefined, isGuest: boolean) {
+  const shortAddress = shortenAddress(address);
+  return isGuest && shortAddress !== "Unknown" ? `Guest ${shortAddress}` : shortAddress;
+}
+
+function rivalIdentityLabel(address: string | undefined, isBot: boolean) {
+  const shortAddress = shortenAddress(address);
+  return isBot && shortAddress !== "Unknown" ? `Bot ${shortAddress}` : shortAddress;
+}
+
 function formatMatchClock(remainingMs?: number) {
   if (!Number.isFinite(remainingMs) || remainingMs === undefined) {
     return "03:00";
@@ -283,6 +293,8 @@ export function BattleScreen() {
     lastRoomCancelled,
     lastDamageEvent,
     lastPlayResult,
+    lastOpenCardAccepted,
+    lastCardActionRejected,
     lastCardCountdown,
     lastCardExpired,
     currentPhase,
@@ -303,6 +315,7 @@ export function BattleScreen() {
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activeQuestionCard, setActiveQuestionCard] = useState<Card | null>(null);
+  const [activeCardAccepted, setActiveCardAccepted] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
@@ -339,6 +352,8 @@ export function BattleScreen() {
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
+  const lastProcessedOpenAcceptedAtRef = useRef(0);
+  const lastProcessedCardRejectedAtRef = useRef(0);
   const lastProcessedExpiredAtRef = useRef(0);
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
@@ -420,6 +435,20 @@ export function BattleScreen() {
     [],
   );
 
+  const resetActiveCard = useCallback(() => {
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+      answerFeedbackTimerRef.current = null;
+    }
+    setActiveCardId(null);
+    setActiveQuestionCard(null);
+    setActiveCardAccepted(false);
+    setAnswerLocked(false);
+    setSelectedOptionId(null);
+    setAnswerFeedback(null);
+    pendingCardIdRef.current = null;
+  }, []);
+
   useEffect(() => {
     return () => {
       if (gameNoticeTimerRef.current) {
@@ -458,9 +487,50 @@ export function BattleScreen() {
   );
 
   useEffect(() => {
+    if (!lastOpenCardAccepted) return;
+    if (lastOpenCardAccepted.at === lastProcessedOpenAcceptedAtRef.current) return;
+    lastProcessedOpenAcceptedAtRef.current = lastOpenCardAccepted.at;
+    if (lastOpenCardAccepted.cardId !== pendingCardIdRef.current && lastOpenCardAccepted.cardId !== activeCardId) return;
+
+    setActiveCardAccepted(true);
+    setSecondsLeft(Math.max(0, Math.ceil(lastOpenCardAccepted.remainingMs / 1000)));
+  }, [activeCardId, lastOpenCardAccepted]);
+
+  useEffect(() => {
+    if (!lastCardCountdown) return;
+    if (lastCardCountdown.cardId !== pendingCardIdRef.current && lastCardCountdown.cardId !== activeCardId) return;
+
+    setActiveCardAccepted(true);
+    setSecondsLeft(Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000)));
+  }, [activeCardId, lastCardCountdown]);
+
+  useEffect(() => {
+    if (!lastCardActionRejected) return;
+    if (lastCardActionRejected.at === lastProcessedCardRejectedAtRef.current) return;
+    lastProcessedCardRejectedAtRef.current = lastCardActionRejected.at;
+
+    const rejectedCardId = lastCardActionRejected.cardId ?? lastCardActionRejected.activeCardId ?? null;
+    const affectsActiveCard =
+      !rejectedCardId ||
+      rejectedCardId === pendingCardIdRef.current ||
+      rejectedCardId === activeCardId ||
+      lastCardActionRejected.activeCardId === activeCardId;
+
+    if (affectsActiveCard) {
+      resetActiveCard();
+      showGameNotice(lastCardActionRejected.message || "Card sync lost. Please reopen the card.", "action", 2800);
+    }
+  }, [activeCardId, lastCardActionRejected, resetActiveCard, showGameNotice]);
+
+  useEffect(() => {
     if (!lastCardExpired) return;
     if (lastCardExpired.at === lastProcessedExpiredAtRef.current) return;
     lastProcessedExpiredAtRef.current = lastCardExpired.at;
+
+    if (lastCardExpired.reason === "rejected") {
+      resetActiveCard();
+      return;
+    }
 
     setOutcomes((prev) => [
       ...prev,
@@ -472,17 +542,8 @@ export function BattleScreen() {
     ]);
     playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
     showGameNotice("No damage this turn.");
-    if (answerFeedbackTimerRef.current) {
-      clearTimeout(answerFeedbackTimerRef.current);
-      answerFeedbackTimerRef.current = null;
-    }
-    setActiveCardId(null);
-    setActiveQuestionCard(null);
-    setAnswerLocked(false);
-    setSelectedOptionId(null);
-    setAnswerFeedback(null);
-    pendingCardIdRef.current = null;
-  }, [lastCardExpired, showGameNotice]);
+    resetActiveCard();
+  }, [lastCardExpired, resetActiveCard, showGameNotice]);
 
   useEffect(() => {
     if (!lastPlayResult) return;
@@ -518,6 +579,7 @@ export function BattleScreen() {
     answerFeedbackTimerRef.current = setTimeout(() => {
       setActiveCardId(null);
       setActiveQuestionCard(null);
+      setActiveCardAccepted(false);
       setAnswerLocked(false);
       setSelectedOptionId(null);
       setAnswerFeedback(null);
@@ -639,6 +701,7 @@ export function BattleScreen() {
     }
     setActiveCardId(card.id);
     setActiveQuestionCard(card);
+    setActiveCardAccepted(false);
     setSecondsLeft(ANSWER_TIME_SEC);
     setAnswerLocked(false);
     setSelectedOptionId(null);
@@ -648,7 +711,7 @@ export function BattleScreen() {
   }
 
   function onAnswer(optionId: string) {
-    if (!activeCard || answerLocked || !isPlayable || isMatchComplete) return;
+    if (!activeCard || !activeCardAccepted || answerLocked || !isPlayable || isMatchComplete) return;
     setSelectedOptionId(optionId);
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
@@ -751,10 +814,10 @@ export function BattleScreen() {
             : winnerAddress
               ? winnerAddress === address
                 ? isBotMatch
-                  ? "Practice win recorded. No Solana payout is awarded for bot matches."
+                  ? "Practice win. No Solana payout in no-stakes rounds."
                   : "Victory secured."
                 : isBotMatch
-                  ? "Practice loss recorded. You did not lose Solana against the bot."
+                  ? "Practice loss. You did not lose Solana."
                   : "Rival took this round."
               : "Match results are being finalized."
   const settlementStatus = isRoomCancelled
@@ -828,9 +891,10 @@ export function BattleScreen() {
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
   const displaySecondsLeft =
-    activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
+    activeCardAccepted && activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
       : secondsLeft;
+  const displayCountdownLabel = activeCardAccepted ? `${displaySecondsLeft}` : "...";
   const roundsToWin = gameState?.roundsToWin ?? 2;
   const maxRounds = Math.max(1, roundsToWin * 2 - 1);
   const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
@@ -883,11 +947,11 @@ export function BattleScreen() {
     }
     : null;
   const opponentIdentityLabel = opponent?.address
-    ? shortenAddress(opponent.address)
+    ? rivalIdentityLabel(opponent.address, isBotMatch)
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const playerAddressLabel = address ? shortenAddress(address) : "Unknown";
+  const playerAddressLabel = playerIdentityLabel(address, guestMatchesSession);
   const regularMatchShareTitle = didWin ? "I just won in a CORA match" : "I just battled in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
@@ -1313,10 +1377,10 @@ export function BattleScreen() {
   if (isBotMatch && !isMatchComplete) {
     alerts.push({
       id: "bot:generated-practice-wallets",
-      title: "Practice Wallets",
+      title: "Practice Mode",
       message: guestMatchesSession
-        ? "Practice mode: temporary addresses and practice questions. Connect wallet for real matches."
-        : "Practice mode: temporary bot address and practice questions. Connect wallet for real matches.",
+        ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
+        : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches.",
       tone: "warning",
       autoDismissMs: 14000,
     });
@@ -1686,7 +1750,7 @@ export function BattleScreen() {
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {playerRoundsWon}</span>
               </p>
               {address && (
-                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{shortenAddress(address)}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{playerAddressLabel}</p>
               )}
             </div>
             <p className="font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
@@ -2333,7 +2397,7 @@ export function BattleScreen() {
                         {activeCard.question.text}
                       </p>
                     </div>
-                    <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displaySecondsLeft}</p>
+                    <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displayCountdownLabel}</p>
                   </div>
 
                   <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
@@ -2345,7 +2409,7 @@ export function BattleScreen() {
                         <button
                           key={option.id}
                           type="button"
-                          disabled={answerLocked || isMatchComplete}
+                          disabled={!activeCardAccepted || answerLocked || isMatchComplete}
                           onClick={() => onAnswer(option.id)}
                           className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
                           style={{
@@ -2366,7 +2430,7 @@ export function BattleScreen() {
                             boxShadow: isSelected
                               ? "0 0 0 2px rgba(248,214,148,0.18), 0 8px 14px rgba(77,42,24,0.16)"
                               : "0 6px 10px rgba(77,42,24,0.12)",
-                            opacity: answerLocked && !isSelected ? 0.72 : 1,
+                            opacity: !activeCardAccepted || (answerLocked && !isSelected) ? 0.72 : 1,
                           }}
                         >
                           <span
@@ -2414,7 +2478,9 @@ export function BattleScreen() {
                 {isMatchComplete
                   ? "Match locked. Resolving final sequence."
                   : activeCard && status === "playing"
-                    ? "Choose an answer."
+                    ? activeCardAccepted
+                      ? "Choose an answer."
+                      : "Opening card..."
                     : isPlayable
                       ? "Pick a card from your hand"
                       : "Waiting for server state..."}
