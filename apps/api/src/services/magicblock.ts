@@ -41,7 +41,7 @@ let routerEndpointLogged = false;
 
 /**
  * These constants must stay in lockstep with
- * packages/battle-anchor-032/programs/cora-battle/src/constants.rs.
+ * packages/contracts/solana/cora-battle/programs/cora-battle/src/constants.rs.
  */
 export const EFFECT_ATTACK = 1;
 export const EFFECT_HEAL = 2;
@@ -205,7 +205,7 @@ function getOptionalValidatorRemainingAccounts():
 function loadCoraBattleIdl(): Idl {
   const candidateUrls = [
     new URL('../../../../packages/solana-client/src/cora_battle.json', import.meta.url),
-    new URL('../../../../packages/battle-anchor-032/target/idl/cora_battle.json', import.meta.url),
+    new URL('../../../../packages/contracts/solana/cora-battle/target/idl/cora_battle.json', import.meta.url),
   ];
 
   for (const candidate of candidateUrls) {

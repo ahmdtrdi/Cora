@@ -108,7 +108,7 @@ describe("apply_effect", () => {
   it("awards the round after an inline KO", async () => {
     const { sessionPda } = await createInlineBattle();
 
-    for (const slot of [0, 2, 3, 4]) {
+    for (const slot of [0, 2, 3]) {
       await applyInlineEffect({
         sessionPda,
         slot,

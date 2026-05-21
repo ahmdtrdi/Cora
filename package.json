@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "packages/contracts/solana/*"
   ],
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",

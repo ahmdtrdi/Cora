@@ -1,7 +1,9 @@
 import { createHash } from 'crypto';
 import { PublicKey } from '@solana/web3.js';
 
-export const CORA_ESCROW_PROGRAM_ID = new PublicKey('9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W');
+export const CORA_ESCROW_PROGRAM_ID = new PublicKey(
+  process.env.CORA_ESCROW_PROGRAM_ID || '9Pqkgy5uu9w2HvgyNUnHEvzdRWSv1h6GyCuD4uKBVp1W'
+);
 
 export const ESCROW_INSTRUCTION_DISCRIMINATORS = {
   depositWager: Buffer.from([234, 73, 235, 136, 168, 103, 239, 207]),

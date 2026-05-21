@@ -58,7 +58,7 @@
         "typescript": "^5",
       },
     },
-    "packages/battle-anchor-032": {
+    "packages/contracts/solana/cora-battle": {
       "name": "cora-battle-tests",
       "dependencies": {
         "@coral-xyz/anchor": "^0.32.0",
@@ -75,19 +75,7 @@
         "typescript": "^5.0.0",
       },
     },
-    "packages/game-logic": {
-      "name": "@cora/game-logic",
-      "version": "0.1.0",
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "^5.0.0",
-      },
-    },
-    "packages/shared-types": {
-      "name": "@cora/shared-types",
-      "version": "0.1.0",
-    },
-    "packages/solana-program": {
+    "packages/contracts/solana/cora-escrow": {
       "name": "solana-program",
       "version": "1.0.0",
       "dependencies": {
@@ -103,6 +91,18 @@
         "ts-mocha": "^10.0.0",
         "typescript": "^5.7.3",
       },
+    },
+    "packages/game-logic": {
+      "name": "@cora/game-logic",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.0.0",
+      },
+    },
+    "packages/shared-types": {
+      "name": "@cora/shared-types",
+      "version": "0.1.0",
     },
   },
   "packages": {
@@ -834,7 +834,7 @@
 
     "cookie-signature": ["cookie-signature@1.0.7", "", {}, "sha512-NXdYc3dLr47pBkpUCHtKSwIOQXLVn8dZEuywboCOJY/osA0wFSLlSawr3KN8qXJEyX66FcONTH8EIlVuK0yyFA=="],
 
-    "cora-battle-tests": ["cora-battle-tests@workspace:packages/battle-anchor-032"],
+    "cora-battle-tests": ["cora-battle-tests@workspace:packages/contracts/solana/cora-battle"],
 
     "cosmiconfig": ["cosmiconfig@8.0.0", "", { "dependencies": { "import-fresh": "^3.2.1", "js-yaml": "^4.1.0", "parse-json": "^5.0.0", "path-type": "^4.0.0" } }, "sha512-da1EafcpH6b/TD8vDRaWV7xFINlHlF6zKsGwS1TsuVJTZRkquaS5HTMq7uq6h31619QjbsYl21gVDOm32KM1vQ=="],
 
@@ -1648,7 +1648,7 @@
 
     "slash": ["slash@3.0.0", "", {}, "sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q=="],
 
-    "solana-program": ["solana-program@workspace:packages/solana-program"],
+    "solana-program": ["solana-program@workspace:packages/contracts/solana/cora-escrow"],
 
     "source-map": ["source-map@0.6.1", "", {}, "sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g=="],
 
