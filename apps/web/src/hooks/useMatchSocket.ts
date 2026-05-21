@@ -8,6 +8,8 @@ import type {
   MatchResult,
   MatchResultPayload,
   CardCountdownData,
+  OpenCardAcceptedData,
+  CardActionRejectedData,
   CardExpiredData,
   ScoreUpdateData,
   RoundOverData,
@@ -92,6 +94,8 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
   const [matchInvalidated, setMatchInvalidated] = useState<MatchResult | null>(null);
   const [lastDamageEvent, setLastDamageEvent] = useState<DamageEvent | null>(null);
   const [lastPlayResult, setLastPlayResult] = useState<(PlayCardResult & { at: number }) | null>(null);
+  const [lastOpenCardAccepted, setLastOpenCardAccepted] = useState<(OpenCardAcceptedData & { at: number }) | null>(null);
+  const [lastCardActionRejected, setLastCardActionRejected] = useState<(CardActionRejectedData & { at: number }) | null>(null);
   const [lastCardCountdown, setLastCardCountdown] = useState<CardCountdownData | null>(null);
   const [lastCardExpired, setLastCardExpired] = useState<(CardExpiredData & { at: number }) | null>(null);
   const [lastScoreUpdate, setLastScoreUpdate] = useState<ScoreUpdateData | null>(null);
@@ -294,6 +298,20 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
             });
             break;
 
+          case 'openCardAccepted':
+            setLastOpenCardAccepted({
+              ...(message.payload as OpenCardAcceptedData),
+              at: Date.now(),
+            });
+            break;
+
+          case 'cardActionRejected':
+            setLastCardActionRejected({
+              ...(message.payload as CardActionRejectedData),
+              at: Date.now(),
+            });
+            break;
+
           case 'cardCountdown':
             setLastCardCountdown(message.payload as CardCountdownData);
             break;
@@ -422,6 +440,8 @@ export function useMatchSocket({ roomId, address, characterId }: UseMatchSocketP
     matchInvalidated,
     lastDamageEvent,
     lastPlayResult,
+    lastOpenCardAccepted,
+    lastCardActionRejected,
     lastCardCountdown,
     lastCardExpired,
     lastScoreUpdate,
