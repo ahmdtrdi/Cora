@@ -156,11 +156,22 @@ export function ConnectWalletScreen() {
             <h1 className="mt-3 font-caprasimo text-4xl leading-none text-[var(--tone-cream)] md:text-5xl">
               Enter the Arena
             </h1>
-            <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
-              Connect a wallet for wager matches, or try a no-stakes practice round.
-            </p>
+            {!connected && (
+              <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
+                Connect a wallet for wager matches, or try a no-stakes practice round.
+              </p>
+            )}
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(111,58,40,0.22)] px-3 py-1.5 shadow-inner">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#f8d694] opacity-50" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#f8d694]" />
+              </span>
+              <span className="font-gabarito text-[10px] font-black uppercase tracking-[0.16em] text-[#f8d694]">
+                Live on Devnet
+              </span>
+            </div>
 
-            <div className="mt-8 flex flex-col items-center gap-5">
+            <div className={`${connected ? "mt-3" : "mt-8"} flex flex-col items-center gap-5`}>
               {!connected && (
                 <div className="grid w-full gap-3 sm:grid-cols-2">
                   <div className="flex min-w-0 flex-col gap-2">

@@ -16,6 +16,11 @@ type PanelData = {
 
 const PANELS: PanelData[] = [
   {
+    title: "Set Up Devnet",
+    copy: "Connect your wallet, switch to Solana Devnet, and grab faucet SOL so wager matches can sign safely while you test CORA.",
+    assetUrl: "/assets/intro/intro-wallet-devnet.webm",
+  },
+  {
     title: "Play Cards",
     copy: "Pick attack or heal cards from your hand, then answer fast-paced multiple choice questions to trigger their powerful effects and dominate the arena!",
     assetUrl: "/assets/intro/intro-cards.webm",
@@ -112,18 +117,23 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
                   <div className="absolute inset-0 arena-grid opacity-10 pointer-events-none" />
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.6)_100%)] pointer-events-none" />
 
-                  {/* Fallback 1: Play Cards Mockup */}
+                  {/* Fallback 0: Wallet / Devnet Mockup */}
                   {currentStep === 0 && (
+                    <WalletDevnetMockup />
+                  )}
+
+                  {/* Fallback 1: Play Cards Mockup */}
+                  {currentStep === 1 && (
                     <PlayCardsMockup />
                   )}
 
                   {/* Fallback 2: Beat The Timer Mockup */}
-                  {currentStep === 1 && (
+                  {currentStep === 2 && (
                     <TimerMockup />
                   )}
 
                   {/* Fallback 3: Practice or Wager Mockup */}
-                  {currentStep === 2 && (
+                  {currentStep === 3 && (
                     <WagerMockup />
                   )}
                 </div>
@@ -136,7 +146,7 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[var(--tone-mint,#cbefc1)]/20 bg-[var(--tone-mint,#cbefc1)]/5">
                   <span className="h-2 w-2 rounded-full bg-[var(--tone-mint,#cbefc1)] animate-pulse" />
                   <span className="font-gabarito text-[10px] font-black uppercase tracking-[0.16em] text-[var(--tone-mint,#cbefc1)]">
-                    Step {currentStep + 1} of 3
+                    Step {currentStep + 1} of {PANELS.length}
                   </span>
                 </div>
 
@@ -168,13 +178,13 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
                     ))}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     {currentStep < PANELS.length - 1 ? (
                       <>
                         <button
                           type="button"
                           onClick={handleSkip}
-                          className="px-4 py-2 font-gabarito text-xs font-bold uppercase tracking-wide text-white/50 hover:text-white transition-colors"
+                          className="px-3 py-2 font-gabarito text-xs font-bold uppercase tracking-wide text-white/50 transition-colors hover:text-white"
                         >
                           Skip
                         </button>
@@ -269,6 +279,67 @@ function IntroPanelVideo({ src, title }: { src: string; title: string }) {
       onEnded={handleEnded}
       className="h-full w-full object-cover"
     />
+  );
+}
+
+/* Fallback 0: Wallet / Devnet Setup Mockup */
+function WalletDevnetMockup() {
+  return (
+    <div className="relative flex h-full w-full flex-col justify-between overflow-hidden p-5">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(248,214,148,0.16),transparent_35%),radial-gradient(circle_at_80%_75%,rgba(203,239,193,0.12),transparent_38%)]" />
+
+      <div className="relative flex items-center justify-between">
+        <div>
+          <p className="font-gabarito text-[9px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
+            Wallet Setup
+          </p>
+          <p className="mt-1 font-caprasimo text-lg text-white">Ready For Devnet</p>
+        </div>
+        <motion.div
+          animate={{ opacity: [0.55, 1, 0.55] }}
+          transition={{ duration: 1.8, repeat: Infinity }}
+          className="rounded-full border border-[var(--tone-mint,#cbefc1)]/30 bg-[var(--tone-mint,#cbefc1)]/10 px-3 py-1 font-mono text-[9px] font-bold uppercase tracking-wide text-[var(--tone-mint,#cbefc1)]"
+        >
+          Devnet
+        </motion.div>
+      </div>
+
+      <div className="relative grid flex-1 place-items-center">
+        <div className="w-full max-w-[340px] rounded-xl border border-white/10 bg-black/45 p-4 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-[linear-gradient(145deg,#6f3a28,#f8d694)]" />
+              <div>
+                <p className="font-gabarito text-xs font-bold text-white">Phantom Wallet</p>
+                <p className="font-mono text-[9px] text-white/45">HpuHN...6YNC</p>
+              </div>
+            </div>
+            <span className="rounded-full bg-[var(--tone-mint,#cbefc1)]/12 px-2 py-1 font-mono text-[8px] font-bold text-[var(--tone-mint,#cbefc1)]">
+              Connected
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {[
+              ["Connect wallet", "Done"],
+              ["Switch network", "Devnet"],
+              ["Faucet SOL", "+2 SOL"],
+            ].map(([label, value], index) => (
+              <motion.div
+                key={label}
+                initial={{ opacity: 0.45, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.2, repeat: Infinity, repeatDelay: 2.2, duration: 0.35 }}
+                className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+              >
+                <span className="font-gabarito text-[11px] font-bold text-white/80">{label}</span>
+                <span className="font-mono text-[9px] font-black uppercase tracking-wide text-[#f8d694]">{value}</span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

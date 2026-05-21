@@ -5956,3 +5956,38 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The display identity is currently stored as optional fields on the local match session. If the app later needs richer profile display names or wallet aliases, move this into a dedicated player presentation model.
 
+## 2026-05-21 - Add Intro Wallet Devnet Step
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) to add `intro-wallet-devnet.webm` as the first onboarding panel before cards, timer, and practice/wager.
+- Added a lightweight wallet/devnet fallback mockup for missing media.
+
+### The Reasoning
+- First-time users need wallet, Devnet, and faucet context before they understand wager matches. Navigation stays intentionally simple with Skip as the low-emphasis escape and Next/Enter Arena as the primary path.
+
+### The Tech Debt
+- The intro overlay now mixes onboarding content and video fallback mockups in one component. If more setup panels land, extract panel data and fallback renderers into a small onboarding module.
+
+## 2026-05-21 - Connect Screen Devnet Signal
+
+### The Change
+- Added a small `Live on Devnet` status pill to [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx).
+
+### The Reasoning
+- The onboarding now teaches wallet, Devnet, and faucet setup. Showing the Devnet signal directly on `/connect` reinforces that this environment is live for testing before users choose wallet or guest entry.
+
+### The Tech Debt
+- The signal is currently static UI copy. If network selection becomes dynamic, wire it to runtime cluster config instead of hardcoding Devnet.
+
+## 2026-05-21 - Refine Connected Devnet Signal
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so the generic connect/practice helper copy hides once a wallet is connected.
+- Shifted the `Live on Devnet` pill to the warm yellow/brown accent family and tightened spacing between it and the connected wallet status.
+
+### The Reasoning
+- Once a wallet is connected, the helper line repeats information the UI already implies. The Devnet and wallet status should read as a compact connected-state cluster.
+
+### The Tech Debt
+- Connected-state spacing is still tuned in the component with conditional margin classes. If the connect card gains more states, extract small header/status subcomponents.
+
