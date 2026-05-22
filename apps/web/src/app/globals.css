@@ -1441,6 +1441,319 @@ body {
     font-size: 11px !important;
     border-radius: 9px !important;
   }
+
+  /* ── Replay Intro Overlay (Modal) Overrides ── */
+  .intro-overlay-backdrop {
+    padding: 6px !important;
+  }
+
+  .intro-overlay-modal {
+    height: 98svh !important;
+    max-height: 98svh !important;
+    overflow: hidden !important;
+    border-radius: 14px !important;
+    transform: scale(0.85) !important;
+  }
+
+  .intro-overlay-grid {
+    min-height: 0 !important;
+    height: 100% !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  }
+
+  .intro-overlay-visual {
+    grid-column: span 7 / span 7 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    padding: 10px !important;
+    border-bottom: none !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .intro-overlay-video-wrapper,
+  .intro-overlay-mockup-wrapper {
+    max-height: 100% !important;
+    max-width: 360px !important;
+  }
+
+  .intro-overlay-content {
+    grid-column: span 5 / span 5 !important;
+    padding: 10px 12px 12px !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+  }
+
+  .intro-overlay-text-wrapper {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .intro-overlay-step-pill {
+    padding: 2px 6px !important;
+    align-self: flex-start !important;
+  }
+
+  .intro-overlay-step-pill-dot {
+    width: 6px !important;
+    height: 6px !important;
+  }
+
+  .intro-overlay-step-pill-text {
+    font-size: 8px !important;
+    letter-spacing: 0.1em !important;
+  }
+
+  .intro-overlay-title {
+    font-size: 1.25rem !important;
+    line-height: 1.1 !important;
+  }
+
+  .intro-overlay-copy {
+    font-size: 10.5px !important;
+    line-height: 1.25 !important;
+  }
+
+  .intro-overlay-nav {
+    margin-top: auto !important;
+    padding-top: 4px !important;
+  }
+
+  .intro-overlay-dots-container {
+    gap: 4px !important;
+  }
+
+  .intro-overlay-dots-container button {
+    height: 6px !important;
+  }
+
+  .intro-overlay-dots-container button.w-6 {
+    width: 14px !important;
+  }
+
+  .intro-overlay-dots-container button.w-2\.5 {
+    width: 6px !important;
+  }
+
+  .intro-overlay-btn-group button {
+    padding: 4px 10px !important;
+    font-size: 9.5px !important;
+    min-height: 0 !important;
+  }
+
+  .intro-overlay-btn-group button.btn-game-primary {
+    padding: 6px 14px !important;
+    font-size: 10px !important;
+  }
+
+  /* Mockup specific compact scaling */
+  .wallet-mockup {
+    padding: 8px !important;
+  }
+
+  .wallet-mockup-header p.text-lg {
+    font-size: 12px !important;
+  }
+
+  .wallet-mockup-header div {
+    font-size: 7.5px !important;
+    padding: 1px 4px !important;
+  }
+
+  .wallet-mockup-body {
+    min-height: 0 !important;
+  }
+
+  .wallet-mockup-card {
+    padding: 6px 8px !important;
+    max-width: 250px !important;
+    border-radius: 8px !important;
+  }
+
+  .wallet-mockup-card .border-b {
+    padding-bottom: 4px !important;
+  }
+
+  .wallet-mockup-card .h-8 {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  .wallet-mockup-card p.text-xs {
+    font-size: 9.5px !important;
+  }
+
+  .wallet-mockup-card p.text-\[9px\] {
+    font-size: 7.5px !important;
+  }
+
+  .wallet-mockup-card span.text-\[8px\] {
+    font-size: 7.5px !important;
+    padding: 1px 4px !important;
+  }
+
+  .wallet-mockup-steps {
+    margin-top: 6px !important;
+    gap: 4px !important;
+  }
+
+  .wallet-mockup-steps div {
+    padding: 3px 6px !important;
+  }
+
+  .wallet-mockup-steps span.text-\[11px\] {
+    font-size: 9px !important;
+  }
+
+  .wallet-mockup-steps span.text-\[9px\] {
+    font-size: 8px !important;
+  }
+
+  /* PlayCards Mockup */
+  .playcards-mockup {
+    padding: 6px !important;
+  }
+
+  .playcards-mockup-opponent {
+    padding: 3px 6px !important;
+  }
+
+  .playcards-mockup-opponent .w-8 {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  .playcards-mockup-opponent .text-\[10px\] {
+    font-size: 9px !important;
+  }
+
+  .playcards-mockup-opponent .text-\[9px\] {
+    font-size: 7.5px !important;
+  }
+
+  .playcards-mockup-opponent .w-24 {
+    width: 60px !important;
+  }
+
+  .playcards-mockup div.text-white\/50 {
+    font-size: 8px !important;
+  }
+
+  .playcards-mockup div.bg-black\/80 {
+    padding: 5px 8px !important;
+    max-width: 190px !important;
+  }
+
+  .playcards-mockup div.bg-black\/80 .text-\[9px\] {
+    font-size: 8px !important;
+  }
+
+  .playcards-mockup div.bg-black\/80 .text-\[10px\] {
+    font-size: 9px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .playcards-mockup div.bg-black\/80 .text-\[8px\] {
+    font-size: 7.5px !important;
+    padding: 2px !important;
+  }
+
+  .playcards-mockup .font-caprasimo {
+    font-size: 14px !important;
+  }
+
+  .playcards-mockup svg {
+    width: 10px !important;
+    height: 10px !important;
+  }
+
+  .playcards-mockup .h-16 {
+    height: 38px !important;
+  }
+
+  .playcards-mockup .w-14 {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .playcards-mockup .w-16 {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .playcards-mockup .w-14 .text-\[6px\],
+  .playcards-mockup .w-16 .text-\[6px\] {
+    font-size: 5px !important;
+  }
+
+  .playcards-mockup .w-14 .text-white\/80,
+  .playcards-mockup .w-16 .text-white {
+    font-size: 6.5px !important;
+  }
+
+  /* Timer Mockup */
+  .timer-mockup {
+    padding: 10px !important;
+  }
+
+  .timer-mockup div.bg-black\/60 {
+    padding: 6px 8px !important;
+    max-width: 170px !important;
+  }
+
+  .timer-mockup div.bg-black\/60 .text-\[9px\] {
+    font-size: 8px !important;
+  }
+
+  .timer-mockup div.bg-black\/60 .text-\[11px\] {
+    font-size: 9.5px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .timer-mockup div.bg-black\/60 .text-\[8px\] {
+    font-size: 7.5px !important;
+    padding: 2px !important;
+  }
+
+  .timer-mockup .w-20 {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .timer-mockup .font-caprasimo {
+    font-size: 12px !important;
+  }
+
+  .timer-mockup .text-\[9px\].font-mono {
+    font-size: 7.5px !important;
+  }
+
+  /* Wager Mockup */
+  .wager-mockup {
+    padding: 8px !important;
+    gap: 6px !important;
+  }
+
+  .wager-mockup .w-10 {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 11px !important;
+  }
+
+  .wager-mockup .text-\[11px\] {
+    font-size: 9.5px !important;
+  }
+
+  .wager-mockup .text-\[8px\] {
+    font-size: 7.5px !important;
+  }
+
+  .wager-mockup .space-y-0\.5 {
+    padding: 3px !important;
+  }
 }
 
 /* Portrait mobile: horizontal card layout [ pict | info ] */

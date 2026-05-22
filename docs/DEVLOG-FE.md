@@ -6456,3 +6456,25 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - None. Spacing, padding, and sizes scale proportionally down, maintaining absolute parity with the design specs.
+
+## 2026-05-22 - Polish Replay Intro Overlay for Mobile Landscape
+
+### The Change
+- **Injected Semantic Class Hooks**: Added specific class hooks (`.intro-overlay-backdrop`, `.intro-overlay-modal`, `.intro-overlay-glow`, `.intro-overlay-grid`, `.intro-overlay-visual`, `.intro-overlay-video-wrapper`, `.intro-overlay-mockup-wrapper`, `.intro-overlay-content`, `.intro-overlay-text-wrapper`, `.intro-overlay-step-pill`, `.intro-overlay-step-pill-dot`, `.intro-overlay-step-pill-text`, `.intro-overlay-title`, `.intro-overlay-copy`, `.intro-overlay-nav`, `.intro-overlay-dots-container`, and `.intro-overlay-btn-group`) into [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx).
+- **Added Semantic Classes to Mockups**: Added specific class hooks (`.wallet-mockup`, `.wallet-mockup-header`, `.wallet-mockup-body`, `.wallet-mockup-card`, `.wallet-mockup-steps`, and `.playcards-mockup`, `.playcards-mockup-opponent`) into [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) sub-components to allow targeted styling.
+- **Implemented Premium Landscape Overrides**: Injected premium visual style overrides in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) inside the short landscape media query (`@media (orientation: landscape) and (max-height: 540px)`):
+  - Bound the modal height to `98svh` and forced `overflow: hidden` to completely eliminate vertical scrolling, providing a console-like native app feel.
+  - Adjusted the grid and columns to stretch to 100% height without any overflow.
+  - Scaled down padding, typography (title `3xl` -> `1.25rem`, copy `sm` -> `10.5px`), spacing, and dots indicators.
+  - Created bespoke, meticulously detailed micro-scaling rules for all 4 animated CSS/SVG interactive fallbacks (`WalletDevnetMockup`, `PlayCardsMockup`, `TimerMockup`, `WagerMockup`) to ensure they scale and fit inside their aspect-ratio containers beautifully on small landscape viewports.
+  - Applied `transform: scale(0.85) !important;` to `.intro-overlay-modal` to visually scale down the modal, providing margins around the edges and ensuring it feels like a native floating overlay rather than a full-screen takeover.
+
+### The Reasoning
+- On mobile landscape viewports (e.g. `844x390` on iPhone 12 Pro), the Replay Intro modal was too tall and got severely cut off/scrolled because of grid `min-h-[500px]` constraints and large padding.
+- Adding targeted overrides under the low-height landscape media query shrinks and compacts spacing, text sizes, and mockup sizes perfectly.
+- Applying a CSS `scale` transform shrinks the entire container while preserving its aspect ratio and layout rules, creating a comfortable visual padding without risking squished inner flex items.
+- This creates an extremely premium, perfectly framed, scroll-free, and immersive onboarding slideshow that adapts elegantly to small landscape devices without affecting desktop or tablet experiences.
+
+### The Tech Debt
+- None. The changes are strictly scoped under the media query and use semantic class hooks, ensuring high maintainability and zero risk of regression on other viewports.
+
