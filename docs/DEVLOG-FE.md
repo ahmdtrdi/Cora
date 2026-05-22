@@ -6049,3 +6049,117 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The reminder copy is local to `OpponentFound`. If Blink deposits or other wager entry points need the same rule reminder later, extract a shared deposit reminder component.
 
+## 2026-05-22 - Phone Landscape Arena Responsiveness
+
+### The Change
+- Added phone-landscape CSS hooks to [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for the arena shell, room header, player strip, stage, hand prompt, cards, and active question panel.
+- Added responsive rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for coarse-pointer landscape screens under `960px` wide and `540px` tall, compressing vertical chrome and scaling cards by viewport height.
+- Added [MobileFullscreenButton.tsx](/d:/projects/Cora/apps/web/src/components/play/MobileFullscreenButton.tsx), a phone-landscape-only fullscreen toggle that hides itself when the browser does not expose a fullscreen API.
+
+### The Reasoning
+- The existing portrait gate handled rotation, but landscape phones still had very little usable height after browser UI. The fix keeps desktop untouched while making the battle HUD, player strip, stage, and hand share the short viewport more deliberately.
+- The fullscreen button is progressive enhancement: supported browsers can reclaim toolbar space, while unsupported browsers simply keep the responsive layout without showing a broken control.
+
+### The Tech Debt
+- The phone-landscape breakpoint is tuned to common mobile browser viewports rather than device-specific QA. We should still manually check Safari and Chrome on a real phone because fullscreen support and toolbar behavior differ by browser.
+
+## 2026-05-22 - Phone Landscape Arena Overlay Scale Pass
+
+### The Change
+- Added responsive hooks to [BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx) so socket/error notifications can shrink on phone landscape.
+- Added class hooks in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for the in-arena combat notice and both base HP meters.
+- Added class hooks in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) for the match-finished result card, expression blocks, payout/status/stat pills, actions, and settlement details.
+- Extended [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to reduce notification size, combat notice size, base-bar width/height/type, HUD pill type, result emoji blocks, and the match-finished overlay on phone landscape.
+
+### The Reasoning
+- The arena frame now fits better, but secondary UI was still eating the same short viewport. Scaling the notification and result layers in the same breakpoint keeps the entire battle experience consistent instead of fixing only the card hand.
+- The result overlay uses max-height plus internal scrolling for details, so core outcome/action content stays reachable even when a phone browser toolbar leaves very little vertical room.
+
+### The Tech Debt
+- The share modal and generated share cards are not yet independently optimized for phone landscape. If users commonly share directly from landscape battle, those surfaces need their own compact pass.
+
+## 2026-05-22 - Extra Compact Post-Match Overlay Tuning
+
+### The Change
+- Tightened the phone-landscape post-match result overlay rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css), reducing result card width/padding, title size, payout pill size, expression tile size, stat/status pill size, and vertical gaps.
+- Added a more specific `.btn-game.battle-result-action` rule so the compact post-match action buttons override the global chunky game-button sizing in landscape phone viewports.
+- Added a shorter-height override for sub-390px landscape heights, including smaller expression tiles and smaller result actions.
+
+### The Reasoning
+- The 642x300 viewport still showed the result overlay consuming nearly the whole arena, and the global `.btn-game` rule was re-inflating the buttons after the compact media query. The more specific selector keeps result actions intentionally small without changing buttons elsewhere.
+
+### The Tech Debt
+- This is still CSS-tuned rather than screenshot-tested through Playwright. Real-device Safari/Chrome should be the final judge because browser chrome changes the available viewport height.
+
+## 2026-05-22 - Phone Landscape Share Modal Wrapper
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to wrap the existing match-result and challenge share cards in a phone-landscape preview shell.
+- Added phone-landscape CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to shrink the share modal chrome, scale the preview shell, and keep the preview scrollable inside tiny landscape heights.
+
+### The Reasoning
+- The share card renderer is also used for saved/generated outputs, so the card component and render inputs were left untouched. The modal now scales only the browser preview wrapper, preserving the original share-card rendering and export behavior.
+
+### The Tech Debt
+- The scaled preview uses CSS transform and an internal scroll frame. If the share flow becomes a primary mobile-landscape action, a dedicated mobile preview mode could improve ergonomics while still keeping export rendering separate.
+
+## 2026-05-22 - Keep Share Modal Actions Visible
+
+### The Change
+- Updated the phone-landscape share modal CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the share modal stack is a fixed-height flex column.
+- Capped the scaled preview frame height and made the share action row a non-shrinking footer inside the modal.
+
+### The Reasoning
+- The previous scaled preview still consumed too much of a 300px-tall landscape viewport, pushing `Save As PNG` and `Create Blink` below the visible area. The modal now reserves vertical room for those actions instead of relying on page scroll.
+
+### The Tech Debt
+- The preview scale is tuned for the current share card dimensions. If the share card content grows, revisit the preview scale or add responsive preview presets.
+
+## 2026-05-22 - Remove Share Preview Scrollbars
+
+### The Change
+- Updated the phone-landscape share preview frame in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to hide internal overflow instead of showing horizontal and vertical scrollbars.
+- Reduced the share preview scale further for short landscape viewports so the preview, close control, and action buttons can coexist in the 300px-height layout.
+
+### The Reasoning
+- The preview wrapper used CSS transform scaling, but the unscaled layout box still created scrollable overflow. Hiding the preview-frame overflow and tuning the scale keeps the modal clean while preserving the original share-card rendering and export path.
+
+### The Tech Debt
+- Extremely tall share-card content can now be clipped in the tiny landscape preview. The exported image is unaffected, but future preview-only affordances may need a tap-to-expand view.
+
+## 2026-05-22 - Revert Mobile Share Modal Control Placement
+
+### The Change
+- Reverted the last phone-landscape share modal control-placement tweak in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css).
+- Restored the share preview frame and close/action layout to the previous no-scrollbar state.
+
+### The Reasoning
+- The requested control placement change was not the desired direction. Keeping the prior no-scrollbar wrapper is safer while we decide the exact mobile share modal layout.
+
+### The Tech Debt
+- The share modal still needs a better mobile-only control layout, but the next pass should be checked against the target 642x300 viewport before landing.
+
+## 2026-05-22 - Extreme Landscape Arena Scale Mode
+
+### The Change
+- Added an ultra-short phone-landscape breakpoint in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for viewports under `260px` tall.
+- In that breakpoint, the battle shell is treated as a fixed `16 / 9` virtual board and scaled down to fit the available height/width.
+- Added a tighter scale for sub-`230px` landscape heights, matching the `642x220` stress case.
+
+### The Reasoning
+- The existing phone-landscape responsive rules work for normal short phones, but extremely shallow viewports should not keep stretching the arena across the full width. Scaling the whole arena as a fixed-ratio board preserves the battle composition instead of continuing to compress individual pieces.
+
+### The Tech Debt
+- The scale factors are CSS-tuned for the current arena dimensions. If the battle HUD grows, the virtual-board scale may need a quick recalibration.
+
+## 2026-05-22 - Center Extreme Landscape Scale Mode
+
+### The Change
+- Updated the extreme landscape arena scale rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the scaled battle shell is absolutely centered with `left/top: 50%` and `translate(-50%, -50%)`.
+
+### The Reasoning
+- The previous transform-based scale relied on grid centering of the unscaled virtual board. In very shallow viewports, the visual scaled board could appear shifted to the right because layout and transformed visual dimensions were different. Explicit center positioning keeps the scaled board visually centered.
+
+### The Tech Debt
+- The extreme layout still depends on hand-tuned virtual-board scale values. A future cleanup could calculate this with a single CSS variable pair for virtual width and scale.
+

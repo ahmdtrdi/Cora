@@ -357,7 +357,7 @@ export function BattleScreenOverlays({
         {shouldShowResultOverlay && (
           <motion.div
             key="match-result-backdrop"
-            className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]"
+            className="battle-result-backdrop fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,5,0.82)] p-4 backdrop-blur-[1px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -369,7 +369,7 @@ export function BattleScreenOverlays({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
               transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="frame-cut relative w-full max-w-2xl overflow-hidden p-4 md:p-5"
+              className="battle-result-card frame-cut relative w-full max-w-2xl overflow-hidden p-4 md:p-5"
               style={{
                 border: "1px solid rgba(248,214,148,0.42)",
                 background:
@@ -379,14 +379,14 @@ export function BattleScreenOverlays({
             >
               <div className="text-center">
                 <p
-                  className="mx-auto max-w-[18ch] break-words font-caprasimo text-[clamp(2.2rem,6vw,4rem)] leading-[0.95] text-[#1f2b24]"
+                className="battle-result-title mx-auto max-w-[18ch] break-words font-caprasimo text-[clamp(2.2rem,6vw,4rem)] leading-[0.95] text-[#1f2b24]"
                   style={{ textWrap: "balance" }}
                 >
                   {settlementText}
                 </p>
-                <div className="mt-3 flex justify-center">
+                <div className="battle-result-payout mt-3 flex justify-center">
                   <span
-                    className={`rounded-2xl px-4 py-2 text-center font-gabarito text-xs font-black uppercase tracking-[0.08em] md:text-sm ${
+                    className={`battle-result-payout-pill rounded-2xl px-4 py-2 text-center font-gabarito text-xs font-black uppercase tracking-[0.08em] md:text-sm ${
                       isWinPayoutHighlight ? "shadow-[0_10px_16px_rgba(39,65,55,0.2)]" : ""
                     }`}
                     style={
@@ -407,17 +407,17 @@ export function BattleScreenOverlays({
                   </span>
                 </div>
                 {settlementEmojiMood && (
-                  <div className="mt-4 flex w-full items-center justify-center gap-5 md:gap-10">
-                    <div className="relative">
+                  <div className="battle-result-expressions mt-4 flex w-full items-center justify-center gap-5 md:gap-10">
+                    <div className="battle-result-expression relative">
                       <div
-                        className="relative rounded-[24px] border px-4 py-3"
+                        className="battle-result-expression-card relative rounded-[24px] border px-4 py-3"
                         style={{
                           borderColor: "rgba(39,65,55,0.22)",
                           background: "linear-gradient(150deg, rgba(255,251,244,0.98), rgba(244,229,200,0.98))",
                           boxShadow: "0 8px 14px rgba(33,67,53,0.14)",
                         }}
                       >
-                        <div className="relative h-24 w-24 overflow-hidden rounded-[16px] border border-[rgba(39,65,55,0.2)] md:h-28 md:w-28">
+                        <div className="battle-result-expression-image relative h-24 w-24 overflow-hidden rounded-[16px] border border-[rgba(39,65,55,0.2)] md:h-28 md:w-28">
                           {settlementExpressionSrc?.player && !failedExpressionSprites[settlementExpressionSrc.player] ? (
                             <Image
                               src={settlementExpressionSrc.player}
@@ -440,7 +440,7 @@ export function BattleScreenOverlays({
                             </div>
                           )}
                         </div>
-                        <p className="mt-2 font-gabarito text-[11px] font-black uppercase tracking-[0.12em] text-[#4f6759]">YOU</p>
+                        <p className="battle-result-expression-label mt-2 font-gabarito text-[11px] font-black uppercase tracking-[0.12em] text-[#4f6759]">YOU</p>
                       </div>
                       <span
                         className="absolute -left-1 bottom-4 h-3.5 w-3.5 rotate-45 rounded-[2px] border-l border-b"
@@ -450,16 +450,16 @@ export function BattleScreenOverlays({
                         }}
                       />
                     </div>
-                    <div className="relative">
+                    <div className="battle-result-expression relative">
                       <div
-                        className="relative rounded-[24px] border px-4 py-3"
+                        className="battle-result-expression-card relative rounded-[24px] border px-4 py-3"
                         style={{
                           borderColor: "rgba(111,58,40,0.22)",
                           background: "linear-gradient(150deg, rgba(255,251,244,0.98), rgba(244,229,200,0.98))",
                           boxShadow: "0 8px 14px rgba(111,58,40,0.14)",
                         }}
                       >
-                        <div className="relative h-24 w-24 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.2)] md:h-28 md:w-28">
+                        <div className="battle-result-expression-image relative h-24 w-24 overflow-hidden rounded-[16px] border border-[rgba(111,58,40,0.2)] md:h-28 md:w-28">
                           {settlementExpressionSrc?.opponent && !failedExpressionSprites[settlementExpressionSrc.opponent] ? (
                             <Image
                               src={settlementExpressionSrc.opponent}
@@ -482,7 +482,7 @@ export function BattleScreenOverlays({
                             </div>
                           )}
                         </div>
-                        <p className="mt-2 font-gabarito text-[11px] font-black uppercase tracking-[0.12em] text-[#6f3a28]">
+                        <p className="battle-result-expression-label mt-2 font-gabarito text-[11px] font-black uppercase tracking-[0.12em] text-[#6f3a28]">
                           YOUR RIVAL
                         </p>
                       </div>
@@ -496,60 +496,60 @@ export function BattleScreenOverlays({
                     </div>
                   </div>
                 )}
-                <div className="mt-3 flex justify-center">
+                <div className="battle-result-status mt-3 flex justify-center">
                   <span
-                    className="rounded-full px-3 py-1 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.14em]"
+                    className="battle-result-status-pill rounded-full px-3 py-1 font-gabarito text-[10px] font-extrabold uppercase tracking-[0.14em]"
                     style={settlementStatusStyle}
                   >
                     {settlementStatus}
                   </span>
                 </div>
                 {winnerLineText && (
-                  <p className="mt-2 font-gabarito text-xs text-[#5e7768]">{winnerLineText}</p>
+                  <p className="battle-result-winner-line mt-2 font-gabarito text-xs text-[#5e7768]">{winnerLineText}</p>
                 )}
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 p-1">
+              <div className="battle-result-stats mt-4 flex flex-wrap items-center justify-center gap-1.5 p-1">
                 <span
-                  className="rounded-full px-2.5 py-1 font-gabarito text-[10px] font-black uppercase tracking-[0.1em] text-[#274137]"
+                  className="battle-result-stat-pill rounded-full px-2.5 py-1 font-gabarito text-[10px] font-black uppercase tracking-[0.1em] text-[#274137]"
                   style={{ background: "rgba(225,238,219,0.96)" }}
                 >
                   Rounds {playerRoundsWon}-{opponentRoundsWon}
                 </span>
                 <span
-                  className="rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.1em] text-[#2a4a3c]"
+                  className="battle-result-stat-pill rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.1em] text-[#2a4a3c]"
                   style={{ background: "rgba(233,243,228,0.96)" }}
                 >
                   Correct {correctCount}
                 </span>
                 <span
-                  className="rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.1em] text-[#6f3a28]"
+                  className="battle-result-stat-pill rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.1em] text-[#6f3a28]"
                   style={{ background: "rgba(246,238,224,0.96)" }}
                 >
                   Timeout {timeoutCount}
                 </span>
                 <span
-                  className="rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.1em] text-[#7c4a36]"
+                  className="battle-result-stat-pill rounded-full px-2.5 py-1 font-gabarito text-[10px] font-bold uppercase tracking-[0.1em] text-[#7c4a36]"
                   style={{ background: "rgba(245,234,228,0.96)" }}
                 >
                   Wrong {wrongCount}
                 </span>
               </div>
 
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <div className="battle-result-actions mt-5 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     onOpenShareModal();
                   }}
-                  className="btn-game btn-game-primary min-w-[146px] px-4 py-2 text-xs shadow-xl"
+                  className="battle-result-action btn-game btn-game-primary min-w-[146px] px-4 py-2 text-xs shadow-xl"
                 >
                   Share Match
                 </button>
                 <Link
                   href="/lobby"
                   onClick={onReturnToLobby}
-                  className="btn-game btn-game-secondary min-w-[146px] px-4 py-2 text-center text-xs shadow-xl"
+                  className="battle-result-action btn-game btn-game-secondary min-w-[146px] px-4 py-2 text-center text-xs shadow-xl"
                   style={{
                     background: "linear-gradient(140deg, #3f6c57 0%, #274137 100%)",
                     borderColor: "rgba(248,214,148,0.34)",
@@ -561,11 +561,11 @@ export function BattleScreenOverlays({
                 </Link>
               </div>
 
-              <div className="mt-4 text-center">
+              <div className="battle-result-details-toggle mt-4 text-center">
                 <button
                   type="button"
                   onClick={onToggleSettlementDetails}
-                  className="font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[#4f6759] underline decoration-dotted underline-offset-2"
+                  className="battle-result-details-button font-gabarito text-xs font-bold uppercase tracking-[0.14em] text-[#4f6759] underline decoration-dotted underline-offset-2"
                 >
                   {settlementDetailsOpen ? "Hide Settlement Details" : "Show Settlement Details"}
                 </button>
@@ -573,7 +573,7 @@ export function BattleScreenOverlays({
 
               {settlementDetailsOpen && (
                 <div
-                  className="mt-2 frame-cut frame-cut-sm space-y-1 p-3"
+                  className="battle-result-details mt-2 frame-cut frame-cut-sm space-y-1 p-3"
                   style={{ border: "1px solid rgba(39,65,55,0.16)", background: "rgba(255,248,236,0.95)" }}
                 >
                   <p className="font-gabarito text-xs font-bold uppercase tracking-[0.1em] text-[#274137]">
@@ -619,40 +619,44 @@ export function BattleScreenOverlays({
       </AnimatePresence>
 
       {shareModalOpen && shouldShowResultOverlay && (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
-          <div className="w-full max-w-3xl">
+        <div className="battle-share-backdrop fixed inset-0 z-[70] grid place-items-center bg-[rgba(7,12,10,0.72)] p-4">
+          <div className="battle-share-panel w-full max-w-3xl">
             {!createdBlinkChallenge && (
-              <div className="space-y-4">
-                <div className="flex justify-end px-1">
+              <div className="battle-share-stack space-y-4">
+                <div className="battle-share-close-row flex justify-end px-1">
                   <button
                     type="button"
                     onClick={resetShareView}
-                    className="z-10 shrink-0 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                    className="battle-share-close z-10 shrink-0 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
                     style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
                   >
                     Close
                   </button>
                 </div>
-                <MatchResultShareCard
-                  title={regularMatchShareTitle}
-                  arenaLabel={arenaLabel}
-                  wagerUsd={wagerUsd}
-                  playerCharacterName={playerCharacterName}
-                  opponentCharacterName={opponentCharacterName}
-                  playerAddressLabel={playerAddressLabel}
-                  opponentAddressLabel={opponentAddressLabel}
-                  playerExpressionSrc={playerResultExpressionSrc}
-                  opponentExpressionSrc={opponentResultExpressionSrc}
-                  roundsLabel={`${playerRoundsWon}-${opponentRoundsWon}`}
-                  correctCount={correctCount}
-                  wrongCount={wrongCount}
-                  timeoutCount={timeoutCount}
-                />
-                <div className="flex flex-wrap gap-2">
+                <div className="battle-share-preview-frame">
+                  <div className="battle-share-preview-scale">
+                    <MatchResultShareCard
+                      title={regularMatchShareTitle}
+                      arenaLabel={arenaLabel}
+                      wagerUsd={wagerUsd}
+                      playerCharacterName={playerCharacterName}
+                      opponentCharacterName={opponentCharacterName}
+                      playerAddressLabel={playerAddressLabel}
+                      opponentAddressLabel={opponentAddressLabel}
+                      playerExpressionSrc={playerResultExpressionSrc}
+                      opponentExpressionSrc={opponentResultExpressionSrc}
+                      roundsLabel={`${playerRoundsWon}-${opponentRoundsWon}`}
+                      correctCount={correctCount}
+                      wrongCount={wrongCount}
+                      timeoutCount={timeoutCount}
+                    />
+                  </div>
+                </div>
+                <div className="battle-share-actions flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => void onSaveMatchResultPng()}
-                    className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5"
+                    className="battle-share-action rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5"
                     style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
                   >
                     Save As PNG
@@ -661,7 +665,7 @@ export function BattleScreenOverlays({
                     type="button"
                     onClick={() => void onCreateBlinkFromResult()}
                     disabled={createBlinkBusy}
-                    className="rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                    className="battle-share-action rounded-lg border px-3 py-2 font-gabarito text-xs font-extrabold uppercase tracking-[0.1em] text-[#1f1b18] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                     style={{ borderColor: "rgba(34,34,34,0.26)", background: "rgba(255,255,255,0.76)" }}
                   >
                     {createBlinkBusy ? "Opening Phantom..." : "Create Blink"}
@@ -669,7 +673,7 @@ export function BattleScreenOverlays({
                 </div>
                 {createBlinkBusy && (
                   <div
-                    className="inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+                    className="battle-share-busy inline-flex items-center gap-2 rounded-full px-3 py-1.5"
                     style={{
                       border: "1px solid rgba(248,214,148,0.26)",
                       background: "linear-gradient(145deg, rgba(248,214,148,0.14), rgba(203,227,193,0.1))",
@@ -683,7 +687,7 @@ export function BattleScreenOverlays({
                   </div>
                 )}
                 {shareNotice && (
-                  <p className="font-gabarito text-xs" style={{ color: shareNotice.tone === "success" ? "#2f6249" : "#8a3f2b" }}>
+                  <p className="battle-share-notice font-gabarito text-xs" style={{ color: shareNotice.tone === "success" ? "#2f6249" : "#8a3f2b" }}>
                     {shareNotice.text}
                   </p>
                 )}
@@ -691,37 +695,43 @@ export function BattleScreenOverlays({
             )}
 
             {createdBlinkChallenge && (
-              <div className="space-y-3">
-                <div className="flex justify-end px-1">
+              <div className="battle-share-stack space-y-3">
+                <div className="battle-share-close-row flex justify-end px-1">
                   <button
                     type="button"
                     onClick={resetShareView}
-                    className="z-10 shrink-0 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
+                    className="battle-share-close z-10 shrink-0 frame-cut frame-cut-sm px-2 py-1 font-gabarito text-xs font-extrabold uppercase tracking-wide"
                     style={{ border: "1px solid rgba(39,65,55,0.2)", color: "#274137", background: "rgba(255,248,236,0.95)" }}
                   >
                     Close
                   </button>
                 </div>
-                <ChallengeShareCard
-                  title={challengeShareTitle}
-                  challengerAddress={address}
-                  arenaLabel={arenaLabel}
-                  token={arenaToken}
-                  wagerUsd={wagerUsd}
-                  challengeLink={createdBlinkChallenge.blinkUrl}
-                  description={null}
-                  statusLabel={challengeStatusLabel}
-                  characterExpressionSrc={challengeCharacterExpressionSrc}
-                  characterExpressionAlt="Your scientist expression"
-                />
-                <ChallengeShareActions
-                  challengeLink={createdBlinkChallenge.blinkUrl}
-                  notice={shareNotice}
-                  actionCopyLabel="Copy Blink URL"
-                  onCopy={onCopyChallengeLink}
-                  onSaveJpg={onSaveChallengeJpg}
-                  onShareX={onShareChallengeToX}
-                />
+                <div className="battle-share-preview-frame">
+                  <div className="battle-share-preview-scale">
+                    <ChallengeShareCard
+                      title={challengeShareTitle}
+                      challengerAddress={address}
+                      arenaLabel={arenaLabel}
+                      token={arenaToken}
+                      wagerUsd={wagerUsd}
+                      challengeLink={createdBlinkChallenge.blinkUrl}
+                      description={null}
+                      statusLabel={challengeStatusLabel}
+                      characterExpressionSrc={challengeCharacterExpressionSrc}
+                      characterExpressionAlt="Your scientist expression"
+                    />
+                  </div>
+                </div>
+                <div className="battle-share-challenge-actions">
+                  <ChallengeShareActions
+                    challengeLink={createdBlinkChallenge.blinkUrl}
+                    notice={shareNotice}
+                    actionCopyLabel="Copy Blink URL"
+                    onCopy={onCopyChallengeLink}
+                    onSaveJpg={onSaveChallengeJpg}
+                    onShareX={onShareChallengeToX}
+                  />
+                </div>
               </div>
             )}
           </div>

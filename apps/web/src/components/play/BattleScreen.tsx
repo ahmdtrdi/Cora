@@ -10,6 +10,7 @@ import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
 import { MobileLandscapeGate } from "./MobileLandscapeGate";
+import { MobileFullscreenButton } from "./MobileFullscreenButton";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { GAME_AUDIO, playOneShotAudio, useLoopingAudio, usePreloadedAudio } from "@/lib/audio/gameAudio";
@@ -1642,13 +1643,14 @@ export function BattleScreen() {
 
   return (
     <main
-      className="h-[100svh] overflow-hidden px-3 py-2 md:px-5 md:py-3"
+      className="battle-screen h-[100svh] overflow-hidden px-3 py-2 md:px-5 md:py-3"
       style={{
         background:
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
       <MobileLandscapeGate />
+      <MobileFullscreenButton />
 
       <BattleScreenStatusLayer
         visibleAlerts={visibleAlerts}
@@ -1656,32 +1658,32 @@ export function BattleScreen() {
         onDismissAlert={dismissAlert}
       />
 
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
-        <header className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-1.5">
-          <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
+      <div className="battle-shell mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+        <header className="battle-room-header mb-1 flex shrink-0 flex-wrap items-center justify-between gap-1.5">
+          <p className="battle-room-id font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
             Battle Room - {roomId}
           </p>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="battle-status-row flex flex-wrap items-center gap-1.5">
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {roundText}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {remainingMatchClock}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {statusLabel} - {connectionState}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{
                 border: "1px solid rgba(39,65,55,0.2)",
                 background:
@@ -1694,7 +1696,7 @@ export function BattleScreen() {
               {phaseLabel}
             </span>
             <span
-              className="rounded-full px-2.5 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
+              className="battle-rival-pill rounded-full px-2.5 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
               style={{
                 border: "1px solid rgba(248,214,148,0.32)",
                 background: opponentIsConnected ? "rgba(39,65,55,0.52)" : "rgba(111,58,40,0.52)",
@@ -1707,7 +1709,7 @@ export function BattleScreen() {
               <button
                 type="button"
                 onClick={onCancelMatch}
-                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(19,32,26,0.9)", color: "var(--tone-cream)" }}
               >
                 Cancel Match
@@ -1717,7 +1719,7 @@ export function BattleScreen() {
               <button
                 type="button"
                 onClick={onOpenSurrenderModal}
-                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
               >
                 Surrender
@@ -1727,7 +1729,7 @@ export function BattleScreen() {
               <Link
                 href={cleanLobbyHref}
                 onClick={clearLobbyReturnState}
-                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
               >
                 Return To Lobby
@@ -1737,7 +1739,7 @@ export function BattleScreen() {
         </header>
 
         <section
-          className="frame-cut relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2"
+          className="battle-arena-frame frame-cut relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2"
           style={{
             border: "1px solid rgba(248,214,148,0.28)",
             background:
@@ -1745,11 +1747,11 @@ export function BattleScreen() {
           }}
         >
           <div
-            className="relative z-20 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-1.5 md:px-5"
+            className="battle-player-strip relative z-20 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-1.5 md:px-5"
             style={{ borderBottom: "1px solid rgba(248,214,148,0.12)" }}
           >
             <div className="min-w-0">
-              <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+              <p className="battle-player-meta flex min-w-0 flex-wrap items-center gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
                 <span className="font-bold text-[var(--tone-cream)]">You</span>
                 <span className="opacity-40">{"\u00B7"}</span>
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {playerScore}</span>
@@ -1760,9 +1762,9 @@ export function BattleScreen() {
                 <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{playerAddressLabel}</p>
               )}
             </div>
-            <p className="font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
+            <p className="battle-vs font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
             <div className="min-w-0 text-right">
-              <p className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+              <p className="battle-player-meta flex min-w-0 flex-wrap items-center justify-end gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {opponentScore}</span>
                 <span className="opacity-40">{"\u00B7"}</span>
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {opponentRoundsWon}</span>
@@ -1773,7 +1775,7 @@ export function BattleScreen() {
             </div>
           </div>
 
-          <div className="relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
+          <div className="battle-stage relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
             {targetArenaImageUrl && !failedArenaSprites[targetArenaImageUrl] && (
               <div className="pointer-events-none absolute inset-0 z-0">
                 <Image
@@ -1834,7 +1836,7 @@ export function BattleScreen() {
                   animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
                   exit={{ opacity: 0, y: -4, x: "-50%", scale: 0.98 }}
                   transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                  className="pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
+                  className="battle-notice pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
                   style={{
                     border:
                       activeGameNotice.tone === "phase"
@@ -1851,7 +1853,7 @@ export function BattleScreen() {
                   }}
                 >
                   <p
-                    className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
+                    className="battle-notice-kicker font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
                     style={{
                       color:
                         activeGameNotice.tone === "phase"
@@ -1861,7 +1863,7 @@ export function BattleScreen() {
                   >
                     {activeGameNotice.tone === "phase" ? "Battle Update" : "Combat Update"}
                   </p>
-                  <p className="mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
+                  <p className="battle-notice-message mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
                     {activeGameNotice.message}
                   </p>
                 </motion.div>
@@ -1875,7 +1877,7 @@ export function BattleScreen() {
               }}
             />
             <div
-              className="pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
+              className="battle-base battle-base-player pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
                 opacity:
                   playerBaseDefeatActive && endgameBaseFadeActive
@@ -2023,7 +2025,7 @@ export function BattleScreen() {
             </div>
 
             <div
-              className="pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
+              className="battle-base battle-base-opponent pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
                 opacity:
                   opponentBaseDefeatActive && endgameBaseFadeActive
@@ -2171,12 +2173,12 @@ export function BattleScreen() {
               </motion.div>
             </div>
 
-            <div className="absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
-                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
+            <div className="battle-base-meter battle-base-meter-player absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
+              <div className="battle-base-meter-labels flex items-center justify-between gap-2">
+                <p className="battle-base-meter-title font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+                <p className="battle-base-meter-value font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
               </div>
-              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+              <div className="battle-base-meter-track mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -2187,12 +2189,12 @@ export function BattleScreen() {
               </div>
             </div>
 
-            <div className="absolute right-3 top-3 z-20 w-[clamp(132px,17vw,190px)] text-right md:right-5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
-                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+            <div className="battle-base-meter battle-base-meter-opponent absolute right-3 top-3 z-20 w-[clamp(132px,17vw,190px)] text-right md:right-5">
+              <div className="battle-base-meter-labels flex items-center justify-between gap-2">
+                <p className="battle-base-meter-value font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
+                <p className="battle-base-meter-title font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
               </div>
-              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+              <div className="battle-base-meter-track mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
                 <div
                   className="ml-auto h-full rounded-full"
                   style={{
@@ -2204,7 +2206,7 @@ export function BattleScreen() {
             </div>
 
             <motion.div
-              className={`absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
+              className={`battle-character battle-character-player absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
                 }`}
               animate={playerActionControls}
             >
@@ -2268,7 +2270,7 @@ export function BattleScreen() {
             </motion.div>
 
             <motion.div
-              className={`absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
+              className={`battle-character battle-character-opponent absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
                 }`}
               animate={opponentActionControls}
             >
@@ -2379,7 +2381,7 @@ export function BattleScreen() {
 
           </div>
 
-          <div className="relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
+          <div className="battle-hand-panel relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
             <AnimatePresence>
               {activeCard && status === "playing" && !isMatchComplete && (
                 <motion.div
@@ -2388,7 +2390,7 @@ export function BattleScreen() {
                   animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
                   exit={{ opacity: 0, y: 6, x: "-50%", scale: 0.98 }}
                   transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                  className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
+                  className="battle-question-card pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
                   style={{
                     border: "1px solid rgba(248,214,148,0.36)",
                     background: "linear-gradient(150deg, rgba(255,246,228,0.96), rgba(243,221,185,0.96))",
@@ -2459,7 +2461,7 @@ export function BattleScreen() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className="mb-3 flex justify-center">
+            <div className="battle-hand-prompt mb-3 flex justify-center">
               <p
                 className={`inline-flex items-center rounded-full px-3 py-1 text-center font-gabarito text-xs ${
                   isPlayable && !activeCard && !isMatchComplete
@@ -2494,7 +2496,7 @@ export function BattleScreen() {
               </p>
             </div>
 
-            <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
+            <div className="battle-card-row mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
               {Array.from({ length: displaySlots }).map((_, index) => {
                 const card = hand[index] ?? null;
                 const active = card ? activeCardId === card.id : false;
@@ -2511,7 +2513,7 @@ export function BattleScreen() {
                       if (card) onOpenCard(card);
                     }}
                     disabled={cardDisabled}
-                    className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition duration-200 ease-out enabled:hover:-translate-y-2 enabled:hover:scale-[1.03] ${transformClass}`}
+                    className={`battle-hand-card relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition duration-200 ease-out enabled:hover:-translate-y-2 enabled:hover:scale-[1.03] ${transformClass}`}
                     style={{
                       border: visuallyActive ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
                       background: cardBackground
