@@ -10,6 +10,7 @@ import { Queue } from './room/Queue';
 import { Blockchain } from './room/Blockchain';
 import type { Room, RoomSocket } from './room/types';
 import { createBlinkMatchStore, type BlinkMatch, type BlinkMatchStore } from '../services/blinkMatches';
+import { createQueueMatchStore, type QueueMatchStore } from '../services/queueMatches';
 import { BlinkTransactionBuilder } from '../services/BlinkTransactionBuilder';
 import { submitSettlementTransaction } from '../utils/settlement';
 
@@ -21,17 +22,19 @@ export class RoomManager {
   public queue: Queue;
   public blockchain: Blockchain;
   public blinkMatches: BlinkMatchStore;
+  public queueMatches: QueueMatchStore;
   private blinkJanitorInterval: ReturnType<typeof setInterval> | null = null;
   private publicJanitorInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
-    this.store = new Store();
+  constructor(options: { queueMatches?: QueueMatchStore; blinkMatches?: BlinkMatchStore; erEnabled?: boolean } = {}) {
+    this.store = new Store(options.erEnabled);
     this.network = new Network();
     this.engine = new Engine(this);
     this.lifecycle = new Lifecycle(this);
     this.queue = new Queue(this);
     this.blockchain = new Blockchain(this);
-    this.blinkMatches = createBlinkMatchStore();
+    this.blinkMatches = options.blinkMatches ?? createBlinkMatchStore();
+    this.queueMatches = options.queueMatches ?? createQueueMatchStore();
   }
 
   public getRoom(roomId: string): Room | undefined {
@@ -112,7 +115,9 @@ export class RoomManager {
     options: { tokenMint?: string | null; wagerAmount?: bigint | null; characterId?: string | null } = {},
   ): Room {
     this.queue.removeAddress(address);
-    this.queue.releaseUnfundedPublicDepositRoom(address);
+    void this.queue.releaseUnfundedPublicDepositRoom(address).catch((err) => {
+      console.error(`[BotMatch] Failed to release unfinished public room for ${address.slice(0, 6)}..:`, err);
+    });
 
     const activeRoom = this.queue.findActiveRoomForAddress(address);
     if (activeRoom) {
@@ -294,8 +299,10 @@ export class RoomManager {
       for (const room of this.store.getAllRooms()) {
         if (room.roomType !== 'public') continue;
         if (this.queue.isZombieDepositRoom(room)) {
-          console.warn(`[Janitor] Destroying zombie public room ${room.id}`);
-          this.lifecycle.destroyRoom(room.id);
+          console.warn(`[Janitor] Abandoning zombie public room ${room.id}`);
+          void this.lifecycle.abandonPublicRoom(room.id, 'zombie_room').catch((err) => {
+            console.error(`[Janitor] Failed to abandon public room ${room.id}:`, err);
+          });
         }
       }
     }, intervalMs);
