@@ -6417,3 +6417,42 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - None. This uses standard Tailwind responsive flex structures and plays nicely with the landscape media overrides which force `flex: 1 1 auto` to stretch height correctly in landscape.
+
+## 2026-05-22 - Refactor Character Selection Screen for Responsive Landscape
+
+### The Change
+- **Upgraded Grid Layout Breakpoints**: Changed the scientist cards selection grid breakpoint from `xl:grid-cols-3` to `lg:grid-cols-3` in [CharacterSelect.tsx (character)](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) to align all 3 option cards side-by-side on tablet landscape viewports (e.g. `1180px` wide).
+- **Injected Semantic Class Hooks**: Introduced specific class wrappers (`.character-select-screen`, `.character-select-header`, `.character-select-title`, `.character-select-desc`, `.character-select-footer`, `.character-select-continue-btn`, `.character-card-btn`, `.character-card-avatar`, `.character-card-info`, `.character-card-name`, `.character-card-base`, `.character-card-badge-row`, and `.character-card-status-container`) inside [CharacterSelect.tsx (lobby)](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [CharacterSelect.tsx (character)](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx), and [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx).
+- **Wrapped Textual Info in Character Cards**: Refactored [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) to wrap card descriptions, role badges, base info, and selection status inside a dedicated vertical flex-column container (`.character-card-info`), decoupling them from the absolute card layout.
+- **Implemented Premium Landscape Overrides**: Injected custom visual media query styles in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for short landscape screens (`@media (orientation: landscape) and (max-height: 540px)`):
+  - Compressed paddings, text sizes, and margins globally across the selection phase container to fit inside a single `100svh` view height without scrolling.
+  - Hid verbose description paragraphs (`.character-select-desc`) inside narrow landscape headers.
+  - Forced a 3-column side-by-side grid layout on mobile landscape screens.
+  - Morphed standard vertical rectangular cards into highly compact horizontal rows (`flex-direction: row`), containing a tight `68px` circular avatar on the left and stacked detail metadata on the right.
+
+### The Reasoning
+- On mobile landscape screens (e.g. iPhone 12 Pro), the original character select screen overflowed vertically, demanding significant scrolling to access characters and the main continue CTA button. Cards had rigid `min-h-[350px]` styles and square avatars that were too tall for a `390px` high viewport.
+- Switching to horizontal flex-row cards under a media query compresses each card to a highly aesthetic `120px` height.
+- On tablet landscape (e.g. iPad Air), the previous `xl:grid-cols-3` constraint forced the third scientist card to wrap to a second row, making it look unbalanced. Changing to `lg:grid-cols-3` lets all three cards sit side-by-side inside viewports wider than `1024px` perfectly.
+- Compacting spacing, hiding verbose text, and layout morphing are handled entirely in pure CSS, ensuring stable rendering and avoiding any React SSR/client hydration warnings.
+
+### The Tech Debt
+- Tablet portrait sizes and mobile portrait screens continue to use the standard vertical stacking layouts correctly. The custom horizontal overrides are scoped strictly to low-height landscape orientations. No tech debt is introduced.
+
+## 2026-05-22 - Refine Character Select Landscape to Vertical Card Layout
+
+### The Change
+- **Cleaned up globals.css duplicate styles**: Resolved a PostCSS compilation error (`CssSyntaxError`) in `apps/web/src/app/globals.css` by deleting duplicate keyframes, wallet-adapter overrides, and paper-grain text blocks.
+- **Refactored character cards in mobile/tablet landscape overrides**: Modified the media-query overrides in `apps/web/src/app/globals.css` for `@media (orientation: landscape) and (max-height: 540px)` so character cards remain vertically oriented (picture above, info below) instead of turning horizontal (sideways).
+- **Implemented vertical scaling and stretching constraints**:
+  - Bound the cards' height to `100%` and `min-height: 0` inside the grid cells, and used flex grow constraints so that all three cards stretch to fill the screen viewport height exactly.
+  - Compressed the avatar (`.character-card-avatar`) to a compact `80px` square and centered it horizontally above the description texts.
+  - Tightened margins and scaled down name/base/badge typography to preserve standard game aesthetics in short viewports.
+
+### The Reasoning
+- The user requested keeping the gorgeous vertical card composition (portrait picture on top and info below) even on compact landscape screens, rather than layout-morphing them to sideways cards.
+- Restructuring the CSS with `flex-grow` and `height: 100%` ensures the standard vertical cards scale down cleanly, fitting all elements (header, three cards, and queue button) perfectly inside an iPhone 12 Pro landscape viewport (`390px` high) without any vertical scroll.
+- Fixing the duplicated blocks in `globals.css` ensures Next.js/Turbopack compiles the CSS bundle smoothly.
+
+### The Tech Debt
+- None. Spacing, padding, and sizes scale proportionally down, maintaining absolute parity with the design specs.

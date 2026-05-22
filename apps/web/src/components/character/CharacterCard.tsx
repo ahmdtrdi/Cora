@@ -80,7 +80,7 @@ export function CharacterCard({
       animate={{ opacity: 1, y: selected ? -5 : 0 }}
       transition={{ duration: 0.32, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
       whileHover={isInteractive ? { y: selected ? -6 : -1.5 } : undefined}
-      className={`game-card relative flex flex-col overflow-hidden p-4 text-left transition-transform ${compact ? "min-h-[320px]" : "min-h-[350px]"}`}
+      className={`game-card character-card-btn relative flex flex-col overflow-hidden p-4 text-left transition-transform ${compact ? "min-h-[320px]" : "min-h-[350px]"}`}
       style={{
         border: selected ? "3px solid #ba6931" : "3px solid rgba(111,58,40,0.38)",
         background: selected
@@ -97,7 +97,7 @@ export function CharacterCard({
     >
       <motion.div
         animate={portraitControls}
-        className={`relative mx-auto mb-4 aspect-square w-full overflow-hidden rounded-2xl ${compact ? "max-w-[190px]" : "max-w-[210px]"}`}
+        className={`character-card-avatar relative mx-auto mb-4 aspect-square w-full overflow-hidden rounded-2xl ${compact ? "max-w-[190px]" : "max-w-[210px]"}`}
         style={{
           border: selected ? "2px solid rgba(248,214,148,0.94)" : "2px solid rgba(15,20,17,0.7)",
           background: character.portraitBg,
@@ -129,32 +129,34 @@ export function CharacterCard({
         </div>
       </motion.div>
 
-      <p className="font-caprasimo text-2xl leading-tight text-[#2a1b10]">{character.name}</p>
-      <p className="mt-1 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#664734]">
-        Base: {character.base}
-      </p>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-        <span className="rounded-full border border-[rgba(39,65,55,0.3)] bg-[rgba(239,247,237,0.92)] px-2 py-0.5 font-gabarito text-[10px] font-semibold uppercase tracking-wide text-[#274137]">
-          {roleLabel}
-        </span>
-        <span className="rounded-full border border-[rgba(39,65,55,0.34)] bg-[rgba(226,236,222,0.9)] px-2 py-0.5 font-mono text-[10px] font-bold text-[#274137]">
-          x{specialtyMultiplier.toFixed(1)}
-        </span>
-      </div>
+      <div className="character-card-info flex flex-1 flex-col justify-between w-full h-full">
+        <div>
+          <p className="character-card-name font-caprasimo text-2xl leading-tight text-[#2a1b10]">{character.name}</p>
+          <p className="character-card-base mt-1 font-gabarito text-xs font-semibold uppercase tracking-wide text-[#664734]">
+            Base: {character.base}
+          </p>
+          <div className="character-card-badge-row mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full border border-[rgba(39,65,55,0.3)] bg-[rgba(239,247,237,0.92)] px-2 py-0.5 font-gabarito text-[10px] font-semibold uppercase tracking-wide text-[#274137]">
+              {roleLabel}
+            </span>
+            <span className="rounded-full border border-[rgba(39,65,55,0.34)] bg-[rgba(226,236,222,0.9)] px-2 py-0.5 font-mono text-[10px] font-bold text-[#274137]">
+              x{specialtyMultiplier.toFixed(1)}
+            </span>
+          </div>
+        </div>
 
-
-
-      <div className={compact ? "mt-4" : "mt-auto pt-2"}>
-        <div
-          className={`rounded-xl border px-3 py-2 text-center font-gabarito text-[11px] font-bold uppercase tracking-[0.12em] ${
-            selected
-              ? "border-[rgba(248,214,148,0.52)] bg-[rgba(39,65,55,0.92)] text-[#f8d694]"
-              : autoAssigned
-                ? "border-[rgba(186,105,49,0.4)] bg-[rgba(255,242,222,0.94)] text-[#8f5a1d]"
-                : "border-[rgba(111,58,40,0.28)] bg-[rgba(255,250,239,0.86)] text-[#6f3a28]"
-          }`}
-        >
-          {statusLabel}
+        <div className={`character-card-status-container ${compact ? "mt-4" : "mt-auto pt-2"}`}>
+          <div
+            className={`character-card-status rounded-xl border px-3 py-2 text-center font-gabarito text-[11px] font-bold uppercase tracking-[0.12em] ${
+              selected
+                ? "border-[rgba(248,214,148,0.52)] bg-[rgba(39,65,55,0.92)] text-[#f8d694]"
+                : autoAssigned
+                  ? "border-[rgba(186,105,49,0.4)] bg-[rgba(255,242,222,0.94)] text-[#8f5a1d]"
+                  : "border-[rgba(111,58,40,0.28)] bg-[rgba(255,250,239,0.86)] text-[#6f3a28]"
+            }`}
+          >
+            {statusLabel}
+          </div>
         </div>
       </div>
     </motion.button>
