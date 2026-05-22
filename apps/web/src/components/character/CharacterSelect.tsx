@@ -118,7 +118,7 @@ export function CharacterSelect({
   }, [autoAssignedCharacter, selectedCharacter]);
 
   return (
-    <section className={`flex flex-col ${compactCards ? "" : "flex-1"}`}>
+    <section className={`character-select-panel flex flex-col ${compactCards ? "" : "flex-1"}`}>
       {showHeading && (
         <div className="mb-4">
           <p className="font-gabarito text-[11px] uppercase tracking-[0.2em] text-[#6d8373]">
@@ -246,7 +246,7 @@ export function CharacterSelect({
         </div>
       )}
 
-      <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 ${compactCards ? "items-start" : "flex-1"}`}>
+      <div className={`character-select-grid grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 ${compactCards ? "items-start" : "flex-1"}`}>
         {characters.map((character, index) => (
           <CharacterCard
             key={character.id}

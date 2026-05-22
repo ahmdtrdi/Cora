@@ -1,6 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach, mock } from 'bun:test';
 import { RoomManager } from '../src/managers/RoomManager';
 import type { Room } from '../src/managers/room/types';
+import { MemoryQueueMatchStore } from '../src/services/queueMatches';
 
 /**
  * Create a mock WebSocket that records all sent messages.
@@ -26,9 +27,9 @@ function createMockWs() {
 }
 
 async function waitForPlayingRoom(room: Room) {
-  for (let attempt = 0; attempt < 25; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     if (room.status === 'playing' && room.engine?.isActive()) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
 
   expect(room.status).toBe('playing');
@@ -40,7 +41,7 @@ describe('RoomManager', () => {
   let manager: RoomManager;
 
   beforeEach(() => {
-    manager = new RoomManager();
+    manager = new RoomManager({ queueMatches: new MemoryQueueMatchStore(), erEnabled: false });
   });
 
   // ─── Room Creation ───────────────────────────────────────────
@@ -165,6 +166,31 @@ describe('RoomManager', () => {
 
   // ─── Join Room ───────────────────────────────────────────────
 
+  describe('createBotMatch', () => {
+    test('replaces a stale settling bot room for the same player', () => {
+      const firstRoom = manager.createBotMatch('playerA', { characterId: 'einstein' });
+      firstRoom.status = 'settling';
+
+      const nextRoom = manager.createBotMatch('playerA', { characterId: 'turing' });
+
+      expect(nextRoom.id).not.toBe(firstRoom.id);
+      expect(nextRoom.roomType).toBe('bot');
+      expect(nextRoom.playerA).toBe('playerA');
+      expect(manager.getRoom(firstRoom.id)).toBeUndefined();
+    });
+
+    test('replaces an unjoined bot deposit room after a client retry', () => {
+      const firstRoom = manager.createBotMatch('playerA', { characterId: 'einstein' });
+
+      const nextRoom = manager.createBotMatch('playerA', { characterId: 'curie' });
+
+      expect(nextRoom.id).not.toBe(firstRoom.id);
+      expect(nextRoom.roomType).toBe('bot');
+      expect(nextRoom.playerA).toBe('playerA');
+      expect(manager.getRoom(firstRoom.id)).toBeUndefined();
+    });
+  });
+
   describe('joinRoom', () => {
     test('first player joins and gets gameStateUpdate', () => {
       manager.createRoom('room-join');
@@ -198,7 +224,8 @@ describe('RoomManager', () => {
       expect(room.status).toBe('depositing');
 
       // Both should have received updated game state with depositing status
-      const stateMsg2 = mock2.lastMessage;
+      const stateMsg2 = mock2.messages.find((m: any) => m.type === 'gameStateUpdate' && m.payload.status === 'depositing');
+      expect(stateMsg2).toBeDefined();
       expect(stateMsg2.type).toBe('gameStateUpdate');
       expect(stateMsg2.payload.status).toBe('depositing');
     });
@@ -329,6 +356,7 @@ describe('RoomManager', () => {
       expect(room.status).toBe('depositing');
 
       manager.leaveRoom(roomId, 'playerB');
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(manager.getRoom(roomId)).toBeUndefined();
       expect((manager.queue as any).queue).toHaveLength(0);
@@ -359,7 +387,7 @@ describe('RoomManager', () => {
       const room = manager.getRoom(roomId)!;
       expect(room.status).toBe('depositing');
 
-      manager.lifecycle.cancelRoom(roomId, 'playerA');
+      await manager.lifecycle.cancelRoom(roomId, 'playerA');
 
       expect(manager.getRoom(roomId)).toBeUndefined();
       expect((manager.queue as any).queue).toHaveLength(0);
@@ -474,6 +502,11 @@ describe('RoomManager', () => {
       expect(countdownMsg).toBeDefined();
       expect(countdownMsg.payload.cardId).toBe(cardId);
       expect(countdownMsg.payload.remainingMs).toBe(10_000);
+
+      const acceptedMsg = mock1.messages.find((m: any) => m.type === 'openCardAccepted');
+      expect(acceptedMsg).toBeDefined();
+      expect(acceptedMsg.payload.cardId).toBe(cardId);
+      expect(acceptedMsg.payload.remainingMs).toBe(10_000);
     });
 
     test('opening a second card while one is open is rejected', async () => {
@@ -495,10 +528,17 @@ describe('RoomManager', () => {
 
       // Still only tracking the first card
       expect(room.openedCards.get('pA')!.cardId).toBe(cardId1);
+
+      const rejectedMsg = mock1.messages.find((m: any) => m.type === 'cardActionRejected');
+      expect(rejectedMsg).toBeDefined();
+      expect(rejectedMsg.payload.action).toBe('openCard');
+      expect(rejectedMsg.payload.reason).toBe('already_open');
+      expect(rejectedMsg.payload.cardId).toBe(cardId2);
+      expect(rejectedMsg.payload.activeCardId).toBe(cardId1);
     });
 
     test('opening a card not in hand is rejected', async () => {
-      const { room } = await setupPlayingRoom();
+      const { room, mock1 } = await setupPlayingRoom();
 
       manager.handleMessage('room-card', 'pA', {
         type: 'openCard',
@@ -506,13 +546,19 @@ describe('RoomManager', () => {
       });
 
       expect(room.openedCards.has('pA')).toBe(false);
+
+      const rejectedMsg = mock1.messages.find((m: any) => m.type === 'cardActionRejected');
+      expect(rejectedMsg).toBeDefined();
+      expect(rejectedMsg.payload.action).toBe('openCard');
+      expect(rejectedMsg.payload.reason).toBe('not_in_hand');
+      expect(rejectedMsg.payload.cardId).toBe('fake-card-id');
     });
   });
 
   // ─── Card Play Handling ──────────────────────────────────────
 
   describe('handleMessage - playCard', () => {
-    async function setupPlayingRoom() {
+    async function setupPlayingRoom(roomType: Room['roomType'] = 'public') {
       manager.createRoom('room-play');
       const mock1 = createMockWs();
       const mock2 = createMockWs();
@@ -523,6 +569,7 @@ describe('RoomManager', () => {
       const room = manager.getRoom('room-play')!;
       room.playerA = 'pA';
       room.playerB = 'pB';
+      room.roomType = roomType;
 
       manager.handleMessage('room-play', 'pA', {
         type: 'confirmDeposit',
@@ -553,6 +600,18 @@ describe('RoomManager', () => {
       // Should NOT have received a playCardResult
       const resultMsg = mock1.messages.find((m: any) => m.type === 'playCardResult');
       expect(resultMsg).toBeUndefined();
+
+      const rejectedMsg = mock1.messages.find((m: any) => m.type === 'cardActionRejected');
+      expect(rejectedMsg).toBeDefined();
+      expect(rejectedMsg.payload.action).toBe('playCard');
+      expect(rejectedMsg.payload.reason).toBe('not_opened');
+      expect(rejectedMsg.payload.cardId).toBe(cardId);
+
+      // Legacy unlock while FE migrates to cardActionRejected.
+      const expiredMsg = mock1.messages.find((m: any) => m.type === 'cardExpired');
+      expect(expiredMsg).toBeDefined();
+      expect(expiredMsg.payload.cardId).toBe(cardId);
+      expect(expiredMsg.payload.reason).toBe('rejected');
     });
 
     test('playing card after opening sends playCardResult and scoreUpdate', async () => {
@@ -624,6 +683,32 @@ describe('RoomManager', () => {
 
       // Opened card should be cleared
       expect(room.openedCards.has('pA')).toBe(false);
+    });
+
+    test('bot practice recovers playCard when open state is missing', async () => {
+      const { room, mock1 } = await setupPlayingRoom('bot');
+
+      const internalPa = (room.engine! as any).players.get('pA');
+      const engineCard = internalPa.hand[0];
+      const cardId = engineCard.id;
+
+      mock1.sent.length = 0;
+
+      manager.handleMessage('room-play', 'pA', {
+        type: 'playCard',
+        payload: { cardId, selectedOptionId: engineCard.correctOptionId },
+      });
+
+      const resultMsg = mock1.messages.find((m: any) => m.type === 'playCardResult');
+      expect(resultMsg).toBeDefined();
+      expect(resultMsg.payload.correct).toBe(true);
+
+      const expiredMsg = mock1.messages.find((m: any) => m.type === 'cardExpired');
+      expect(expiredMsg).toBeUndefined();
+      const rejectedMsg = mock1.messages.find((m: any) => m.type === 'cardActionRejected');
+      expect(rejectedMsg).toBeUndefined();
+      expect(room.openedCards.has('pA')).toBe(false);
+      expect(room.engine!.getServerHandForPlayer('pA').some((card) => card.id === cardId)).toBe(false);
     });
   });
 

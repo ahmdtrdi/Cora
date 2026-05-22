@@ -27,29 +27,15 @@ export function createQueueSocketRoute(roomManager: RoomManager) {
 
     return {
       onOpen(_event, ws) {
-        roomManager.queue.releaseUnfundedPublicDepositRoom(address);
-
-        // Check for active room first (reconnect scenario)
-        const activeRoom = roomManager.queue.findActiveRoomForAddress(address);
-        if (activeRoom) {
-          const role =
-            activeRoom.playerA === address ? 'playerA'
-              : activeRoom.playerB === address ? 'playerB'
-                : undefined;
-          const opponentAddress = address === activeRoom.playerA ? activeRoom.playerB : activeRoom.playerA;
-
-          roomManager.network.safeSend(ws, {
-            type: 'matchFound',
-            payload: { roomId: activeRoom.id, role, opponentAddress: opponentAddress ?? '' },
-          } satisfies WsMessage);
-
-          console.log(`[QueueWS] ${address.slice(0, 6)}.. already in room ${activeRoom.id}, sent matchFound`);
-          return;
-        }
-
-        // Enter queue via WebSocket
         queued = true;
-        roomManager.queue.queueMatchWs(address, ws);
+        void roomManager.queue.queueMatchWs(address, ws).catch((err) => {
+          console.error('[QueueWS] Unhandled queueMatchWs failure:', err);
+          roomManager.network.safeSend(ws, {
+            type: 'queueLeft',
+            payload: { reason: 'match_creation_failed' },
+          } satisfies WsMessage);
+          ws.close(1011, 'Match creation failed');
+        });
       },
 
       onMessage(event, ws) {

@@ -10,6 +10,7 @@ import type { Card, CharacterState, GameStatus } from "@shared/websocket";
 import { useMatchSocket } from "../../hooks/useMatchSocket";
 import { MatchContextMissingState, WalletRequiredState } from "./BattleScreenGateStates";
 import { MobileLandscapeGate } from "./MobileLandscapeGate";
+import { MobileFullscreenButton } from "./MobileFullscreenButton";
 import { BattleScreenOverlays } from "./BattleScreenOverlays";
 import { BattleScreenStatusLayer, type BattleUiAlert } from "./BattleScreenStatusLayer";
 import { GAME_AUDIO, playOneShotAudio, useLoopingAudio, usePreloadedAudio } from "@/lib/audio/gameAudio";
@@ -20,7 +21,7 @@ import { createMatchResultCardFileName, renderMatchResultCardPng } from "@/lib/c
 import {
   clearMatchSessionState,
   getMatchSessionAddress,
-  getMatchSessionToken,
+  isGuestBotMatchSession,
   readActiveDepositIntent,
   readActiveMatchSession,
   writeActiveBlinkChallengeSession,
@@ -116,6 +117,16 @@ function shortenAddress(address?: string) {
   if (!address) return "Unknown";
   if (address.length <= 12) return address;
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
+function playerIdentityLabel(address: string | undefined, isGuest: boolean) {
+  const shortAddress = shortenAddress(address);
+  return isGuest && shortAddress !== "Unknown" ? `Guest ${shortAddress}` : shortAddress;
+}
+
+function rivalIdentityLabel(address: string | undefined, isBot: boolean) {
+  const shortAddress = shortenAddress(address);
+  return isBot && shortAddress !== "Unknown" ? `Bot ${shortAddress}` : shortAddress;
 }
 
 function formatMatchClock(remainingMs?: number) {
@@ -241,17 +252,19 @@ export function BattleScreen() {
   const wallet = useWallet();
   const { publicKey } = wallet;
 
-  const address = publicKey?.toBase58() ?? "";
+  const connectedWalletAddress = publicKey?.toBase58() ?? "";
   const matchSessionAddress = getMatchSessionAddress(activeMatchSession);
   const roomMatchesSession = Boolean(roomIdParam && activeMatchSession?.roomId === roomIdParam);
-  const walletMatchesSession = Boolean(address && matchSessionAddress && address === matchSessionAddress);
-  const canUseMatchSession = matchSessionHydrated && roomMatchesSession && walletMatchesSession;
+  const guestMatchesSession = isGuestBotMatchSession(activeMatchSession) && Boolean(matchSessionAddress);
+  const walletMatchesSession = Boolean(connectedWalletAddress && matchSessionAddress && connectedWalletAddress === matchSessionAddress);
+  const canUseMatchSession = matchSessionHydrated && roomMatchesSession && (walletMatchesSession || guestMatchesSession);
+  const address = canUseMatchSession && guestMatchesSession ? matchSessionAddress : connectedWalletAddress;
   const roomId = canUseMatchSession ? activeMatchSession?.roomId ?? "" : "";
   const arenaId = canUseMatchSession ? activeMatchSession?.arenaId ?? arenaIdParam ?? "sol" : arenaIdParam ?? "sol";
   const arenaToken = ARENA_TOKEN_BY_ID[arenaId] ?? "SOL";
   const wagerUsd = canUseMatchSession ? activeMatchSession?.wagerUsd ?? FIXED_WAGER_USD : FIXED_WAGER_USD;
   const preSignedDepositSig = canUseMatchSession ? readActiveDepositIntent(roomId, address) : null;
-  const requiresWalletConnect = !address;
+  const requiresWalletConnect = matchSessionHydrated && !address && !guestMatchesSession;
   const playGuardError = !roomIdParam
     ? "Missing roomId. Return to lobby and enter the match from the found flow."
     : !matchSessionHydrated
@@ -260,9 +273,9 @@ export function BattleScreen() {
         ? "Missing local match session. Return to lobby and enter the match from the found flow."
         : activeMatchSession.roomId !== roomIdParam
           ? "This play link does not match your active local match session."
-          : !matchSessionAddress
-            ? "Local match session is missing a wallet address. Return to lobby and rejoin the match."
-            : address && matchSessionAddress !== address
+        : !matchSessionAddress
+          ? "Local match session is missing a player address. Return to lobby and rejoin the match."
+          : !guestMatchesSession && connectedWalletAddress && matchSessionAddress !== connectedWalletAddress
               ? "Connected wallet does not match the wallet that started this match."
               : null;
 
@@ -280,6 +293,8 @@ export function BattleScreen() {
     lastRoomCancelled,
     lastDamageEvent,
     lastPlayResult,
+    lastOpenCardAccepted,
+    lastCardActionRejected,
     lastCardCountdown,
     lastCardExpired,
     currentPhase,
@@ -300,6 +315,7 @@ export function BattleScreen() {
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activeQuestionCard, setActiveQuestionCard] = useState<Card | null>(null);
+  const [activeCardAccepted, setActiveCardAccepted] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(ANSWER_TIME_SEC);
   const [answerLocked, setAnswerLocked] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
@@ -336,6 +352,8 @@ export function BattleScreen() {
 
   const pendingCardIdRef = useRef<string | null>(null);
   const lastProcessedPlayAtRef = useRef(0);
+  const lastProcessedOpenAcceptedAtRef = useRef(0);
+  const lastProcessedCardRejectedAtRef = useRef(0);
   const lastProcessedExpiredAtRef = useRef(0);
   const lastDamageTimestampRef = useRef(0);
   const depositConfirmedRef = useRef(false);
@@ -417,6 +435,20 @@ export function BattleScreen() {
     [],
   );
 
+  const resetActiveCard = useCallback(() => {
+    if (answerFeedbackTimerRef.current) {
+      clearTimeout(answerFeedbackTimerRef.current);
+      answerFeedbackTimerRef.current = null;
+    }
+    setActiveCardId(null);
+    setActiveQuestionCard(null);
+    setActiveCardAccepted(false);
+    setAnswerLocked(false);
+    setSelectedOptionId(null);
+    setAnswerFeedback(null);
+    pendingCardIdRef.current = null;
+  }, []);
+
   useEffect(() => {
     return () => {
       if (gameNoticeTimerRef.current) {
@@ -455,31 +487,67 @@ export function BattleScreen() {
   );
 
   useEffect(() => {
+    if (!lastOpenCardAccepted) return;
+    if (lastOpenCardAccepted.at === lastProcessedOpenAcceptedAtRef.current) return;
+    lastProcessedOpenAcceptedAtRef.current = lastOpenCardAccepted.at;
+    if (lastOpenCardAccepted.cardId !== pendingCardIdRef.current && lastOpenCardAccepted.cardId !== activeCardId) return;
+
+    setActiveCardAccepted(true);
+    setSecondsLeft(Math.max(0, Math.ceil(lastOpenCardAccepted.remainingMs / 1000)));
+  }, [activeCardId, lastOpenCardAccepted]);
+
+  useEffect(() => {
+    if (!lastCardCountdown) return;
+    if (lastCardCountdown.cardId !== pendingCardIdRef.current && lastCardCountdown.cardId !== activeCardId) return;
+
+    setActiveCardAccepted(true);
+    setSecondsLeft(Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000)));
+  }, [activeCardId, lastCardCountdown]);
+
+  useEffect(() => {
+    if (!lastCardActionRejected) return;
+    if (lastCardActionRejected.at === lastProcessedCardRejectedAtRef.current) return;
+    lastProcessedCardRejectedAtRef.current = lastCardActionRejected.at;
+
+    const rejectedCardId = lastCardActionRejected.cardId ?? lastCardActionRejected.activeCardId ?? null;
+    const affectsActiveCard =
+      !rejectedCardId ||
+      rejectedCardId === pendingCardIdRef.current ||
+      rejectedCardId === activeCardId ||
+      lastCardActionRejected.activeCardId === activeCardId;
+
+    if (affectsActiveCard) {
+      queueMicrotask(() => {
+        resetActiveCard();
+        showGameNotice(lastCardActionRejected.message || "Card sync lost. Please reopen the card.", "action", 2800);
+      });
+    }
+  }, [activeCardId, lastCardActionRejected, resetActiveCard, showGameNotice]);
+
+  useEffect(() => {
     if (!lastCardExpired) return;
     if (lastCardExpired.at === lastProcessedExpiredAtRef.current) return;
     lastProcessedExpiredAtRef.current = lastCardExpired.at;
 
-    setOutcomes((prev) => [
-      ...prev,
-      {
-        cardId: lastCardExpired.cardId,
-        outcome: "timeout",
-        at: lastCardExpired.at,
-      },
-    ]);
-    playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
-    showGameNotice("No damage this turn.");
-    if (answerFeedbackTimerRef.current) {
-      clearTimeout(answerFeedbackTimerRef.current);
-      answerFeedbackTimerRef.current = null;
+    if (lastCardExpired.reason === "rejected") {
+      queueMicrotask(() => resetActiveCard());
+      return;
     }
-    setActiveCardId(null);
-    setActiveQuestionCard(null);
-    setAnswerLocked(false);
-    setSelectedOptionId(null);
-    setAnswerFeedback(null);
-    pendingCardIdRef.current = null;
-  }, [lastCardExpired, showGameNotice]);
+
+    queueMicrotask(() => {
+      setOutcomes((prev) => [
+        ...prev,
+        {
+          cardId: lastCardExpired.cardId,
+          outcome: "timeout",
+          at: lastCardExpired.at,
+        },
+      ]);
+      playOneShotAudio(GAME_AUDIO.wrong, { volume: 0.88 });
+      showGameNotice("No damage this turn.");
+      resetActiveCard();
+    });
+  }, [lastCardExpired, resetActiveCard, showGameNotice]);
 
   useEffect(() => {
     if (!lastPlayResult) return;
@@ -515,6 +583,7 @@ export function BattleScreen() {
     answerFeedbackTimerRef.current = setTimeout(() => {
       setActiveCardId(null);
       setActiveQuestionCard(null);
+      setActiveCardAccepted(false);
       setAnswerLocked(false);
       setSelectedOptionId(null);
       setAnswerFeedback(null);
@@ -636,6 +705,7 @@ export function BattleScreen() {
     }
     setActiveCardId(card.id);
     setActiveQuestionCard(card);
+    setActiveCardAccepted(false);
     setSecondsLeft(ANSWER_TIME_SEC);
     setAnswerLocked(false);
     setSelectedOptionId(null);
@@ -645,7 +715,7 @@ export function BattleScreen() {
   }
 
   function onAnswer(optionId: string) {
-    if (!activeCard || answerLocked || !isPlayable || isMatchComplete) return;
+    if (!activeCard || !activeCardAccepted || answerLocked || !isPlayable || isMatchComplete) return;
     setSelectedOptionId(optionId);
     setAnswerLocked(true);
     pendingCardIdRef.current = activeCard.id;
@@ -695,6 +765,13 @@ export function BattleScreen() {
   const winnerAddress =
     settlementResult?.winner ?? matchSummaryResult?.winnerAddress ?? matchInvalidated?.winnerAddress ?? null;
   const matchResultReason = matchSummaryResult?.reason ?? matchInvalidated?.reason ?? null;
+  const isBotMatch =
+    roomId.startsWith("bot-") ||
+    gameState?.roomType === "bot" ||
+    matchSummaryResult?.isBotMatch === true ||
+    matchInvalidated?.isBotMatch === true;
+  const displayPlayerAddress = activeMatchSession?.displayAddress?.trim() || address;
+  const displayPlayerAsGuest = activeMatchSession?.displayAsGuest ?? guestMatchesSession;
   const surrenderedAddress = matchSummaryResult?.surrenderedAddress ?? matchInvalidated?.surrenderedAddress ?? null;
   const didCurrentPlayerSurrender = matchResultReason === "surrender" && surrenderedAddress === address;
   const didOpponentSurrender =
@@ -742,8 +819,12 @@ export function BattleScreen() {
             ? "The match ended evenly. Settlement is being resolved."
             : winnerAddress
               ? winnerAddress === address
-                ? "Victory secured."
-                : "Rival took this round."
+                ? isBotMatch
+                  ? "Practice win. No Solana payout in no-stakes rounds."
+                  : "Victory secured."
+                : isBotMatch
+                  ? "Practice loss. You did not lose Solana."
+                  : "Rival took this round."
               : "Match results are being finalized."
   const settlementStatus = isRoomCancelled
     ? "Cancelled"
@@ -816,9 +897,10 @@ export function BattleScreen() {
   const didWin = winnerAddress ? winnerAddress === address : false;
   const challengeStatusLabel = didWin ? "Winner" : "Rematch";
   const displaySecondsLeft =
-    activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
+    activeCardAccepted && activeCard && lastCardCountdown && lastCardCountdown.cardId === activeCard.id
       ? Math.max(0, Math.ceil(lastCardCountdown.remainingMs / 1000))
       : secondsLeft;
+  const displayCountdownLabel = activeCardAccepted ? `${displaySecondsLeft}` : "...";
   const roundsToWin = gameState?.roundsToWin ?? 2;
   const maxRounds = Math.max(1, roundsToWin * 2 - 1);
   const currentRound = Math.min(maxRounds, Math.max(1, gameState?.currentRound ?? 1));
@@ -871,11 +953,11 @@ export function BattleScreen() {
     }
     : null;
   const opponentIdentityLabel = opponent?.address
-    ? shortenAddress(opponent.address)
+    ? rivalIdentityLabel(opponent.address, isBotMatch)
     : isRoomStateLoading
       ? "Syncing..."
       : "Unknown";
-  const playerAddressLabel = address ? shortenAddress(address) : "Unknown";
+  const playerAddressLabel = playerIdentityLabel(displayPlayerAddress, displayPlayerAsGuest);
   const regularMatchShareTitle = didWin ? "I just won in a CORA match" : "I just battled in a CORA match";
   const challengeShareTitle = didWin
     ? `I just won against ${opponentIdentityLabel}.`
@@ -1079,6 +1161,10 @@ export function BattleScreen() {
       wagerUsd,
       address,
       walletAddress: address,
+      displayAddress: displayPlayerAddress,
+      displayAsGuest: displayPlayerAsGuest,
+      roomType: isBotMatch ? "bot" : activeMatchSession?.roomType ?? null,
+      isGuest: guestMatchesSession,
       status: "playing",
       canSurrenderByState,
     });
@@ -1296,8 +1382,19 @@ export function BattleScreen() {
       autoDismissMs: 0,
     });
   }
+  if (isBotMatch && !isMatchComplete) {
+    alerts.push({
+      id: "bot:generated-practice-wallets",
+      title: "Practice Mode",
+      message: displayPlayerAsGuest
+        ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
+        : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches.",
+      tone: "warning",
+      autoDismissMs: 14000,
+    });
+  }
 
-  const missingPreSignedDeposit = status === "depositing" && connectionState === "connected" && !preSignedDepositSig;
+  const missingPreSignedDeposit = !isBotMatch && status === "depositing" && connectionState === "connected" && !preSignedDepositSig;
   if (missingPreSignedDeposit) {
     alerts.push({
       id: "deposit:missing_pre_signed_intent",
@@ -1493,7 +1590,7 @@ export function BattleScreen() {
   }
 
   async function onCreateBlinkFromResult() {
-    if (!address) {
+    if (guestMatchesSession || !connectedWalletAddress) {
       setShareNotice({ text: "Connect wallet before creating a Blink challenge.", tone: "error" });
       return;
     }
@@ -1509,7 +1606,7 @@ export function BattleScreen() {
       const snapshot = await createBlinkChallengeSession({
         connection,
         wallet,
-        walletAddress: address,
+        walletAddress: connectedWalletAddress,
         tokenMint: arenaToken,
         wagerAmount,
         wagerUsd,
@@ -1546,13 +1643,14 @@ export function BattleScreen() {
 
   return (
     <main
-      className="h-[100svh] overflow-hidden px-3 py-2 md:px-5 md:py-3"
+      className="battle-screen h-[100svh] overflow-hidden px-3 py-2 md:px-5 md:py-3"
       style={{
         background:
           "radial-gradient(circle at 50% 24%, rgba(168,143,104,0.2), transparent 46%), linear-gradient(180deg, #26372f 0%, #1a2822 45%, #111a16 100%)",
       }}
     >
       <MobileLandscapeGate />
+      <MobileFullscreenButton />
 
       <BattleScreenStatusLayer
         visibleAlerts={visibleAlerts}
@@ -1560,32 +1658,32 @@ export function BattleScreen() {
         onDismissAlert={dismissAlert}
       />
 
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
-        <header className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-1.5">
-          <p className="font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
+      <div className="battle-shell mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+        <header className="battle-room-header mb-1 flex shrink-0 flex-wrap items-center justify-between gap-1.5">
+          <p className="battle-room-id font-gabarito text-xs uppercase tracking-[0.18em] text-[var(--tone-cream)]/85">
             Battle Room - {roomId}
           </p>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="battle-status-row flex flex-wrap items-center gap-1.5">
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {roundText}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {remainingMatchClock}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
             >
               {statusLabel} - {connectionState}
             </span>
             <span
-              className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+              className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
               style={{
                 border: "1px solid rgba(39,65,55,0.2)",
                 background:
@@ -1598,7 +1696,7 @@ export function BattleScreen() {
               {phaseLabel}
             </span>
             <span
-              className="rounded-full px-2.5 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
+              className="battle-rival-pill rounded-full px-2.5 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em]"
               style={{
                 border: "1px solid rgba(248,214,148,0.32)",
                 background: opponentIsConnected ? "rgba(39,65,55,0.52)" : "rgba(111,58,40,0.52)",
@@ -1611,7 +1709,7 @@ export function BattleScreen() {
               <button
                 type="button"
                 onClick={onCancelMatch}
-                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(248,214,148,0.38)", background: "rgba(19,32,26,0.9)", color: "var(--tone-cream)" }}
               >
                 Cancel Match
@@ -1621,7 +1719,7 @@ export function BattleScreen() {
               <button
                 type="button"
                 onClick={onOpenSurrenderModal}
-                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(186,105,49,0.45)", background: "rgba(77,42,24,0.9)", color: "var(--tone-cream)" }}
               >
                 Surrender
@@ -1631,7 +1729,7 @@ export function BattleScreen() {
               <Link
                 href={cleanLobbyHref}
                 onClick={clearLobbyReturnState}
-                className="frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
+                className="battle-status-pill frame-cut frame-cut-sm px-2.5 py-0.5 font-gabarito text-[11px] font-bold uppercase tracking-wide"
                 style={{ border: "1px solid rgba(248,214,148,0.32)", background: "rgba(19,32,26,0.86)", color: "var(--tone-cream)" }}
               >
                 Return To Lobby
@@ -1641,7 +1739,7 @@ export function BattleScreen() {
         </header>
 
         <section
-          className="frame-cut relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2"
+          className="battle-arena-frame frame-cut relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-2"
           style={{
             border: "1px solid rgba(248,214,148,0.28)",
             background:
@@ -1649,11 +1747,11 @@ export function BattleScreen() {
           }}
         >
           <div
-            className="relative z-20 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-1.5 md:px-5"
+            className="battle-player-strip relative z-20 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-1.5 md:px-5"
             style={{ borderBottom: "1px solid rgba(248,214,148,0.12)" }}
           >
             <div className="min-w-0">
-              <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+              <p className="battle-player-meta flex min-w-0 flex-wrap items-center gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
                 <span className="font-bold text-[var(--tone-cream)]">You</span>
                 <span className="opacity-40">{"\u00B7"}</span>
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {playerScore}</span>
@@ -1661,12 +1759,12 @@ export function BattleScreen() {
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {playerRoundsWon}</span>
               </p>
               {address && (
-                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{shortenAddress(address)}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-[rgba(244,240,230,0.58)]">{playerAddressLabel}</p>
               )}
             </div>
-            <p className="font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
+            <p className="battle-vs font-caprasimo text-2xl leading-none text-[var(--tone-cream)] drop-shadow-[0_6px_14px_rgba(0,0,0,0.4)] md:text-3xl">VS</p>
             <div className="min-w-0 text-right">
-              <p className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
+              <p className="battle-player-meta flex min-w-0 flex-wrap items-center justify-end gap-1.5 font-gabarito text-xs text-[rgba(244,240,230,0.88)]">
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Score {opponentScore}</span>
                 <span className="opacity-40">{"\u00B7"}</span>
                 <span className="rounded-full px-1.5 py-px text-[10px]" style={{ background: "rgba(39,65,55,0.38)", border: "1px solid rgba(248,214,148,0.18)" }}>Rounds {opponentRoundsWon}</span>
@@ -1677,7 +1775,7 @@ export function BattleScreen() {
             </div>
           </div>
 
-          <div className="relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
+          <div className="battle-stage relative min-h-0 flex-1 overflow-hidden pt-[4.25rem]">
             {targetArenaImageUrl && !failedArenaSprites[targetArenaImageUrl] && (
               <div className="pointer-events-none absolute inset-0 z-0">
                 <Image
@@ -1738,7 +1836,7 @@ export function BattleScreen() {
                   animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
                   exit={{ opacity: 0, y: -4, x: "-50%", scale: 0.98 }}
                   transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                  className="pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
+                  className="battle-notice pointer-events-none frame-cut absolute left-1/2 top-[-2rem] z-30 w-[min(92vw,34rem)] px-4 py-2.5 shadow-xl"
                   style={{
                     border:
                       activeGameNotice.tone === "phase"
@@ -1755,7 +1853,7 @@ export function BattleScreen() {
                   }}
                 >
                   <p
-                    className="font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
+                    className="battle-notice-kicker font-gabarito text-[10px] font-black uppercase tracking-[0.2em]"
                     style={{
                       color:
                         activeGameNotice.tone === "phase"
@@ -1765,7 +1863,7 @@ export function BattleScreen() {
                   >
                     {activeGameNotice.tone === "phase" ? "Battle Update" : "Combat Update"}
                   </p>
-                  <p className="mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
+                  <p className="battle-notice-message mt-0.5 font-gabarito text-sm font-bold uppercase tracking-[0.07em] text-[var(--tone-cream)] md:text-[15px]">
                     {activeGameNotice.message}
                   </p>
                 </motion.div>
@@ -1779,7 +1877,7 @@ export function BattleScreen() {
               }}
             />
             <div
-              className="pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
+              className="battle-base battle-base-player pointer-events-none absolute -left-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
                 opacity:
                   playerBaseDefeatActive && endgameBaseFadeActive
@@ -1927,7 +2025,7 @@ export function BattleScreen() {
             </div>
 
             <div
-              className="pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
+              className="battle-base battle-base-opponent pointer-events-none absolute -right-[7%] bottom-[5%] z-0 w-[clamp(200px,27vw,400px)] transition-all duration-[1500ms] ease-out"
               style={{
                 opacity:
                   opponentBaseDefeatActive && endgameBaseFadeActive
@@ -2075,12 +2173,12 @@ export function BattleScreen() {
               </motion.div>
             </div>
 
-            <div className="absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
-                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
+            <div className="battle-base-meter battle-base-meter-player absolute left-3 top-3 z-20 w-[clamp(132px,17vw,190px)] md:left-5">
+              <div className="battle-base-meter-labels flex items-center justify-between gap-2">
+                <p className="battle-base-meter-title font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+                <p className="battle-base-meter-value font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{playerBaseHp} / 100</p>
               </div>
-              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+              <div className="battle-base-meter-track mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -2091,12 +2189,12 @@ export function BattleScreen() {
               </div>
             </div>
 
-            <div className="absolute right-3 top-3 z-20 w-[clamp(132px,17vw,190px)] text-right md:right-5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
-                <p className="font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
+            <div className="battle-base-meter battle-base-meter-opponent absolute right-3 top-3 z-20 w-[clamp(132px,17vw,190px)] text-right md:right-5">
+              <div className="battle-base-meter-labels flex items-center justify-between gap-2">
+                <p className="battle-base-meter-value font-mono text-[11px] text-[rgba(244,240,230,0.86)]">{opponentBaseHp} / 100</p>
+                <p className="battle-base-meter-title font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[rgba(244,240,230,0.82)]">Base</p>
               </div>
-              <div className="mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
+              <div className="battle-base-meter-track mt-1 h-2 overflow-hidden rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(19,32,26,0.72)]">
                 <div
                   className="ml-auto h-full rounded-full"
                   style={{
@@ -2108,7 +2206,7 @@ export function BattleScreen() {
             </div>
 
             <motion.div
-              className={`absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
+              className={`battle-character battle-character-player absolute left-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "player" ? "-translate-y-2 rotate-[-2deg]" : ""
                 }`}
               animate={playerActionControls}
             >
@@ -2172,7 +2270,7 @@ export function BattleScreen() {
             </motion.div>
 
             <motion.div
-              className={`absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
+              className={`battle-character battle-character-opponent absolute right-[21%] bottom-[12%] z-[6] aspect-[4/5] w-[clamp(110px,16vw,176px)] transition-all duration-300 ${characterActionSide === "opponent" ? "-translate-y-2 rotate-[2deg]" : ""
                 }`}
               animate={opponentActionControls}
             >
@@ -2283,7 +2381,7 @@ export function BattleScreen() {
 
           </div>
 
-          <div className="relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
+          <div className="battle-hand-panel relative z-20 shrink-0 px-3 pb-3 pt-0.5 md:px-5">
             <AnimatePresence>
               {activeCard && status === "playing" && !isMatchComplete && (
                 <motion.div
@@ -2292,7 +2390,7 @@ export function BattleScreen() {
                   animate={{ opacity: 1, y: 0, x: "-50%", scale: 1 }}
                   exit={{ opacity: 0, y: 6, x: "-50%", scale: 0.98 }}
                   transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                  className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
+                  className="battle-question-card pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[min(92vw,48rem)] overflow-hidden rounded-[18px] p-2 md:p-2.5"
                   style={{
                     border: "1px solid rgba(248,214,148,0.36)",
                     background: "linear-gradient(150deg, rgba(255,246,228,0.96), rgba(243,221,185,0.96))",
@@ -2308,7 +2406,7 @@ export function BattleScreen() {
                         {activeCard.question.text}
                       </p>
                     </div>
-                    <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displaySecondsLeft}</p>
+                    <p className="shrink-0 font-caprasimo text-3xl leading-none text-[#ba6931]">{displayCountdownLabel}</p>
                   </div>
 
                   <div className="mt-2 grid grid-cols-2 gap-1.5 md:gap-2">
@@ -2320,7 +2418,7 @@ export function BattleScreen() {
                         <button
                           key={option.id}
                           type="button"
-                          disabled={answerLocked || isMatchComplete}
+                          disabled={!activeCardAccepted || answerLocked || isMatchComplete}
                           onClick={() => onAnswer(option.id)}
                           className="relative min-h-10 overflow-hidden rounded-xl px-2.5 py-2 text-left transition hover:-translate-y-0.5 disabled:cursor-default"
                           style={{
@@ -2341,7 +2439,7 @@ export function BattleScreen() {
                             boxShadow: isSelected
                               ? "0 0 0 2px rgba(248,214,148,0.18), 0 8px 14px rgba(77,42,24,0.16)"
                               : "0 6px 10px rgba(77,42,24,0.12)",
-                            opacity: answerLocked && !isSelected ? 0.72 : 1,
+                            opacity: !activeCardAccepted || (answerLocked && !isSelected) ? 0.72 : 1,
                           }}
                         >
                           <span
@@ -2363,7 +2461,7 @@ export function BattleScreen() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className="mb-3 flex justify-center">
+            <div className="battle-hand-prompt mb-3 flex justify-center">
               <p
                 className={`inline-flex items-center rounded-full px-3 py-1 text-center font-gabarito text-xs ${
                   isPlayable && !activeCard && !isMatchComplete
@@ -2389,14 +2487,16 @@ export function BattleScreen() {
                 {isMatchComplete
                   ? "Match locked. Resolving final sequence."
                   : activeCard && status === "playing"
-                    ? "Choose an answer."
+                    ? activeCardAccepted
+                      ? "Choose an answer."
+                      : "Opening card..."
                     : isPlayable
                       ? "Pick a card from your hand"
                       : "Waiting for server state..."}
               </p>
             </div>
 
-            <div className="mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
+            <div className="battle-card-row mx-auto flex max-w-4xl items-end justify-center gap-2 md:gap-3">
               {Array.from({ length: displaySlots }).map((_, index) => {
                 const card = hand[index] ?? null;
                 const active = card ? activeCardId === card.id : false;
@@ -2413,7 +2513,7 @@ export function BattleScreen() {
                       if (card) onOpenCard(card);
                     }}
                     disabled={cardDisabled}
-                    className={`relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition duration-200 ease-out enabled:hover:-translate-y-2 enabled:hover:scale-[1.03] ${transformClass}`}
+                    className={`battle-hand-card relative aspect-[5/7] w-[13vw] min-w-[58px] max-w-[118px] overflow-hidden rounded-[18px] px-2 py-2 text-left transition duration-200 ease-out enabled:hover:-translate-y-2 enabled:hover:scale-[1.03] ${transformClass}`}
                     style={{
                       border: visuallyActive ? "2px solid rgba(248,214,148,0.95)" : "2px solid rgba(111,58,40,0.52)",
                       background: cardBackground
@@ -2484,6 +2584,7 @@ export function BattleScreen() {
         onCloseSurrenderModal={() => setSurrenderModalOpen(false)}
         settlementText={settlementText}
         settlementSubtitle={settlementSubtitle}
+        isBotMatch={isBotMatch}
         settlementOutcomeKind={settlementOutcomeKind}
         settlementEmojiMood={settlementEmojiMood}
         settlementExpressionSrc={settlementExpressionSrc}

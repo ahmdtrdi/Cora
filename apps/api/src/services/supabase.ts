@@ -21,7 +21,7 @@ export const supabase = {
   },
 };
 
-function getClient(): Promise<SupabaseClient> {
+export function getClient(): Promise<SupabaseClient> {
   clientPromise ??= import('@supabase/supabase-js').then(({ createClient }) =>
     createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
   );

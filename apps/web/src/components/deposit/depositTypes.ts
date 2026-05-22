@@ -4,6 +4,7 @@ export type DepositStatus =
   | "wallet_required"
   | "signing"
   | "submitted"
+  | "practice"
   | "confirmed"
   | "waiting_opponent"
   | "opponent_failed"
@@ -35,6 +36,10 @@ export const DEPOSIT_STATUS_META: Record<DepositStatus, DepositStatusMeta> = {
   submitted: {
     label: "Deposit Submitted",
     helper: "Deposit signature captured. Verifying room state.",
+  },
+  practice: {
+    label: "Practice Match",
+    helper: "No deposit needed. Preparing the arena.",
   },
   confirmed: {
     label: "Deposit Confirmed",

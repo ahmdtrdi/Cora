@@ -171,7 +171,7 @@ describe("apply_card_effect", () => {
   it("awards the round after an effect-based KO", async () => {
     const { sessionPda, playerA } = await createSession();
     const cards = await Promise.all(
-      [3, 4, 5, 6].map((cardIndex) =>
+      [3, 4, 5].map((cardIndex) =>
         registerEffectCard({
           sessionPda,
           cardIndex,

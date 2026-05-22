@@ -20,11 +20,11 @@ export function BattleScreenStatusLayer({
   onDismissAlert,
 }: BattleScreenStatusLayerProps) {
   return (
-    <div className="fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
+    <div className="battle-alert-layer fixed right-4 top-4 z-[70] flex w-full max-w-sm flex-col gap-2 md:right-6 md:top-6">
       {visibleAlerts.map((alert) => (
         <div
           key={alert.id}
-          className="frame-cut px-3 py-2"
+          className="battle-alert-card frame-cut px-3 py-2"
           style={{
             border:
               alert.tone === "error"
@@ -38,7 +38,7 @@ export function BattleScreenStatusLayer({
         >
           <div className="flex items-start justify-between gap-2">
             <p
-              className="font-gabarito text-xs font-bold uppercase tracking-wide"
+              className="battle-alert-title font-gabarito text-xs font-bold uppercase tracking-wide"
               style={{ color: alert.tone === "error" ? "#f8d694" : "#f8d694" }}
             >
               {alert.title}
@@ -46,20 +46,20 @@ export function BattleScreenStatusLayer({
             <button
               type="button"
               onClick={() => onDismissAlert(alert.id)}
-              className="font-gabarito text-xs font-bold leading-none text-[var(--tone-cream)] opacity-80"
+              className="battle-alert-close font-gabarito text-xs font-bold leading-none text-[var(--tone-cream)] opacity-80"
               aria-label="Close alert"
             >
               X
             </button>
           </div>
           <p
-            className="mt-1 break-words font-gabarito text-xs"
+            className="battle-alert-message mt-1 break-words font-gabarito text-xs"
             style={{ color: "rgba(244,240,230,0.88)" }}
           >
             {alert.message}
           </p>
           {alert.id.startsWith("socket:") && socketUrl && (
-            <p className="mt-1 break-all font-gabarito text-[11px] text-[rgba(244,240,230,0.74)]">
+            <p className="battle-alert-url mt-1 break-all font-gabarito text-[11px] text-[rgba(244,240,230,0.74)]">
               {socketUrl}
             </p>
           )}
@@ -68,7 +68,7 @@ export function BattleScreenStatusLayer({
               <button
                 type="button"
                 onClick={alert.onAction}
-                className="frame-cut frame-cut-sm px-2 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
+                className="battle-alert-action frame-cut frame-cut-sm px-2 py-1 font-gabarito text-[11px] font-extrabold uppercase tracking-wide"
                 style={{
                   border: "1px solid rgba(248,214,148,0.35)",
                   color: "var(--tone-cream)",
@@ -79,7 +79,7 @@ export function BattleScreenStatusLayer({
               </button>
             )}
           </div>
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-[rgba(248,214,148,0.16)]">
+          <div className="battle-alert-drain mt-2 h-1 overflow-hidden rounded-full bg-[rgba(248,214,148,0.16)]">
             <div
               className="h-full"
               style={{

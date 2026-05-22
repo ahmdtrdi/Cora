@@ -26,6 +26,9 @@ type OpponentFoundProps = {
   matchRole?: "playerA" | "playerB" | null;
   arena: Arena;
   wagerUsd: string;
+  isGuest?: boolean;
+  displayWalletAddress?: string;
+  displayAsGuest?: boolean;
   onTimeout: () => void;
 };
 
@@ -44,6 +47,14 @@ function shortWallet(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function identityLabel(address: string, isGuest: boolean) {
+  return isGuest ? `Guest ${shortWallet(address)}` : shortWallet(address);
+}
+
+function rivalIdentityLabel(address: string, isBot: boolean) {
+  return isBot ? `Bot ${shortWallet(address)}` : shortWallet(address);
+}
+
 function getRoomCancelledMessage(reason?: "player_cancelled" | "deposit_timeout" | "disconnect") {
   if (reason === "deposit_timeout") return "Deposit timed out. Returning to lobby.";
   if (reason === "disconnect") return "Match cancelled before battle start. Returning to lobby.";
@@ -57,6 +68,9 @@ export function OpponentFound({
   matchRole,
   arena,
   wagerUsd,
+  isGuest = false,
+  displayWalletAddress,
+  displayAsGuest = isGuest,
   onTimeout,
 }: OpponentFoundProps) {
   const router = useRouter();
@@ -72,6 +86,7 @@ export function OpponentFound({
   const [isCancellingMatch, setIsCancellingMatch] = useState(false);
   const [connectionIssueBannerVisible, setConnectionIssueBannerVisible] = useState(false);
   const [walletApprovalTakingLong, setWalletApprovalTakingLong] = useState(false);
+  const [depositReminderOpen, setDepositReminderOpen] = useState(false);
   const [myExpressionUnavailable, setMyExpressionUnavailable] = useState(false);
   const [battleLaunchCountdown, setBattleLaunchCountdown] = useState<number | null>(null);
   const hasConnectedOnceRef = useRef(false);
@@ -90,7 +105,9 @@ export function OpponentFound({
     [myScientist.id],
   );
 
-  const walletAddress = wallet.publicKey?.toBase58() ?? myWallet;
+  const walletAddress = isGuest ? myWallet : wallet.publicKey?.toBase58() ?? myWallet;
+  const visibleWalletAddress = displayWalletAddress ?? (isGuest ? myWallet : walletAddress);
+  const displayWalletLabel = identityLabel(visibleWalletAddress, displayAsGuest);
   usePreloadedAudio(OPPONENT_FOUND_PRELOADED_AUDIO);
   const signed = signingState === "waiting";
   const {
@@ -109,6 +126,7 @@ export function OpponentFound({
     address: walletAddress,
     characterId: myScientist.id,
   });
+  const isBotMatch = roomId.startsWith("bot-") || gameState?.roomType === "bot";
   const isBattleSnapshotReady = gameState?.status === "playing" && (gameState.hand?.length ?? 0) > 0;
   const hasOpponent = Boolean(gameState?.opponent?.address) && !gameState?.opponent.address.includes("Waiting");
   const opponentAddress = hasOpponent ? gameState?.opponent.address ?? null : null;
@@ -121,15 +139,16 @@ export function OpponentFound({
     effectiveRole === "playerB" && !depositUnlockedAt && !signedDepositSignature && signingState !== "signing";
   const isPlayerAWaitingForPlayerB =
     effectiveRole === "playerA" && signingState === "waiting" && Boolean(signedDepositSignature);
-  const shouldShowCountdown = !isPlayerBWaitingUnlock && signingState !== "waiting";
+  const shouldShowCountdown = !isBotMatch && !isPlayerBWaitingUnlock && signingState !== "waiting";
   const canAttemptSign =
     Boolean(wallet.publicKey) &&
     signingState !== "signing" &&
     signingState !== "waiting" &&
+    !isBotMatch &&
     !isPlayerBWaitingUnlock &&
     !signed;
   const depositPreparationKey =
-    wallet.publicKey && !signedDepositSignature
+    wallet.publicKey && !signedDepositSignature && !isBotMatch
       ? `${roomId}:${wallet.publicKey.toBase58()}:${arena.token}:${wagerUsd}`
       : null;
   const reassignedRoomId =
@@ -169,6 +188,16 @@ export function OpponentFound({
           progress: 100,
           showPulse: false,
         }
+      : isBotMatch && !hasArenaPreparationSignal
+      ? {
+          ...magicBlockUi,
+          tone: "magicblock" as const,
+          badgeLabel: "Practice Arena",
+          title: "Preparing practice round",
+          detail: "No deposit needed. Setting up the arena.",
+          progress: 45,
+          showPulse: true,
+        }
       : playerHasSignedDeposit && !hasArenaPreparationSignal
       ? {
           ...magicBlockUi,
@@ -182,7 +211,7 @@ export function OpponentFound({
           showPulse: true,
         }
       : magicBlockUi;
-  const showArenaStatusStrip = playerHasSignedDeposit || battleLaunchCountdown !== null;
+  const showArenaStatusStrip = isBotMatch || playerHasSignedDeposit || battleLaunchCountdown !== null;
   const isMagicBlockArenaLoading = displayedMagicBlockUi.tone === "magicblock";
   const isArenaProcessing = displayedMagicBlockUi.tone === "magicblock" || displayedMagicBlockUi.showPulse;
 
@@ -271,7 +300,11 @@ export function OpponentFound({
   }, [battleLaunchCountdown]);
 
   useEffect(() => {
-    if (!(signingState === "waiting" && isBattleSnapshotReady && signedDepositSignature)) {
+    const readyForBattle = isBotMatch
+      ? isBattleSnapshotReady
+      : signingState === "waiting" && isBattleSnapshotReady && Boolean(signedDepositSignature);
+
+    if (!readyForBattle) {
       const resetTimer = window.setTimeout(() => setBattleLaunchCountdown(null), 0);
       return () => window.clearTimeout(resetTimer);
     }
@@ -285,8 +318,12 @@ export function OpponentFound({
       writeActiveMatchSession({
         walletAddress,
         address: walletAddress,
+        displayAddress: visibleWalletAddress,
+        displayAsGuest,
         roomId,
         role: effectiveRole ?? null,
+        roomType: isBotMatch ? "bot" : null,
+        isGuest,
         arenaId: arena.id,
         scientistId: myScientist.id,
         status: "playing",
@@ -294,11 +331,13 @@ export function OpponentFound({
         arenaToken: arena.token,
         wagerUsd,
       });
-      writeActiveDepositIntent({
-        roomId,
-        address: walletAddress,
-        signature: signedDepositSignature,
-      });
+      if (signedDepositSignature) {
+        writeActiveDepositIntent({
+          roomId,
+          address: walletAddress,
+          signature: signedDepositSignature,
+        });
+      }
       const params = new URLSearchParams({
         roomId,
         arena: arena.id,
@@ -317,6 +356,8 @@ export function OpponentFound({
     signingState,
     router,
     walletAddress,
+    visibleWalletAddress,
+    displayAsGuest,
     roomId,
     arena.id,
     arena.token,
@@ -325,10 +366,12 @@ export function OpponentFound({
     signedDepositSignature,
     isBattleSnapshotReady,
     effectiveRole,
+    isBotMatch,
+    isGuest,
   ]);
 
   useEffect(() => {
-    if (isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
+    if (isBotMatch || isPlayerBWaitingUnlock || signingState === "waiting" || signingState === "signing" || signingState === "error") return;
 
     if (secondsLeft <= 0) {
       onTimeout();
@@ -350,6 +393,7 @@ export function OpponentFound({
     wagerUsd,
     myScientist.id,
     isPlayerBWaitingUnlock,
+    isBotMatch,
   ]);
 
   useEffect(() => {
@@ -526,6 +570,7 @@ export function OpponentFound({
   }, [connectionState]);
 
   async function onSignDeposit() {
+    setDepositReminderOpen(false);
     console.info("[OpponentFound] Deposit click", {
       roomId,
       role: effectiveRole ?? "unknown",
@@ -652,6 +697,16 @@ export function OpponentFound({
     }
   }
 
+  function onRequestDeposit() {
+    if (!canAttemptSign) return;
+    setDepositReminderOpen(true);
+  }
+
+  function onConfirmDepositReminder() {
+    if (!canAttemptSign) return;
+    void onSignDeposit();
+  }
+
   function onCancelMatch() {
     // Ref guard prevents multiple rapid clicks from firing onTimeout() more than once
     // before the component unmounts (state updates are async, refs are synchronous).
@@ -689,6 +744,11 @@ export function OpponentFound({
     if (insufficientFunds) {
       return `Top up your ${arena.token} wallet to cover $${wagerUsd} wager + ~0.001 SOL in fees, then retry.`;
     }
+    if (isBotMatch) {
+      if (battleLaunchCountdown !== null) return `Practice battle starts in ${battleLaunchCountdown}...`;
+      if (isBattleSnapshotReady) return "Practice round ready. Starting battle.";
+      return "No deposit needed. Preparing your practice round.";
+    }
     if (!wallet.publicKey) return "Connect Phantom wallet first.";
     if (isPlayerBWaitingUnlock) {
       if (isDisconnected) {
@@ -722,6 +782,7 @@ export function OpponentFound({
     if (insufficientFunds) return "insufficient_funds";
     if (opponentFailedDepositAt) return "opponent_failed";
     if (signingState === "error") return "error";
+    if (isBotMatch) return isBattleSnapshotReady || battleLaunchCountdown !== null ? "confirmed" : "practice";
     if (!wallet.publicKey) return "wallet_required";
     if (signingState === "signing") return "signing";
     if (battleLaunchCountdown !== null) return "confirmed";
@@ -734,6 +795,7 @@ export function OpponentFound({
   function getPrimaryButtonLabel() {
     const isDisconnected = connectionState === "error" || connectionState === "disconnected";
     const isReconnecting = connectionState === "reconnecting";
+    if (isBotMatch) return "Preparing Practice...";
     if (isPlayerBWaitingUnlock) {
       if (isDisconnected) return "Disconnected...";
       if (isReconnecting) return "Reconnecting...";
@@ -744,13 +806,17 @@ export function OpponentFound({
     if (signingState === "signing") return "Signing In Wallet...";
     if (signingState === "waiting") return "Waiting For Opponent...";
     if (signingState === "error") return "Retry Deposit";
-    return "Sign Deposit";
+    return "Deposit";
   }
 
 
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col overflow-x-hidden overflow-y-auto px-4 py-6 md:h-[100svh] md:overflow-hidden md:px-6 md:py-8">
+    <div
+      className={`opponent-found-screen mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col overflow-x-hidden overflow-y-auto px-4 py-6 md:h-[100svh] md:overflow-hidden md:px-6 md:py-8 ${
+        isBotMatch ? "opponent-found-screen--bot" : ""
+      }`}
+    >
       {/* Opponent failed to deposit popup */}
       {opponentFailedDepositAt && (
         <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
@@ -794,6 +860,26 @@ export function OpponentFound({
           >
             <p className="font-caprasimo text-base text-[#f8d694]">Match cancelled</p>
             <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">{roomCancelledNotice}</p>
+          </div>
+        </div>
+      )}
+      {isBotMatch && (
+        <div className="opponent-found-practice-banner z-[75] mx-auto w-full max-w-xl self-center px-4">
+          <div
+            className="opponent-found-practice-card frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            style={{
+              border: "2px solid rgba(248,214,148,0.55)",
+              background: "linear-gradient(145deg, rgba(13,24,20,0.96) 0%, rgba(25,43,35,0.96) 100%)",
+            }}
+          >
+            <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
+              Practice mode
+            </p>
+            <p className="mt-1 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+              {displayAsGuest
+                ? "You are trying CORA in a no-stakes round. Connect a wallet when you are ready for real matches."
+                : "This is a no-stakes practice round. Connect a wallet when you are ready for real matches."}
+            </p>
           </div>
         </div>
       )}
@@ -904,22 +990,75 @@ export function OpponentFound({
           </div>
         </div>
       )}
+      {depositReminderOpen && canAttemptSign && !isBotMatch && (
+        <div className="fixed inset-0 z-[90] grid place-items-center bg-[rgba(2,6,5,0.78)] p-4 backdrop-blur-[1px]">
+          <div
+            className="frame-cut w-full max-w-md p-5 text-center shadow-2xl md:p-6"
+            style={{
+              border: "1px solid rgba(248,214,148,0.42)",
+              background: "linear-gradient(145deg, rgba(13,24,20,0.98) 0%, rgba(22,35,29,0.98) 100%)",
+              boxShadow: "0 24px 48px rgba(0,0,0,0.46)",
+            }}
+          >
+            <p className="font-gabarito text-[11px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
+              Deposit rule reminder
+            </p>
+            <p className="mt-2 font-caprasimo text-3xl leading-tight text-[var(--tone-cream)]">
+              Confirm wager deposit
+            </p>
+            <p className="mt-4 font-gabarito text-sm text-[rgba(244,240,230,0.88)]">
+              Wager: <span className="font-black text-[var(--tone-cream)]">${wagerUsd}</span> on{" "}
+              <span className="font-black text-[var(--tone-cream)]">{arena.token}</span> arena.
+            </p>
+            <p className="mt-2 rounded-xl border border-[rgba(248,214,148,0.18)] bg-[rgba(248,214,148,0.08)] px-3 py-2 font-gabarito text-sm text-[#f1dfc1]">
+              Winner takes the settled pot; surrendering or leaving can forfeit your wager.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setDepositReminderOpen(false)}
+                className="btn-game btn-game-secondary px-5 py-3 text-xs"
+                style={{
+                  borderColor: "rgba(248,214,148,0.34)",
+                  background: "rgba(248,214,148,0.08)",
+                  boxShadow: "0 4px 0 rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08)",
+                  color: "rgba(255,246,224,0.92)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmDepositReminder}
+                disabled={!canAttemptSign}
+                className={`btn-game btn-game-primary px-4 py-2 text-xs shadow-xl ${
+                  canAttemptSign ? "" : "cursor-not-allowed opacity-55"
+                }`}
+              >
+                Confirm Deposit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <div className="flex-shrink-0 text-center">
+      <div className="opponent-found-heading flex-shrink-0 text-center">
       <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
         {arena.label} · ${wagerUsd} {arena.token}
       </p>
       <h1 className="mt-2 font-caprasimo text-4xl text-[var(--tone-cream)] drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)] md:text-5xl">
-        Rival Locked
+        {isBotMatch ? "Practice Rival Locked" : "Rival Locked"}
       </h1>
-      <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
-        Sign the deposit before the timer expires.
-      </p>
+      {!isBotMatch && (
+        <p className="mt-2 font-gabarito text-sm text-[rgba(244,240,230,0.9)]">
+          Sign the deposit before the timer expires.
+        </p>
+      )}
       </div>
 
-      <div className="mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+      <div className="opponent-found-duel-grid mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div
-          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          className="opponent-found-player-card relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
             border: "2px solid rgba(111,58,40,0.62)",
             background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
@@ -927,9 +1066,9 @@ export function OpponentFound({
           }}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
-          <div className="relative flex items-center gap-4">
+          <div className="opponent-found-card-content relative flex items-center gap-4">
             <div
-              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              className="opponent-found-avatar grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
                 background: myScientist.portraitBg,
@@ -954,25 +1093,25 @@ export function OpponentFound({
               )}
             </div>
 
-            <div className="min-w-0">
+            <div className="opponent-found-card-meta min-w-0">
               <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
                 You
               </span>
-              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
-              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+              <p className="opponent-found-name mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
+              <p className="opponent-found-detail mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
+              <p className="opponent-found-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{displayWalletLabel}</p>
             </div>
           </div>
         </div>
 
-        <div className="grid place-items-center px-4 py-1 md:px-6">
-          <div className="animate-orb-breath font-caprasimo text-5xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)] md:text-6xl" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+        <div className="opponent-found-vs-wrap grid place-items-center px-4 py-1 md:px-6">
+          <div className="opponent-found-vs animate-orb-breath font-caprasimo text-5xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)] md:text-6xl" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
             VS
           </div>
         </div>
 
         <div
-          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          className="opponent-found-player-card relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
             border: "2px solid rgba(111,58,40,0.62)",
             background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
@@ -980,9 +1119,9 @@ export function OpponentFound({
           }}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
-          <div className="relative flex items-center gap-4">
+          <div className="opponent-found-card-content relative flex items-center gap-4">
             <div
-              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              className="opponent-found-avatar grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
                 background: "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
@@ -993,33 +1132,34 @@ export function OpponentFound({
                 ?
               </span>
             </div>
-            <div className="min-w-0">
+            <div className="opponent-found-card-meta min-w-0">
               <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
                 Rival
               </span>
-              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
+              <p className="opponent-found-name mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
                 Your Rival
               </p>
-              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
+              <p className="opponent-found-detail mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
                 Character revealed when battle starts.
               </p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
-                {opponentAddress ? shortWallet(opponentAddress) : "Syncing rival..."}
+              <p className="opponent-found-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
+                {opponentAddress ? rivalIdentityLabel(opponentAddress, isBotMatch) : "Syncing rival..."}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-end overflow-visible pb-4 md:overflow-y-auto">
+      <div className="opponent-found-deposit-area flex min-h-0 flex-1 flex-col justify-end overflow-visible pb-4 md:overflow-y-auto">
         <div
-          className="mt-6 w-full rounded-2xl border p-4 shadow-xl md:mt-8 md:p-5"
+          className="opponent-found-deposit-shell mt-6 w-full rounded-2xl border p-4 shadow-xl md:mt-8 md:p-5"
           style={{
             borderColor: "rgba(248,214,148,0.35)",
             background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",
           }}
         >
           <DepositPanel
+            title={isBotMatch ? "Practice round" : undefined}
             token={arena.token}
             wagerUsd={wagerUsd}
             status={getDepositStatus()}
@@ -1045,7 +1185,7 @@ export function OpponentFound({
             signature={signedDepositSignature}
             canPrimaryAction={canAttemptSign}
             primaryActionLabel={getPrimaryButtonLabel()}
-            onPrimaryAction={onSignDeposit}
+            onPrimaryAction={isBotMatch ? undefined : onRequestDeposit}
             statusStripSlot={
               showArenaStatusStrip ? (
                 <div className="mx-auto flex min-h-[58px] w-full max-w-xl items-center justify-center">
@@ -1097,7 +1237,7 @@ export function OpponentFound({
               ) : null
             }
             walletSlot={
-              !wallet.publicKey ? (
+              !wallet.publicKey && !isGuest ? (
                 <div className="pt-1">
                   <HydratedWalletButton />
                 </div>

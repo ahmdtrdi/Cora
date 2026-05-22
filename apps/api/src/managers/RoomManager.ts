@@ -1,6 +1,7 @@
-import { Connection } from '@solana/web3.js';
+import { Connection, Keypair } from '@solana/web3.js';
 import type { WsMessage } from '@shared/websocket';
 import { deriveMatchId } from '@shared/escrow';
+import { CHARACTER_DEFS } from '@shared/characterStats';
 import { Store } from './room/Store';
 import { Network } from './room/Network';
 import { Lifecycle } from './room/Lifecycle';
@@ -9,6 +10,7 @@ import { Queue } from './room/Queue';
 import { Blockchain } from './room/Blockchain';
 import type { Room, RoomSocket } from './room/types';
 import { createBlinkMatchStore, type BlinkMatch, type BlinkMatchStore } from '../services/blinkMatches';
+import { createQueueMatchStore, type QueueMatchStore } from '../services/queueMatches';
 import { BlinkTransactionBuilder } from '../services/BlinkTransactionBuilder';
 import { submitSettlementTransaction } from '../utils/settlement';
 
@@ -20,17 +22,19 @@ export class RoomManager {
   public queue: Queue;
   public blockchain: Blockchain;
   public blinkMatches: BlinkMatchStore;
+  public queueMatches: QueueMatchStore;
   private blinkJanitorInterval: ReturnType<typeof setInterval> | null = null;
   private publicJanitorInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
-    this.store = new Store();
+  constructor(options: { queueMatches?: QueueMatchStore; blinkMatches?: BlinkMatchStore; erEnabled?: boolean } = {}) {
+    this.store = new Store(options.erEnabled);
     this.network = new Network();
     this.engine = new Engine(this);
     this.lifecycle = new Lifecycle(this);
     this.queue = new Queue(this);
     this.blockchain = new Blockchain(this);
-    this.blinkMatches = createBlinkMatchStore();
+    this.blinkMatches = options.blinkMatches ?? createBlinkMatchStore();
+    this.queueMatches = options.queueMatches ?? createQueueMatchStore();
   }
 
   public getRoom(roomId: string): Room | undefined {
@@ -104,6 +108,57 @@ export class RoomManager {
 
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
     return this.queue.queueMatch(address, signal);
+  }
+
+  public createBotMatch(
+    address: string,
+    options: { tokenMint?: string | null; wagerAmount?: bigint | null; characterId?: string | null } = {},
+  ): Room {
+    this.queue.removeAddress(address);
+    void this.queue.releaseUnfundedPublicDepositRoom(address).catch((err) => {
+      console.error(`[BotMatch] Failed to release unfinished public room for ${address.slice(0, 6)}..:`, err);
+    });
+
+    const activeRoom = this.queue.findActiveRoomForAddress(address);
+    if (activeRoom) {
+      if (this.canReplaceBotRoom(activeRoom, address)) {
+        console.warn(`[BotMatch] Replacing stale bot room ${activeRoom.id} for ${address.slice(0, 6)}..`);
+        this.lifecycle.destroyRoom(activeRoom.id);
+      } else {
+        return activeRoom;
+      }
+    }
+
+    const roomId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const botAddress = Keypair.generate().publicKey.toBase58();
+    const room = this.store.createRoom(roomId);
+    const botCharacterId = this.randomBotCharacterId();
+
+    room.status = 'depositing';
+    room.roomType = 'bot';
+    room.playerA = address;
+    room.playerB = botAddress;
+    room.botAddress = botAddress;
+    room.playerBUnlocked = true;
+    room.tokenMint = options.tokenMint ?? null;
+    room.wagerAmount = options.wagerAmount ?? 0n;
+    room.wagerUsdValue = '0.00';
+    room.playerMeta.set(address, {
+      hasDeposited: true,
+      characterId: options.characterId && CHARACTER_DEFS[options.characterId] ? options.characterId : 'einstein',
+    });
+    room.playerMeta.set(botAddress, {
+      hasDeposited: true,
+      characterId: botCharacterId,
+    });
+    room.clients.set(botAddress, {
+      ws: null,
+      lastSeenAt: Date.now(),
+    });
+    this.store.trackPlayer(address, roomId);
+
+    console.log(`[BotMatch] Created bot room ${roomId}: ${address.slice(0, 6)}.. vs ${botAddress.slice(0, 6)}.. (${botCharacterId})`);
+    return room;
   }
 
   public joinRoom(roomId: string, address: string, ws: RoomSocket, characterId: string = 'einstein') {
@@ -244,8 +299,10 @@ export class RoomManager {
       for (const room of this.store.getAllRooms()) {
         if (room.roomType !== 'public') continue;
         if (this.queue.isZombieDepositRoom(room)) {
-          console.warn(`[Janitor] Destroying zombie public room ${room.id}`);
-          this.lifecycle.destroyRoom(room.id);
+          console.warn(`[Janitor] Abandoning zombie public room ${room.id}`);
+          void this.lifecycle.abandonPublicRoom(room.id, 'zombie_room').catch((err) => {
+            console.error(`[Janitor] Failed to abandon public room ${room.id}:`, err);
+          });
         }
       }
     }, intervalMs);
@@ -284,6 +341,21 @@ export class RoomManager {
 
     void this.blockchain.fetchWagerUsd(room);
     return room;
+  }
+
+  private randomBotCharacterId(): string {
+    const characterIds = Object.keys(CHARACTER_DEFS);
+    return characterIds[Math.floor(Math.random() * characterIds.length)] ?? 'einstein';
+  }
+
+  private canReplaceBotRoom(room: Room, address: string): boolean {
+    if (room.roomType !== 'bot') return false;
+    if (room.status === 'settling' || room.status === 'finished') return true;
+    if (room.engine && !room.engine.isActive()) return true;
+
+    const playerIsHuman = address === room.playerA || address === room.playerB;
+    const humanSocketConnected = playerIsHuman && Boolean(room.clients.get(address)?.ws);
+    return room.status === 'depositing' && !humanSocketConnected;
   }
 }
 

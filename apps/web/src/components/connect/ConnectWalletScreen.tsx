@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { HydratedWalletButton } from "@/components/wallet/HydratedWalletButton";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { Keypair } from "@solana/web3.js";
+import { IntroOverlay } from "@/components/lobby/IntroOverlay";
+
+const GUEST_ADDRESS_STORAGE_KEY = "cora:guest-address";
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -13,9 +17,29 @@ function shortWallet(address: string) {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
+function writeStoredGuestAddress(address: string) {
+  try {
+    window.sessionStorage.setItem(GUEST_ADDRESS_STORAGE_KEY, address);
+  } catch {
+    // Guest mode can still create a fresh address from the lobby if storage is unavailable.
+  }
+}
+
 export function ConnectWalletScreen() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const { publicKey } = useWallet();
+  const { publicKey, wallet, connect, disconnect, connecting, disconnecting } = useWallet();
+  const { setVisible: setWalletModalVisible } = useWalletModal();
+  const [guestBusy, setGuestBusy] = useState(false);
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [introOverlayOpen, setIntroOverlayOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return !window.localStorage.getItem("cora:introSeen");
+    } catch {
+      return false;
+    }
+  });
   const connected = Boolean(publicKey);
   const address = publicKey?.toBase58() ?? "";
 
@@ -25,6 +49,40 @@ export function ConnectWalletScreen() {
     if (!next.startsWith("/")) return "/lobby";
     return next;
   }, [searchParams]);
+
+  const handleCloseIntro = useCallback(() => {
+    setIntroOverlayOpen(false);
+    try {
+      window.localStorage.setItem("cora:introSeen", "1");
+    } catch {
+      // The intro is non-critical; blocked storage should not block arena entry.
+    }
+  }, []);
+
+  function enterAsGuest() {
+    if (guestBusy) return;
+    setGuestBusy(true);
+    writeStoredGuestAddress(Keypair.generate().publicKey.toBase58());
+    router.push("/lobby?guest=1");
+  }
+
+  async function connectWallet() {
+    if (walletBusy || connecting) return;
+
+    if (!wallet) {
+      setWalletModalVisible(true);
+      return;
+    }
+
+    setWalletBusy(true);
+    try {
+      await connect();
+    } catch {
+      // Wallet cancellation should leave the user on the connect screen without breaking the flow.
+    } finally {
+      setWalletBusy(false);
+    }
+  }
 
   return (
     <main className="relative grid min-h-[100svh] place-items-center overflow-hidden bg-gradient-to-b from-[#121919] to-[#0a0f0c] px-4 py-8">
@@ -98,12 +156,57 @@ export function ConnectWalletScreen() {
             <h1 className="mt-3 font-caprasimo text-4xl leading-none text-[var(--tone-cream)] md:text-5xl">
               Enter the Arena
             </h1>
-            <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
-              Connect your wallet to join the scientist battle lobby.
-            </p>
+            {!connected && (
+              <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
+                Connect a wallet for wager matches, or try a no-stakes practice round.
+              </p>
+            )}
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(111,58,40,0.22)] px-3 py-1.5 shadow-inner">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#f8d694] opacity-50" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#f8d694]" />
+              </span>
+              <span className="font-gabarito text-[10px] font-black uppercase tracking-[0.16em] text-[#f8d694]">
+                Live on Devnet
+              </span>
+            </div>
 
-            <div className="mt-8 flex flex-col items-center gap-5">
-              <HydratedWalletButton />
+            <div className={`${connected ? "mt-3" : "mt-8"} flex flex-col items-center gap-5`}>
+              {!connected && (
+                <div className="grid w-full gap-3 sm:grid-cols-2">
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={connectWallet}
+                      disabled={walletBusy || connecting}
+                      className={`btn-game btn-game-primary min-h-[56px] w-full px-4 text-sm ${
+                        walletBusy || connecting ? "cursor-not-allowed opacity-60" : ""
+                      }`}
+                    >
+                      {walletBusy || connecting ? "Connecting..." : "Connect Wallet"}
+                    </button>
+                    <p className="font-gabarito text-[11px] leading-snug text-[#8fa897]">
+                      Full queue, deposits, Blinks, and Solana rewards.
+                    </p>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={enterAsGuest}
+                      disabled={guestBusy}
+                      className={`btn-game btn-game-secondary min-h-[56px] w-full px-4 text-sm ${
+                        guestBusy ? "cursor-not-allowed opacity-60" : ""
+                      }`}
+                    >
+                      {guestBusy ? "Opening..." : "Enter As Guest"}
+                    </button>
+                    <p className="font-gabarito text-[11px] leading-snug text-[#8fa897]">
+                      Try CORA first. No wallet, deposit, or Solana payout.
+                    </p>
+                  </div>
+                </div>
+              )}
               
               {connected ? (
                 <div className="mt-2 flex flex-col items-center gap-5">
@@ -118,11 +221,23 @@ export function ConnectWalletScreen() {
                   >
                     Enter Lobby
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void disconnect();
+                    }}
+                    disabled={disconnecting}
+                    className={`font-gabarito text-xs font-bold uppercase tracking-[0.16em] text-[rgba(244,240,230,0.58)] underline decoration-dotted underline-offset-4 transition hover:text-[rgba(244,240,230,0.88)] ${
+                      disconnecting ? "cursor-not-allowed opacity-60" : ""
+                    }`}
+                  >
+                    {disconnecting ? "Disconnecting..." : "Disconnect Wallet"}
+                  </button>
                 </div>
               ) : (
                 <div className="mt-2 rounded-lg border border-[rgba(186,105,49,0.2)] bg-[rgba(186,105,49,0.05)] p-4 shadow-inner">
                   <p className="font-gabarito text-xs leading-relaxed text-[var(--tone-cream)] opacity-70">
-                    A connected wallet is required before entering the lobby and deposit flow.
+                    Guest practice lets you try CORA without a wallet. Connect later for queue, deposits, Blinks, and history.
                   </p>
                 </div>
               )}
@@ -130,6 +245,7 @@ export function ConnectWalletScreen() {
           </div>
         </div>
       </section>
+      <IntroOverlay isOpen={introOverlayOpen} onClose={handleCloseIntro} />
     </main>
   );
 }

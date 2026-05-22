@@ -670,3 +670,248 @@ _Files touched:_ `packages/game-logic/src/GameEngine.ts`, `packages/shared-types
 **The Reasoning:**
 
 - Damage balance should have one source of truth. Lowering base attack damage without updating ER manifests or the program ceiling would keep oversized attack slots registered on-chain and make future balance changes easier to miss.
+
+---
+
+## 22. Bot Practice Matches - Queue Fallback With ER Gameplay (2026-05-18)
+
+**The Change:**
+
+_Files touched:_ `packages/shared-types/src/websocket.ts`, `packages/game-logic/src/GameEngine.ts`, `apps/api/src/managers/RoomManager.ts`, `apps/api/src/managers/room/*`, `apps/api/src/routes/match.ts`, `apps/web/src/lib/matchmaking/queueMatch.ts`, `apps/web/src/hooks/useQueueSocket.ts`, `apps/web/src/hooks/useMatchSocket.ts`, `apps/web/src/components/lobby/*`, `apps/web/src/components/deposit/depositTypes.ts`, `apps/web/src/components/play/BattleScreen.tsx`, `apps/web/src/components/play/BattleScreenOverlays.tsx`
+
+- Added a `bot` room type and `POST /match/bot` endpoint. The endpoint removes the player from the public queue, creates a room with a generated valid bot pubkey, randomly assigns the bot character, and marks both participants as deposited so the room can enter setup without Phantom signing.
+- Bot matches still initialize the normal `GameEngine` and MagicBlock ER setup when ER is configured. Settlement/refund/anti-cheat payout branches are skipped for bot rooms because no escrow is funded.
+- Added a server-side bot loop that opens cards, answers after a human-like delay, prefers attack cards, and uses heal cards when damaged. Bot accuracy is intentionally moderate so it can fight back without feeling like a perfect answer machine.
+- Added a queue screen "Play With Bot" button and a slow-queue prompt after 15 seconds offering "Play With Bot" or "Keep Queueing".
+- Updated the deposit handoff UI so bot rooms skip deposit signing, show practice/arena-prep messaging, and launch battle once a playable room snapshot arrives.
+- Updated result and surrender copy so winning against a bot says no Solana is awarded, while losing/surrendering says no Solana was lost.
+
+**The Reasoning:**
+
+- Bot rooms reuse the same room socket, engine, card, and ER paths as human matches, which keeps gameplay behavior close to production and avoids a separate practice-mode engine.
+- The bot uses a real generated Solana pubkey because the ER battle session expects player addresses even though no bot wallet signs or receives payout.
+- Payout logic is explicitly skipped at the backend instead of relying on frontend wording. This prevents accidental settlement attempts for unfunded practice rooms.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p packages/game-logic/tsconfig.json --noEmit`
+- `bun test packages/game-logic/test/GameEngine.test.ts` (`21 pass`; first sandboxed run hit EPERM reading `characterStats.ts`, approved rerun passed)
+- `npm run build --workspace=web`
+
+**Tech Debt:**
+
+- Bot tuning constants are currently server-local. If practice mode becomes a product feature, move bot difficulty profiles into a config surface and expose easy/normal/hard.
+- There is no dedicated API room lifecycle test for bot rooms yet. The current API test suite still has external-service coupling, so an offline RoomManager boundary test should be added once those dependencies are isolated.
+
+---
+
+## 23. Guest Practice Login - Bot-Only Access (2026-05-18)
+
+**The Change:**
+
+_Files touched:_ `apps/web/src/components/lobby/LobbyScreen.tsx`, `apps/web/src/components/lobby/LobbySetup.tsx`, `apps/web/src/components/lobby/CharacterSelect.tsx`, `apps/web/src/components/lobby/OpponentFound.tsx`, `apps/web/src/components/play/BattleScreen.tsx`, `apps/web/src/lib/session/matchSession.ts`
+
+- Added a guest lobby mode that generates a temporary Solana-format public address in the browser and stores it with the local active match session.
+- Guest mode bypasses normal public queue entry and starts only `/match/bot`; wallet, deposit, and Blink flows remain wallet-only.
+- Updated `/play` session gating so a guest can enter only when the local session is marked `isGuest: true` and `roomType: "bot"`.
+- Added top-of-screen practice wallet notices in the bot found handoff and battle screen. Guest copy explains that both the guest address and bot address are generated practice addresses used only for CORA's ER game state.
+
+**The Reasoning:**
+
+- Reusing bot rooms keeps guest practice on the same engine, socket, and ER gameplay path without weakening real wager flows.
+- The guest address is stored only as a local practice identity. It is intentionally not treated as an authenticated wallet and cannot enter public matchmaking or create funded challenges.
+- The play-screen guard is explicit about `isGuest + bot` so a generated address cannot accidentally become a general login method.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- `npm run build --workspace=web`
+
+**Tech Debt:**
+
+- Guest identity is session-local and browser-only. If guest retention becomes important, add a clearer account upgrade path from guest practice to wallet login.
+
+**Follow-up (2026-05-18):**
+
+- Added the guest entry point to `/connect` via `ConnectWalletScreen`, not only the lobby setup screen. The connect page now stores a generated guest address and opens `/lobby?guest=1`, where the lobby initializes directly in guest-practice mode.
+- Updated connect page copy/metadata so Phantom is clearly for wager features while guest mode is bot-only practice.
+
+**Follow-up (2026-05-19):**
+
+- Removed the leftover lobby-level "Play As Guest" CTA and guest-address footer after a user has already entered guest mode from `/connect`.
+- Replaced the lobby footer copy with: "You entered as guest. Please connect your wallet to unlock deposits and all possibilities of CORA."
+- Suppressed wallet-disconnected and wallet-select UI during guest bot setup, since guest play intentionally has no wallet.
+- Removed the duplicate top subtitle from bot match setup; the no-deposit/practice preparation copy remains in the lower status panel.
+
+**Follow-up 2 (2026-05-19):**
+
+- Fixed guest mode persistence after a completed bot match. Returning to `/lobby` now rehydrates guest mode from the stored generated guest address when no wallet is connected.
+- If the user later connects Phantom while not already in a guest match, the lobby switches back to wallet mode so full queue/deposit/Blink flows unlock normally.
+
+---
+
+## 24. Bot Practice Question Pool Separation (2026-05-19)
+
+**The Change:**
+
+_Files touched:_ `apps/api/src/questions.ts`, `apps/api/src/managers/room/Engine.ts`, `apps/api/test/questions.test.ts`, `apps/web/src/components/lobby/OpponentFound.tsx`, `apps/web/src/components/play/BattleScreen.tsx`
+
+- Added `loadPracticeQuestions()` so bot matches load only `data/questions/pool.json`.
+- Updated bot room engine initialization to skip the Supabase `get_match_deck` path entirely, while public/private real matches still use the existing Supabase-backed question flow.
+- Added a focused API test proving practice questions are loaded from `pool.json` only.
+- Updated the practice wallet notices in both the bot handoff and battle screen to explain that bot questions use the practice pool, not the real match deck, and invite players to log in with a wallet for the full CORA experience.
+
+**The Reasoning:**
+
+- Bot practice should be useful for onboarding without exposing or reusing the real competitive deck from Supabase.
+- Keeping the split at engine initialization preserves the normal room/socket/gameplay path while changing only the question source for `roomType === "bot"`.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- `bun test apps/api/test/questions.test.ts` (`5 pass`; first sandboxed run hit EPERM reading `packages/shared-types/src/question.ts`, approved rerun passed)
+
+**Tech Debt:**
+
+- Real match JSON fallback still uses the legacy all-files local loader. If Supabase fallback needs to mirror production more tightly, split `questions.json` into its own real-match fallback loader too.
+
+**Copy Follow-up (2026-05-19):**
+
+- Shortened the bot practice wallet notice in `OpponentFound.tsx` and `BattleScreen.tsx` to a compact practice-mode warning with a wallet CTA.
+
+---
+
+## 25. Bot Match Retry Recovery (2026-05-19)
+
+**The Change:**
+
+_Files touched:_ `apps/web/src/components/lobby/LobbyScreen.tsx`, `apps/api/src/managers/RoomManager.ts`, `apps/api/test/RoomManager.test.ts`
+
+- Added a 10-second timeout to the lobby `Play With Bot` request. If `/match/bot` does not respond in time, the request aborts, the busy state unlocks, and the player can press `Play With Bot` again.
+- Updated bot room creation so stale bot rooms are replaced instead of reused when they are settling, already inactive, or were created but never joined by the human player.
+- Added focused RoomManager coverage for replacing stale settling bot rooms and unjoined bot rooms after a client retry.
+
+**The Reasoning:**
+
+- Creating a bot room should be a fast API response; 10 seconds is enough to cover slow local tunnels without leaving the button locked forever.
+- Bot rooms have no escrow payout/loss, so replacing stale practice rooms is safer than routing the player back into a room that is already ending or waiting for delayed cleanup.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit`
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit`
+- Attempted `bun test apps/api/test/RoomManager.test.ts --test-name-pattern createBotMatch`; blocked before tests by the existing Goldrush dependency error: `401 Invalid or missing API key`.
+
+**Tech Debt:**
+
+- `RoomManager.test.ts` still imports paths that touch external Goldrush configuration before tests can run. The room-manager test harness needs dependency isolation so lifecycle tests can run offline.
+
+---
+
+## 26. Practice Pool Deduplication And Expansion (2026-05-19)
+
+**The Change:**
+
+_Files touched:_ `data/questions/pool.json`, `apps/api/src/managers/room/Blockchain.ts`, `apps/api/.env.example`, `apps/api/test/questions.test.ts`
+
+- Replaced the duplicate-heavy practice pool with 128 unique bot-practice questions.
+- Kept the same question schema as `questions.json`: `id`, `category`, `questionText`, four `options`, one correct `score`, and `explanation`.
+- Balanced the pool across `sequence`, `logical`, and `math` categories while keeping the difficulty easier than the competitive deck.
+- Raised the MagicBlock inline manifest default/guidance to 128 pre-registered card slots so longer bot matches do not run past the committed ER manifest window.
+- Updated the local ignored API env's `CORA_BATTLE_PRE_REGISTER_CARD_LIMIT` value to 128 for the current dev setup.
+- Added an API regression test that asserts the practice pool has 128 questions, no duplicate IDs/text, and no exact `questionText` overlap with `questions.json`.
+
+**The Reasoning:**
+
+- Guest-vs-bot practice can consume more than the old 20/24 committed ER manifest slots during longer matches. A larger pool plus a larger manifest window gives MagicBlock setup enough unique card slots and removes repeated question fatigue.
+- Keeping practice content distinct from `questions.json` preserves the separation between onboarding practice and the real competitive deck.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit --tsBuildInfoFile .codex-api-check.tsbuildinfo`
+- `bun test apps/api/test/questions.test.ts` (`6 pass`; sandboxed runs still hit EPERM reading `packages/shared-types/src/question.ts`, approved rerun passed)
+
+**Tech Debt:**
+
+- `GameEngine` still pre-generates up to 100 cards per match even though the practice pool now contains 128 questions. If we want every practice question to be reachable in one match, raise the engine queue cap and re-check ER account limits together.
+
+---
+
+## 27. Bot Practice Card Open Desync Recovery (2026-05-20)
+
+**The Bug:**
+
+A bot-practice player could get stuck after the backend logged:
+
+`Player <address> tried to play card <cardId> without opening it first in room bot-...`
+
+The room engine required every `playCard` to match a tracked `openedCards` entry. If the frontend had already moved into answer UI but the backend had lost, rejected, or cleared the `openCard` state, `handlePlayCard()` returned silently. The card was not played, no `playCardResult` or `cardExpired` event was sent, and the frontend stayed locked waiting for a terminal card event.
+
+**The Change:**
+
+_Files touched:_ `apps/api/src/managers/room/Engine.ts`, `apps/api/test/RoomManager.test.ts`
+
+- Added backend recovery for bot-practice rooms: if `playCard` arrives without tracked open state but the card is still in the player's current hand, the backend processes the answer instead of dead-ending the UI.
+- Kept public/private matches strict: playing without opening still does not apply damage/heal, but now sends `cardExpired` plus a fresh game-state snapshot so the client unlocks.
+- Re-sends the current countdown when a player tries to open a card while one is already open, helping reconnect or duplicate-open cases resync.
+- Clears stale opened-card records when the tracked card is no longer in the player's hand, so stale backend state cannot block future opens.
+- Added RoomManager regression coverage for the strict public path and the bot-practice recovery path.
+
+**The Reasoning:**
+
+- The bug was a backend/client state desync, not a wrong answer validation issue. The unsafe part was the silent return: the UI needs a terminal event for every attempted answer.
+- Practice bot rooms have no wager, so recovering a missing `openCard` by accepting the still-in-hand answer is better UX and low risk.
+- Real wager rooms keep the server-side open-before-play invariant, but now fail closed with a client-unlocking event instead of freezing.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit` passed.
+- Attempted `bun test apps/api/test/RoomManager.test.ts --test-name-pattern playCard`; blocked before test execution because Bun in this local environment cannot resolve `@solana/web3.js` from `RoomManager.ts`, even though Node/npm can resolve the installed package.
+
+**Tech Debt:**
+
+- `RoomManager.test.ts` still needs dependency isolation from Solana/MagicBlock imports so room lifecycle tests can run under Bun without loading the full blockchain stack.
+
+---
+
+## 28. Card Open ACK And Rejection Contract For FE (2026-05-20)
+
+**The Change:**
+
+_Files touched:_ `packages/shared-types/src/websocket.ts`, `apps/api/src/managers/room/Engine.ts`, `apps/api/test/RoomManager.test.ts`
+
+- Added `openCardAccepted` server event with `{ cardId, remainingMs }`.
+- Added `cardActionRejected` server event with `{ action, reason, cardId?, activeCardId?, recoverable, message }`.
+- Added explicit rejection reasons: `game_not_active`, `invalid_payload`, `not_in_hand`, `already_open`, `not_opened`, and `different_card_open`.
+- `openCard` now behaves as the server-side check-and-open request. FE does not need a separate pre-check request.
+- Successful opens still emit `cardCountdown` for backward compatibility, but FE can now treat `openCardAccepted` as the real modal/answer-enable ACK.
+- Rejected opens/plays emit `cardActionRejected`, a fresh game-state snapshot when useful, and a legacy `cardExpired` with `reason: "rejected"` so the current FE can still unlock during migration.
+- Real public/private matches remain fail-closed: rejected `playCard` does not mutate the engine hand, does not apply damage/heal, and does not consume a MagicBlock ER slot.
+- Bot practice still recovers a missing open state when the answered card is still in the server hand, keeping no-stakes practice smooth.
+
+**The Reasoning:**
+
+- The frontend should not add a separate "is this card open?" request because that adds latency and still races. The existing `openCard` request should be the authoritative ACK boundary.
+- `cardCountdown` was an implicit ACK. `openCardAccepted` gives FE a clean signal: enable answers only after this event for the clicked card.
+- `cardActionRejected` lets FE show honest sync-copy such as "Card sync lost. Please reopen the card." instead of treating every rejection as a timeout.
+
+**FE Implementation Notes:**
+
+- On card click: send `openCard`, set a lightweight pending/syncing state, and do not enable answer buttons yet.
+- On `openCardAccepted` matching the pending card: open/enable the answer UI and start displaying `remainingMs`.
+- On `cardActionRejected`: close pending/active answer UI, show `payload.message`, refresh from the next `gameStateUpdate`, and let the player reopen.
+- On `cardExpired`: treat omitted `reason` or `reason: "timeout"` as a true timeout. Treat `reason: "rejected"` as a legacy unlock signal and avoid counting it as a player timeout once `cardActionRejected` is handled.
+
+**Test:**
+
+- `node_modules/.bin/tsc.cmd -p apps/api/tsconfig.json --noEmit --tsBuildInfoFile .codex-api-check.tsbuildinfo` passed.
+- `node_modules/.bin/tsc.cmd -p apps/web/tsconfig.json --noEmit --tsBuildInfoFile .codex-web-check.tsbuildinfo` passed.
+- Attempted `node_modules/.bin/tsc.cmd -p packages/shared-types/tsconfig.json --noEmit`; skipped because `packages/shared-types` has no `tsconfig.json`.
+- Attempted `bun test apps/api/test/RoomManager.test.ts --test-name-pattern "card|playCard|openCard"`; blocked before test execution because Bun cannot resolve `@solana/web3.js` from `RoomManager.ts` in this local environment.
+
+**Tech Debt:**
+
+- After FE fully handles `cardActionRejected`, we can remove the transitional `cardExpired(reason: "rejected")` compatibility event.

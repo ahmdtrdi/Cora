@@ -14,6 +14,10 @@ type CharacterSelectProps = {
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
+  isGuest?: boolean;
+  displayAsGuest?: boolean;
+  continueLabel?: string;
+  continueBusy?: boolean;
 };
 
 function trimWallet(address: string) {
@@ -32,19 +36,24 @@ export function CharacterSelect({
   arena,
   wagerUsd,
   walletAddress,
+  isGuest = false,
+  displayAsGuest = isGuest,
+  continueLabel = "Enter Queue",
+  continueBusy = false,
 }: CharacterSelectProps) {
   const characters: CharacterOption[] = scientists.map((scientist) => ({
     ...scientist,
   }));
+  const walletLabel = displayAsGuest ? `Guest ${trimWallet(walletAddress)}` : trimWallet(walletAddress);
 
   return (
     <RoomPhaseShell
       withTransition={false}
-      className="min-h-[100svh] overflow-x-hidden overflow-y-auto pb-3 pt-5 md:h-[100svh] md:overflow-hidden md:pb-4 md:pt-6"
+      className="character-select-screen min-h-[100svh] overflow-x-hidden overflow-y-auto pb-3 pt-5 md:pb-4 md:pt-6"
       phase="setup"
       hideTitleBlock={true}
       statusSlot={
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="character-select-status-slot flex flex-wrap items-center justify-end gap-2">
           <span
             className="frame-cut frame-cut-sm px-3 py-1.5 font-gabarito text-[11px] font-semibold uppercase tracking-wide shadow-sm"
             style={{ border: `2px solid ${arena.frame}`, color: arena.frame, background: "var(--warm-bg)" }}
@@ -61,22 +70,22 @@ export function CharacterSelect({
             className="frame-cut frame-cut-sm px-3 py-1.5 font-mono text-[11px] font-semibold tracking-wide text-[var(--tone-cream)] shadow-sm"
             style={{ border: "2px solid var(--tone-bark)", background: "var(--tone-forest)" }}
           >
-            {trimWallet(walletAddress)}
+            {walletLabel}
           </span>
         </div>
       }
     >
-      <div className="flex flex-col">
+      <div className="character-select-container flex flex-col">
         {/* Main header row */}
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 md:mb-10">
+        <div className="character-select-header mb-8 flex flex-wrap items-center justify-between gap-4 md:mb-10">
           <div>
             <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[#f8d694]">
               Setup
             </p>
-            <h1 className="mt-3 font-caprasimo text-[2rem] leading-none text-[#fff8ea] drop-shadow-[0_5px_10px_rgba(0,0,0,0.45)] md:text-[2.6rem]">
+            <h1 className="character-select-title mt-3 font-caprasimo text-[2rem] leading-none text-[#fff8ea] drop-shadow-[0_5px_10px_rgba(0,0,0,0.45)] md:text-[2.6rem]">
               Choose Your Scientist
             </h1>
-            <p className="mt-3 max-w-2xl font-gabarito text-[14px] text-[rgba(244,240,230,0.9)] leading-relaxed">
+            <p className="character-select-desc mt-3 max-w-2xl font-gabarito text-[14px] text-[rgba(244,240,230,0.9)] leading-relaxed">
               Choose the mind that will defend your base in the arena.
             </p>
           </div>
@@ -84,7 +93,7 @@ export function CharacterSelect({
             <button
               type="button"
               onClick={onBack}
-              className="btn-game btn-game-secondary px-4 py-2 text-[11px] shadow-sm"
+              className="btn-game btn-game-secondary character-select-back-btn px-4 py-2 text-[11px] shadow-sm"
             >
               Back
             </button>
@@ -102,14 +111,14 @@ export function CharacterSelect({
             onSelect(next);
           }}
         />
-        <div className="mt-6 flex items-center justify-end md:mt-8">
+        <div className="character-select-footer mt-6 flex items-center justify-end md:mt-8">
           <button
             type="button"
             onClick={onContinue}
-            disabled={!selected}
-            className={`btn-game btn-game-primary min-w-[172px] px-5 py-2 text-xs shadow-xl ${!selected ? "opacity-50 grayscale" : ""}`}
+            disabled={!selected || continueBusy}
+            className={`btn-game btn-game-primary character-select-continue-btn min-w-[172px] px-5 py-2 text-xs shadow-xl ${!selected || continueBusy ? "opacity-50 grayscale" : ""}`}
           >
-            Enter Queue
+            {continueBusy ? "Starting..." : continueLabel}
           </button>
         </div>
       </div>

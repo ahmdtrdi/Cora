@@ -5744,3 +5744,1055 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The landing video is currently wired directly to a hosted asset URL inside the component. If we expect to swap clips often, we should move the media source and poster into environment/config-driven content.
 - The history page messaging is accurate for the current Devnet state, but once indexed history becomes stable we should replace the placeholder route with the full records experience and remove the temporary hold copy.
+
+## 2026-05-20 - Connect screen wallet and guest entry hierarchy clarified
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so `Connect Wallet` and `Enter As Guest` are sibling entry actions on the connect screen.
+- Replaced the raw wallet adapter button on this screen with a local wallet action that either opens the wallet modal or connects the selected wallet, keeping Phantom as provider context instead of a competing top-level CTA.
+- Tightened guest and practice copy across connect, lobby, handoff, battle notice, surrender, and result surfaces so user-facing text says `practice round`, `practice rival`, or `no-stakes round` instead of implementation-flavored `bot match` and generated-address wording.
+- Added a quiet `Disconnect Wallet` action to the connected `/connect` state so users can still undo an auto-synced wallet after the embedded wallet dropdown was removed from this screen.
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the wallet and Blink actions sit on the same footer row, with the guest/wallet helper text spanning below them, and the wallet action uses the same CORA `btn-game-primary` styling as lobby progression buttons instead of the default wallet adapter pill.
+- Updated guest identity pills in [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx), and [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so guest addresses consistently render with a `Guest` prefix, matching the lobby setup identity pill.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so post-match share cards and the in-battle player identity line also render guest practice addresses with the `Guest` prefix.
+- Updated bot rival identity labels in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so practice rival addresses render with a `Bot` prefix anywhere they feed the lobby handoff, battle HUD, share card, or share-copy text.
+- Removed the always-visible `Practice Now` action from [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx), leaving the slow-queue overlay as the dedicated practice fallback prompt.
+
+### The Reasoning
+- The connect screen has two real product paths: wallet-backed CORA with queue/deposits/rewards, and guest bot practice. Presenting Phantom beside those paths made the hierarchy read like three modes instead of one provider inside the wallet path.
+- Keeping both actions in the existing centered arena panel preserves the current visual language while making the decision clearer for new users.
+
+### The Tech Debt
+- The custom wallet action is intentionally scoped to the connect screen. Other surfaces still use the shared `HydratedWalletButton`, so if this hierarchy becomes the standard wallet entry pattern, we should promote it into a reusable component.
+
+## 2026-05-21 - Server-acknowledged card opening in battle UI
+
+### The Change
+- Updated [useMatchSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useMatchSocket.ts) to expose the new backend `openCardAccepted` and `cardActionRejected` events.
+- Updated [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so clicking a card still opens the question shell immediately, but answer buttons remain disabled until the matching `openCardAccepted` event or legacy matching `cardCountdown` arrives.
+- Added `cardActionRejected` handling that resets the active card and shows the backend message, plus `cardExpired(reason: "rejected")` handling that unlocks without treating the event as a real timeout.
+
+### The Reasoning
+- The previous card flow trusted the client-side open state too early. If the backend rejected or lost the open state, the player could answer into a silent backend rejection and get stuck.
+- Waiting for the server ACK before enabling answers preserves the authoritative open-before-play contract while keeping the UX responsive: players see the card shell right away, then answers become available as soon as the server confirms.
+
+### The Tech Debt
+- The battle UI still uses a local `Opening card...` pending state rather than a dedicated visual treatment. If this state becomes noticeable over real network conditions, add a small animated sync affordance to the question card instead of relying only on disabled answers and `...` countdown copy.
+
+## 2026-05-21 - First-Time Intro Overlay & Free Tutorial Flow Completed
+
+### The Change
+- Verified the implementation of the skippable first-time glassmorphic `<IntroOverlay>` in [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx). Features 3 interactive, beautiful animated CSS/SVG fallback components (`PlayCardsMockup`, `TimerMockup`, `WagerMockup`) representing cards, timers, and wager/practice mechanics that seamlessly defer to real WebM/PNG media assets once available in `/assets/intro/`.
+- Confirmed the lobby setup bottom-right action stack in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) successfully renders the sibling `"Try Free Tutorial"` action, alongside polished, context-aware prompt labels (`"Select a token to wager, or try free tutorial"`).
+- Checked the full tutorial integration in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - Automatically loads and sets `cora:introSeen` in local storage for new normal lobby users.
+  - Implements the complete `startTutorialFlow` transition which guides guest users to Scientist Selection in tutorial mode.
+  - Implements `startTutorialMatch` which generates temporary guest credentials, registers the session with `isTutorial: true`, starts a practice bot match via `createBotMatch`, and routes natively to `/play` with `tutorial=1` in query parameters.
+
+### The Reasoning
+- Keeping interactive SVG/CSS animations as high-fidelity fallbacks guarantees a premium, visually engaging client experience even when external media assets are still loading or missing.
+- Scoping the tutorial mode to a custom `isTutorial: true` flag and isolated temp guest credentials prevents active wallet sessions or live deposit queues from being overridden.
+
+### The Tech Debt
+- The `IntroOverlay` asset availability check performs dynamic `HEAD` requests on mount. If the overlay is loaded frequently or asset count increases, these checks should be debounced or pre-cached in static configuration metadata instead of hitting network endpoints on each load.
+
+## 2026-05-21 - Lobby Tutorial CTA Prioritized Beside Wallet-Gated Draft CTA
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the bottom-right action row now renders `Try Free Tutorial` on the left and the stronger primary `Pick Scientist` action on the right.
+- Added explicit wallet gating to the primary lobby draft action, so `Pick Scientist` remains disabled when no wallet is connected even if an arena is selected.
+
+### The Reasoning
+- The tutorial path is the low-friction no-wallet/no-wager path, so it should remain immediately available while the wallet-backed wager path stays visually primary but blocked until the required setup is complete.
+- Keeping the stronger action on the right preserves the main competitive flow hierarchy while making the free tutorial an obvious fallback instead of a hidden alternative.
+
+### The Tech Debt
+- The primary draft action now explicitly requires `walletConnected` in `LobbySetup` in addition to the upstream `canPlay` flag. If lobby playability rules keep expanding, these conditions should be consolidated into a named view-state object to avoid duplicated policy between parent and child components.
+
+## 2026-05-21 - Lobby Arena Bottom Vignette for CTA Readability
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add a bottom-only dark gradient overlay above the arena preview image and below the lobby content/actions.
+
+### The Reasoning
+- The new side-by-side `Try Free Tutorial` and `Pick Scientist` action row sits over varied arena artwork, so a bottom vignette gives the buttons and helper copy stable contrast without dimming the whole preview image.
+
+### The Tech Debt
+- The vignette height and opacity are locally tuned to the current lobby artwork. If future arena images have much brighter lower thirds, this may need to become a reusable overlay token or per-arena readability setting.
+
+## 2026-05-21 - Intro Overlay Shared Across Connect and Lobby
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so all three panels use WebM media, including the new `/assets/intro/intro-practice-wager.webm` asset.
+- Removed the top-right close control and the final-panel `Try Free Tutorial` CTA from the intro overlay, leaving only the `Skip`, `Next`, and final `Enter Arena` actions.
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) to show the same first-time intro overlay on `/connect` using the existing `cora:introSeen` localStorage key.
+- Kept the `/lobby` intro trigger in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) as a fallback for users who bypass `/connect` directly.
+- Renamed the uploaded practice/wager intro asset to [intro-practice-wager.webm](/d:/projects/Cora/apps/web/public/assets/intro/intro-practice-wager.webm) so the public path is URL-safe and consistent with the other intro assets.
+
+### The Reasoning
+- The intro now teaches the game once, then reveals the current screen's real decisions. `/connect` owns the normal first-time entry experience, while `/lobby` still protects direct links and bookmarks.
+- Removing game-mode CTAs from the intro keeps responsibility clean: the overlay explains, `/connect` handles wallet/guest choice, and `/lobby` handles tutorial versus wager flow.
+
+### The Tech Debt
+- `IntroOverlay` now serves both connect and lobby but still lives under `components/lobby`. If more onboarding surfaces appear, move it into a neutral `components/onboarding` folder with any shared intro storage helpers.
+
+## 2026-05-21 - Intro Videos Hold First Frame Before Playback
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) to render intro media through a dedicated `IntroPanelVideo` helper.
+- Intro videos now wait for `loadedData`, pause on the first frame, hold for one second, and only then start muted looped playback.
+
+### The Reasoning
+- Holding the first frame lets the overlay finish appearing and gives the video a stable loaded state before motion begins, which makes the onboarding panels feel smoother and avoids premature autoplay while the modal is still settling.
+
+### The Tech Debt
+- The one-second hold is a local constant tuned by feel. If intro timing becomes part of a broader motion system, move it into shared animation timing tokens.
+
+## 2026-05-21 - Intro Video Loop Hold
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so intro videos no longer use native `loop` playback.
+- Added manual `ended` handling that pauses on the final frame for one second, resets to the beginning, and then starts playback again.
+
+### The Reasoning
+- The same deliberate pause used before first playback now applies between loops, making repeated intro media feel less abrupt and easier to read.
+
+### The Tech Debt
+- The first-frame and end-frame holds currently share the same timing constant. If later media has different pacing needs, the start hold and loop hold may need separate constants.
+
+## 2026-05-21 - React Lint Cleanup After Intro/Tutorial Wiring
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so first-time intro visibility is derived from lazy initial state instead of setting state synchronously inside an effect.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to defer effect-driven guest/login/intro/queue-state updates, remove the unused legacy HTTP matchmaking helper/imports, and complete callback dependency lists for tutorial and auto-requeue paths.
+- Updated [useQueueSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useQueueSocket.ts) so mutable queue refs are synchronized in effects instead of during render, and reconnects call the latest socket opener through a ref.
+- Cleaned small unused items in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx), [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx), and [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts).
+
+### The Reasoning
+- The current ESLint setup includes stricter React Compiler and hooks rules. Deferring state updates that are triggered by effects and moving ref writes out of render keeps the existing behavior while satisfying those rules.
+
+### The Tech Debt
+- Several older effects in the lobby and battle screens still mix state coordination with side effects. They now satisfy lint for the surfaced cases, but longer-term cleanup should split state machines from transport/storage effects.
+
+## 2026-05-21 - Stabilize Practice Match Callback Dependency
+
+### The Change
+- Wrapped `startBotMatch` in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) with `useCallback` and added its explicit dependency list.
+
+### The Reasoning
+- `beginMatchmaking` depends on `startBotMatch` for guest/practice flow. Stabilizing the callback prevents `beginMatchmaking` from changing every render and clears the remaining React hooks lint warning.
+
+### The Tech Debt
+- Lobby still has several large callback blocks in one component. If tutorial, guest practice, and wager queue keep expanding, extracting flow-specific hooks would make dependency management easier to audit.
+
+## 2026-05-21 - Soften Lobby Arena CTA Vignette
+
+### The Change
+- Tuned the bottom arena vignette in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) from a taller, darker overlay to a shorter and lighter gradient.
+
+### The Reasoning
+- The CTA area still needs contrast, but the previous black gradient covered too much of the arena artwork. The lighter pass keeps button readability while letting more of the preview image show through.
+
+### The Tech Debt
+- The gradient remains hand-tuned for the current arena art. Future arenas may need per-image contrast review.
+
+## 2026-05-21 - Lobby Board Hover Motion Removed
+
+### The Change
+- Added a `.game-card-static` utility in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to opt specific game-card wrappers out of the global hover lift while preserving a warm hover glow.
+- Applied the static game-card variant to the main horizontal lobby board in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+- Restored the individual arena token selection buttons to their button-like hover/selected lift behavior.
+
+### The Reasoning
+- The large lobby board is a layout wrapper rather than a direct action target, so it should not move on hover. A glow still gives the surface a responsive feel, while the actual arena token selectors remain buttons and can keep their hover affordance.
+
+### The Tech Debt
+- `.game-card-static` now carries a lobby-tuned glow value. If more wrapper-only cards appear, consider a named component-level card variant instead of utility opt-outs.
+
+## 2026-05-21 - Preserve Tutorial Match Address
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the generic matched-room session writer does not run while the free tutorial flow is active.
+
+### The Reasoning
+- `startTutorialMatch` creates a bot room using a temporary no-wallet guest address and writes that exact address into the active match session before routing to `/play`. The generic lobby session effect could run afterward and overwrite the same room with the connected wallet or stored guest identity, causing the play socket to join as the wrong address and leaving the bot room stuck waiting for its original player.
+
+### The Tech Debt
+- Tutorial mode still depends on local lobby state to protect the session write. If match session handling grows further, extract a dedicated tutorial session helper so normal wager recovery and tutorial handoff cannot share the same write path by accident.
+
+## 2026-05-21 - Route Tutorial Through Opponent Found
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the free tutorial creates the bot room, stores the tutorial guest address, then moves into the existing `found` phase instead of routing directly to `/play`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so guest/tutorial flows use the provided guest address for the match socket even when a wallet is connected.
+
+### The Reasoning
+- The normal matchmaking flow uses `OpponentFound` to connect to the room, wait for the server battle snapshot, show the prep/countdown UI, and only then enter `/play`. Tutorial should mimic that path so `/play` loads with ready server state instead of showing an in-battle waiting message.
+
+### The Tech Debt
+- `OpponentFound` now handles both wager deposits and no-wager bot prep. If practice-specific prep grows, split the status copy/control logic into smaller mode-specific helpers while keeping the shared matched-screen shell.
+
+## 2026-05-21 - Keep Connected-Wallet Tutorial on Guest Identity
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so tutorial mode uses the guest identity for lobby display, bot match creation, and the `OpponentFound` socket handoff even when a wallet is connected.
+- Prevented the connected-wallet auto-switch effect from flipping `loginMode` out of guest while the tutorial flow is active.
+
+### The Reasoning
+- The free tutorial is intentionally a no-wager guest-style match. A connected wallet could previously make the UI look like guest mode while still passing the wallet address into the matched/prep flow, which caused the server to wait for the original tutorial guest address.
+
+### The Tech Debt
+- `isTutorialMode` and `isGuestMode` now intentionally overlap in the lobby. If more practice modes appear, introduce a clearer `identityMode` or match-entry state machine instead of combining booleans.
+
+## 2026-05-21 - Split Tutorial Transport And Display Identity
+
+### The Change
+- Added optional display identity fields to [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so a match can keep one address for socket/session transport and another for UI display.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx), and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so connected-wallet tutorial shows the real wallet while still using the hidden tutorial guest address for the no-deposit bot room.
+
+### The Reasoning
+- Free tutorial needs the generated guest address to keep the no-wager bot socket stable, but a connected user should still see their wallet identity in character select, opponent found, and battle. Splitting display identity from transport identity gives that UX without turning tutorial into a real wallet wager flow.
+
+### The Tech Debt
+- The display identity is currently stored as optional fields on the local match session. If the app later needs richer profile display names or wallet aliases, move this into a dedicated player presentation model.
+
+## 2026-05-21 - Add Intro Wallet Devnet Step
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) to add `intro-wallet-devnet.webm` as the first onboarding panel before cards, timer, and practice/wager.
+- Added a lightweight wallet/devnet fallback mockup for missing media.
+
+### The Reasoning
+- First-time users need wallet, Devnet, and faucet context before they understand wager matches. Navigation stays intentionally simple with Skip as the low-emphasis escape and Next/Enter Arena as the primary path.
+
+### The Tech Debt
+- The intro overlay now mixes onboarding content and video fallback mockups in one component. If more setup panels land, extract panel data and fallback renderers into a small onboarding module.
+
+## 2026-05-21 - Connect Screen Devnet Signal
+
+### The Change
+- Added a small `Live on Devnet` status pill to [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx).
+
+### The Reasoning
+- The onboarding now teaches wallet, Devnet, and faucet setup. Showing the Devnet signal directly on `/connect` reinforces that this environment is live for testing before users choose wallet or guest entry.
+
+### The Tech Debt
+- The signal is currently static UI copy. If network selection becomes dynamic, wire it to runtime cluster config instead of hardcoding Devnet.
+
+## 2026-05-21 - Refine Connected Devnet Signal
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so the generic connect/practice helper copy hides once a wallet is connected.
+- Shifted the `Live on Devnet` pill to the warm yellow/brown accent family and tightened spacing between it and the connected wallet status.
+
+### The Reasoning
+- Once a wallet is connected, the helper line repeats information the UI already implies. The Devnet and wallet status should read as a compact connected-state cluster.
+
+### The Tech Debt
+- Connected-state spacing is still tuned in the component with conditional margin classes. If the connect card gains more states, extract small header/status subcomponents.
+
+## 2026-05-21 - Lobby Replay Intro Utility
+
+### The Change
+- Added a `Replay Intro` lobby utility action wired to reopen the existing [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) without resetting intro localStorage.
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so wallet, wager, balance, replay intro, and history share the same clipped pill language, with warm action coloring for replay and muted disabled styling for history.
+
+### The Reasoning
+- Users may want to revisit onboarding after landing in the lobby. Keeping replay as a top utility action makes it discoverable without competing with arena selection or tutorial/practice CTAs.
+
+### The Tech Debt
+- The lobby header pill helper is local to `LobbySetup`. If other screens need the same pill treatment, promote it into a shared UI component.
+
+## 2026-05-21 - Match Wallet Pill Height
+
+### The Change
+- Reduced the wallet identity marker size in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the wallet pill matches the wager and balance pill height.
+
+### The Reasoning
+- The previous marker made the wallet pill visually taller than the rest of the lobby header controls. Keeping all pills aligned makes the header read as one consistent utility strip.
+
+### The Tech Debt
+- Header pill sizing is still manually tuned in `LobbySetup`; shared pill tokens would make future adjustments less repetitive.
+
+## 2026-05-21 - Soften Replay Intro Pill
+
+### The Change
+- Reduced the warm outline and highlight strength on the `Replay Intro` header pill in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- Replay Intro is a helpful utility action, but it should sit below the main lobby actions visually. Softer treatment keeps it discoverable without over-commanding the header.
+
+### The Tech Debt
+- Header action tones are still inline style objects; promote them to shared tokens if more header utilities are added.
+
+## 2026-05-21 - Reset Intro Replay Step
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so opening the overlay always resets to the first panel.
+
+### The Reasoning
+- Replay Intro should behave like a fresh replay, not resume from wherever the user last closed the onboarding.
+
+### The Tech Debt
+- Intro step state still lives inside the overlay. If parent screens ever need deep-linking to a specific intro step, expose an initial step prop instead.
+
+## 2026-05-22 - Real Match Deposit Reminder
+
+### The Change
+- Added a pre-sign deposit reminder modal to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) for the real matchmaking flow.
+- Changed the idle primary action copy from `Sign Deposit` to `Deposit`; pressing it now opens the reminder, and `Confirm Deposit` starts the existing Phantom signing path.
+- Finalized the reminder UI with centered content, a compact wager line, a single readable warning, and a light warm cancel action.
+
+### The Reasoning
+- The reminder needs to appear before Phantom opens, but the stable signing/socket logic should stay untouched. The modal gates only the UI click path and still calls the existing `onSignDeposit` handler, preserving transaction preparation, `Opening Phantom...`, deposit confirmation, and timeout behavior.
+
+### The Tech Debt
+- The reminder copy is local to `OpponentFound`. If Blink deposits or other wager entry points need the same rule reminder later, extract a shared deposit reminder component.
+
+## 2026-05-22 - Phone Landscape Arena Responsiveness
+
+### The Change
+- Added phone-landscape CSS hooks to [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for the arena shell, room header, player strip, stage, hand prompt, cards, and active question panel.
+- Added responsive rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for coarse-pointer landscape screens under `960px` wide and `540px` tall, compressing vertical chrome and scaling cards by viewport height.
+- Added [MobileFullscreenButton.tsx](/d:/projects/Cora/apps/web/src/components/play/MobileFullscreenButton.tsx), a phone-landscape-only fullscreen toggle that hides itself when the browser does not expose a fullscreen API.
+
+### The Reasoning
+- The existing portrait gate handled rotation, but landscape phones still had very little usable height after browser UI. The fix keeps desktop untouched while making the battle HUD, player strip, stage, and hand share the short viewport more deliberately.
+- The fullscreen button is progressive enhancement: supported browsers can reclaim toolbar space, while unsupported browsers simply keep the responsive layout without showing a broken control.
+
+### The Tech Debt
+- The phone-landscape breakpoint is tuned to common mobile browser viewports rather than device-specific QA. We should still manually check Safari and Chrome on a real phone because fullscreen support and toolbar behavior differ by browser.
+
+## 2026-05-22 - Phone Landscape Arena Overlay Scale Pass
+
+### The Change
+- Added responsive hooks to [BattleScreenStatusLayer.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenStatusLayer.tsx) so socket/error notifications can shrink on phone landscape.
+- Added class hooks in [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) for the in-arena combat notice and both base HP meters.
+- Added class hooks in [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) for the match-finished result card, expression blocks, payout/status/stat pills, actions, and settlement details.
+- Extended [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to reduce notification size, combat notice size, base-bar width/height/type, HUD pill type, result emoji blocks, and the match-finished overlay on phone landscape.
+
+### The Reasoning
+- The arena frame now fits better, but secondary UI was still eating the same short viewport. Scaling the notification and result layers in the same breakpoint keeps the entire battle experience consistent instead of fixing only the card hand.
+- The result overlay uses max-height plus internal scrolling for details, so core outcome/action content stays reachable even when a phone browser toolbar leaves very little vertical room.
+
+### The Tech Debt
+- The share modal and generated share cards are not yet independently optimized for phone landscape. If users commonly share directly from landscape battle, those surfaces need their own compact pass.
+
+## 2026-05-22 - Extra Compact Post-Match Overlay Tuning
+
+### The Change
+- Tightened the phone-landscape post-match result overlay rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css), reducing result card width/padding, title size, payout pill size, expression tile size, stat/status pill size, and vertical gaps.
+- Added a more specific `.btn-game.battle-result-action` rule so the compact post-match action buttons override the global chunky game-button sizing in landscape phone viewports.
+- Added a shorter-height override for sub-390px landscape heights, including smaller expression tiles and smaller result actions.
+
+### The Reasoning
+- The 642x300 viewport still showed the result overlay consuming nearly the whole arena, and the global `.btn-game` rule was re-inflating the buttons after the compact media query. The more specific selector keeps result actions intentionally small without changing buttons elsewhere.
+
+### The Tech Debt
+- This is still CSS-tuned rather than screenshot-tested through Playwright. Real-device Safari/Chrome should be the final judge because browser chrome changes the available viewport height.
+
+## 2026-05-22 - Phone Landscape Share Modal Wrapper
+
+### The Change
+- Updated [BattleScreenOverlays.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreenOverlays.tsx) to wrap the existing match-result and challenge share cards in a phone-landscape preview shell.
+- Added phone-landscape CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to shrink the share modal chrome, scale the preview shell, and keep the preview scrollable inside tiny landscape heights.
+
+### The Reasoning
+- The share card renderer is also used for saved/generated outputs, so the card component and render inputs were left untouched. The modal now scales only the browser preview wrapper, preserving the original share-card rendering and export behavior.
+
+### The Tech Debt
+- The scaled preview uses CSS transform and an internal scroll frame. If the share flow becomes a primary mobile-landscape action, a dedicated mobile preview mode could improve ergonomics while still keeping export rendering separate.
+
+## 2026-05-22 - Keep Share Modal Actions Visible
+
+### The Change
+- Updated the phone-landscape share modal CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the share modal stack is a fixed-height flex column.
+- Capped the scaled preview frame height and made the share action row a non-shrinking footer inside the modal.
+
+### The Reasoning
+- The previous scaled preview still consumed too much of a 300px-tall landscape viewport, pushing `Save As PNG` and `Create Blink` below the visible area. The modal now reserves vertical room for those actions instead of relying on page scroll.
+
+### The Tech Debt
+- The preview scale is tuned for the current share card dimensions. If the share card content grows, revisit the preview scale or add responsive preview presets.
+
+## 2026-05-22 - Remove Share Preview Scrollbars
+
+### The Change
+- Updated the phone-landscape share preview frame in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to hide internal overflow instead of showing horizontal and vertical scrollbars.
+- Reduced the share preview scale further for short landscape viewports so the preview, close control, and action buttons can coexist in the 300px-height layout.
+
+### The Reasoning
+- The preview wrapper used CSS transform scaling, but the unscaled layout box still created scrollable overflow. Hiding the preview-frame overflow and tuning the scale keeps the modal clean while preserving the original share-card rendering and export path.
+
+### The Tech Debt
+- Extremely tall share-card content can now be clipped in the tiny landscape preview. The exported image is unaffected, but future preview-only affordances may need a tap-to-expand view.
+
+## 2026-05-22 - Revert Mobile Share Modal Control Placement
+
+### The Change
+- Reverted the last phone-landscape share modal control-placement tweak in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css).
+- Restored the share preview frame and close/action layout to the previous no-scrollbar state.
+
+### The Reasoning
+- The requested control placement change was not the desired direction. Keeping the prior no-scrollbar wrapper is safer while we decide the exact mobile share modal layout.
+
+### The Tech Debt
+- The share modal still needs a better mobile-only control layout, but the next pass should be checked against the target 642x300 viewport before landing.
+
+## 2026-05-22 - Extreme Landscape Arena Scale Mode
+
+### The Change
+- Added an ultra-short phone-landscape breakpoint in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for viewports under `260px` tall.
+- In that breakpoint, the battle shell is treated as a fixed `16 / 9` virtual board and scaled down to fit the available height/width.
+- Added a tighter scale for sub-`230px` landscape heights, matching the `642x220` stress case.
+
+### The Reasoning
+- The existing phone-landscape responsive rules work for normal short phones, but extremely shallow viewports should not keep stretching the arena across the full width. Scaling the whole arena as a fixed-ratio board preserves the battle composition instead of continuing to compress individual pieces.
+
+### The Tech Debt
+- The scale factors are CSS-tuned for the current arena dimensions. If the battle HUD grows, the virtual-board scale may need a quick recalibration.
+
+## 2026-05-22 - Center Extreme Landscape Scale Mode
+
+### The Change
+- Updated the extreme landscape arena scale rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the scaled battle shell is absolutely centered with `left/top: 50%` and `translate(-50%, -50%)`.
+
+### The Reasoning
+- The previous transform-based scale relied on grid centering of the unscaled virtual board. In very shallow viewports, the visual scaled board could appear shifted to the right because layout and transformed visual dimensions were different. Explicit center positioning keeps the scaled board visually centered.
+
+### The Tech Debt
+- The extreme layout still depends on hand-tuned virtual-board scale values. A future cleanup could calculate this with a single CSS variable pair for virtual width and scale.
+
+## 2026-05-22 - Restore Scientist Pick Scrolling
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the lobby root only hides horizontal overflow instead of clipping all overflow.
+- Updated [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) so the pick-scientist shell stays vertically scrollable at medium/tablet widths instead of switching to a fixed `100svh` hidden-overflow layout.
+
+### The Reasoning
+- Mobile and tablet landscape can make the scientist roster plus header/action row taller than the viewport. The previous overflow clamps left the page with extra content but no scroll container, so users could not reach the lower cards or continue action.
+
+### The Tech Debt
+- This should still be checked on the target real devices/browser chrome, because `svh` behavior and visible toolbar height vary between mobile Safari and Chrome.
+
+## 2026-05-22 - Compact Lobby Setup On Phones
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) with smaller base mobile spacing, text, arena rows, icon/check sizes, hero minimum height, and action-row gaps while keeping the existing roomier scale at `sm`/`md` breakpoints.
+- Added a lobby-scoped phone override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so `.btn-game` padding/font sizes shrink inside the lobby setup screen instead of being re-inflated by the global button rule.
+
+### The Reasoning
+- The `/lobby` setup screen was using desktop-ish defaults for phones, making the header pills, arena list, hero panel, and primary actions feel oversized before users even reach scientist selection. Compacting only the base styles improves mobile fit without disturbing tablet/desktop layout.
+
+### The Tech Debt
+- This pass is still size-tuning by breakpoint. The next mobile polish should be checked against the exact target phone dimensions and may need landscape-specific ordering if the arena art should stay visible above the selector.
+
+## 2026-05-22 - Compact Lobby Setup In Short Landscape
+
+### The Change
+- Added short-landscape lobby setup selectors in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) for the main card, arena panel/list/options, hero copy/title, and action block.
+- Added a `max-width: 960px` plus `max-height: 540px` landscape override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to shrink the `/lobby` header pills, arena column, option rows, hero padding/title, and action buttons when phone landscape triggers Tailwind's `md` breakpoint.
+
+### The Reasoning
+- The first compact pass only reduced base phone styles, but an iPhone 12 Pro landscape viewport is `844px` wide, so `md:` classes were still applying desktop-ish sizing. The short-landscape override targets that actual viewport shape directly.
+
+### The Tech Debt
+- The rule is intentionally scoped to `/lobby` setup. Other lobby phases may need matching short-landscape treatment as we move through the mobile/tablet pass.
+
+## 2026-05-22 - Fit Lobby Setup Without Short-Landscape Scroll
+
+### The Change
+- Added a `lobby-setup-footer` hook in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) for the secondary wallet/Blink action row.
+- Updated the short-landscape rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the `/lobby` setup screen uses a fixed `100svh` height, hides page overflow, flexes the main card into the remaining space, and keeps the footer as a compact visible row.
+- Further tightened short-landscape header pill padding, arena option heights, hero padding, title size, and primary action sizing.
+
+### The Reasoning
+- The previous short-landscape pass reduced visual scale, but the main card still took enough height to push `Create Blink Challenge` below the viewport. Treating the screen as a height-budgeted layout makes the phase responsive enough to fit without page scrolling at the iPhone 12 Pro landscape viewport.
+
+### The Tech Debt
+- If wallet/browser overlays add more fixed UI in the future, the footer may need to become an icon-sized overflow menu in short landscape rather than staying as a full text button.
+
+## 2026-05-22 - Stretch Lobby Setup On Tablet Landscape
+
+### The Change
+- Added a tablet-landscape media query in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for `961px`-plus landscape widths with enough viewport height.
+- The `/lobby` setup screen now uses `100svh` height in that tablet-landscape range, keeps the header/footer fixed to their natural height, and lets the main arena card flex to fill the remaining vertical space.
+
+### The Reasoning
+- iPad landscape had the inverse of the phone problem: the UI fit, but the arena wrapper stayed content-height and left a large empty area underneath. Stretching the main card makes the layout feel intentionally responsive on tablet landscape without affecting the phone short-landscape no-scroll mode.
+
+### The Tech Debt
+- The tablet range is breakpoint-based. If Android tablets with unusual aspect ratios show awkward spacing, we may need to refine the range around aspect-ratio rather than only width/height.
+
+## 2026-05-22 - Prevent Short-Landscape Arena Caption Wrap
+
+### The Change
+- Updated the short-landscape `/lobby` arena option caption rule in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so secondary labels stay on one line with ellipsis instead of wrapping.
+
+### The Reasoning
+- The narrow phone-landscape arena column made labels like `THE CLASSIC ARENA` wrap into three lines, making the selected row look broken. Keeping the caption single-line preserves row height and visual rhythm.
+
+### The Tech Debt
+- If arena captions become meaningfully longer, we may want explicit shorter mobile labels in data rather than relying on ellipsis.
+
+## 2026-05-22 - Let Short-Landscape Arena Captions Span Right
+
+### The Change
+- Updated the short-landscape arena option layout in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so caption text uses the available row width and remains visible instead of truncating with ellipsis.
+
+### The Reasoning
+- The intended fix was not to show `THE...`, but to let labels like `THE CLASSIC ARENA` continue horizontally within the option row while staying single-line.
+
+### The Tech Debt
+- The short-landscape option structure is now CSS-targeted by child position. If this card markup changes, these selectors should be revisited.
+
+## 2026-05-22 - Tune Short-Landscape Arena Icon and Check Alignment
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add explicit `lobby-setup-arena-token-icon` and `lobby-setup-arena-check` hooks and replaced text checkmarks with inline SVG check icons for stable centering.
+- Updated short-landscape rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to reduce token icon SVG size and tighten check badge size/position.
+
+### The Reasoning
+- The phone-landscape arena row needed a smaller token icon, and the unicode checkmark baseline was visually offset inside the badge. SVG checks give predictable centering across devices and fonts.
+
+### The Tech Debt
+- These selector hooks are specific to the current arena option markup. If the row structure changes, icon/check overrides should be revalidated.
+
+## 2026-05-22 - Restore Mobile-Landscape Arena Check Visibility
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so arena check badges render with explicit inline color and higher stacking (`z-[2]`) in selected rows.
+- Updated short-landscape check sizing in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to slightly larger badge/icon dimensions for better visibility on phone DPR scaling.
+
+### The Reasoning
+- After the SVG check migration, the mobile-landscape selected check could disappear due a combination of layering and tiny rendered size. Raising z-order and making the icon slightly larger restores reliable visibility.
+
+### The Tech Debt
+- If we continue scaling arena rows down further for extreme short viewports, check icon size should be tuned in lockstep to avoid another visibility regression.
+
+## 2026-05-22 - Use CSS Arena Checks In Mobile Landscape
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so selected arena badges render a `lobby-setup-arena-check-mark` span instead of an inline SVG path.
+- Added CSS-drawn checkmark styling in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for the short-landscape arena check badge.
+- Added an orange selected-check treatment for the BONK arena.
+
+### The Reasoning
+- The badge shell was visible in mobile landscape, but the SVG check path was disappearing. A CSS-drawn tick is simpler and more reliable at the tiny phone-landscape size, while the BONK state now matches its warm arena color.
+
+### The Tech Debt
+- The CSS check depends on border-based drawing. If the badge is scaled below the current short-landscape size, the mark dimensions should be retuned with the badge.
+
+## 2026-05-22 - Restore Arena Checkmark Across Viewports
+
+### The Change
+- Moved `.lobby-setup-arena-check-mark` styling in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) out of the short-landscape-only media query into a base rule so desktop, tablet, and mobile all render the selected checkmark.
+- Changed the CSS-drawn tick from a left/bottom border shape to a right/bottom border shape rotated `45deg`, with phone-landscape only overriding its dimensions.
+
+### The Reasoning
+- The previous fix accidentally defined the visible checkmark only for short landscape, leaving other viewports with an unstyled empty span. The tick direction also made the phone-landscape mark barely visible. A base rule keeps the mark present everywhere, and the media query now only scales it.
+
+### The Tech Debt
+- The selected arena badge now depends on shared base styling plus a short-landscape size override. Future badge changes should be checked across phone portrait, phone landscape, tablet landscape, and desktop together.
+
+## 2026-05-22 - Harden Arena Check Badge Shape
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so `.lobby-setup-arena-check` owns its absolute position, fixed circular dimensions, grid centering, and full-circle radius with stronger CSS.
+- Moved the visible checkmark drawing to `.lobby-setup-arena-check::before` and hid the child marker span, leaving the short-landscape rule to only resize the badge/check.
+
+### The Reasoning
+- The selected badge was still being stretched into an oval because Tailwind responsive sizing utilities and custom responsive rules were fighting. Making the badge a self-contained circular component removes that conflict and keeps the check visible.
+
+### The Tech Debt
+- The JSX still includes a child marker span for markup stability, but it is now hidden. A future cleanup can remove that span once the responsive pass settles.
+
+## 2026-05-22 - Simplify Arena Check Badge
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so selected arena badges render only the purpose-built `lobby-setup-arena-check` class and the original text checkmark character.
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to remove pseudo-element check drawing and make the badge a self-contained circular flex element with fixed width/height, `border-radius: 50%`, centered text, and short-landscape-only size reduction.
+
+### The Reasoning
+- The badge was broken because JSX utility classes, pseudo-element check drawing, and responsive overrides were all fighting each other. Returning to a plain text check inside one CSS-owned circle restores the previous mark while keeping the badge round and vertically centered across viewport sizes.
+
+### The Tech Debt
+- This should be visually checked after the dev server refresh because prior browser-cached CSS made this area hard to trust by inspection alone.
+
+## 2026-05-22 - Refactor Option Layout Selectors to Prevent Check Leakage
+
+### The Change
+- Refactored generic direct-child selectors `.lobby-setup-arena-option > div` in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) inside the landscape media query to target `.lobby-setup-arena-option > div:first-child` and `.lobby-setup-arena-token-icon` specifically.
+
+### The Reasoning
+- The `.lobby-setup-arena-check` badge was being stretched into a capsule shape and its text was overflowing/falling out because it was a direct child `div` of `.lobby-setup-arena-option`. As a result, it was matching the generic media-query rules for `.lobby-setup-arena-option > div`, which leaked `padding-right: 24px` and custom layout sizes onto it. Targeting only the first child div (the content wrapper) isolates the checkmark element completely, allowing it to render as a perfect circle with the check character centered.
+
+### The Tech Debt
+- Other parts of the app may still rely on generic `> div` selectors inside parent containers. Standardizing custom layout components with class-based selectors would prevent style leakage long-term.
+
+## 2026-05-22 - Mobile Portrait Horizontal Token Chips selector
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) options container to use a responsive flex structure: horizontal row on mobile portrait (`flex-row gap-2`) and vertical stack on desktop/tablets (`sm:flex-col sm:gap-0 sm:space-y-3`).
+- Refactored the option button contents layout to stack elements vertically (`flex-col items-center justify-center`) on mobile portrait view while keeping horizontal structure on desktop/tablets.
+- Made the "And More To Come" placeholder button responsive, collapsing its long text on mobile to display a clean `+` sign.
+- Added portrait mobile `@media (max-width: 639px)` style overrides in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to:
+  - Transform rectangular options into perfect circular game tokens using `aspect-ratio: 1/1` and circular radiuses (`border-radius: 999px`), while overriding standard corner clips.
+  - Hide long descriptive flavor texts and center label content.
+  - Position and float selected checkmark icons (`.lobby-setup-arena-check`) at the top-right overlapping border of the active circular chips.
+
+### The Reasoning
+- On mobile portrait view, the vertical list of rectangular choice buttons occupied excessive vertical height. This pushed the key artwork card and the primary game buttons ("TRY FREE TUTORIAL", "PICK SCIENTIST") down the viewport, causing a cramped layout.
+- Transforming the choices into a compact horizontal bar of sleek circular token chips reduces vertical selection height from ~260px to ~65px, giving full breathing room to the primary visual interface while maintaining a premium game-like feel.
+
+### The Tech Debt
+- On extremely narrow screens (< 320px), the circular chips might shrink. However, standard portrait viewports (360px+) are fully supported.
+- If extra arenas are added in the future, we may need to implement a horizontal swiper for the token chip bar.
+
+## 2026-05-22 - Fix Header Pill Wrap and Syntax Error in Lobby Setup
+
+### The Change
+- Fixed a compilation/syntax error in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) around the top header layout.
+- Restored the missing `style={{` tag on the main `.lobby-setup-card` wrapper.
+- Properly flattened the top header layout so that the `Address` (Wallet ID), `Wager`, `Balance`, `Replay Intro`, and `History Coming Soon` pills are direct sibling nodes inside the outer `flex flex-wrap items-center gap-2` container.
+- Added a responsive hidden-sm constraint `<span className="hidden sm:inline"> Balance</span>` inside the `Balance` pill.
+
+### The Reasoning
+- An incomplete file merge in a previous code edit deleted parts of the balance pill container and the `Replay Intro` button, resulting in a parsing error and a broken screen.
+- In addition, selecting BONK/MEW expanded the balance text (`COMING SOON`), which caused the nested `[ Wager | Balance ]` block to wrap and push the entire dashboard layout down onto 3 rows.
+- Flattening the flex container allows each badge/pill to wrap individually if space runs out, rather than grouping them in nested boxes.
+- Shortening the mobile label (from `BONK Balance: COMING SOON` to `BONK: COMING SOON`) keeps the total character width tight and prevents the header row from wrapping into a third row entirely, keeping a stable two-row configuration on mobile portrait across all selected arenas.
+
+### The Tech Debt
+- The `wagerUsd` and `tokenBalanceValue` values are currently read-only mocks on mobile; when the live wallet transaction/balance hook integration is active, these layout constraints must be verified with active real data.
+
+## 2026-05-22 - Standardize Compact Balance Pill to Prevent Header Wrap
+
+### The Change
+- Refactored `LobbySetup.tsx` to simplify and consolidate the `tokenBalanceValue` variable, removing the unused `tokenBalanceLabel` and `tokenBalanceValueMobile`.
+- Modified the balance pill markup in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to always use the compact `{Token}: {Value}` format directly (e.g., `SOL: 0`, `BONK: Soon`, `MEW: Soon`), completely removing screen-width responsive spans and media-query toggles for the text content.
+
+### The Reasoning
+- Even with responsive helper spans, Next.js hydration mismatches or simulator layout queries could render the full `COMING SOON` text instead of `Soon` below the `sm` breakpoint on mobile viewports.
+- Standardizing the balance pill to use the compact `{Token}: {Value}` HUD format across both mobile and desktop solves this cleanly. It guarantees a 100% stable layout width (maximum 10–12 characters), eliminates responsive CSS and hydration conflicts, and keeps all five header pills locked into a clean, stable two-row configuration on mobile portrait across all selected tokens.
+
+### The Tech Debt
+- None. This is a clean simplification that removes dead logic and media-query complexity from the component.
+
+## 2026-05-22 - Fix Next.js Wallet Hydration Mismatch in Lobby Setup
+
+### The Change
+- Added a `mounted` state guard pattern via a local `useState` and `useEffect` inside [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+- wrapped all properties, attributes, and conditional blocks that depend on the browser's client-side Solana wallet state (e.g. `selectedWallet`, `walletConnected`, `playability`, `connecting`) in the `mounted` check to render stable placeholder states during the initial pre-rendered SSR pass.
+
+### The Reasoning
+- The browser wallet adapter loads previously selected wallets from local storage on mount. Since Next.js has no access to client local storage during Server-Side Rendering (SSR), it pre-renders the HTML with no wallet connected (`Select Wallet` button text).
+- Upon page hydration, if the client has a wallet selected, the mismatch in button labels (`Select Wallet` on server vs `Connect Wallet` on client) or the presence of conditionally rendered wallet status elements triggers a React hydration warning.
+- Forcing the component to match the server HTML structure until `mounted` is set to `true` on the client completely avoids these hydration mismatches and allows the wallet state to safely load dynamically after the page loads.
+
+### The Tech Debt
+- None. This is standard best practice for client-only state variables in Next.js.
+
+## 2026-05-22 - Fix Lobby Setup Header Split and Left-Centered Options
+
+### The Change
+- Split the single outer header flex container in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) into two distinct sibling flex containers: one on the left containing `Address` (Wallet identity), `Wager`, and `Balance` pills, and one on the right containing `Replay Intro` and `History Coming Soon` pills.
+- Added the `sm:justify-start` class to the inner flex container of the arena choice option buttons (both the dynamic mapping and the static MEW teaser) in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- Flattening the header in a single wrapper previously caused `<header className="... justify-between">` to place all five pills on the far left. By dividing them into left and right flex cluster wrappers, Tailwind's `justify-between` naturally pushes the secondary utilities to the right side of the screen on desktop/landscape viewports while maintaining compact stacking behavior on mobile portrait.
+- The arena choice buttons previously centered their icon and text contents horizontally on desktop/landscape viewports, which looked mismatched. Adding `sm:justify-start` aligns the icon and text block to the left edge of the wide rectangular button while keeping them vertically centered, aligning with the absolute checkmark floated on the right.
+
+### The Tech Debt
+- None. This utilizes standard Tailwind CSS alignment utility classes and restores the intended layout cleanly.
+
+## 2026-05-22 - Make Main Setup Card Grow Vertically in Portrait
+
+### The Change
+- Added the `grow` (`flex-grow: 1`) class to the main `.lobby-setup-card` container in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- In portrait viewports on tall devices, there was excessive empty space at the bottom of the screen below the card, causing the `Create Blink Challenge` footer button to sit floating awkwardly in the middle.
+- Adding `grow` lets the card expand dynamically to fill all available vertical space inside the `min-h-[100svh]` container. This pushes the footer to the bottom of the screen, and the inner `.lobby-setup-hero` section (which already has `grow`) expands vertically to fill the card. The backdrop artwork, title, and buttons beautifully occupy this space, creating a highly polished, immersive full-screen dashboard app layout.
+
+### The Tech Debt
+- None. This uses standard Tailwind responsive flex structures and plays nicely with the landscape media overrides which force `flex: 1 1 auto` to stretch height correctly in landscape.
+
+## 2026-05-22 - Refactor Character Selection Screen for Responsive Landscape
+
+### The Change
+- **Upgraded Grid Layout Breakpoints**: Changed the scientist cards selection grid breakpoint from `xl:grid-cols-3` to `lg:grid-cols-3` in [CharacterSelect.tsx (character)](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx) to align all 3 option cards side-by-side on tablet landscape viewports (e.g. `1180px` wide).
+- **Injected Semantic Class Hooks**: Introduced specific class wrappers (`.character-select-screen`, `.character-select-header`, `.character-select-title`, `.character-select-desc`, `.character-select-footer`, `.character-select-continue-btn`, `.character-card-btn`, `.character-card-avatar`, `.character-card-info`, `.character-card-name`, `.character-card-base`, `.character-card-badge-row`, and `.character-card-status-container`) inside [CharacterSelect.tsx (lobby)](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [CharacterSelect.tsx (character)](/d:/projects/Cora/apps/web/src/components/character/CharacterSelect.tsx), and [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx).
+- **Wrapped Textual Info in Character Cards**: Refactored [CharacterCard.tsx](/d:/projects/Cora/apps/web/src/components/character/CharacterCard.tsx) to wrap card descriptions, role badges, base info, and selection status inside a dedicated vertical flex-column container (`.character-card-info`), decoupling them from the absolute card layout.
+- **Implemented Premium Landscape Overrides**: Injected custom visual media query styles in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for short landscape screens (`@media (orientation: landscape) and (max-height: 540px)`):
+  - Compressed paddings, text sizes, and margins globally across the selection phase container to fit inside a single `100svh` view height without scrolling.
+  - Hid verbose description paragraphs (`.character-select-desc`) inside narrow landscape headers.
+  - Forced a 3-column side-by-side grid layout on mobile landscape screens.
+  - Morphed standard vertical rectangular cards into highly compact horizontal rows (`flex-direction: row`), containing a tight `68px` circular avatar on the left and stacked detail metadata on the right.
+
+### The Reasoning
+- On mobile landscape screens (e.g. iPhone 12 Pro), the original character select screen overflowed vertically, demanding significant scrolling to access characters and the main continue CTA button. Cards had rigid `min-h-[350px]` styles and square avatars that were too tall for a `390px` high viewport.
+- Switching to horizontal flex-row cards under a media query compresses each card to a highly aesthetic `120px` height.
+- On tablet landscape (e.g. iPad Air), the previous `xl:grid-cols-3` constraint forced the third scientist card to wrap to a second row, making it look unbalanced. Changing to `lg:grid-cols-3` lets all three cards sit side-by-side inside viewports wider than `1024px` perfectly.
+- Compacting spacing, hiding verbose text, and layout morphing are handled entirely in pure CSS, ensuring stable rendering and avoiding any React SSR/client hydration warnings.
+
+### The Tech Debt
+- Tablet portrait sizes and mobile portrait screens continue to use the standard vertical stacking layouts correctly. The custom horizontal overrides are scoped strictly to low-height landscape orientations. No tech debt is introduced.
+
+## 2026-05-22 - Refine Character Select Landscape to Vertical Card Layout
+
+### The Change
+- **Cleaned up globals.css duplicate styles**: Resolved a PostCSS compilation error (`CssSyntaxError`) in `apps/web/src/app/globals.css` by deleting duplicate keyframes, wallet-adapter overrides, and paper-grain text blocks.
+- **Refactored character cards in mobile/tablet landscape overrides**: Modified the media-query overrides in `apps/web/src/app/globals.css` for `@media (orientation: landscape) and (max-height: 540px)` so character cards remain vertically oriented (picture above, info below) instead of turning horizontal (sideways).
+- **Implemented vertical scaling and stretching constraints**:
+  - Bound the cards' height to `100%` and `min-height: 0` inside the grid cells, and used flex grow constraints so that all three cards stretch to fill the screen viewport height exactly.
+  - Compressed the avatar (`.character-card-avatar`) to a compact `80px` square and centered it horizontally above the description texts.
+  - Tightened margins and scaled down name/base/badge typography to preserve standard game aesthetics in short viewports.
+
+### The Reasoning
+- The user requested keeping the gorgeous vertical card composition (portrait picture on top and info below) even on compact landscape screens, rather than layout-morphing them to sideways cards.
+- Restructuring the CSS with `flex-grow` and `height: 100%` ensures the standard vertical cards scale down cleanly, fitting all elements (header, three cards, and queue button) perfectly inside an iPhone 12 Pro landscape viewport (`390px` high) without any vertical scroll.
+- Fixing the duplicated blocks in `globals.css` ensures Next.js/Turbopack compiles the CSS bundle smoothly.
+
+### The Tech Debt
+- None. Spacing, padding, and sizes scale proportionally down, maintaining absolute parity with the design specs.
+
+## 2026-05-22 - Polish Replay Intro Overlay for Mobile Landscape
+
+### The Change
+- **Injected Semantic Class Hooks**: Added specific class hooks (`.intro-overlay-backdrop`, `.intro-overlay-modal`, `.intro-overlay-glow`, `.intro-overlay-grid`, `.intro-overlay-visual`, `.intro-overlay-video-wrapper`, `.intro-overlay-mockup-wrapper`, `.intro-overlay-content`, `.intro-overlay-text-wrapper`, `.intro-overlay-step-pill`, `.intro-overlay-step-pill-dot`, `.intro-overlay-step-pill-text`, `.intro-overlay-title`, `.intro-overlay-copy`, `.intro-overlay-nav`, `.intro-overlay-dots-container`, and `.intro-overlay-btn-group`) into [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx).
+- **Added Semantic Classes to Mockups**: Added specific class hooks (`.wallet-mockup`, `.wallet-mockup-header`, `.wallet-mockup-body`, `.wallet-mockup-card`, `.wallet-mockup-steps`, and `.playcards-mockup`, `.playcards-mockup-opponent`) into [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) sub-components to allow targeted styling.
+- **Implemented Premium Landscape Overrides**: Injected premium visual style overrides in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) inside the short landscape media query (`@media (orientation: landscape) and (max-height: 540px)`):
+  - Bound the modal height to `98svh` and forced `overflow: hidden` to completely eliminate vertical scrolling, providing a console-like native app feel.
+  - Adjusted the grid and columns to stretch to 100% height without any overflow.
+  - Scaled down padding, typography (title `3xl` -> `1.25rem`, copy `sm` -> `10.5px`), spacing, and dots indicators.
+  - Created bespoke, meticulously detailed micro-scaling rules for all 4 animated CSS/SVG interactive fallbacks (`WalletDevnetMockup`, `PlayCardsMockup`, `TimerMockup`, `WagerMockup`) to ensure they scale and fit inside their aspect-ratio containers beautifully on small landscape viewports.
+  - Applied `transform: scale(0.85) !important;` to `.intro-overlay-modal` to visually scale down the modal, providing margins around the edges and ensuring it feels like a native floating overlay rather than a full-screen takeover.
+
+### The Reasoning
+- On mobile landscape viewports (e.g. `844x390` on iPhone 12 Pro), the Replay Intro modal was too tall and got severely cut off/scrolled because of grid `min-h-[500px]` constraints and large padding.
+- Adding targeted overrides under the low-height landscape media query shrinks and compacts spacing, text sizes, and mockup sizes perfectly.
+- Applying a CSS `scale` transform shrinks the entire container while preserving its aspect ratio and layout rules, creating a comfortable visual padding without risking squished inner flex items.
+- This creates an extremely premium, perfectly framed, scroll-free, and immersive onboarding slideshow that adapts elegantly to small landscape devices without affecting desktop or tablet experiences.
+
+### The Tech Debt
+- None. The changes are strictly scoped under the media query and use semantic class hooks, ensuring high maintainability and zero risk of regression on other viewports.
+
+## 2026-05-22 - Scale Bot Found Screen in Mobile Landscape
+
+### The Change
+- Added a bot-only class hook to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the found screen can be targeted without touching standard PvP rooms.
+- Added a small class hook to the active match toast in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx).
+- Added a short mobile landscape media query in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) that scales the bot found screen to `0.82` and the toast to `0.86`.
+
+### The Reasoning
+- The bot found page was visually too large in iPhone-style landscape, but the layout itself was acceptable. Scaling the existing composition preserves positions and desktop/tablet behavior while making the mobile landscape view breathe.
+- The query is scoped to `orientation: landscape`, `max-width: 960px`, `max-height: 540px`, and `pointer: coarse`, avoiding desktop and normal tablet viewports.
+
+### The Tech Debt
+- None. This is intentionally a narrow scale-only fix, leaving the underlying desktop layout untouched.
+
+## 2026-05-22 - Tighten Tutorial Found Scale for iPhone Landscape
+
+### The Change
+- Added a stricter short-height mobile landscape override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for `max-height: 420px`.
+- Reduced the bot found screen scale from the broader `0.82` to `0.72` for iPhone-style landscape heights, and reduced the tutorial toast scale from `0.86` to `0.76`.
+
+### The Reasoning
+- The Try Free Tutorial path still felt oversized at `844x390` after the broader mobile-landscape scale.
+- This keeps the requested scale-only approach while targeting the specific cramped viewport range without changing desktop, tablet, or taller landscape screens.
+
+### The Tech Debt
+- None. The fix remains scoped to coarse-pointer mobile landscape and uses only scale overrides.
+
+## 2026-05-22 - Reflow Bot Found Screen for Mobile Landscape
+
+### The Change
+- Added semantic layout hooks to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) for the bot found screen, practice banner, duel grid, player cards, VS label, and deposit/status area.
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so bot/tutorial opponent-found screens use a two-column layout only in coarse-pointer short landscape viewports:
+  - Left column: player card, VS label, bot card.
+  - Right column: practice banner and compact match/deposit/status info.
+- Kept the active match toast compact in the same mobile landscape viewport via the existing [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) toast hook.
+
+### The Reasoning
+- The Try Free Tutorial flow reaches this screen after character selection, and the previous desktop-style stack was too tall and visually crowded on iPhone landscape.
+- A two-column layout uses the available width instead of fighting the limited height, matching the requested structure while keeping desktop and larger tablet views on the original layout.
+- The media query is scoped to `orientation: landscape`, `max-width: 960px`, `max-height: 540px`, and `pointer: coarse`, so regular desktop and tablet layouts remain untouched.
+
+### The Tech Debt
+- The deposit/status panel still uses descendant selectors for some compact text sizing. A future cleanup could add first-class semantic classes inside `DepositPanel` if this layout needs more tuning.
+
+## 2026-05-22 - Center Bot Duel Stack in Mobile Landscape
+
+### The Change
+- Updated the bot/tutorial opponent-found mobile landscape grid in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the left duel stack uses content-sized rows (`auto auto auto`) instead of stretching player and bot cards to fill the whole column height.
+- Increased the internal duel stack gap slightly from `6px` to `8px` so the cards and VS label read as a centered cluster.
+
+### The Reasoning
+- The two-column mobile landscape layout was structurally correct, but the player and bot cards stretched from top to bottom, making the left side feel pinned to the extremes.
+- Content-sized rows keep `[You] / VS / [Bot]` grouped in the middle, matching the intended compact duel presentation without affecting desktop or larger tablet layouts.
+
+### The Tech Debt
+- None. This is a small CSS-only refinement inside the existing coarse-pointer short-landscape query.
+
+## 2026-05-22 - Align Bot Found Columns in Mobile Landscape
+
+### The Change
+- Updated the bot/tutorial opponent-found mobile landscape CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the left duel stack and right info stack both occupy row 2 of the layout grid.
+- Changed the bot layout columns from `42% / 58%` to `38% / 62%`.
+- Capped the player and bot card width at `22rem` and centered each card inside the left column.
+- Centered the right deposit/status area vertically in the same row as the duel stack.
+
+### The Reasoning
+- The previous two-column layout had the left duel stack spanning both rows, while the right status panel started lower. This made the columns feel misaligned.
+- Moving both major content groups into the same row gives them a shared vertical baseline, while the narrower card cap removes the empty right-side space inside the player and bot cards.
+
+### The Tech Debt
+- None. This remains a CSS-only refinement scoped to mobile landscape bot/tutorial found screens.
+
+## 2026-05-22 - Unstack Bot Found Notifications and Lift Info Card
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the bot/tutorial found info shell has no extra top margin and is lifted slightly inside the mobile landscape layout.
+- Moved the active match toast lower and narrowed it in the same mobile landscape query so it no longer stacks directly on top of the practice banner.
+
+### The Reasoning
+- The left duel stack and the right info panel still felt misaligned because the info card had visual top offset inside its grid area.
+- The practice banner and tutorial toast were occupying the same top notification lane, so separating their vertical positions removes the stacked notification effect without changing desktop or larger tablet views.
+
+### The Tech Debt
+- None. This is scoped to the existing short, coarse-pointer landscape media query.
+
+## 2026-05-22 - Center Bot Found Layout Vertically
+
+### The Change
+- Updated the mobile landscape bot/tutorial found layout in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the outer grid uses content-sized rows (`auto auto`) and `align-content: center`.
+- Removed the manual `translateY(-44px)` lift from the right info card.
+- Slightly increased the row gap to keep the centered group readable after removing the manual offset.
+
+### The Reasoning
+- The previous fix lifted the right info card by hand, which made the bottom gap too large and the whole layout feel high in the viewport.
+- Centering the actual grid content as a group balances the top and bottom breathing room without relying on hard-coded upward movement.
+
+### The Tech Debt
+- None. This is a CSS-only refinement inside the existing mobile landscape bot/tutorial query.
+
+## 2026-05-22 - Center Practice Banner and Remove Tutorial Toast
+
+### The Change
+- Removed the success toast emitted by the Try Free Tutorial path in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx).
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the practice mode banner spans the full bot/tutorial found mobile landscape grid and centers itself with a capped width.
+
+### The Reasoning
+- The tutorial transition already has the practice mode banner and match status panel, so the extra "Tutorial match initialized" toast duplicated the message and visually stacked over the banner.
+- Centering the practice banner across both columns makes it read as a screen-level status instead of a right-column panel.
+
+### The Tech Debt
+- None. The toast removal is limited to the tutorial success path; other lobby success/error toasts remain intact.
+
+## 2026-05-22 - Normalize Practice Banner Centering
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the bot/tutorial practice mode banner explicitly clears leftover fixed-position offsets, uses `translate: 0 0`, centers with auto margins, and has a slightly narrower capped width.
+
+### The Reasoning
+- The banner was spanning both columns but still visually read as attached to the left side because its inherited notification sizing/positioning made the centered grid item feel offset.
+- Clearing those offsets and using explicit centered sizing makes the banner sit as a screen-level heading above the two-column layout.
+
+### The Tech Debt
+- None. This remains scoped to the mobile landscape bot/tutorial found screen.
+
+## 2026-05-22 - Correct Bot Found Banner Grid Logic
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the bot/tutorial practice banner is forced to be a static grid item in row 1 spanning both columns.
+- Replaced the combined grid `gap` with explicit row and column gaps for the mobile landscape bot/tutorial layout.
+- Added `!important` resets for the practice banner's fixed-position offsets and translate/transform utilities.
+
+### The Reasoning
+- The intended mobile landscape structure is `tutorial banner` above `duel stack | info panel`.
+- The banner still appeared clipped toward the left because it retained behavior from its original fixed notification role. Hard-resetting those mobile-landscape-only properties makes the sectioning match the intended two-row layout.
+
+### The Tech Debt
+- None. This only applies inside the existing coarse-pointer short-landscape media query.
+
+## 2026-05-22 - Make Tutorial Banner Normal Flow
+
+### The Change
+- Removed the fixed-position Tailwind utilities from the bot/tutorial practice banner in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx).
+- Simplified the mobile landscape banner override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) now that the banner is no longer fighting fixed positioning.
+
+### The Reasoning
+- The target structure is `tutorial banner` above `duel stack | info panel`.
+- Reusing the old fixed notification classes made the banner keep escaping the mobile landscape grid, even with CSS resets. Making the JSX element normal-flow gives the grid full control over placement.
+
+### The Tech Debt
+- None. The banner only renders for bot/tutorial matches, so removing fixed utilities does not affect normal PvP opponent-found alerts.
+
+## 2026-05-22 - Force Tutorial Found Grid Areas
+
+### The Change
+- Updated the bot/tutorial opponent-found mobile landscape rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to use explicit `practice`, `duel`, and `deposit` grid areas.
+- Forced the relevant layout utilities inside that mobile-landscape-only query so the practice banner becomes a centered top row and the second row is `VS stack | info panel`.
+
+### The Reasoning
+- The intended structure is `tutorial banner` above `duel stack | info panel`.
+- The previous rules still depended on normal grid placement and inherited utility behavior, which let the banner visually drift into the left cluster.
+
+### The Tech Debt
+- None. The override is still limited to short coarse-pointer landscape viewports for bot/tutorial matches.
+
+## 2026-05-22 - Center Practice Banner on Tablet and Desktop
+
+### The Change
+- Updated the practice mode banner wrapper in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) with `mx-auto` and `self-center`.
+
+### The Reasoning
+- Outside the mobile landscape grid override, the banner is a normal flex child with a capped width, so it defaulted to the left edge of the opponent-found content column.
+- Centering the wrapper fixes tablet and desktop alignment while leaving the mobile landscape media query untouched.
+
+### The Tech Debt
+- None. Mobile landscape keeps its explicit grid-area override.
+
+## 2026-05-22 - Compact Portrait Bot Duel Cards
+
+### The Change
+- Added a portrait-only bot/tutorial override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for the opponent-found duel section.
+- The portrait duel area now lays out as `[you card] VS [rival card]`, with each card using a compact 3:4 ratio and vertical `label -> portrait -> wallet` content.
+- Hid the longer character name/base lines in this portrait bot view to keep the cards readable.
+
+### The Reasoning
+- Portrait mobile has enough vertical scroll room, but the full-width stacked cards made the rival reveal area feel heavy and repetitive.
+- A compact side-by-side duel row gives the user the intended matchup read at a glance while leaving the existing deposit panel below for scrolling.
+
+### The Tech Debt
+- None. This is scoped to portrait coarse-pointer screens and does not touch the mobile landscape grid.
+
+## 2026-05-22 - Extend Portrait Duel Cards to Tablet
+
+### The Change
+- Broadened the portrait bot/tutorial duel override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) from phone widths to tablet portrait widths.
+- Capped the compact 3:4 player cards at `12rem` so they do not balloon on iPad portrait.
+- Removed the portrait-only flex spacer above the deposit panel so the status card sits closer to the duel row.
+
+### The Reasoning
+- Tablet portrait was still using the roomy desktop card row, which left a large empty gap before the match info panel.
+- Reusing the compact portrait duel treatment keeps the matchup visually tight and lets the scrollable status content follow naturally.
+
+### The Tech Debt
+- None. Mobile landscape remains governed by its separate explicit grid-area media query.
+
+## 2026-05-22 - Scale Tablet Portrait Duel Cards Up
+
+### The Change
+- Added a tablet-portrait layer in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for bot/tutorial opponent-found screens.
+- Increased the 3:4 duel card cap, portrait size, VS label size, and duel spacing for `641px-960px` portrait coarse-pointer viewports.
+
+### The Reasoning
+- Tablet portrait has enough width and height for a larger matchup row, and the phone-sized cards made the info panel sit too high with too much empty space below.
+- Scaling the duel row up restores the intended visual weight while keeping the info panel below the matchup.
+
+### The Tech Debt
+- None. Phone portrait and mobile landscape keep their separate overrides.
+
+## 2026-05-22 - Increase Tablet Portrait Duel Scale
+
+### The Change
+- Raised the tablet-portrait bot/tutorial duel card cap in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) from `15.5rem` to `17.5rem`.
+- Increased the tablet portrait image/question mark size, VS label size, card padding, and info-panel gap.
+
+### The Reasoning
+- The first tablet portrait pass still left the matchup row feeling undersized for iPad-style portrait space.
+- Scaling the duel row further gives the cards the right visual weight while preserving the phone portrait and mobile landscape layouts.
+
+### The Tech Debt
+- None. This remains isolated to the tablet portrait media query.
+
+## 2026-05-22 - Matchmaking Portrait Duel Cards
+
+### The Change
+- Added semantic class hooks to [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) for the waiting duel grid, player cards, avatars, labels, wallet text, VS marker, and unknown opponent card.
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so matchmaking portrait views reuse the same 3:4 side-by-side duel card language as opponent-found.
+- Added the same tablet portrait scale-up layer for matchmaking cards.
+
+### The Reasoning
+- The actual matchmaking UI should visually match the approved opponent-found matchup composition.
+- Portrait waiting now reads as `[You] VS [?]` with compact card anatomy, while desktop and landscape keep their existing layout.
+
+### The Tech Debt
+- None. The override is scoped to portrait coarse-pointer matchmaking screens.
+
+## 2026-05-22 - Simplify Matchmaking Progress Copy
+
+### The Change
+- Updated [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) so the three progress bars render as unlabeled side-by-side segments.
+- Replaced the per-bar labels and rotating flavor copy with one status text slot that follows the current matchmaking stage.
+
+### The Reasoning
+- The matchmaking loading area should read as `-- -- --` with one changing status label, reducing duplicate copy and making the state easier to scan.
+
+### The Tech Debt
+- None. This is a component-only simplification.
+
+## 2026-05-22 - Tighten Matchmaking Top Spacing
+
+### The Change
+- Reduced the vertical padding and cancel-row bottom margin in [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx).
+
+### The Reasoning
+- The matchmaking screen had too much empty space above the cancel button, especially in portrait view.
+- Tightening the outer padding brings the header cluster closer to the top without changing the matchup card layout.
+
+### The Tech Debt
+- None.
+
+## 2026-05-22 - Regular Opponent Found Portrait Duel Cards
+
+### The Change
+- Added portrait-only CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so regular opponent-found deposit screens use the same side-by-side 3:4 duel cards as bot/tutorial and matchmaking.
+- Added the same tablet portrait scale-up rules for the regular deposit matchup cards.
+
+### The Reasoning
+- The deposit-phase opponent-found screen still used stacked full-width player cards in portrait, making it inconsistent with the approved compact matchup treatment.
+- Reusing the same card anatomy keeps the flow visually consistent while leaving the deposit panel behavior untouched.
+
+### The Tech Debt
+- There is some selector duplication between matchmaking, bot opponent-found, and regular opponent-found portrait rules. A future cleanup could consolidate these into shared class names.
+
+## 2026-05-22 - Tighten Portrait Deposit Gap
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so regular opponent-found portrait deposit screens use natural-height deposit layout instead of the default flex spacer.
+- Reduced the portrait deposit shell top margin to close the gap under the compact matchup row.
+
+### The Reasoning
+- After switching regular opponent-found portrait cards to the compact 3:4 matchup, the inherited `flex-1 justify-end` deposit area created too much vertical space before the deposit card.
+
+### The Tech Debt
+- None. This is scoped to regular opponent-found portrait screens.
+
+## 2026-05-22 - Center Portrait Match Stacks
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so portrait matchmaking and opponent-found screens vertically center their full content stack when there is spare viewport height.
+- Overrode tablet portrait opponent-found height/overflow so the centered stack remains scrollable if content exceeds the viewport.
+
+### The Reasoning
+- The compact portrait matchup/deposit screens could appear biased upward with a visible empty region at the bottom.
+- Centering the full stack balances top and bottom space without changing landscape behavior.
+
+### The Tech Debt
+- None. This is limited to portrait coarse-pointer screens.
+
+## 2026-05-22 - Fix Lobby Setup Hydration Lint
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to derive the mounted/client-ready flag with `useSyncExternalStore` instead of setting state directly in an effect.
+- Removed an unused `rightBoardBackground` constant flagged by lint.
+
+### The Reasoning
+- React's hook lint now rejects synchronous setState calls inside effects for derived render state.
+- The mounted flag is a hydration snapshot, so `useSyncExternalStore` expresses the server/client split without cascading renders.
+
+### The Tech Debt
+- None.

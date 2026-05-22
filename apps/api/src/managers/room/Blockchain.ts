@@ -29,15 +29,29 @@ const REGISTERED_MAX_HEAL_EFFECT_VALUE = Math.min(GAMEPLAY_MAX_HEAL_EFFECT_VALUE
  * Maximum cards per player to pre-commit in the inline manifest.
  * Must be <= 128 (MAX_CARD_SLOTS on-chain).
  */
+const MAX_ER_MANIFEST_CARD_SLOTS = 128;
+const DEFAULT_ER_MANIFEST_CARD_LIMIT = MAX_ER_MANIFEST_CARD_SLOTS;
+const configuredErManifestCardLimit = Number(
+  process.env.CORA_BATTLE_PRE_REGISTER_CARD_LIMIT ?? DEFAULT_ER_MANIFEST_CARD_LIMIT,
+);
 const ER_MANIFEST_CARD_LIMIT = Math.max(
-  5,
-  Math.min(128, Number(process.env.CORA_BATTLE_PRE_REGISTER_CARD_LIMIT ?? 20)),
+  GameEngine.HAND_SIZE,
+  Math.min(
+    MAX_ER_MANIFEST_CARD_SLOTS,
+    Number.isFinite(configuredErManifestCardLimit)
+      ? Math.floor(configuredErManifestCardLimit)
+      : DEFAULT_ER_MANIFEST_CARD_LIMIT,
+  ),
 );
 
 const ER_SETUP_FEE_CUSHION_LAMPORTS = Math.max(
   500_000,
   Number(process.env.CORA_BATTLE_SETUP_FEE_CUSHION_LAMPORTS ?? 1_500_000),
 );
+
+export type SettlementResult =
+  | { ok: true; signature?: string }
+  | { ok: false; error: unknown };
 
 export class Blockchain {
   constructor(private manager: RoomManager) {}
@@ -297,7 +311,7 @@ export class Blockchain {
 
     const keypair = getServerKeypair();
     const playerAConnected = Boolean(room.playerA && room.clients.get(room.playerA)?.ws);
-    const playerBConnected = Boolean(room.playerB && room.clients.get(room.playerB)?.ws);
+    const playerBConnected = Boolean(room.playerB && (room.playerB === room.botAddress || room.clients.get(room.playerB)?.ws));
 
     if (playerAConnected && playerBConnected) {
       await magicBlockService.resolveRoundByState({
@@ -385,6 +399,8 @@ export class Blockchain {
 
     room.erLifecycleStatus = 'committing';
     room.status = 'settling';
+    this.manager.engine.stopBot(room);
+    this.manager.lifecycle.clearAllOpenedCards(room);
     this.manager.network.broadcastGameState(room);
 
     const keypair = getServerKeypair();
@@ -427,7 +443,7 @@ export class Blockchain {
   /**
    * Broadcasts settlement-signed match result to all connected clients and submits to oracle.
    */
-  public async settleMatch(room: Room, winnerAddress: string): Promise<void> {
+  public async settleMatch(room: Room, winnerAddress: string): Promise<SettlementResult> {
     // Verify winner against ER if available (ER is source of truth)
     if (room.erSessionPda) {
       try {
@@ -449,10 +465,20 @@ export class Blockchain {
       winnerAddress,
     );
 
-    // Call oracle to automatically submit settlement on-chain
-    submitSettlementTransaction(action, room.matchIdBytes, winnerAddress)
-      .then(tx => console.log(`[RoomBlockchain] On-chain settlement completed. Tx: ${tx}`))
-      .catch(err => console.error(`[RoomBlockchain] Auto-settlement failed:`, err));
+    let transactionSignature: string | undefined;
+    try {
+      transactionSignature = await submitSettlementTransaction(action, room.matchIdBytes, winnerAddress);
+      console.log(`[RoomBlockchain] On-chain settlement completed. Tx: ${transactionSignature}`);
+      if (room.queueMatchPersisted) {
+        await this.manager.queueMatches.markCompleted(room.id, winnerAddress);
+      }
+    } catch (err) {
+      console.error(`[RoomBlockchain] Auto-settlement failed:`, err);
+      if (room.queueMatchPersisted) {
+        await this.manager.queueMatches.markSettlementFailed(room.id, winnerAddress, err);
+      }
+      return { ok: false, error: err };
+    }
 
     for (const client of room.clients.values()) {
       this.manager.network.safeSend(client.ws, {
@@ -465,6 +491,8 @@ export class Blockchain {
         }
       } as WsMessage);
     }
+
+    return { ok: true, signature: transactionSignature };
   }
 
   /**
@@ -522,6 +550,7 @@ export class Blockchain {
       verdict => verdict.verdict === 'suspicious' || verdict.verdict === 'rejected',
     );
     const erProof = this.buildErProofPayload(room);
+    const isBotMatch = room.roomType === 'bot';
 
     if (finalState.status === 'Finished' && finalState.winner) {
       const reason = finalState.endReason === END_REASON_SINGLE_PLAYER_TIMEOUT
@@ -530,7 +559,15 @@ export class Blockchain {
           ? 'surrender'
           : 'hp_zero';
 
-      this.settleMatch(room, finalState.winner);
+      if (isBotMatch) {
+        console.log(`[BotMatch] ER result finalized for ${room.id}; skipping escrow settlement.`);
+      } else {
+        void this.settleMatch(room, finalState.winner).then((result) => {
+          if (!result.ok) {
+            console.error(`[RoomBlockchain] Settlement failed for ER room ${room.id}`);
+          }
+        });
+      }
       this.manager.network.broadcastToRoom(room, {
         type: 'matchResult',
         payload: {
@@ -543,7 +580,8 @@ export class Blockchain {
           finalHealth,
           finalRoundsWon,
           finalCorrectAnswers,
-          antiCheatWarning,
+          antiCheatWarning: isBotMatch ? false : antiCheatWarning,
+          isBotMatch,
           erProof,
         } satisfies MatchResult,
       });
@@ -551,7 +589,11 @@ export class Blockchain {
     }
 
     const refundReason = finalState.endReason === END_REASON_SERVER_CANCELLED ? 'server_error' : 'draw';
-    this.refundMatch(room, refundReason);
+    if (isBotMatch) {
+      console.log(`[BotMatch] ER result finalized for ${room.id}; skipping escrow refund.`);
+    } else {
+      this.refundMatch(room, refundReason);
+    }
     this.manager.network.broadcastToRoom(room, {
       type: 'matchResult',
       payload: {
@@ -561,7 +603,8 @@ export class Blockchain {
         finalHealth,
         finalRoundsWon,
         finalCorrectAnswers,
-        antiCheatWarning,
+        antiCheatWarning: isBotMatch ? false : antiCheatWarning,
+        isBotMatch,
         erProof,
       } satisfies MatchResult,
     });
@@ -600,10 +643,12 @@ export class Blockchain {
       finalHealth: engine?.getHealth() ?? {},
       finalRoundsWon: engine?.getRoundsWon() ?? {},
       finalCorrectAnswers: engine?.getCorrectAnswers() ?? {},
+      isBotMatch: room.roomType === 'bot',
       erProof: this.buildErProofPayload(room),
     };
 
     engine?.setExternalAuthority(false);
+    this.manager.engine.stopBot(room);
     this.manager.lifecycle.clearAllOpenedCards(room);
     engine?.stop();
 

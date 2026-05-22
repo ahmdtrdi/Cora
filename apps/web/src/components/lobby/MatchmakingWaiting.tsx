@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { AnimatePresence, motion } from "framer-motion";
 import type { Arena, Scientist } from "./LobbyScreen";
 
 type MatchmakingWaitingProps = {
@@ -12,6 +11,7 @@ type MatchmakingWaitingProps = {
   arena: Arena;
   wagerUsd: string;
   walletAddress: string;
+  isGuest?: boolean;
   state: "searching" | "timeout" | "error";
   stage: "finding" | "verifying" | "preparing";
   errorMessage?: string | null;
@@ -24,13 +24,6 @@ type MatchmakingWaitingProps = {
 };
 
 const SEGMENTS = ["Finding Opponent", "Verifying Wallet", "Preparing Arena"] as const;
-
-const FLAVOR_TEXTS = [
-  "Calibrating neural pathways...",
-  "Synchronizing knowledge banks...",
-  "Locking in the wager escrow...",
-  "Analyzing opponent profile...",
-];
 
 function shortWallet(address: string) {
   if (address.length <= 12) {
@@ -46,6 +39,7 @@ export function MatchmakingWaiting({
   arena,
   wagerUsd,
   walletAddress,
+  isGuest = false,
   state,
   stage,
   errorMessage,
@@ -55,7 +49,6 @@ export function MatchmakingWaiting({
   onCancel,
 }: MatchmakingWaitingProps) {
   const [activeLoopProgress, setActiveLoopProgress] = useState(0);
-  const [flavorIdx, setFlavorIdx] = useState(0);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -78,13 +71,8 @@ export function MatchmakingWaiting({
 
     rafId = requestAnimationFrame(tick);
 
-    const id = setInterval(() => {
-      setFlavorIdx((prev) => (prev + 1) % FLAVOR_TEXTS.length);
-    }, 1500);
-
     return () => {
       cancelAnimationFrame(rafId);
-      clearInterval(id);
     };
   }, [state, stage]);
 
@@ -110,10 +98,16 @@ export function MatchmakingWaiting({
           : null;
   const isFailureState = state === "timeout" || state === "error";
   const matchedOpponent = opponentScientist ?? null;
+  const walletLabel = isGuest ? `Guest ${shortWallet(walletAddress)}` : shortWallet(walletAddress);
+  const progressLabel = isSearching
+    ? SEGMENTS[stageIndex]
+    : state === "timeout"
+      ? "Search timed out"
+      : "Search failed";
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-8 md:px-6">
-      <div className="mb-4 flex w-full justify-end">
+    <div className="matchmaking-waiting-screen mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col items-center justify-center px-4 py-5 md:px-6 md:py-6">
+      <div className="mb-3 flex w-full justify-end">
         <button
           type="button"
           onClick={onCancel}
@@ -136,9 +130,9 @@ export function MatchmakingWaiting({
         <p className="mt-2 max-w-2xl text-center font-gabarito text-sm text-[rgba(244,240,230,0.9)]">{subtitle}</p>
       )}
 
-      <div className="mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+      <div className="matchmaking-duel-grid mt-8 grid w-full grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div
-          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          className="matchmaking-player-card relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
             border: "2px solid rgba(111,58,40,0.62)",
             background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
@@ -146,9 +140,9 @@ export function MatchmakingWaiting({
           }}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
-          <div className="relative flex items-center gap-4">
+          <div className="matchmaking-card-content relative flex items-center gap-4">
             <div
-              className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              className="matchmaking-avatar relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
                 background: scientist.portraitBg,
@@ -170,26 +164,26 @@ export function MatchmakingWaiting({
               )}
             </div>
 
-            <div className="min-w-0">
+            <div className="matchmaking-card-meta min-w-0">
               <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
                 You
               </span>
-              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{scientist.name}</p>
-              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{scientist.base}</p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(walletAddress)}</p>
+              <p className="matchmaking-name mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{scientist.name}</p>
+              <p className="matchmaking-detail mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{scientist.base}</p>
+              <p className="matchmaking-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{walletLabel}</p>
             </div>
           </div>
         </div>
 
-        <div className="grid place-items-center px-6">
-          <div className="animate-orb-breath font-caprasimo text-6xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)]" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+        <div className="matchmaking-vs-wrap grid place-items-center px-6">
+          <div className="matchmaking-vs animate-orb-breath font-caprasimo text-6xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)]" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
             VS
           </div>
         </div>
 
         {matchedOpponent ? (
           <div
-            className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+            className="matchmaking-player-card relative overflow-hidden rounded-2xl p-5 shadow-xl"
             style={{
               border: "2px solid rgba(111,58,40,0.62)",
               background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
@@ -197,9 +191,9 @@ export function MatchmakingWaiting({
             }}
           >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
-            <div className="relative flex items-center gap-4">
+            <div className="matchmaking-card-content relative flex items-center gap-4">
               <div
-                className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+                className="matchmaking-avatar relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
                 style={{
                   border: "2px solid rgba(111,58,40,0.6)",
                   background: matchedOpponent.portraitBg,
@@ -220,21 +214,21 @@ export function MatchmakingWaiting({
                   </span>
                 )}
               </div>
-              <div className="min-w-0">
+              <div className="matchmaking-card-meta min-w-0">
                 <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
                   Opponent
                 </span>
-                <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{matchedOpponent.name}</p>
-                <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{matchedOpponent.base}</p>
+                <p className="matchmaking-name mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{matchedOpponent.name}</p>
+                <p className="matchmaking-detail mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{matchedOpponent.base}</p>
                 {opponentWalletAddress ? (
-                  <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(opponentWalletAddress)}</p>
+                  <p className="matchmaking-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{shortWallet(opponentWalletAddress)}</p>
                 ) : null}
               </div>
             </div>
           </div>
         ) : (
           <div
-            className="relative grid min-h-[156px] place-items-center overflow-hidden rounded-2xl p-5 shadow-xl"
+            className="matchmaking-unknown-card relative grid min-h-[156px] place-items-center overflow-hidden rounded-2xl p-5 shadow-xl"
             style={{
               border: "2px dashed rgba(248,214,148,0.5)",
               background: "linear-gradient(145deg, rgba(15,35,27,0.96), rgba(8,18,14,0.96))",
@@ -242,16 +236,22 @@ export function MatchmakingWaiting({
             }}
           >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.15),transparent_50%)]" />
-            <div className="relative text-center">
-              <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-clay)] opacity-90">Scanning</p>
-              <p className="mt-2 font-caprasimo text-3xl text-[var(--tone-cream)]">Unknown</p>
+            <div className="matchmaking-unknown-content relative text-center">
+              <span className="matchmaking-unknown-label font-gabarito text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--tone-clay)] opacity-90">Scanning</span>
+              <div className="matchmaking-unknown-avatar">
+                <span>?</span>
+              </div>
+              <p className="matchmaking-unknown-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-cream)]">Searching...</p>
             </div>
           </div>
         )}
       </div>
 
       <div className="mt-8 w-full">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <p className="mb-2 text-center font-gabarito text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--tone-cream)] opacity-85">
+          {progressLabel}
+        </p>
+        <div className="grid grid-cols-3 gap-2">
           {SEGMENTS.map((segment, idx) => {
             const ratio =
               !isSearching
@@ -263,7 +263,6 @@ export function MatchmakingWaiting({
                     : 0;
             return (
               <div key={segment}>
-                <p className="mb-1.5 font-gabarito text-[11px] font-bold uppercase tracking-wide text-[var(--tone-cream)] opacity-85">{segment}</p>
                 <div className="h-2 overflow-hidden rounded-full bg-[rgba(248,214,148,0.14)] shadow-inner">
                   <div
                     className={`h-full rounded-full ${ratio > 0 ? "shimmer-bar" : ""}`}
@@ -276,21 +275,8 @@ export function MatchmakingWaiting({
         </div>
       </div>
 
-      <div className="mt-6 flex h-10 items-center justify-center">
-        {isSearching ? (
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={flavorIdx}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.28 }}
-              className="font-gabarito text-sm tracking-wide text-[var(--tone-mint)] drop-shadow-sm"
-            >
-              {FLAVOR_TEXTS[flavorIdx]}
-            </motion.p>
-          </AnimatePresence>
-        ) : (
+      {!isSearching && (
+        <div className="mt-6 flex h-10 items-center justify-center">
           <button
             type="button"
             onClick={onRetry}
@@ -298,8 +284,8 @@ export function MatchmakingWaiting({
           >
             Keep Searching
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

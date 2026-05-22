@@ -77,20 +77,6 @@ function isBackendInsufficientBalanceError(status: number, errorData: unknown): 
   return ["error", "message", "reason", "code"].some((key) => isInsufficientBalanceText(payload[key]));
 }
 
-function isSimulationInsufficientBalanceSignal(value: string): boolean {
-  const lowered = value.toLowerCase();
-  return (
-    lowered.includes("insufficient") ||
-    lowered.includes("balance") ||
-    lowered.includes("fund") ||
-    lowered.includes("lamport") ||
-    lowered.includes("0x1") ||
-    lowered.includes('"custom":1') ||
-    lowered.includes('"custom": 1') ||
-    lowered.includes("instructionerror")
-  );
-}
-
 function mapWalletError(error: unknown): DepositIntentError {
   if (error instanceof DepositIntentError) return error;
 

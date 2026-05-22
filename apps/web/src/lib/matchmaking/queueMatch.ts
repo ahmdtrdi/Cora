@@ -2,6 +2,7 @@ type QueueMatchParams = {
   address: string;
   tokenMint?: string;
   wagerAmount?: number;
+  characterId?: string;
   signal?: AbortSignal;
 };
 
@@ -10,16 +11,17 @@ type QueueMatchResponse = {
   role?: "playerA" | "playerB";
   tokenMint?: string;
   wagerAmount?: string;
-  roomType?: "public" | "private";
+  roomType?: "public" | "private" | "bot";
   alreadyInRoom?: boolean;
   status?: string;
+  opponentAddress?: string | null;
 };
 
 type ActiveMatchResponse = {
   inRoom: boolean;
   roomId?: string;
   role?: "playerA" | "playerB";
-  roomType?: "public" | "private";
+  roomType?: "public" | "private" | "bot";
   status?: string;
   playerA?: string | null;
   playerB?: string | null;
@@ -30,7 +32,7 @@ type MatchPresenceResponse = {
   queued: boolean;
   roomId?: string;
   role?: "playerA" | "playerB";
-  roomType?: "public" | "private";
+  roomType?: "public" | "private" | "bot";
   status?: string;
 };
 
@@ -78,7 +80,7 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
     role?: "playerA" | "playerB";
     tokenMint?: string;
     wagerAmount?: string;
-    roomType?: "public" | "private";
+    roomType?: "public" | "private" | "bot";
     alreadyInRoom?: boolean;
     status?: string;
     error?: string;
@@ -101,6 +103,60 @@ export async function queueMatch({ address, tokenMint, wagerAmount, signal }: Qu
     roomType: payload?.roomType,
     alreadyInRoom: payload?.alreadyInRoom,
     status: payload?.status,
+  };
+}
+
+export async function createBotMatch({
+  address,
+  tokenMint,
+  wagerAmount,
+  characterId,
+  signal,
+}: QueueMatchParams): Promise<QueueMatchResponse> {
+  const apiBaseUrl = resolveApiBaseUrl();
+  const body: {
+    address: string;
+    tokenMint?: string;
+    wagerAmount?: number;
+    characterId?: string;
+  } = { address };
+  if (tokenMint) body.tokenMint = tokenMint;
+  if (wagerAmount !== undefined) body.wagerAmount = wagerAmount;
+  if (characterId) body.characterId = characterId;
+
+  const response = await fetch(`${apiBaseUrl}/match/bot`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  const payload = (await response.json().catch(() => null)) as {
+    roomId?: string;
+    role?: "playerA" | "playerB";
+    roomType?: "public" | "private" | "bot";
+    status?: string;
+    opponentAddress?: string | null;
+    error?: string;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? `Bot matchmaking failed (${response.status}).`);
+  }
+
+  const roomId = payload?.roomId;
+  if (!roomId) {
+    throw new Error("Bot matchmaking response missing roomId.");
+  }
+
+  return {
+    roomId,
+    role: payload?.role,
+    roomType: payload?.roomType,
+    status: payload?.status,
+    opponentAddress: payload?.opponentAddress ?? null,
   };
 }
 

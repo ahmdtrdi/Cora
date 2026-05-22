@@ -7,6 +7,8 @@ export class Store {
   /** Reverse index: player wallet address → roomId for O(1) active-room lookups */
   private playerRooms: Map<string, string> = new Map();
 
+  constructor(private defaultErEnabled = isMagicBlockConfigured()) {}
+
   public createRoom(roomId: string): Room {
     if (this.rooms.has(roomId)) {
       return this.rooms.get(roomId)!;
@@ -23,6 +25,7 @@ export class Store {
       roomType: 'public',
       playerA: null,
       playerB: null,
+      botAddress: null,
       playerBUnlocked: false,
       tokenMint: null,
       wagerAmount: null,
@@ -30,7 +33,7 @@ export class Store {
       erSessionPda: null,
       wagerUsdValue: null,
       blinkJoinDeadline: null,
-      erEnabled: isMagicBlockConfigured(),
+      erEnabled: this.defaultErEnabled,
       erLifecycleStatus: 'none',
       erCardRegistry: new Map(),
       erNextCardNonce: 0,
