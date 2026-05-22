@@ -9,7 +9,8 @@ import { LobbySetup } from "./LobbySetup";
 import { CharacterSelect } from "./CharacterSelect";
 import { MatchmakingWaiting } from "./MatchmakingWaiting";
 import { OpponentFound } from "./OpponentFound";
-import { createBotMatch, getActiveMatchForAddress, getMatchPresenceForAddress, queueMatch } from "@/lib/matchmaking/queueMatch";
+import { IntroOverlay } from "./IntroOverlay";
+import { createBotMatch, getActiveMatchForAddress } from "@/lib/matchmaking/queueMatch";
 import { useQueueSocket } from "@/hooks/useQueueSocket";
 import {
   getPrivateChallenge,
@@ -117,7 +118,6 @@ type Phase = "setup" | "character-select" | "waiting" | "found";
 type MatchmakingState = "idle" | "searching" | "timeout" | "error";
 type MatchmakingStage = "finding" | "verifying" | "preparing";
 const FIXED_WAGER_USD = "1.00";
-const MATCHMAKING_TIMEOUT_MS = 45_000;
 const BOT_OFFER_DELAY_MS = 15_000;
 const BOT_MATCH_START_TIMEOUT_MS = 10_000;
 // OpponentFound owns deposit transaction prefetching, so keep the cosmetic
@@ -236,6 +236,8 @@ export function LobbyScreen() {
   const [matchedRoomId, setMatchedRoomId] = useState<string | null>(null);
   const [matchedRole, setMatchedRole] = useState<"playerA" | "playerB" | null>(null);
   const [matchmakingState, setMatchmakingState] = useState<MatchmakingState>("idle");
+  const [isTutorialMode, setIsTutorialMode] = useState(false);
+  const [introOverlayOpen, setIntroOverlayOpen] = useState(false);
   const [matchmakingStage, setMatchmakingStage] = useState<MatchmakingStage>("finding");
   const [matchmakingError, setMatchmakingError] = useState<string | null>(null);
   const [botOfferOpen, setBotOfferOpen] = useState(false);
@@ -294,8 +296,10 @@ export function LobbyScreen() {
 
   useEffect(() => {
     if (!requestedGuest) return;
-    ensureGuestAddress();
-    setLoginMode("guest");
+    queueMicrotask(() => {
+      ensureGuestAddress();
+      setLoginMode("guest");
+    });
   }, [ensureGuestAddress, requestedGuest]);
 
   const selectedArena = useMemo(
@@ -335,25 +339,32 @@ export function LobbyScreen() {
   const walletConnected = Boolean(publicKey);
   const walletAddress = publicKey?.toBase58() ?? "";
   const isGuestMode = loginMode === "guest";
-  const matchmakerAddress = isGuestMode ? guestAddress : walletAddress;
-  const walletAddr = matchmakerAddress || (isGuestMode ? "Guest" : "Not connected");
+  const usesGuestIdentity = isGuestMode || isTutorialMode;
+  const matchmakerAddress = usesGuestIdentity ? guestAddress : walletAddress;
+  const walletAddr = matchmakerAddress || (usesGuestIdentity ? "Guest" : "Not connected");
+  const showsWalletIdentityInTutorial = isTutorialMode && Boolean(walletAddress);
+  const displayWalletAddr = showsWalletIdentityInTutorial ? walletAddress : walletAddr;
+  const displayWalletAsGuest = usesGuestIdentity && !showsWalletIdentityInTutorial;
 
   useEffect(() => {
     const storedGuestAddress = readStoredGuestAddress();
     if (!storedGuestAddress) return;
 
-    setGuestAddress(storedGuestAddress);
-    if (!walletAddress && loginMode === "wallet" && !matchedRoomId) {
-      setLoginMode("guest");
-    }
+    queueMicrotask(() => {
+      setGuestAddress(storedGuestAddress);
+      if (!walletAddress && loginMode === "wallet" && !matchedRoomId) {
+        setLoginMode("guest");
+      }
+    });
   }, [loginMode, matchedRoomId, walletAddress]);
 
   useEffect(() => {
+    if (isTutorialMode) return;
     if (!walletAddress || loginMode !== "guest") return;
     if (matchedRoomId || phase === "waiting" || phase === "found") return;
 
-    setLoginMode("wallet");
-  }, [loginMode, matchedRoomId, phase, walletAddress]);
+    queueMicrotask(() => setLoginMode("wallet"));
+  }, [isTutorialMode, loginMode, matchedRoomId, phase, walletAddress]);
 
   const activeBlinkStatus = activeBlinkChallenge?.status as PrivateChallengeStatus | undefined;
   const hasBlockingBlinkChallenge =
@@ -730,120 +741,7 @@ export function LobbyScreen() {
     setActiveMatchToast({ text: "Could not connect - try rejoining instead", tone: "error" });
   }, [clearActiveMatchBanner]);
 
-  const startMatchmakingSearch = useCallback(async () => {
-    if (hasBlockingBlinkChallenge) {
-      setBlinkChallengePanelOpen(true);
-      setMatchmakingState("error");
-      setMatchmakingError("Clear or finish your active Blink challenge before entering normal queue.");
-      return;
-    }
-
-    if (!walletAddress) {
-      setMatchmakingState("error");
-      setMatchmakingError("Connect wallet before entering queue.");
-      return;
-    }
-
-    matchmakingAbortRef.current?.abort();
-    userCancelledRef.current = false;
-
-    const controller = new AbortController();
-    matchmakingAbortRef.current = controller;
-    const requestId = ++matchmakingRequestIdRef.current;
-    let timedOut = false;
-
-    setMatchmakingState("searching");
-    setMatchmakingStage("finding");
-    setMatchmakingError(null);
-    setMatchedRoomId(null);
-    setMatchedRole(null);
-    clearFoundTransitionTimers();
-
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, MATCHMAKING_TIMEOUT_MS);
-
-    try {
-      const { roomId, role, alreadyInRoom, status } = await queueMatch({
-        address: walletAddress,
-        tokenMint: selectedArena?.token,
-        signal: controller.signal,
-      });
-
-      if (requestId !== matchmakingRequestIdRef.current) return;
-
-      if (alreadyInRoom) {
-        openRecoveredRoom({
-          roomId,
-          role: role ?? null,
-          status: status ?? null,
-          arenaId: selectedArena?.id ?? null,
-          token: selectedArena?.token ?? null,
-          wagerUsd: FIXED_WAGER_USD,
-          scientistId: selectedScientist?.id ?? null,
-        });
-        return;
-      }
-
-      setMatchedRoomId(roomId);
-      setMatchedRole(role ?? null);
-      setMatchmakingState("searching");
-      setMatchmakingStage("verifying");
-      clearFoundTransitionTimers();
-
-      const verifyTimer = setTimeout(() => {
-        if (requestId !== matchmakingRequestIdRef.current) return;
-        setMatchmakingStage("preparing");
-
-        const prepareTimer = setTimeout(() => {
-          if (requestId !== matchmakingRequestIdRef.current) return;
-          setMatchmakingState("idle");
-          setPhase("found");
-        }, POST_MATCH_FOUND_PREPARE_MS);
-        foundTransitionTimeoutsRef.current.push(prepareTimer);
-      }, POST_MATCH_FOUND_VERIFY_MS);
-
-      foundTransitionTimeoutsRef.current.push(verifyTimer);
-    } catch (error) {
-      if (requestId !== matchmakingRequestIdRef.current) return;
-      if (controller.signal.aborted) {
-        if (userCancelledRef.current) return;
-        if (timedOut) {
-          setMatchmakingState("timeout");
-          setMatchmakingStage("finding");
-          setMatchmakingError("No opponent found yet. Retry to keep searching.");
-        }
-        return;
-      }
-
-      const message = error instanceof Error ? error.message : "Failed to queue matchmaking.";
-      setMatchmakingState("error");
-      setMatchmakingStage("finding");
-      setMatchmakingError(message);
-    } finally {
-      clearTimeout(timeoutId);
-      if (matchmakingAbortRef.current === controller) {
-        matchmakingAbortRef.current = null;
-      }
-    }
-  }, [
-    walletAddress,
-    hasBlockingBlinkChallenge,
-    selectedArena,
-    selectedScientist,
-    clearFoundTransitionTimers,
-    openRecoveredRoom,
-    setBlinkChallengePanelOpen,
-    setMatchmakingState,
-    setMatchmakingError,
-    setMatchedRoomId,
-    setMatchedRole,
-    setMatchmakingStage,
-    setPhase,
-  ]);
-
-  async function startBotMatch() {
+  const startBotMatch = useCallback(async () => {
     const playerAddress = isGuestMode ? ensureGuestAddress() : walletAddress;
 
     if (!playerAddress) {
@@ -923,9 +821,164 @@ export function LobbyScreen() {
       clearTimeout(timeoutId);
       setBotMatchBusy(false);
     }
-  }
+  }, [
+    clearFoundTransitionTimers,
+    ensureGuestAddress,
+    isGuestMode,
+    queueSocket,
+    selectedArena,
+    selectedScientist,
+    walletAddress,
+    setActiveMatchToast,
+    setBotMatchBusy,
+    setBotOfferDismissed,
+    setBotOfferOpen,
+    setMatchedRole,
+    setMatchedRoomId,
+    setMatchmakingError,
+    setMatchmakingStage,
+    setMatchmakingState,
+    setPhase,
+  ]);
 
-  function beginMatchmaking() {
+  const startTutorialFlow = useCallback(() => {
+    setIsTutorialMode(true);
+    setSelectedArenaId("sol");
+    setLoginMode("guest");
+    ensureGuestAddress();
+    setPhase("character-select");
+  }, [
+    ensureGuestAddress,
+    setIsTutorialMode,
+    setLoginMode,
+    setPhase,
+    setSelectedArenaId,
+  ]);
+
+  const startTutorialMatch = useCallback(async () => {
+    if (!selectedScientist) {
+      setMatchmakingState("error");
+      setMatchmakingError("Choose a scientist before starting the tutorial.");
+      return;
+    }
+
+    const tutorialAddress = ensureGuestAddress();
+
+    userCancelledRef.current = true;
+    setBotMatchBusy(true);
+    setMatchmakingState("searching");
+    setMatchmakingStage("preparing");
+    setMatchmakingError(null);
+    clearFoundTransitionTimers();
+    queueSocket.cancel();
+    matchmakingAbortRef.current?.abort();
+
+    const controller = new AbortController();
+    matchmakingAbortRef.current = controller;
+    const requestId = ++matchmakingRequestIdRef.current;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, BOT_MATCH_START_TIMEOUT_MS);
+
+    try {
+      const result = await createBotMatch({
+        address: tutorialAddress,
+        tokenMint: "SOL",
+        wagerAmount: toBaseUnitWager(FIXED_WAGER_USD),
+        characterId: selectedScientist.id,
+        signal: controller.signal,
+      });
+
+      if (requestId !== matchmakingRequestIdRef.current) return;
+
+      setMatchedRoomId(result.roomId);
+      setMatchedRole(result.role ?? "playerA");
+      setMatchmakingState("idle");
+      setMatchmakingStage("finding");
+      setActiveMatchToast({
+        text: "Tutorial match initialized! Entering the training arena.",
+        tone: "success",
+      });
+
+      writeActiveMatchSession({
+        walletAddress: tutorialAddress,
+        address: tutorialAddress,
+        displayAddress: walletAddress || tutorialAddress,
+        displayAsGuest: !walletAddress,
+        roomId: result.roomId,
+        role: result.role ?? "playerA",
+        roomType: "bot",
+        isGuest: true,
+        isTutorial: true,
+        arenaId: "sol",
+        scientistId: selectedScientist.id,
+        status: "playing",
+        token: "SOL",
+        arenaToken: "SOL",
+        wagerUsd: FIXED_WAGER_USD,
+      });
+
+      setPhase("found");
+    } catch (error) {
+      if (controller.signal.aborted) {
+        if (!timedOut) return;
+        const message = "Tutorial took too long to start. Please try again.";
+        setMatchmakingState("timeout");
+        setMatchmakingStage("finding");
+        setMatchmakingError(message);
+        setActiveMatchToast({ text: message, tone: "error" });
+        setPhase("character-select");
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : "Failed to start tutorial.";
+      setMatchmakingState("error");
+      setMatchmakingStage("finding");
+      setMatchmakingError(message);
+      setActiveMatchToast({ text: message, tone: "error" });
+      setPhase("character-select");
+    } finally {
+      if (matchmakingAbortRef.current === controller) {
+        matchmakingAbortRef.current = null;
+      }
+      clearTimeout(timeoutId);
+      setBotMatchBusy(false);
+    }
+  }, [
+    selectedScientist,
+    clearFoundTransitionTimers,
+    ensureGuestAddress,
+    queueSocket,
+    setActiveMatchToast,
+    setBotMatchBusy,
+    setMatchedRole,
+    setMatchedRoomId,
+    setMatchmakingError,
+    setMatchmakingStage,
+    setMatchmakingState,
+    setPhase,
+    walletAddress,
+  ]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const introSeen = window.localStorage.getItem("cora:introSeen");
+      if (!introSeen && phase === "setup" && !challengeMode && !activeMatchBannerSnapshot && !pendingErRecovery && !blinkJoinSnapshot) {
+        queueMicrotask(() => setIntroOverlayOpen(true));
+      }
+    }
+  }, [phase, challengeMode, activeMatchBannerSnapshot, pendingErRecovery, blinkJoinSnapshot]);
+
+  const handleCloseIntro = useCallback(() => {
+    setIntroOverlayOpen(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("cora:introSeen", "1");
+    }
+  }, [setIntroOverlayOpen]);
+
+  const beginMatchmaking = useCallback(() => {
     if (isGuestMode) {
       void startBotMatch();
       return;
@@ -951,7 +1004,23 @@ export function LobbyScreen() {
     setMatchedRole(null);
     setPhase("waiting");
     queueSocket.connect(walletAddress);
-  }
+  }, [
+    hasBlockingBlinkChallenge,
+    isGuestMode,
+    queueSocket,
+    startBotMatch,
+    walletAddress,
+    setActiveMatchToast,
+    setBlinkChallengePanelOpen,
+    setBotOfferDismissed,
+    setBotOfferOpen,
+    setMatchedRole,
+    setMatchedRoomId,
+    setMatchmakingError,
+    setMatchmakingStage,
+    setMatchmakingState,
+    setPhase,
+  ]);
 
   function cancelMatchmaking() {
     userCancelledRef.current = true;
@@ -1001,13 +1070,17 @@ export function LobbyScreen() {
   // React to WS queue state changes (expired / error)
   useEffect(() => {
     if (queueSocket.queueState === 'expired') {
-      setMatchmakingState("timeout");
-      setMatchmakingStage("finding");
-      setMatchmakingError("No opponent found yet. Retry to keep searching.");
+      queueMicrotask(() => {
+        setMatchmakingState("timeout");
+        setMatchmakingStage("finding");
+        setMatchmakingError("No opponent found yet. Retry to keep searching.");
+      });
     } else if (queueSocket.queueState === 'error' && !userCancelledRef.current) {
-      setMatchmakingState("error");
-      setMatchmakingStage("finding");
-      setMatchmakingError("Queue connection lost. Retry to reconnect.");
+      queueMicrotask(() => {
+        setMatchmakingState("error");
+        setMatchmakingStage("finding");
+        setMatchmakingError("Queue connection lost. Retry to reconnect.");
+      });
     }
   }, [queueSocket.queueState]);
 
@@ -1078,9 +1151,7 @@ export function LobbyScreen() {
     return () => clearTimeout(timeoutId);
   }, [activeMatchToast]);
 
-  // NOTE: Presence polling removed — WS queue provides real-time status.
-  // The getMatchPresenceForAddress API is still used for boot-time recovery
-  // in the active-room lookup effect above.
+  // NOTE: Presence polling removed; WS queue provides real-time status.
 
   useEffect(() => {
     if (!blinkChallengeNotice) return;
@@ -1184,7 +1255,7 @@ export function LobbyScreen() {
       beginMatchmaking();
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [resumeQueue, phase, canQueue, matchmakingState, walletAddress]);
+  }, [resumeQueue, phase, canQueue, matchmakingState, walletAddress, beginMatchmaking]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1501,6 +1572,8 @@ export function LobbyScreen() {
   }, [matchedRoomId, phaseContextIssue, walletAddress]);
 
   useEffect(() => {
+    if (isTutorialMode) return;
+
     const sessionAddress = isGuestMode ? guestAddress : walletAddress;
     if (!sessionAddress || !matchedRoomId) return;
     writeActiveMatchSession({
@@ -1517,7 +1590,7 @@ export function LobbyScreen() {
       arenaToken: selectedArena?.token ?? null,
       wagerUsd: FIXED_WAGER_USD,
     });
-  }, [guestAddress, isGuestMode, walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
+  }, [guestAddress, isGuestMode, isTutorialMode, walletAddress, matchedRoomId, matchedRole, selectedArena?.id, selectedArena?.token, selectedScientist?.id, phase]);
 
   return (
     <div
@@ -2076,6 +2149,8 @@ export function LobbyScreen() {
                   onCreateBlinkChallenge={handleCreateBlinkChallenge}
                   blinkChallengeBusy={blinkChallengeBusy}
                   hasActiveBlinkChallenge={hasBlockingBlinkChallenge}
+                  onTryFreeTutorial={startTutorialFlow}
+                  onReplayIntro={() => setIntroOverlayOpen(true)}
                 />
               </motion.div>
             )}
@@ -2094,17 +2169,23 @@ export function LobbyScreen() {
                   scientists={SCIENTISTS}
                   selected={selectedScientist}
                   onSelect={setSelectedScientist}
-                  onBack={() => setPhase("setup")}
+                  onBack={() => {
+                    setIsTutorialMode(false);
+                    setPhase("setup");
+                  }}
                   onContinue={() => {
-                    if (canQueue) {
+                    if (isTutorialMode) {
+                      void startTutorialMatch();
+                    } else if (canQueue) {
                       beginMatchmaking();
                     }
                   }}
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
-                  walletAddress={walletAddr}
-                  isGuest={isGuestMode}
-                  continueLabel={isGuestMode ? "Practice Now" : "Enter Queue"}
+                  walletAddress={displayWalletAddr}
+                  isGuest={isGuestMode || isTutorialMode}
+                  displayAsGuest={displayWalletAsGuest}
+                  continueLabel={isTutorialMode ? "Start Tutorial" : isGuestMode ? "Practice Now" : "Enter Queue"}
                   continueBusy={botMatchBusy}
                 />
               </motion.div>
@@ -2151,11 +2232,13 @@ export function LobbyScreen() {
                 <OpponentFound
                   myScientist={selectedScientist}
                   myWallet={walletAddr}
+                  displayWalletAddress={displayWalletAddr}
+                  displayAsGuest={displayWalletAsGuest}
                   roomId={matchedRoomId}
                   matchRole={matchedRole}
                   arena={selectedArena}
                   wagerUsd={FIXED_WAGER_USD}
-                  isGuest={isGuestMode}
+                  isGuest={usesGuestIdentity}
                   onTimeout={() => {
                     // Fully reset matchmaking state — abort any hanging HTTP request,
                     // clear timers, and go back to character-select so the user can
@@ -2177,6 +2260,10 @@ export function LobbyScreen() {
           </AnimatePresence>
         )
       )}
+      <IntroOverlay
+        isOpen={introOverlayOpen}
+        onClose={handleCloseIntro}
+      />
     </div>
   );
 }

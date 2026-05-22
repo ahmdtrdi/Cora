@@ -5778,3 +5778,274 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 
 ### The Tech Debt
 - The battle UI still uses a local `Opening card...` pending state rather than a dedicated visual treatment. If this state becomes noticeable over real network conditions, add a small animated sync affordance to the question card instead of relying only on disabled answers and `...` countdown copy.
+
+## 2026-05-21 - First-Time Intro Overlay & Free Tutorial Flow Completed
+
+### The Change
+- Verified the implementation of the skippable first-time glassmorphic `<IntroOverlay>` in [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx). Features 3 interactive, beautiful animated CSS/SVG fallback components (`PlayCardsMockup`, `TimerMockup`, `WagerMockup`) representing cards, timers, and wager/practice mechanics that seamlessly defer to real WebM/PNG media assets once available in `/assets/intro/`.
+- Confirmed the lobby setup bottom-right action stack in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) successfully renders the sibling `"Try Free Tutorial"` action, alongside polished, context-aware prompt labels (`"Select a token to wager, or try free tutorial"`).
+- Checked the full tutorial integration in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx):
+  - Automatically loads and sets `cora:introSeen` in local storage for new normal lobby users.
+  - Implements the complete `startTutorialFlow` transition which guides guest users to Scientist Selection in tutorial mode.
+  - Implements `startTutorialMatch` which generates temporary guest credentials, registers the session with `isTutorial: true`, starts a practice bot match via `createBotMatch`, and routes natively to `/play` with `tutorial=1` in query parameters.
+
+### The Reasoning
+- Keeping interactive SVG/CSS animations as high-fidelity fallbacks guarantees a premium, visually engaging client experience even when external media assets are still loading or missing.
+- Scoping the tutorial mode to a custom `isTutorial: true` flag and isolated temp guest credentials prevents active wallet sessions or live deposit queues from being overridden.
+
+### The Tech Debt
+- The `IntroOverlay` asset availability check performs dynamic `HEAD` requests on mount. If the overlay is loaded frequently or asset count increases, these checks should be debounced or pre-cached in static configuration metadata instead of hitting network endpoints on each load.
+
+## 2026-05-21 - Lobby Tutorial CTA Prioritized Beside Wallet-Gated Draft CTA
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the bottom-right action row now renders `Try Free Tutorial` on the left and the stronger primary `Pick Scientist` action on the right.
+- Added explicit wallet gating to the primary lobby draft action, so `Pick Scientist` remains disabled when no wallet is connected even if an arena is selected.
+
+### The Reasoning
+- The tutorial path is the low-friction no-wallet/no-wager path, so it should remain immediately available while the wallet-backed wager path stays visually primary but blocked until the required setup is complete.
+- Keeping the stronger action on the right preserves the main competitive flow hierarchy while making the free tutorial an obvious fallback instead of a hidden alternative.
+
+### The Tech Debt
+- The primary draft action now explicitly requires `walletConnected` in `LobbySetup` in addition to the upstream `canPlay` flag. If lobby playability rules keep expanding, these conditions should be consolidated into a named view-state object to avoid duplicated policy between parent and child components.
+
+## 2026-05-21 - Lobby Arena Bottom Vignette for CTA Readability
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add a bottom-only dark gradient overlay above the arena preview image and below the lobby content/actions.
+
+### The Reasoning
+- The new side-by-side `Try Free Tutorial` and `Pick Scientist` action row sits over varied arena artwork, so a bottom vignette gives the buttons and helper copy stable contrast without dimming the whole preview image.
+
+### The Tech Debt
+- The vignette height and opacity are locally tuned to the current lobby artwork. If future arena images have much brighter lower thirds, this may need to become a reusable overlay token or per-arena readability setting.
+
+## 2026-05-21 - Intro Overlay Shared Across Connect and Lobby
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so all three panels use WebM media, including the new `/assets/intro/intro-practice-wager.webm` asset.
+- Removed the top-right close control and the final-panel `Try Free Tutorial` CTA from the intro overlay, leaving only the `Skip`, `Next`, and final `Enter Arena` actions.
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) to show the same first-time intro overlay on `/connect` using the existing `cora:introSeen` localStorage key.
+- Kept the `/lobby` intro trigger in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) as a fallback for users who bypass `/connect` directly.
+- Renamed the uploaded practice/wager intro asset to [intro-practice-wager.webm](/d:/projects/Cora/apps/web/public/assets/intro/intro-practice-wager.webm) so the public path is URL-safe and consistent with the other intro assets.
+
+### The Reasoning
+- The intro now teaches the game once, then reveals the current screen's real decisions. `/connect` owns the normal first-time entry experience, while `/lobby` still protects direct links and bookmarks.
+- Removing game-mode CTAs from the intro keeps responsibility clean: the overlay explains, `/connect` handles wallet/guest choice, and `/lobby` handles tutorial versus wager flow.
+
+### The Tech Debt
+- `IntroOverlay` now serves both connect and lobby but still lives under `components/lobby`. If more onboarding surfaces appear, move it into a neutral `components/onboarding` folder with any shared intro storage helpers.
+
+## 2026-05-21 - Intro Videos Hold First Frame Before Playback
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) to render intro media through a dedicated `IntroPanelVideo` helper.
+- Intro videos now wait for `loadedData`, pause on the first frame, hold for one second, and only then start muted looped playback.
+
+### The Reasoning
+- Holding the first frame lets the overlay finish appearing and gives the video a stable loaded state before motion begins, which makes the onboarding panels feel smoother and avoids premature autoplay while the modal is still settling.
+
+### The Tech Debt
+- The one-second hold is a local constant tuned by feel. If intro timing becomes part of a broader motion system, move it into shared animation timing tokens.
+
+## 2026-05-21 - Intro Video Loop Hold
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so intro videos no longer use native `loop` playback.
+- Added manual `ended` handling that pauses on the final frame for one second, resets to the beginning, and then starts playback again.
+
+### The Reasoning
+- The same deliberate pause used before first playback now applies between loops, making repeated intro media feel less abrupt and easier to read.
+
+### The Tech Debt
+- The first-frame and end-frame holds currently share the same timing constant. If later media has different pacing needs, the start hold and loop hold may need separate constants.
+
+## 2026-05-21 - React Lint Cleanup After Intro/Tutorial Wiring
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so first-time intro visibility is derived from lazy initial state instead of setting state synchronously inside an effect.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) to defer effect-driven guest/login/intro/queue-state updates, remove the unused legacy HTTP matchmaking helper/imports, and complete callback dependency lists for tutorial and auto-requeue paths.
+- Updated [useQueueSocket.ts](/d:/projects/Cora/apps/web/src/hooks/useQueueSocket.ts) so mutable queue refs are synchronized in effects instead of during render, and reconnects call the latest socket opener through a ref.
+- Cleaned small unused items in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx), [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx), and [signDepositIntent.ts](/d:/projects/Cora/apps/web/src/lib/solana/signDepositIntent.ts).
+
+### The Reasoning
+- The current ESLint setup includes stricter React Compiler and hooks rules. Deferring state updates that are triggered by effects and moving ref writes out of render keeps the existing behavior while satisfying those rules.
+
+### The Tech Debt
+- Several older effects in the lobby and battle screens still mix state coordination with side effects. They now satisfy lint for the surfaced cases, but longer-term cleanup should split state machines from transport/storage effects.
+
+## 2026-05-21 - Stabilize Practice Match Callback Dependency
+
+### The Change
+- Wrapped `startBotMatch` in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) with `useCallback` and added its explicit dependency list.
+
+### The Reasoning
+- `beginMatchmaking` depends on `startBotMatch` for guest/practice flow. Stabilizing the callback prevents `beginMatchmaking` from changing every render and clears the remaining React hooks lint warning.
+
+### The Tech Debt
+- Lobby still has several large callback blocks in one component. If tutorial, guest practice, and wager queue keep expanding, extracting flow-specific hooks would make dependency management easier to audit.
+
+## 2026-05-21 - Soften Lobby Arena CTA Vignette
+
+### The Change
+- Tuned the bottom arena vignette in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) from a taller, darker overlay to a shorter and lighter gradient.
+
+### The Reasoning
+- The CTA area still needs contrast, but the previous black gradient covered too much of the arena artwork. The lighter pass keeps button readability while letting more of the preview image show through.
+
+### The Tech Debt
+- The gradient remains hand-tuned for the current arena art. Future arenas may need per-image contrast review.
+
+## 2026-05-21 - Lobby Board Hover Motion Removed
+
+### The Change
+- Added a `.game-card-static` utility in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to opt specific game-card wrappers out of the global hover lift while preserving a warm hover glow.
+- Applied the static game-card variant to the main horizontal lobby board in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+- Restored the individual arena token selection buttons to their button-like hover/selected lift behavior.
+
+### The Reasoning
+- The large lobby board is a layout wrapper rather than a direct action target, so it should not move on hover. A glow still gives the surface a responsive feel, while the actual arena token selectors remain buttons and can keep their hover affordance.
+
+### The Tech Debt
+- `.game-card-static` now carries a lobby-tuned glow value. If more wrapper-only cards appear, consider a named component-level card variant instead of utility opt-outs.
+
+## 2026-05-21 - Preserve Tutorial Match Address
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the generic matched-room session writer does not run while the free tutorial flow is active.
+
+### The Reasoning
+- `startTutorialMatch` creates a bot room using a temporary no-wallet guest address and writes that exact address into the active match session before routing to `/play`. The generic lobby session effect could run afterward and overwrite the same room with the connected wallet or stored guest identity, causing the play socket to join as the wrong address and leaving the bot room stuck waiting for its original player.
+
+### The Tech Debt
+- Tutorial mode still depends on local lobby state to protect the session write. If match session handling grows further, extract a dedicated tutorial session helper so normal wager recovery and tutorial handoff cannot share the same write path by accident.
+
+## 2026-05-21 - Route Tutorial Through Opponent Found
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the free tutorial creates the bot room, stores the tutorial guest address, then moves into the existing `found` phase instead of routing directly to `/play`.
+- Updated [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so guest/tutorial flows use the provided guest address for the match socket even when a wallet is connected.
+
+### The Reasoning
+- The normal matchmaking flow uses `OpponentFound` to connect to the room, wait for the server battle snapshot, show the prep/countdown UI, and only then enter `/play`. Tutorial should mimic that path so `/play` loads with ready server state instead of showing an in-battle waiting message.
+
+### The Tech Debt
+- `OpponentFound` now handles both wager deposits and no-wager bot prep. If practice-specific prep grows, split the status copy/control logic into smaller mode-specific helpers while keeping the shared matched-screen shell.
+
+## 2026-05-21 - Keep Connected-Wallet Tutorial on Guest Identity
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so tutorial mode uses the guest identity for lobby display, bot match creation, and the `OpponentFound` socket handoff even when a wallet is connected.
+- Prevented the connected-wallet auto-switch effect from flipping `loginMode` out of guest while the tutorial flow is active.
+
+### The Reasoning
+- The free tutorial is intentionally a no-wager guest-style match. A connected wallet could previously make the UI look like guest mode while still passing the wallet address into the matched/prep flow, which caused the server to wait for the original tutorial guest address.
+
+### The Tech Debt
+- `isTutorialMode` and `isGuestMode` now intentionally overlap in the lobby. If more practice modes appear, introduce a clearer `identityMode` or match-entry state machine instead of combining booleans.
+
+## 2026-05-21 - Split Tutorial Transport And Display Identity
+
+### The Change
+- Added optional display identity fields to [matchSession.ts](/d:/projects/Cora/apps/web/src/lib/session/matchSession.ts) so a match can keep one address for socket/session transport and another for UI display.
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx), [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx), [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx), and [BattleScreen.tsx](/d:/projects/Cora/apps/web/src/components/play/BattleScreen.tsx) so connected-wallet tutorial shows the real wallet while still using the hidden tutorial guest address for the no-deposit bot room.
+
+### The Reasoning
+- Free tutorial needs the generated guest address to keep the no-wager bot socket stable, but a connected user should still see their wallet identity in character select, opponent found, and battle. Splitting display identity from transport identity gives that UX without turning tutorial into a real wallet wager flow.
+
+### The Tech Debt
+- The display identity is currently stored as optional fields on the local match session. If the app later needs richer profile display names or wallet aliases, move this into a dedicated player presentation model.
+
+## 2026-05-21 - Add Intro Wallet Devnet Step
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) to add `intro-wallet-devnet.webm` as the first onboarding panel before cards, timer, and practice/wager.
+- Added a lightweight wallet/devnet fallback mockup for missing media.
+
+### The Reasoning
+- First-time users need wallet, Devnet, and faucet context before they understand wager matches. Navigation stays intentionally simple with Skip as the low-emphasis escape and Next/Enter Arena as the primary path.
+
+### The Tech Debt
+- The intro overlay now mixes onboarding content and video fallback mockups in one component. If more setup panels land, extract panel data and fallback renderers into a small onboarding module.
+
+## 2026-05-21 - Connect Screen Devnet Signal
+
+### The Change
+- Added a small `Live on Devnet` status pill to [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx).
+
+### The Reasoning
+- The onboarding now teaches wallet, Devnet, and faucet setup. Showing the Devnet signal directly on `/connect` reinforces that this environment is live for testing before users choose wallet or guest entry.
+
+### The Tech Debt
+- The signal is currently static UI copy. If network selection becomes dynamic, wire it to runtime cluster config instead of hardcoding Devnet.
+
+## 2026-05-21 - Refine Connected Devnet Signal
+
+### The Change
+- Updated [ConnectWalletScreen.tsx](/d:/projects/Cora/apps/web/src/components/connect/ConnectWalletScreen.tsx) so the generic connect/practice helper copy hides once a wallet is connected.
+- Shifted the `Live on Devnet` pill to the warm yellow/brown accent family and tightened spacing between it and the connected wallet status.
+
+### The Reasoning
+- Once a wallet is connected, the helper line repeats information the UI already implies. The Devnet and wallet status should read as a compact connected-state cluster.
+
+### The Tech Debt
+- Connected-state spacing is still tuned in the component with conditional margin classes. If the connect card gains more states, extract small header/status subcomponents.
+
+## 2026-05-21 - Lobby Replay Intro Utility
+
+### The Change
+- Added a `Replay Intro` lobby utility action wired to reopen the existing [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) without resetting intro localStorage.
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so wallet, wager, balance, replay intro, and history share the same clipped pill language, with warm action coloring for replay and muted disabled styling for history.
+
+### The Reasoning
+- Users may want to revisit onboarding after landing in the lobby. Keeping replay as a top utility action makes it discoverable without competing with arena selection or tutorial/practice CTAs.
+
+### The Tech Debt
+- The lobby header pill helper is local to `LobbySetup`. If other screens need the same pill treatment, promote it into a shared UI component.
+
+## 2026-05-21 - Match Wallet Pill Height
+
+### The Change
+- Reduced the wallet identity marker size in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so the wallet pill matches the wager and balance pill height.
+
+### The Reasoning
+- The previous marker made the wallet pill visually taller than the rest of the lobby header controls. Keeping all pills aligned makes the header read as one consistent utility strip.
+
+### The Tech Debt
+- Header pill sizing is still manually tuned in `LobbySetup`; shared pill tokens would make future adjustments less repetitive.
+
+## 2026-05-21 - Soften Replay Intro Pill
+
+### The Change
+- Reduced the warm outline and highlight strength on the `Replay Intro` header pill in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- Replay Intro is a helpful utility action, but it should sit below the main lobby actions visually. Softer treatment keeps it discoverable without over-commanding the header.
+
+### The Tech Debt
+- Header action tones are still inline style objects; promote them to shared tokens if more header utilities are added.
+
+## 2026-05-21 - Reset Intro Replay Step
+
+### The Change
+- Updated [IntroOverlay.tsx](/d:/projects/Cora/apps/web/src/components/lobby/IntroOverlay.tsx) so opening the overlay always resets to the first panel.
+
+### The Reasoning
+- Replay Intro should behave like a fresh replay, not resume from wherever the user last closed the onboarding.
+
+### The Tech Debt
+- Intro step state still lives inside the overlay. If parent screens ever need deep-linking to a specific intro step, expose an initial step prop instead.
+
+## 2026-05-22 - Real Match Deposit Reminder
+
+### The Change
+- Added a pre-sign deposit reminder modal to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) for the real matchmaking flow.
+- Changed the idle primary action copy from `Sign Deposit` to `Deposit`; pressing it now opens the reminder, and `Confirm Deposit` starts the existing Phantom signing path.
+- Finalized the reminder UI with centered content, a compact wager line, a single readable warning, and a light warm cancel action.
+
+### The Reasoning
+- The reminder needs to appear before Phantom opens, but the stable signing/socket logic should stay untouched. The modal gates only the UI click path and still calls the existing `onSignDeposit` handler, preserving transaction preparation, `Opening Phantom...`, deposit confirmation, and timeout behavior.
+
+### The Tech Debt
+- The reminder copy is local to `OpponentFound`. If Blink deposits or other wager entry points need the same rule reminder later, extract a shared deposit reminder component.
+

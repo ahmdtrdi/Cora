@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { HistoryButton } from "@/components/history/HistoryButton";
 import { useWalletArenaPlayability } from "@/hooks/useWalletArenaPlayability";
 import type { Arena } from "./LobbyScreen";
 
@@ -23,6 +21,8 @@ type LobbySetupProps = {
   onCreateBlinkChallenge: () => void;
   blinkChallengeBusy: boolean;
   hasActiveBlinkChallenge: boolean;
+  onTryFreeTutorial: () => void;
+  onReplayIntro: () => void;
 };
 
 function truncateWallet(address: string) {
@@ -60,6 +60,58 @@ function ArenaIcon({ token, active }: { token: string; active: boolean }) {
   );
 }
 
+function HeaderPill({
+  children,
+  tone = "info",
+  disabled = false,
+  onClick,
+}: {
+  children: ReactNode;
+  tone?: "info" | "action" | "disabled";
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  const isButton = Boolean(onClick);
+  const toneStyle =
+    tone === "action"
+      ? {
+          border: "2px solid rgba(248,214,148,0.34)",
+          background: "linear-gradient(180deg, rgba(111,58,40,0.88) 0%, rgba(72,39,25,0.92) 100%)",
+          boxShadow: "inset 0 1px 0 rgba(248,214,148,0.18), 0 10px 24px rgba(0,0,0,0.22)",
+          color: "#f8d694",
+        }
+      : tone === "disabled"
+        ? {
+            border: "2px solid rgba(88,88,82,0.72)",
+            background: "linear-gradient(180deg, rgba(34,38,34,0.9) 0%, rgba(24,28,24,0.95) 100%)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+            color: "rgba(244,240,230,0.62)",
+          }
+        : {
+            border: "2px solid var(--tone-bark)",
+            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
+            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2), 0 10px 24px rgba(0,0,0,0.22)",
+            color: "var(--tone-mint)",
+          };
+  const className = `frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 font-gabarito text-xs font-bold uppercase tracking-wider shadow-lg transition ${
+    isButton && !disabled ? "hover:-translate-y-0.5 hover:brightness-110" : ""
+  } ${disabled ? "cursor-not-allowed grayscale" : ""}`;
+
+  if (isButton) {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled} className={className} style={toneStyle}>
+        {children}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className} style={toneStyle}>
+      {children}
+    </div>
+  );
+}
+
 export function LobbySetup({
   walletAddress,
   walletConnected,
@@ -74,6 +126,8 @@ export function LobbySetup({
   onCreateBlinkChallenge,
   blinkChallengeBusy,
   hasActiveBlinkChallenge,
+  onTryFreeTutorial,
+  onReplayIntro,
 }: LobbySetupProps) {
   const { wallet: selectedWallet, connect, connecting } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
@@ -99,7 +153,7 @@ export function LobbySetup({
   } satisfies Arena;
   const selectedArenaDisplay = selectedArena ?? (selectedArenaId === COMING_SOON_ARENA_ID ? mewArena : null);
   const comingSoonArenaVisible = selectedArenaId !== null && COMING_SOON_ARENA_IDS.has(selectedArenaId);
-  const actionDisabled = comingSoonArenaVisible || !canPlay;
+  const actionDisabled = comingSoonArenaVisible || !walletConnected || !canPlay;
   const actionLabel = comingSoonArenaVisible ? "Coming Soon" : "Pick Scientist";
   const guestAddressLabel = guestAddress ? `Guest ${truncateWallet(guestAddress)}` : "Guest";
   const identityLabel = guestMode ? guestAddressLabel : walletConnected ? truncateWallet(walletAddress) : "Wallet not connected";
@@ -171,7 +225,7 @@ export function LobbySetup({
       };
       image.src = url;
     }
-  }, []);
+  }, [BONK_ARENA_IMAGE_URL, MEW_ARENA_IMAGE_URL, NULL_ARENA_IMAGE_URL, SOL_ARENA_IMAGE_URL]);
 
   useEffect(() => {
     if (!incomingArenaImageUrl || typeof window === "undefined") return;
@@ -210,21 +264,15 @@ export function LobbySetup({
   return (
     <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-6xl flex-col px-4 py-5 md:px-6 md:py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div
-          className="frame-cut frame-cut-sm inline-flex items-center gap-3 px-3 py-2 shadow-lg"
-          style={{
-            border: "2px solid var(--tone-bark)",
-            background: "linear-gradient(180deg, #1b3429 0%, #14271f 100%)",
-            boxShadow: "inset 0 1px 0 rgba(203,227,193,0.2)",
-          }}
-        >
-          <div className="h-6 w-6 rounded-full border border-[var(--tone-teal)] bg-[var(--tone-clay)]" />
-          <p className="font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)]">
-            {identityLabel}
-          </p>
-        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <HeaderPill>
+            <span className="h-4 w-4 rounded-full border border-[var(--tone-teal)] bg-[var(--tone-clay)]" />
+            <span className="font-mono text-xs font-semibold tracking-wide text-[var(--tone-cream)]">
+              {identityLabel}
+            </span>
+          </HeaderPill>
 
-        <div className="inline-flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div
             className="frame-cut frame-cut-sm inline-flex items-center gap-2 px-3 py-2 shadow-lg"
             style={{
@@ -251,12 +299,20 @@ export function LobbySetup({
             </span>
           </div>
         </div>
+        </div>
 
-        <HistoryButton label="History Coming Soon" />
+        <div className="flex flex-wrap items-center gap-2">
+          <HeaderPill tone="action" onClick={onReplayIntro}>
+            Replay Intro
+          </HeaderPill>
+          <HeaderPill tone="disabled" disabled>
+            History Coming Soon
+          </HeaderPill>
+        </div>
       </header>
 
       <div
-        className="game-card mt-2 flex w-full flex-col overflow-hidden shadow-2xl md:flex-row"
+        className="game-card game-card-static mt-2 flex w-full flex-col overflow-hidden shadow-2xl md:flex-row"
         style={{
           border: "3px solid var(--tone-bark)",
           background: "linear-gradient(180deg, #e7d8bb 0%, #dccaa7 100%)",
@@ -430,6 +486,7 @@ export function LobbySetup({
             />
           )}
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_28%,rgba(0,0,0,0.58)_100%)]" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[38%] bg-[linear-gradient(180deg,rgba(8,15,12,0)_0%,rgba(8,15,12,0.46)_62%,rgba(8,15,12,0.68)_100%)]" />
           <div className="arena-grid pointer-events-none absolute inset-0 opacity-20 mix-blend-overlay" />
           {selectedArena && (
             <div
@@ -464,29 +521,45 @@ export function LobbySetup({
           </div>
 
           <div className="relative z-10 mt-auto flex w-full flex-col items-end justify-end pt-12">
-            <div className="flex w-full shrink-0 flex-col items-center md:w-auto md:items-end">
-              {!selectedArenaDisplay && (
-                <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80">Select a token to continue</p>
+            <div className="flex w-full shrink-0 flex-col items-center gap-3 md:w-auto md:items-end">
+              {!selectedArenaDisplay ? (
+                <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80 text-center md:text-right">
+                  Select a token to wager, or try free tutorial
+                </p>
+              ) : (
+                !walletConnected && !guestMode && (
+                  <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80 text-center md:text-right">
+                    Connect wallet to draft, or try free tutorial
+                  </p>
+                )
               )}
-              {selectedArenaDisplay && !walletConnected && !guestMode && (
-                <p className="mb-2 font-gabarito text-xs text-[var(--tone-cream)] opacity-80">Connect wallet to draft</p>
-              )}
-              <motion.button
-                whileHover={!actionDisabled ? { y: -2 } : undefined}
-                whileTap={!actionDisabled ? { scale: 0.98 } : undefined}
-                type="button"
-                onClick={() => {
-                  if (!actionDisabled) {
-                    onPlay();
-                  }
-                }}
-                disabled={actionDisabled}
-                className={`btn-game btn-game-primary w-full px-10 py-4 text-base shadow-2xl transition-all md:w-auto ${
-                  actionDisabled ? "cursor-not-allowed opacity-50 grayscale" : ""
-                }`}
-              >
-                {actionLabel}
-              </motion.button>
+              <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+                <motion.button
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={onTryFreeTutorial}
+                  className="btn-game btn-game-secondary w-full px-8 py-4 text-base shadow-2xl transition-all md:w-auto border border-[var(--tone-mint,#cbefc1)]/30 text-[var(--tone-mint,#cbefc1)] bg-[var(--tone-mint,#cbefc1)]/5"
+                >
+                  Try Free Tutorial
+                </motion.button>
+                <motion.button
+                  whileHover={!actionDisabled ? { y: -2 } : undefined}
+                  whileTap={!actionDisabled ? { scale: 0.98 } : undefined}
+                  type="button"
+                  onClick={() => {
+                    if (!actionDisabled) {
+                      onPlay();
+                    }
+                  }}
+                  disabled={actionDisabled}
+                  className={`btn-game btn-game-primary w-full px-10 py-4 text-base shadow-2xl transition-all md:w-auto ${
+                    actionDisabled ? "cursor-not-allowed opacity-50 grayscale" : ""
+                  }`}
+                >
+                  {actionLabel}
+                </motion.button>
+              </div>
             </div>
           </div>
         </section>

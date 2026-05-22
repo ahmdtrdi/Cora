@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Keypair } from "@solana/web3.js";
+import { IntroOverlay } from "@/components/lobby/IntroOverlay";
 
 const GUEST_ADDRESS_STORAGE_KEY = "cora:guest-address";
 
@@ -31,6 +32,14 @@ export function ConnectWalletScreen() {
   const { setVisible: setWalletModalVisible } = useWalletModal();
   const [guestBusy, setGuestBusy] = useState(false);
   const [walletBusy, setWalletBusy] = useState(false);
+  const [introOverlayOpen, setIntroOverlayOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return !window.localStorage.getItem("cora:introSeen");
+    } catch {
+      return false;
+    }
+  });
   const connected = Boolean(publicKey);
   const address = publicKey?.toBase58() ?? "";
 
@@ -40,6 +49,15 @@ export function ConnectWalletScreen() {
     if (!next.startsWith("/")) return "/lobby";
     return next;
   }, [searchParams]);
+
+  const handleCloseIntro = useCallback(() => {
+    setIntroOverlayOpen(false);
+    try {
+      window.localStorage.setItem("cora:introSeen", "1");
+    } catch {
+      // The intro is non-critical; blocked storage should not block arena entry.
+    }
+  }, []);
 
   function enterAsGuest() {
     if (guestBusy) return;
@@ -138,11 +156,22 @@ export function ConnectWalletScreen() {
             <h1 className="mt-3 font-caprasimo text-4xl leading-none text-[var(--tone-cream)] md:text-5xl">
               Enter the Arena
             </h1>
-            <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
-              Connect a wallet for wager matches, or try a no-stakes practice round.
-            </p>
+            {!connected && (
+              <p className="mt-4 font-gabarito text-sm text-[#8fa897]">
+                Connect a wallet for wager matches, or try a no-stakes practice round.
+              </p>
+            )}
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[rgba(248,214,148,0.34)] bg-[rgba(111,58,40,0.22)] px-3 py-1.5 shadow-inner">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#f8d694] opacity-50" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#f8d694]" />
+              </span>
+              <span className="font-gabarito text-[10px] font-black uppercase tracking-[0.16em] text-[#f8d694]">
+                Live on Devnet
+              </span>
+            </div>
 
-            <div className="mt-8 flex flex-col items-center gap-5">
+            <div className={`${connected ? "mt-3" : "mt-8"} flex flex-col items-center gap-5`}>
               {!connected && (
                 <div className="grid w-full gap-3 sm:grid-cols-2">
                   <div className="flex min-w-0 flex-col gap-2">
@@ -216,6 +245,7 @@ export function ConnectWalletScreen() {
           </div>
         </div>
       </section>
+      <IntroOverlay isOpen={introOverlayOpen} onClose={handleCloseIntro} />
     </main>
   );
 }
