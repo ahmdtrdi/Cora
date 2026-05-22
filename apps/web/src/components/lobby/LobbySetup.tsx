@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { motion } from "framer-motion";
@@ -563,12 +563,12 @@ export function LobbySetup({
             <div className="flex w-full shrink-0 flex-col items-center gap-2.5 sm:gap-3 md:w-auto md:items-end">
               {!selectedArenaDisplay ? (
                 <p className="mb-1 font-gabarito text-[11px] text-[var(--tone-cream)] opacity-80 text-center sm:mb-2 sm:text-xs md:text-right">
-                  Select a token to wager, or try free tutorial
+                  Select a token to wager, or practice for free
                 </p>
               ) : (
                 mounted && !walletConnected && !guestMode && (
                   <p className="mb-1 font-gabarito text-[11px] text-[var(--tone-cream)] opacity-80 text-center sm:mb-2 sm:text-xs md:text-right">
-                    Connect wallet to draft, or try free tutorial
+                    Connect wallet to draft, or practice for free
                   </p>
                 )
               )}
@@ -580,7 +580,7 @@ export function LobbySetup({
                   onClick={onTryFreeTutorial}
                   className="btn-game btn-game-secondary lobby-setup-main-action w-full px-5 py-3 text-xs shadow-2xl transition-all sm:px-8 sm:py-4 sm:text-base md:w-auto border border-[var(--tone-mint,#cbefc1)]/30 text-[var(--tone-mint,#cbefc1)] bg-[var(--tone-mint,#cbefc1)]/5"
                 >
-                  Try Free Tutorial
+                  Practice for Free
                 </motion.button>
                 <motion.button
                   whileHover={!actionDisabled ? { y: -2 } : undefined}
