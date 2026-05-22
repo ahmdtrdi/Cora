@@ -6708,3 +6708,91 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - None. This remains isolated to the tablet portrait media query.
 
+## 2026-05-22 - Matchmaking Portrait Duel Cards
+
+### The Change
+- Added semantic class hooks to [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) for the waiting duel grid, player cards, avatars, labels, wallet text, VS marker, and unknown opponent card.
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so matchmaking portrait views reuse the same 3:4 side-by-side duel card language as opponent-found.
+- Added the same tablet portrait scale-up layer for matchmaking cards.
+
+### The Reasoning
+- The actual matchmaking UI should visually match the approved opponent-found matchup composition.
+- Portrait waiting now reads as `[You] VS [?]` with compact card anatomy, while desktop and landscape keep their existing layout.
+
+### The Tech Debt
+- None. The override is scoped to portrait coarse-pointer matchmaking screens.
+
+## 2026-05-22 - Simplify Matchmaking Progress Copy
+
+### The Change
+- Updated [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx) so the three progress bars render as unlabeled side-by-side segments.
+- Replaced the per-bar labels and rotating flavor copy with one status text slot that follows the current matchmaking stage.
+
+### The Reasoning
+- The matchmaking loading area should read as `-- -- --` with one changing status label, reducing duplicate copy and making the state easier to scan.
+
+### The Tech Debt
+- None. This is a component-only simplification.
+
+## 2026-05-22 - Tighten Matchmaking Top Spacing
+
+### The Change
+- Reduced the vertical padding and cancel-row bottom margin in [MatchmakingWaiting.tsx](/d:/projects/Cora/apps/web/src/components/lobby/MatchmakingWaiting.tsx).
+
+### The Reasoning
+- The matchmaking screen had too much empty space above the cancel button, especially in portrait view.
+- Tightening the outer padding brings the header cluster closer to the top without changing the matchup card layout.
+
+### The Tech Debt
+- None.
+
+## 2026-05-22 - Regular Opponent Found Portrait Duel Cards
+
+### The Change
+- Added portrait-only CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so regular opponent-found deposit screens use the same side-by-side 3:4 duel cards as bot/tutorial and matchmaking.
+- Added the same tablet portrait scale-up rules for the regular deposit matchup cards.
+
+### The Reasoning
+- The deposit-phase opponent-found screen still used stacked full-width player cards in portrait, making it inconsistent with the approved compact matchup treatment.
+- Reusing the same card anatomy keeps the flow visually consistent while leaving the deposit panel behavior untouched.
+
+### The Tech Debt
+- There is some selector duplication between matchmaking, bot opponent-found, and regular opponent-found portrait rules. A future cleanup could consolidate these into shared class names.
+
+## 2026-05-22 - Tighten Portrait Deposit Gap
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so regular opponent-found portrait deposit screens use natural-height deposit layout instead of the default flex spacer.
+- Reduced the portrait deposit shell top margin to close the gap under the compact matchup row.
+
+### The Reasoning
+- After switching regular opponent-found portrait cards to the compact 3:4 matchup, the inherited `flex-1 justify-end` deposit area created too much vertical space before the deposit card.
+
+### The Tech Debt
+- None. This is scoped to regular opponent-found portrait screens.
+
+## 2026-05-22 - Center Portrait Match Stacks
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so portrait matchmaking and opponent-found screens vertically center their full content stack when there is spare viewport height.
+- Overrode tablet portrait opponent-found height/overflow so the centered stack remains scrollable if content exceeds the viewport.
+
+### The Reasoning
+- The compact portrait matchup/deposit screens could appear biased upward with a visible empty region at the bottom.
+- Centering the full stack balances top and bottom space without changing landscape behavior.
+
+### The Tech Debt
+- None. This is limited to portrait coarse-pointer screens.
+
+## 2026-05-22 - Fix Lobby Setup Hydration Lint
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to derive the mounted/client-ready flag with `useSyncExternalStore` instead of setting state directly in an effect.
+- Removed an unused `rightBoardBackground` constant flagged by lint.
+
+### The Reasoning
+- React's hook lint now rejects synchronous setState calls inside effects for derived render state.
+- The mounted flag is a hydration snapshot, so `useSyncExternalStore` expresses the server/client split without cascading renders.
+
+### The Tech Debt
+- None.

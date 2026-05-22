@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -30,6 +30,18 @@ function truncateWallet(address: string) {
     return address;
   }
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
+}
+
+function subscribeToHydration() {
+  return () => {};
+}
+
+function getClientHydrationSnapshot() {
+  return true;
+}
+
+function getServerHydrationSnapshot() {
+  return false;
 }
 
 function ArenaIcon({ token, active }: { token: string; active: boolean }) {
@@ -132,11 +144,12 @@ export function LobbySetup({
   const { wallet: selectedWallet, connect, connecting } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
   const [walletBusy, setWalletBusy] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    subscribeToHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
   const ARENA_ASSET_VERSION = "2026-05-12-arena-refresh-1";
   const COMING_SOON_ARENA_ID = "mew";
   const COMING_SOON_ARENA_IDS = new Set(["bonk", COMING_SOON_ARENA_ID]);
@@ -144,8 +157,6 @@ export function LobbySetup({
   const SOL_ARENA_IMAGE_URL = `/assets/arena/sol.png?v=${ARENA_ASSET_VERSION}`;
   const BONK_ARENA_IMAGE_URL = `/assets/arena/bonk.png?v=${ARENA_ASSET_VERSION}`;
   const MEW_ARENA_IMAGE_URL = `/assets/arena/mew.png?v=${ARENA_ASSET_VERSION}`;
-  const rightBoardBackground =
-    "radial-gradient(circle at 58% 42%, rgba(248,214,148,0.16), transparent 36%), linear-gradient(145deg, #10231b 0%, #18392d 48%, #0d1a14 100%)";
   const selectedArena = arenas.find((arena) => arena.id === selectedArenaId) ?? null;
   const mewArena = {
     id: COMING_SOON_ARENA_ID,
