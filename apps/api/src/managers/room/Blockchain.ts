@@ -49,6 +49,10 @@ const ER_SETUP_FEE_CUSHION_LAMPORTS = Math.max(
   Number(process.env.CORA_BATTLE_SETUP_FEE_CUSHION_LAMPORTS ?? 1_500_000),
 );
 
+export type SettlementResult =
+  | { ok: true; signature?: string }
+  | { ok: false; error: unknown };
+
 export class Blockchain {
   constructor(private manager: RoomManager) {}
 
@@ -439,7 +443,7 @@ export class Blockchain {
   /**
    * Broadcasts settlement-signed match result to all connected clients and submits to oracle.
    */
-  public async settleMatch(room: Room, winnerAddress: string): Promise<void> {
+  public async settleMatch(room: Room, winnerAddress: string): Promise<SettlementResult> {
     // Verify winner against ER if available (ER is source of truth)
     if (room.erSessionPda) {
       try {
@@ -461,10 +465,20 @@ export class Blockchain {
       winnerAddress,
     );
 
-    // Call oracle to automatically submit settlement on-chain
-    submitSettlementTransaction(action, room.matchIdBytes, winnerAddress)
-      .then(tx => console.log(`[RoomBlockchain] On-chain settlement completed. Tx: ${tx}`))
-      .catch(err => console.error(`[RoomBlockchain] Auto-settlement failed:`, err));
+    let transactionSignature: string | undefined;
+    try {
+      transactionSignature = await submitSettlementTransaction(action, room.matchIdBytes, winnerAddress);
+      console.log(`[RoomBlockchain] On-chain settlement completed. Tx: ${transactionSignature}`);
+      if (room.queueMatchPersisted) {
+        await this.manager.queueMatches.markCompleted(room.id, winnerAddress);
+      }
+    } catch (err) {
+      console.error(`[RoomBlockchain] Auto-settlement failed:`, err);
+      if (room.queueMatchPersisted) {
+        await this.manager.queueMatches.markSettlementFailed(room.id, winnerAddress, err);
+      }
+      return { ok: false, error: err };
+    }
 
     for (const client of room.clients.values()) {
       this.manager.network.safeSend(client.ws, {
@@ -477,6 +491,8 @@ export class Blockchain {
         }
       } as WsMessage);
     }
+
+    return { ok: true, signature: transactionSignature };
   }
 
   /**
@@ -546,7 +562,11 @@ export class Blockchain {
       if (isBotMatch) {
         console.log(`[BotMatch] ER result finalized for ${room.id}; skipping escrow settlement.`);
       } else {
-        this.settleMatch(room, finalState.winner);
+        void this.settleMatch(room, finalState.winner).then((result) => {
+          if (!result.ok) {
+            console.error(`[RoomBlockchain] Settlement failed for ER room ${room.id}`);
+          }
+        });
       }
       this.manager.network.broadcastToRoom(room, {
         type: 'matchResult',

@@ -1,6 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach, mock } from 'bun:test';
 import { RoomManager } from '../src/managers/RoomManager';
 import type { Room } from '../src/managers/room/types';
+import { MemoryQueueMatchStore } from '../src/services/queueMatches';
 
 /**
  * Create a mock WebSocket that records all sent messages.
@@ -26,9 +27,9 @@ function createMockWs() {
 }
 
 async function waitForPlayingRoom(room: Room) {
-  for (let attempt = 0; attempt < 25; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     if (room.status === 'playing' && room.engine?.isActive()) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
 
   expect(room.status).toBe('playing');
@@ -40,7 +41,7 @@ describe('RoomManager', () => {
   let manager: RoomManager;
 
   beforeEach(() => {
-    manager = new RoomManager();
+    manager = new RoomManager({ queueMatches: new MemoryQueueMatchStore(), erEnabled: false });
   });
 
   // ─── Room Creation ───────────────────────────────────────────
@@ -223,7 +224,8 @@ describe('RoomManager', () => {
       expect(room.status).toBe('depositing');
 
       // Both should have received updated game state with depositing status
-      const stateMsg2 = mock2.lastMessage;
+      const stateMsg2 = mock2.messages.find((m: any) => m.type === 'gameStateUpdate' && m.payload.status === 'depositing');
+      expect(stateMsg2).toBeDefined();
       expect(stateMsg2.type).toBe('gameStateUpdate');
       expect(stateMsg2.payload.status).toBe('depositing');
     });
@@ -354,6 +356,7 @@ describe('RoomManager', () => {
       expect(room.status).toBe('depositing');
 
       manager.leaveRoom(roomId, 'playerB');
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(manager.getRoom(roomId)).toBeUndefined();
       expect((manager.queue as any).queue).toHaveLength(0);
@@ -384,7 +387,7 @@ describe('RoomManager', () => {
       const room = manager.getRoom(roomId)!;
       expect(room.status).toBe('depositing');
 
-      manager.lifecycle.cancelRoom(roomId, 'playerA');
+      await manager.lifecycle.cancelRoom(roomId, 'playerA');
 
       expect(manager.getRoom(roomId)).toBeUndefined();
       expect((manager.queue as any).queue).toHaveLength(0);

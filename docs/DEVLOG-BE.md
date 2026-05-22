@@ -733,3 +733,41 @@
   If a creator shares the base Blink URL without a roomId, a browser
   visitor still sees JSON. Low priority — the shareable link always
   includes a roomId.
+
+## 2026-05-22 - Queue Match Persistence + Unified Match History
+
+### The Change
+- Added `apps/api/supabase/queue_matches.sql` to persist public queue matches in Supabase.
+- Added `apps/api/supabase/match_records_view.sql` as a unified `public.match_records` view over public queue matches and existing Blink matches.
+- Added `apps/api/src/services/queueMatches.ts`, a queue match store with Supabase persistence and memory fallback for local/test environments.
+- Exported a reusable Supabase client from `apps/api/src/services/supabase.ts` for read routes.
+- Added `apps/api/src/routes/matches.ts` and mounted it in `apps/api/src/index.ts` at `/api/matches`.
+  - `GET /api/matches/history/:wallet`
+  - `GET /api/matches/record/:source/:id`
+- Refactored `apps/api/src/managers/room/Queue.ts` so public queue matches create the DB row before creating the in-memory room or removing the waiting opponent.
+- Made `/queue` WebSocket matchmaking async in `apps/api/src/routes/queueSocket.ts` and added failure handling for persistence errors.
+- Added `queueMatches` to `RoomManager` beside `blinkMatches`.
+- Added `depositSignature?: string` and `queueMatchPersisted?: boolean` to room/player metadata in `apps/api/src/managers/room/types.ts`.
+- Updated `apps/api/src/managers/room/Lifecycle.ts` to persist public queue lifecycle transitions:
+  - both deposits confirmed -> `ACTIVE`
+  - no-deposit timeout or explicit cancel -> `CANCELLED`
+  - one deposited player and one timeout -> `FORFEITED`
+  - zombie janitor cleanup -> `ABANDONED`
+- Updated `apps/api/src/managers/room/Blockchain.ts` so queue matches are marked `COMPLETED` only after settlement succeeds, and `SETTLEMENT_FAILED` when settlement fails.
+- Updated `apps/api/src/managers/room/Engine.ts` and surrender paths to handle the new `SettlementResult`.
+- Updated `apps/api/src/managers/room/Store.ts` and `apps/api/test/RoomManager.test.ts` so unit tests can disable ER deterministically while production still follows MagicBlock configuration.
+
+### The Reasoning
+1. **Public queue matches needed durable state.** Previously, queue matches lived only in memory. A Railway restart, deploy, or room cleanup could erase the match history even if players had deposited or completed a game.
+2. **DB creation must be part of matchmaking, not analytics.** The queue now writes `queue_matches` before creating the in-memory room. If Supabase creation fails, the waiting opponent is not removed and no public room is created.
+3. **`match_records` avoids breaking legacy history.** Existing `/api/history` remains unchanged, while new `/api/matches/*` routes can read a normalized history surface for queue and Blink records.
+4. **Settlement success is the completion boundary.** Public queue matches only become `COMPLETED` after `submitSettlementTransaction()` succeeds. Failed settlement is now observable as `SETTLEMENT_FAILED` with an error string instead of silently looking complete.
+5. **Persist only real queue rooms.** Some tests and internal flows create `roomType: public` rooms directly. The `queueMatchPersisted` flag prevents those synthetic/manual rooms from writing noisy or invalid `queue_matches` updates.
+6. **Blink v1 remains deliberately conservative.** The unified history view exposes Blink rows, but leaves Blink `winner` and `settled_at` as `null` because the existing `public.matches` table does not store those fields yet.
+
+### The Tech Debt
+- [ ] **Run Supabase SQL in deployment:** `queue_matches.sql` and `match_records_view.sql` must be applied manually or through the migration process before Railway can persist/read queue history.
+- [ ] **Full test suite still has unrelated failures:** Focused checks pass, but `bun test` still fails because integration tests cannot connect to `localhost:9876` and `data/questions/questions.json` is missing in this workspace.
+- [ ] **Blink history remains partial:** `match_records` currently cannot expose Blink `winner` or `settled_at` until `public.matches` stores those fields.
+- [ ] **Deposit confirmation is still client-triggered:** Queue match rows store deposit signatures, but backend still relies on `confirmDeposit` messages. Production should verify deposit signatures against Solana RPC before marking deposits trusted.
+- [ ] **Memory fallback is not durable:** The queue store falls back to memory when Supabase env vars are missing. That is useful for local tests but should not be treated as production persistence.

@@ -9,7 +9,7 @@ interface QueueItem {
   /** The /queue WebSocket (separate from room WS) — used for queue status events */
   queueWs?: RoomSocket;
   connected: boolean;
-  resolve: (roomId: string) => void;
+  resolve: (roomId: string, opponentAddress?: string) => void;
   enqueuedAt: number;
   ttlHandle?: ReturnType<typeof setTimeout>;
   graceHandle?: ReturnType<typeof setTimeout>;
@@ -27,14 +27,16 @@ export class Queue {
 
     if (activeRoom && this.isZombieDepositRoom(activeRoom)) {
       console.warn(`[Queue] Ignoring zombie deposit room ${activeRoom.id} for ${this.shortAddr(address)}.`);
-      this.manager.lifecycle.destroyRoom(activeRoom.id);
+      void this.manager.lifecycle.abandonPublicRoom(activeRoom.id, 'zombie_room').catch((err) => {
+        console.error(`[Queue] Failed to abandon zombie room ${activeRoom.id}:`, err);
+      });
       return undefined;
     }
 
     return activeRoom;
   }
 
-  public releaseUnfundedPublicDepositRoom(address: string): void {
+  public async releaseUnfundedPublicDepositRoom(address: string): Promise<void> {
     const activeRoom = this.manager.store.findRoomByPlayer(address);
     if (!activeRoom || activeRoom.roomType !== 'public' || activeRoom.status !== 'depositing') return;
 
@@ -47,14 +49,15 @@ export class Queue {
 
     const innocentAddress = hasDeposited ? undefined : opponentAddress ?? undefined;
     console.warn(`[Queue] Releasing incomplete public deposit room ${activeRoom.id} for ${this.shortAddr(address)} before queue entry.`);
-    this.manager.lifecycle.cancelRoom(activeRoom.id, innocentAddress, {
+    await this.manager.lifecycle.cancelRoom(activeRoom.id, innocentAddress, {
       reason: 'player_cancelled',
       cancelledBy: address,
     });
   }
 
   public async queueMatch(address: string, signal?: AbortSignal): Promise<string> {
-    this.releaseUnfundedPublicDepositRoom(address);
+    await this.releaseUnfundedPublicDepositRoom(address);
+    if (signal?.aborted) return '__aborted__';
 
     const activeRoom = this.findActiveRoomForAddress(address);
     if (activeRoom) {
@@ -67,8 +70,8 @@ export class Queue {
       this.printQueueState('REQUEUE', `${this.shortAddr(address)} already waiting; chaining request`);
       return new Promise<string>((resolve) => {
         const originalResolve = existing.resolve;
-        existing.resolve = (roomId: string) => {
-          originalResolve(roomId);
+        existing.resolve = (roomId: string, opponentAddress?: string) => {
+          originalResolve(roomId, opponentAddress);
           resolve(roomId);
         };
         this.bindAbort(signal, existing, address);
@@ -77,21 +80,23 @@ export class Queue {
 
     const opponentIndex = this.queue.findIndex((item) => item.address !== address && item.connected);
     if (opponentIndex !== -1) {
-      const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
-      this.clearQueueTimers(playerAEntry);
+      const playerAEntry = this.queue[opponentIndex];
+      if (!playerAEntry) {
+        throw new Error('Queue opponent disappeared before match creation');
+      }
 
-      const roomId = this.createPublicRoomId();
-      const room = this.manager.store.createRoom(roomId);
-      room.playerA = playerAEntry.address;
-      room.playerB = address;
-      room.status = 'depositing';
-      this.manager.store.trackPlayer(playerAEntry.address, roomId);
-      this.manager.store.trackPlayer(address, roomId);
+      const { roomId } = await this.createPersistedPublicMatch(playerAEntry.address, address);
+      const removed = this.queue.splice(opponentIndex, 1)[0];
+      if (!removed || removed.address !== playerAEntry.address) {
+        await this.manager.queueMatches.markAbandoned(roomId, 'queue_race_opponent_changed');
+        throw new Error('Queue opponent changed during match creation');
+      }
 
-      this.manager.lifecycle.armDepositTimeout(room, playerAEntry.address);
+      this.clearQueueTimers(removed);
+      this.createPublicRoomFromPersistedMatch(roomId, removed.address, address);
       this.printQueueState('MATCH FOUND', `${this.shortAddr(playerAEntry.address)} vs ${this.shortAddr(address)} -> ${roomId}`);
 
-      playerAEntry.resolve(roomId);
+      removed.resolve(roomId, address);
       return roomId;
     }
 
@@ -120,8 +125,8 @@ export class Queue {
    * this pushes real-time events (queueJoined, queueStatus, matchFound)
    * over the provided /queue WebSocket.
    */
-  public queueMatchWs(address: string, queueWs: RoomSocket): void {
-    this.releaseUnfundedPublicDepositRoom(address);
+  public async queueMatchWs(address: string, queueWs: RoomSocket): Promise<void> {
+    await this.releaseUnfundedPublicDepositRoom(address);
 
     // Check for active room (reconnect)
     const activeRoom = this.findActiveRoomForAddress(address);
@@ -153,33 +158,48 @@ export class Queue {
     // Try instant match
     const opponentIndex = this.queue.findIndex((item) => item.address !== address && item.connected);
     if (opponentIndex !== -1) {
-      const playerAEntry = this.queue.splice(opponentIndex, 1)[0];
-      this.clearQueueTimers(playerAEntry);
-
-      const roomId = this.createPublicRoomId();
-      const room = this.manager.store.createRoom(roomId);
-      room.playerA = playerAEntry.address;
-      room.playerB = address;
-      room.status = 'depositing';
-      this.manager.store.trackPlayer(playerAEntry.address, roomId);
-      this.manager.store.trackPlayer(address, roomId);
-
-      this.manager.lifecycle.armDepositTimeout(room, playerAEntry.address);
-      this.printQueueState('MATCH FOUND (WS)', `${this.shortAddr(playerAEntry.address)} vs ${this.shortAddr(address)} -> ${roomId}`);
-
-      // Notify Player A (opponent) via their queue WS if available
-      if (playerAEntry.queueWs) {
-        this.manager.network.safeSend(playerAEntry.queueWs, {
-          type: 'matchFound',
-          payload: { roomId, role: 'playerA', opponentAddress: address, roomType: room.roomType },
+      const playerAEntry = this.queue[opponentIndex];
+      if (!playerAEntry) {
+        this.manager.network.safeSend(queueWs, {
+          type: 'queueLeft',
+          payload: { reason: 'match_creation_failed' },
         } satisfies WsMessage);
+        return;
       }
-      playerAEntry.resolve(roomId);
+
+      let roomId: string;
+      try {
+        const persisted = await this.createPersistedPublicMatch(playerAEntry.address, address);
+        roomId = persisted.roomId;
+      } catch (err) {
+        console.error('[Queue] Failed to persist public WS match:', err);
+        this.manager.network.safeSend(queueWs, {
+          type: 'queueLeft',
+          payload: { reason: 'match_creation_failed' },
+        } satisfies WsMessage);
+        return;
+      }
+
+      const removed = this.queue.splice(opponentIndex, 1)[0];
+      if (!removed || removed.address !== playerAEntry.address) {
+        await this.manager.queueMatches.markAbandoned(roomId, 'queue_race_opponent_changed');
+        this.manager.network.safeSend(queueWs, {
+          type: 'queueLeft',
+          payload: { reason: 'match_creation_failed' },
+        } satisfies WsMessage);
+        return;
+      }
+
+      this.clearQueueTimers(removed);
+      const room = this.createPublicRoomFromPersistedMatch(roomId, removed.address, address);
+      this.printQueueState('MATCH FOUND (WS)', `${this.shortAddr(removed.address)} vs ${this.shortAddr(address)} -> ${roomId}`);
+
+      removed.resolve(roomId, address);
 
       // Notify current player (Player B) via their queue WS
       this.manager.network.safeSend(queueWs, {
         type: 'matchFound',
-        payload: { roomId, role: 'playerB', opponentAddress: playerAEntry.address, roomType: room.roomType },
+        payload: { roomId, role: 'playerB', opponentAddress: removed.address, roomType: room.roomType },
       } satisfies WsMessage);
 
       this.broadcastQueuePositions();
@@ -191,12 +211,12 @@ export class Queue {
       address,
       queueWs,
       connected: true,
-      resolve: (roomId: string) => {
+      resolve: (roomId: string, opponentAddress?: string) => {
         // When matched via the HTTP path, also notify the queueWs.
         if (queueItem.queueWs) {
           this.manager.network.safeSend(queueItem.queueWs, {
             type: 'matchFound',
-            payload: { roomId, role: 'playerA', opponentAddress: address, roomType: 'public' },
+            payload: { roomId, role: 'playerA', opponentAddress: opponentAddress ?? '', roomType: 'public' },
           } satisfies WsMessage);
         }
       },
@@ -287,6 +307,13 @@ export class Queue {
     address: string,
   ): void {
     if (!signal) return;
+    if (signal.aborted) {
+      if (this.removeQueueItem(queueItem)) {
+        queueItem.resolve('__aborted__');
+        this.printQueueState('ABORTED', `${this.shortAddr(address)} left matchmaking`);
+      }
+      return;
+    }
     signal.addEventListener('abort', () => {
       this.clearQueueTimers(queueItem);
       if (this.removeQueueItem(queueItem)) {
@@ -302,6 +329,31 @@ export class Queue {
     this.queue.splice(index, 1);
     this.broadcastQueuePositions();
     return true;
+  }
+
+  private async createPersistedPublicMatch(playerA: string, playerB: string): Promise<{ roomId: string }> {
+    const roomId = this.createPublicRoomId();
+    await this.manager.queueMatches.create({
+      id: roomId,
+      playerA,
+      playerB,
+      tokenMint: null,
+      wagerAmount: 0n,
+    });
+    return { roomId };
+  }
+
+  private createPublicRoomFromPersistedMatch(roomId: string, playerA: string, playerB: string): Room {
+    const room = this.manager.store.createRoom(roomId);
+    room.roomType = 'public';
+    room.queueMatchPersisted = true;
+    room.playerA = playerA;
+    room.playerB = playerB;
+    room.status = 'depositing';
+    this.manager.store.trackPlayer(playerA, roomId);
+    this.manager.store.trackPlayer(playerB, roomId);
+    this.manager.lifecycle.armDepositTimeout(room, playerA);
+    return room;
   }
 
   private clearQueueTimers(queueItem: QueueItem): void {
