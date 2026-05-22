@@ -16,6 +16,7 @@ export interface RoomClient {
 export interface ServerPlayerMeta {
   hasDeposited: boolean;
   characterId: string;
+  depositSignature?: string;
 }
 
 export interface OpenedCard {
@@ -70,6 +71,8 @@ export interface Room {
   openedCards: Map<string, OpenedCard>;
   /** 'private' rooms are created via /match/private, 'public' via FIFO, 'bot' via practice queue fallback */
   roomType: RoomType;
+  /** True only when a public FIFO room has a corresponding queue_matches row. */
+  queueMatchPersisted?: boolean;
   /** Role-assigned player addresses — set at pairing time, never from URL params */
   playerA: string | null;
   playerB: string | null;

@@ -95,6 +95,7 @@ export class Lifecycle {
       room.playerMeta.set(address, {
         hasDeposited: existingMeta?.hasDeposited ?? false,
         characterId,
+        depositSignature: existingMeta?.depositSignature,
       });
     }
 
@@ -110,6 +111,7 @@ export class Lifecycle {
         for (const t of room.depositTimeouts.values()) clearTimeout(t);
         room.depositTimeouts.clear();
         console.log(`Room ${roomId}: Late join triggered game start — both already deposited!`);
+        this.markPublicQueueActive(room);
         this.startGameWhenReady(room);
         return;
       }
@@ -163,7 +165,9 @@ export class Lifecycle {
 
       const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
       console.log(`Player ${address} disconnected during depositing in room ${roomId}. Cancelling room immediately.`);
-      this.cancelRoom(roomId, opponentAddress ?? undefined, { reason: 'disconnect', cancelledBy: address });
+      void this.cancelRoom(roomId, opponentAddress ?? undefined, { reason: 'disconnect', cancelledBy: address }).catch((err) => {
+        console.error(`[Lifecycle] Failed to cancel disconnected room ${roomId}:`, err);
+      });
     }
   }
 
@@ -174,7 +178,9 @@ export class Lifecycle {
     if (cancelledBy !== room.playerA && cancelledBy !== room.playerB) return;
 
     console.log(`[Cancel] ${cancelledBy} cancelled deposit room ${roomId}.`);
-    this.cancelRoom(roomId, undefined, { reason: 'player_cancelled', cancelledBy });
+    void this.cancelRoom(roomId, null, { reason: 'player_cancelled', cancelledBy }).catch((err) => {
+      console.error(`[Lifecycle] Failed to cancel room ${roomId}:`, err);
+    });
   }
 
   public handleDeposit(room: Room, address: string, signature: string) {
@@ -209,9 +215,11 @@ export class Lifecycle {
         .catch((err) => {
           console.error(`[Blink] Failed to mark room ${room.id} forfeited:`, err);
         });
-      this.cancelRoom(room.id, room.playerB ?? undefined, {
+      void this.cancelRoom(room.id, room.playerB ?? undefined, {
         reason: 'deposit_timeout',
         cancelledBy: address,
+      }).catch((err) => {
+        console.error(`[Lifecycle] Failed to cancel forfeited Blink room ${room.id}:`, err);
       });
       return;
     }
@@ -222,8 +230,18 @@ export class Lifecycle {
       room.depositTimeouts.delete(address);
     }
 
-    const meta = room.playerMeta.get(address);
-    if (meta) meta.hasDeposited = true;
+    const existing = room.playerMeta.get(address);
+    room.playerMeta.set(address, {
+      hasDeposited: true,
+      characterId: existing?.characterId ?? 'einstein',
+      depositSignature: signature,
+    });
+
+    if (room.queueMatchPersisted && room.tokenMint && room.wagerAmount) {
+      void this.manager.queueMatches.updateTokenInfo(room.id, room.tokenMint, room.wagerAmount).catch((err) => {
+        console.error(`[Lifecycle] Failed to update queue token info ${room.id}:`, err);
+      });
+    }
 
     // True flow: for private rooms, both wagers are already locked on-chain
     // after accept_challenge. Creator's deposit confirmation via WebSocket
@@ -231,9 +249,11 @@ export class Lifecycle {
     if (room.roomType === 'private' && address === room.playerA) {
       void this.manager.blinkMatches.markActive(room.id, address, signature).then((match) => {
         if (match?.status === 'FORFEITED') {
-          this.cancelRoom(room.id, room.playerB ?? undefined, {
+          void this.cancelRoom(room.id, room.playerB ?? undefined, {
             reason: 'deposit_timeout',
             cancelledBy: address,
+          }).catch((err) => {
+            console.error(`[Lifecycle] Failed to cancel forfeited private room ${room.id}:`, err);
           });
         }
       }).catch((err) => {
@@ -275,9 +295,20 @@ export class Lifecycle {
         return;
       }
 
+      this.markPublicQueueActive(room);
       console.log(`Room ${room.id} both players deposited. Initializing game engine!`);
       this.startGameWhenReady(room);
     }
+  }
+
+  private markPublicQueueActive(room: Room): void {
+    if (!room.queueMatchPersisted || !room.playerA || !room.playerB) return;
+
+    const sigA = room.playerMeta.get(room.playerA)?.depositSignature ?? '';
+    const sigB = room.playerMeta.get(room.playerB)?.depositSignature ?? '';
+    void this.manager.queueMatches.markActive(room.id, sigA, sigB).catch((err) => {
+      console.error(`[Lifecycle] Failed to mark queue match active ${room.id}:`, err);
+    });
   }
 
   private startGameWhenReady(room: Room): void {
@@ -307,17 +338,19 @@ export class Lifecycle {
     const timer = setTimeout(() => {
       console.log(`[ShotClock] Player ${address} timed out in room ${room.id}. Cancelling.`);
       const opponentAddress = address === room.playerA ? room.playerB : room.playerA;
-      this.cancelRoom(room.id, opponentAddress ?? undefined, { reason: 'deposit_timeout', cancelledBy: address });
+      void this.cancelRoom(room.id, opponentAddress ?? undefined, { reason: 'deposit_timeout', cancelledBy: address }).catch((err) => {
+        console.error(`[Lifecycle] Failed to cancel timed-out room ${room.id}:`, err);
+      });
     }, this.DEPOSIT_TIMEOUT_MS);
 
     room.depositTimeouts.set(address, timer);
   }
 
-  public cancelRoom(
+  public async cancelRoom(
     roomId: string,
-    innocentAddress?: string,
-    options?: { reason?: 'player_cancelled' | 'deposit_timeout' | 'disconnect'; cancelledBy?: string },
-  ): void {
+    innocentAddress?: string | null,
+    options?: { reason?: string; cancelledBy?: string | null },
+  ): Promise<void> {
     const room = this.manager.store.getRoom(roomId);
     if (!room) return;
     const reason = options?.reason ?? 'deposit_timeout';
@@ -356,8 +389,68 @@ export class Lifecycle {
       }
     }
 
+    if (room.queueMatchPersisted) {
+      await this.persistPublicRoomCancellation(room, options);
+    }
+
     this.closeRoomSockets(room, 'Match cancelled');
     this.destroyRoom(roomId);
+  }
+
+  public async abandonPublicRoom(roomId: string, reason: string): Promise<void> {
+    const room = this.manager.store.getRoom(roomId);
+    if (!room) return;
+
+    if (room.queueMatchPersisted) {
+      await this.manager.queueMatches.markAbandoned(room.id, reason);
+    }
+
+    this.destroyRoom(roomId);
+  }
+
+  private async persistPublicRoomCancellation(
+    room: Room,
+    options?: { reason?: string; cancelledBy?: string | null },
+  ): Promise<void> {
+    if (!room.queueMatchPersisted) return;
+
+    const reason = options?.reason ?? 'cancelled';
+    const cancelledBy = options?.cancelledBy ?? null;
+    const playerA = room.playerA;
+    const playerB = room.playerB;
+
+    if (!playerA || !playerB) {
+      await this.manager.queueMatches.markAbandoned(room.id, reason);
+      return;
+    }
+
+    const aDeposited = room.playerMeta.get(playerA)?.hasDeposited ?? false;
+    const bDeposited = room.playerMeta.get(playerB)?.hasDeposited ?? false;
+
+    if (reason === 'deposit_timeout') {
+      if (aDeposited && !bDeposited) {
+        await this.manager.queueMatches.markForfeited(room.id, playerA, `deposit_timeout:${playerB}`);
+        return;
+      }
+
+      if (bDeposited && !aDeposited) {
+        await this.manager.queueMatches.markForfeited(room.id, playerB, `deposit_timeout:${playerA}`);
+        return;
+      }
+
+      await this.manager.queueMatches.markCancelled(room.id, 'deposit_timeout:no_deposit');
+      return;
+    }
+
+    if (reason === 'zombie_room' || reason === 'server_cleanup') {
+      await this.manager.queueMatches.markAbandoned(room.id, reason);
+      return;
+    }
+
+    await this.manager.queueMatches.markCancelled(
+      room.id,
+      cancelledBy ? `${reason}:${cancelledBy}` : reason,
+    );
   }
 
   private closeRoomSockets(room: Room, reason: string): void {
@@ -436,7 +529,11 @@ export class Lifecycle {
     room.status = 'settling';
     this.manager.network.broadcastGameState(room);
     if (room.roomType !== 'bot') {
-      this.manager.blockchain.settleMatch(room, winnerAddress);
+      void this.manager.blockchain.settleMatch(room, winnerAddress).then((result) => {
+        if (!result.ok) {
+          console.error(`[Lifecycle] Settlement failed for room ${room.id}`);
+        }
+      });
     }
 
     const result: MatchResult = {
