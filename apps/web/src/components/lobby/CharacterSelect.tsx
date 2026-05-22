@@ -49,7 +49,7 @@ export function CharacterSelect({
   return (
     <RoomPhaseShell
       withTransition={false}
-      className="min-h-[100svh] overflow-x-hidden overflow-y-auto pb-3 pt-5 md:h-[100svh] md:overflow-hidden md:pb-4 md:pt-6"
+      className="min-h-[100svh] overflow-x-hidden overflow-y-auto pb-3 pt-5 md:pb-4 md:pt-6"
       phase="setup"
       hideTitleBlock={true}
       statusSlot={

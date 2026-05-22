@@ -6163,3 +6163,257 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - The extreme layout still depends on hand-tuned virtual-board scale values. A future cleanup could calculate this with a single CSS variable pair for virtual width and scale.
 
+## 2026-05-22 - Restore Scientist Pick Scrolling
+
+### The Change
+- Updated [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) so the lobby root only hides horizontal overflow instead of clipping all overflow.
+- Updated [CharacterSelect.tsx](/d:/projects/Cora/apps/web/src/components/lobby/CharacterSelect.tsx) so the pick-scientist shell stays vertically scrollable at medium/tablet widths instead of switching to a fixed `100svh` hidden-overflow layout.
+
+### The Reasoning
+- Mobile and tablet landscape can make the scientist roster plus header/action row taller than the viewport. The previous overflow clamps left the page with extra content but no scroll container, so users could not reach the lower cards or continue action.
+
+### The Tech Debt
+- This should still be checked on the target real devices/browser chrome, because `svh` behavior and visible toolbar height vary between mobile Safari and Chrome.
+
+## 2026-05-22 - Compact Lobby Setup On Phones
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) with smaller base mobile spacing, text, arena rows, icon/check sizes, hero minimum height, and action-row gaps while keeping the existing roomier scale at `sm`/`md` breakpoints.
+- Added a lobby-scoped phone override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so `.btn-game` padding/font sizes shrink inside the lobby setup screen instead of being re-inflated by the global button rule.
+
+### The Reasoning
+- The `/lobby` setup screen was using desktop-ish defaults for phones, making the header pills, arena list, hero panel, and primary actions feel oversized before users even reach scientist selection. Compacting only the base styles improves mobile fit without disturbing tablet/desktop layout.
+
+### The Tech Debt
+- This pass is still size-tuning by breakpoint. The next mobile polish should be checked against the exact target phone dimensions and may need landscape-specific ordering if the arena art should stay visible above the selector.
+
+## 2026-05-22 - Compact Lobby Setup In Short Landscape
+
+### The Change
+- Added short-landscape lobby setup selectors in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) for the main card, arena panel/list/options, hero copy/title, and action block.
+- Added a `max-width: 960px` plus `max-height: 540px` landscape override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to shrink the `/lobby` header pills, arena column, option rows, hero padding/title, and action buttons when phone landscape triggers Tailwind's `md` breakpoint.
+
+### The Reasoning
+- The first compact pass only reduced base phone styles, but an iPhone 12 Pro landscape viewport is `844px` wide, so `md:` classes were still applying desktop-ish sizing. The short-landscape override targets that actual viewport shape directly.
+
+### The Tech Debt
+- The rule is intentionally scoped to `/lobby` setup. Other lobby phases may need matching short-landscape treatment as we move through the mobile/tablet pass.
+
+## 2026-05-22 - Fit Lobby Setup Without Short-Landscape Scroll
+
+### The Change
+- Added a `lobby-setup-footer` hook in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) for the secondary wallet/Blink action row.
+- Updated the short-landscape rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the `/lobby` setup screen uses a fixed `100svh` height, hides page overflow, flexes the main card into the remaining space, and keeps the footer as a compact visible row.
+- Further tightened short-landscape header pill padding, arena option heights, hero padding, title size, and primary action sizing.
+
+### The Reasoning
+- The previous short-landscape pass reduced visual scale, but the main card still took enough height to push `Create Blink Challenge` below the viewport. Treating the screen as a height-budgeted layout makes the phase responsive enough to fit without page scrolling at the iPhone 12 Pro landscape viewport.
+
+### The Tech Debt
+- If wallet/browser overlays add more fixed UI in the future, the footer may need to become an icon-sized overflow menu in short landscape rather than staying as a full text button.
+
+## 2026-05-22 - Stretch Lobby Setup On Tablet Landscape
+
+### The Change
+- Added a tablet-landscape media query in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for `961px`-plus landscape widths with enough viewport height.
+- The `/lobby` setup screen now uses `100svh` height in that tablet-landscape range, keeps the header/footer fixed to their natural height, and lets the main arena card flex to fill the remaining vertical space.
+
+### The Reasoning
+- iPad landscape had the inverse of the phone problem: the UI fit, but the arena wrapper stayed content-height and left a large empty area underneath. Stretching the main card makes the layout feel intentionally responsive on tablet landscape without affecting the phone short-landscape no-scroll mode.
+
+### The Tech Debt
+- The tablet range is breakpoint-based. If Android tablets with unusual aspect ratios show awkward spacing, we may need to refine the range around aspect-ratio rather than only width/height.
+
+## 2026-05-22 - Prevent Short-Landscape Arena Caption Wrap
+
+### The Change
+- Updated the short-landscape `/lobby` arena option caption rule in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so secondary labels stay on one line with ellipsis instead of wrapping.
+
+### The Reasoning
+- The narrow phone-landscape arena column made labels like `THE CLASSIC ARENA` wrap into three lines, making the selected row look broken. Keeping the caption single-line preserves row height and visual rhythm.
+
+### The Tech Debt
+- If arena captions become meaningfully longer, we may want explicit shorter mobile labels in data rather than relying on ellipsis.
+
+## 2026-05-22 - Let Short-Landscape Arena Captions Span Right
+
+### The Change
+- Updated the short-landscape arena option layout in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so caption text uses the available row width and remains visible instead of truncating with ellipsis.
+
+### The Reasoning
+- The intended fix was not to show `THE...`, but to let labels like `THE CLASSIC ARENA` continue horizontally within the option row while staying single-line.
+
+### The Tech Debt
+- The short-landscape option structure is now CSS-targeted by child position. If this card markup changes, these selectors should be revisited.
+
+## 2026-05-22 - Tune Short-Landscape Arena Icon and Check Alignment
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to add explicit `lobby-setup-arena-token-icon` and `lobby-setup-arena-check` hooks and replaced text checkmarks with inline SVG check icons for stable centering.
+- Updated short-landscape rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to reduce token icon SVG size and tighten check badge size/position.
+
+### The Reasoning
+- The phone-landscape arena row needed a smaller token icon, and the unicode checkmark baseline was visually offset inside the badge. SVG checks give predictable centering across devices and fonts.
+
+### The Tech Debt
+- These selector hooks are specific to the current arena option markup. If the row structure changes, icon/check overrides should be revalidated.
+
+## 2026-05-22 - Restore Mobile-Landscape Arena Check Visibility
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so arena check badges render with explicit inline color and higher stacking (`z-[2]`) in selected rows.
+- Updated short-landscape check sizing in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to slightly larger badge/icon dimensions for better visibility on phone DPR scaling.
+
+### The Reasoning
+- After the SVG check migration, the mobile-landscape selected check could disappear due a combination of layering and tiny rendered size. Raising z-order and making the icon slightly larger restores reliable visibility.
+
+### The Tech Debt
+- If we continue scaling arena rows down further for extreme short viewports, check icon size should be tuned in lockstep to avoid another visibility regression.
+
+## 2026-05-22 - Use CSS Arena Checks In Mobile Landscape
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so selected arena badges render a `lobby-setup-arena-check-mark` span instead of an inline SVG path.
+- Added CSS-drawn checkmark styling in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for the short-landscape arena check badge.
+- Added an orange selected-check treatment for the BONK arena.
+
+### The Reasoning
+- The badge shell was visible in mobile landscape, but the SVG check path was disappearing. A CSS-drawn tick is simpler and more reliable at the tiny phone-landscape size, while the BONK state now matches its warm arena color.
+
+### The Tech Debt
+- The CSS check depends on border-based drawing. If the badge is scaled below the current short-landscape size, the mark dimensions should be retuned with the badge.
+
+## 2026-05-22 - Restore Arena Checkmark Across Viewports
+
+### The Change
+- Moved `.lobby-setup-arena-check-mark` styling in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) out of the short-landscape-only media query into a base rule so desktop, tablet, and mobile all render the selected checkmark.
+- Changed the CSS-drawn tick from a left/bottom border shape to a right/bottom border shape rotated `45deg`, with phone-landscape only overriding its dimensions.
+
+### The Reasoning
+- The previous fix accidentally defined the visible checkmark only for short landscape, leaving other viewports with an unstyled empty span. The tick direction also made the phone-landscape mark barely visible. A base rule keeps the mark present everywhere, and the media query now only scales it.
+
+### The Tech Debt
+- The selected arena badge now depends on shared base styling plus a short-landscape size override. Future badge changes should be checked across phone portrait, phone landscape, tablet landscape, and desktop together.
+
+## 2026-05-22 - Harden Arena Check Badge Shape
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so `.lobby-setup-arena-check` owns its absolute position, fixed circular dimensions, grid centering, and full-circle radius with stronger CSS.
+- Moved the visible checkmark drawing to `.lobby-setup-arena-check::before` and hid the child marker span, leaving the short-landscape rule to only resize the badge/check.
+
+### The Reasoning
+- The selected badge was still being stretched into an oval because Tailwind responsive sizing utilities and custom responsive rules were fighting. Making the badge a self-contained circular component removes that conflict and keeps the check visible.
+
+### The Tech Debt
+- The JSX still includes a child marker span for markup stability, but it is now hidden. A future cleanup can remove that span once the responsive pass settles.
+
+## 2026-05-22 - Simplify Arena Check Badge
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) so selected arena badges render only the purpose-built `lobby-setup-arena-check` class and the original text checkmark character.
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to remove pseudo-element check drawing and make the badge a self-contained circular flex element with fixed width/height, `border-radius: 50%`, centered text, and short-landscape-only size reduction.
+
+### The Reasoning
+- The badge was broken because JSX utility classes, pseudo-element check drawing, and responsive overrides were all fighting each other. Returning to a plain text check inside one CSS-owned circle restores the previous mark while keeping the badge round and vertically centered across viewport sizes.
+
+### The Tech Debt
+- This should be visually checked after the dev server refresh because prior browser-cached CSS made this area hard to trust by inspection alone.
+
+## 2026-05-22 - Refactor Option Layout Selectors to Prevent Check Leakage
+
+### The Change
+- Refactored generic direct-child selectors `.lobby-setup-arena-option > div` in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) inside the landscape media query to target `.lobby-setup-arena-option > div:first-child` and `.lobby-setup-arena-token-icon` specifically.
+
+### The Reasoning
+- The `.lobby-setup-arena-check` badge was being stretched into a capsule shape and its text was overflowing/falling out because it was a direct child `div` of `.lobby-setup-arena-option`. As a result, it was matching the generic media-query rules for `.lobby-setup-arena-option > div`, which leaked `padding-right: 24px` and custom layout sizes onto it. Targeting only the first child div (the content wrapper) isolates the checkmark element completely, allowing it to render as a perfect circle with the check character centered.
+
+### The Tech Debt
+- Other parts of the app may still rely on generic `> div` selectors inside parent containers. Standardizing custom layout components with class-based selectors would prevent style leakage long-term.
+
+## 2026-05-22 - Mobile Portrait Horizontal Token Chips selector
+
+### The Change
+- Updated [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) options container to use a responsive flex structure: horizontal row on mobile portrait (`flex-row gap-2`) and vertical stack on desktop/tablets (`sm:flex-col sm:gap-0 sm:space-y-3`).
+- Refactored the option button contents layout to stack elements vertically (`flex-col items-center justify-center`) on mobile portrait view while keeping horizontal structure on desktop/tablets.
+- Made the "And More To Come" placeholder button responsive, collapsing its long text on mobile to display a clean `+` sign.
+- Added portrait mobile `@media (max-width: 639px)` style overrides in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to:
+  - Transform rectangular options into perfect circular game tokens using `aspect-ratio: 1/1` and circular radiuses (`border-radius: 999px`), while overriding standard corner clips.
+  - Hide long descriptive flavor texts and center label content.
+  - Position and float selected checkmark icons (`.lobby-setup-arena-check`) at the top-right overlapping border of the active circular chips.
+
+### The Reasoning
+- On mobile portrait view, the vertical list of rectangular choice buttons occupied excessive vertical height. This pushed the key artwork card and the primary game buttons ("TRY FREE TUTORIAL", "PICK SCIENTIST") down the viewport, causing a cramped layout.
+- Transforming the choices into a compact horizontal bar of sleek circular token chips reduces vertical selection height from ~260px to ~65px, giving full breathing room to the primary visual interface while maintaining a premium game-like feel.
+
+### The Tech Debt
+- On extremely narrow screens (< 320px), the circular chips might shrink. However, standard portrait viewports (360px+) are fully supported.
+- If extra arenas are added in the future, we may need to implement a horizontal swiper for the token chip bar.
+
+## 2026-05-22 - Fix Header Pill Wrap and Syntax Error in Lobby Setup
+
+### The Change
+- Fixed a compilation/syntax error in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) around the top header layout.
+- Restored the missing `style={{` tag on the main `.lobby-setup-card` wrapper.
+- Properly flattened the top header layout so that the `Address` (Wallet ID), `Wager`, `Balance`, `Replay Intro`, and `History Coming Soon` pills are direct sibling nodes inside the outer `flex flex-wrap items-center gap-2` container.
+- Added a responsive hidden-sm constraint `<span className="hidden sm:inline"> Balance</span>` inside the `Balance` pill.
+
+### The Reasoning
+- An incomplete file merge in a previous code edit deleted parts of the balance pill container and the `Replay Intro` button, resulting in a parsing error and a broken screen.
+- In addition, selecting BONK/MEW expanded the balance text (`COMING SOON`), which caused the nested `[ Wager | Balance ]` block to wrap and push the entire dashboard layout down onto 3 rows.
+- Flattening the flex container allows each badge/pill to wrap individually if space runs out, rather than grouping them in nested boxes.
+- Shortening the mobile label (from `BONK Balance: COMING SOON` to `BONK: COMING SOON`) keeps the total character width tight and prevents the header row from wrapping into a third row entirely, keeping a stable two-row configuration on mobile portrait across all selected arenas.
+
+### The Tech Debt
+- The `wagerUsd` and `tokenBalanceValue` values are currently read-only mocks on mobile; when the live wallet transaction/balance hook integration is active, these layout constraints must be verified with active real data.
+
+## 2026-05-22 - Standardize Compact Balance Pill to Prevent Header Wrap
+
+### The Change
+- Refactored `LobbySetup.tsx` to simplify and consolidate the `tokenBalanceValue` variable, removing the unused `tokenBalanceLabel` and `tokenBalanceValueMobile`.
+- Modified the balance pill markup in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) to always use the compact `{Token}: {Value}` format directly (e.g., `SOL: 0`, `BONK: Soon`, `MEW: Soon`), completely removing screen-width responsive spans and media-query toggles for the text content.
+
+### The Reasoning
+- Even with responsive helper spans, Next.js hydration mismatches or simulator layout queries could render the full `COMING SOON` text instead of `Soon` below the `sm` breakpoint on mobile viewports.
+- Standardizing the balance pill to use the compact `{Token}: {Value}` HUD format across both mobile and desktop solves this cleanly. It guarantees a 100% stable layout width (maximum 10–12 characters), eliminates responsive CSS and hydration conflicts, and keeps all five header pills locked into a clean, stable two-row configuration on mobile portrait across all selected tokens.
+
+### The Tech Debt
+- None. This is a clean simplification that removes dead logic and media-query complexity from the component.
+
+## 2026-05-22 - Fix Next.js Wallet Hydration Mismatch in Lobby Setup
+
+### The Change
+- Added a `mounted` state guard pattern via a local `useState` and `useEffect` inside [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+- wrapped all properties, attributes, and conditional blocks that depend on the browser's client-side Solana wallet state (e.g. `selectedWallet`, `walletConnected`, `playability`, `connecting`) in the `mounted` check to render stable placeholder states during the initial pre-rendered SSR pass.
+
+### The Reasoning
+- The browser wallet adapter loads previously selected wallets from local storage on mount. Since Next.js has no access to client local storage during Server-Side Rendering (SSR), it pre-renders the HTML with no wallet connected (`Select Wallet` button text).
+- Upon page hydration, if the client has a wallet selected, the mismatch in button labels (`Select Wallet` on server vs `Connect Wallet` on client) or the presence of conditionally rendered wallet status elements triggers a React hydration warning.
+- Forcing the component to match the server HTML structure until `mounted` is set to `true` on the client completely avoids these hydration mismatches and allows the wallet state to safely load dynamically after the page loads.
+
+### The Tech Debt
+- None. This is standard best practice for client-only state variables in Next.js.
+
+## 2026-05-22 - Fix Lobby Setup Header Split and Left-Centered Options
+
+### The Change
+- Split the single outer header flex container in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx) into two distinct sibling flex containers: one on the left containing `Address` (Wallet identity), `Wager`, and `Balance` pills, and one on the right containing `Replay Intro` and `History Coming Soon` pills.
+- Added the `sm:justify-start` class to the inner flex container of the arena choice option buttons (both the dynamic mapping and the static MEW teaser) in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- Flattening the header in a single wrapper previously caused `<header className="... justify-between">` to place all five pills on the far left. By dividing them into left and right flex cluster wrappers, Tailwind's `justify-between` naturally pushes the secondary utilities to the right side of the screen on desktop/landscape viewports while maintaining compact stacking behavior on mobile portrait.
+- The arena choice buttons previously centered their icon and text contents horizontally on desktop/landscape viewports, which looked mismatched. Adding `sm:justify-start` aligns the icon and text block to the left edge of the wide rectangular button while keeping them vertically centered, aligning with the absolute checkmark floated on the right.
+
+### The Tech Debt
+- None. This utilizes standard Tailwind CSS alignment utility classes and restores the intended layout cleanly.
+
+## 2026-05-22 - Make Main Setup Card Grow Vertically in Portrait
+
+### The Change
+- Added the `grow` (`flex-grow: 1`) class to the main `.lobby-setup-card` container in [LobbySetup.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbySetup.tsx).
+
+### The Reasoning
+- In portrait viewports on tall devices, there was excessive empty space at the bottom of the screen below the card, causing the `Create Blink Challenge` footer button to sit floating awkwardly in the middle.
+- Adding `grow` lets the card expand dynamically to fill all available vertical space inside the `min-h-[100svh]` container. This pushes the footer to the bottom of the screen, and the inner `.lobby-setup-hero` section (which already has `grow`) expands vertically to fill the card. The backdrop artwork, title, and buttons beautifully occupy this space, creating a highly polished, immersive full-screen dashboard app layout.
+
+### The Tech Debt
+- None. This uses standard Tailwind responsive flex structures and plays nicely with the landscape media overrides which force `flex: 1 1 auto` to stretch height correctly in landscape.
