@@ -812,7 +812,11 @@ export function OpponentFound({
 
 
   return (
-    <div className="mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col overflow-x-hidden overflow-y-auto px-4 py-6 md:h-[100svh] md:overflow-hidden md:px-6 md:py-8">
+    <div
+      className={`opponent-found-screen mx-auto flex min-h-[100svh] w-full max-w-5xl flex-col overflow-x-hidden overflow-y-auto px-4 py-6 md:h-[100svh] md:overflow-hidden md:px-6 md:py-8 ${
+        isBotMatch ? "opponent-found-screen--bot" : ""
+      }`}
+    >
       {/* Opponent failed to deposit popup */}
       {opponentFailedDepositAt && (
         <div className="fixed left-1/2 top-6 z-[80] w-full max-w-md -translate-x-1/2">
@@ -860,9 +864,9 @@ export function OpponentFound({
         </div>
       )}
       {isBotMatch && (
-        <div className="fixed left-1/2 top-6 z-[75] w-full max-w-xl -translate-x-1/2 px-4">
+        <div className="opponent-found-practice-banner z-[75] mx-auto w-full max-w-xl self-center px-4">
           <div
-            className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
+            className="opponent-found-practice-card frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
             style={{
               border: "2px solid rgba(248,214,148,0.55)",
               background: "linear-gradient(145deg, rgba(13,24,20,0.96) 0%, rgba(25,43,35,0.96) 100%)",
@@ -1038,7 +1042,7 @@ export function OpponentFound({
         </div>
       )}
 
-      <div className="flex-shrink-0 text-center">
+      <div className="opponent-found-heading flex-shrink-0 text-center">
       <p className="font-gabarito text-[11px] font-bold uppercase tracking-[0.26em] text-[var(--tone-cream)]/90">
         {arena.label} · ${wagerUsd} {arena.token}
       </p>
@@ -1052,9 +1056,9 @@ export function OpponentFound({
       )}
       </div>
 
-      <div className="mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+      <div className="opponent-found-duel-grid mt-6 grid w-full flex-shrink-0 grid-cols-1 gap-3 md:mt-8 md:gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         <div
-          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          className="opponent-found-player-card relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
             border: "2px solid rgba(111,58,40,0.62)",
             background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
@@ -1062,9 +1066,9 @@ export function OpponentFound({
           }}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(248,214,148,0.2),transparent_52%)]" />
-          <div className="relative flex items-center gap-4">
+          <div className="opponent-found-card-content relative flex items-center gap-4">
             <div
-              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              className="opponent-found-avatar grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
                 background: myScientist.portraitBg,
@@ -1089,25 +1093,25 @@ export function OpponentFound({
               )}
             </div>
 
-            <div className="min-w-0">
+            <div className="opponent-found-card-meta min-w-0">
               <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
                 You
               </span>
-              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
-              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{displayWalletLabel}</p>
+              <p className="opponent-found-name mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">{myScientist.name}</p>
+              <p className="opponent-found-detail mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">{myScientist.base}</p>
+              <p className="opponent-found-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">{displayWalletLabel}</p>
             </div>
           </div>
         </div>
 
-        <div className="grid place-items-center px-4 py-1 md:px-6">
-          <div className="animate-orb-breath font-caprasimo text-5xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)] md:text-6xl" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
+        <div className="opponent-found-vs-wrap grid place-items-center px-4 py-1 md:px-6">
+          <div className="opponent-found-vs animate-orb-breath font-caprasimo text-5xl leading-none text-[var(--tone-cream)] drop-shadow-[0_8px_16px_rgba(0,0,0,0.5)] md:text-6xl" style={{ textShadow: "0 0 20px rgba(248,214,148,0.28)" }}>
             VS
           </div>
         </div>
 
         <div
-          className="relative overflow-hidden rounded-2xl p-5 shadow-xl"
+          className="opponent-found-player-card relative overflow-hidden rounded-2xl p-5 shadow-xl"
           style={{
             border: "2px solid rgba(111,58,40,0.62)",
             background: "linear-gradient(145deg, #fff4dd 0%, #f1dfc1 100%)",
@@ -1115,9 +1119,9 @@ export function OpponentFound({
           }}
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_25%,rgba(157,180,150,0.17),transparent_50%)]" />
-          <div className="relative flex items-center gap-4">
+          <div className="opponent-found-card-content relative flex items-center gap-4">
             <div
-              className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
+              className="opponent-found-avatar grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl"
               style={{
                 border: "2px solid rgba(111,58,40,0.6)",
                 background: "linear-gradient(150deg, #5a321f 0%, #7a4529 65%, #3f2418 100%)",
@@ -1128,17 +1132,17 @@ export function OpponentFound({
                 ?
               </span>
             </div>
-            <div className="min-w-0">
+            <div className="opponent-found-card-meta min-w-0">
               <span className="inline-flex rounded-full border border-[rgba(111,58,40,0.38)] bg-[rgba(255,248,236,0.9)] px-2 py-0.5 font-gabarito text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--tone-bark)]">
                 Rival
               </span>
-              <p className="mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
+              <p className="opponent-found-name mt-2 truncate font-caprasimo text-2xl text-[var(--tone-bark)]">
                 Your Rival
               </p>
-              <p className="mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
+              <p className="opponent-found-detail mt-0.5 truncate font-gabarito text-sm text-[rgba(58,37,24,0.85)]">
                 Character revealed when battle starts.
               </p>
-              <p className="mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
+              <p className="opponent-found-wallet mt-2 font-mono text-xs font-semibold text-[var(--tone-forest)]">
                 {opponentAddress ? rivalIdentityLabel(opponentAddress, isBotMatch) : "Syncing rival..."}
               </p>
             </div>
@@ -1146,9 +1150,9 @@ export function OpponentFound({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-end overflow-visible pb-4 md:overflow-y-auto">
+      <div className="opponent-found-deposit-area flex min-h-0 flex-1 flex-col justify-end overflow-visible pb-4 md:overflow-y-auto">
         <div
-          className="mt-6 w-full rounded-2xl border p-4 shadow-xl md:mt-8 md:p-5"
+          className="opponent-found-deposit-shell mt-6 w-full rounded-2xl border p-4 shadow-xl md:mt-8 md:p-5"
           style={{
             borderColor: "rgba(248,214,148,0.35)",
             background: "linear-gradient(160deg, rgba(12,21,17,0.72), rgba(19,32,26,0.72))",

@@ -897,10 +897,6 @@ export function LobbyScreen() {
       setMatchedRole(result.role ?? "playerA");
       setMatchmakingState("idle");
       setMatchmakingStage("finding");
-      setActiveMatchToast({
-        text: "Tutorial match initialized! Entering the training arena.",
-        tone: "success",
-      });
 
       writeActiveMatchSession({
         walletAddress: tutorialAddress,
@@ -1666,7 +1662,7 @@ export function LobbyScreen() {
         </div>
       )}
       {activeMatchToast && (
-        <div className="fixed left-1/2 top-24 z-[100] w-full max-w-md -translate-x-1/2 px-4">
+        <div className="lobby-active-match-toast fixed left-1/2 top-24 z-[100] w-full max-w-md -translate-x-1/2 px-4">
           <div
             className="frame-cut px-4 py-3 shadow-2xl backdrop-blur-md"
             style={{

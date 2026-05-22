@@ -6478,3 +6478,233 @@ Updated the navbar to handle the new section-based color transitions (Dark Hero 
 ### The Tech Debt
 - None. The changes are strictly scoped under the media query and use semantic class hooks, ensuring high maintainability and zero risk of regression on other viewports.
 
+## 2026-05-22 - Scale Bot Found Screen in Mobile Landscape
+
+### The Change
+- Added a bot-only class hook to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) so the found screen can be targeted without touching standard PvP rooms.
+- Added a small class hook to the active match toast in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx).
+- Added a short mobile landscape media query in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) that scales the bot found screen to `0.82` and the toast to `0.86`.
+
+### The Reasoning
+- The bot found page was visually too large in iPhone-style landscape, but the layout itself was acceptable. Scaling the existing composition preserves positions and desktop/tablet behavior while making the mobile landscape view breathe.
+- The query is scoped to `orientation: landscape`, `max-width: 960px`, `max-height: 540px`, and `pointer: coarse`, avoiding desktop and normal tablet viewports.
+
+### The Tech Debt
+- None. This is intentionally a narrow scale-only fix, leaving the underlying desktop layout untouched.
+
+## 2026-05-22 - Tighten Tutorial Found Scale for iPhone Landscape
+
+### The Change
+- Added a stricter short-height mobile landscape override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for `max-height: 420px`.
+- Reduced the bot found screen scale from the broader `0.82` to `0.72` for iPhone-style landscape heights, and reduced the tutorial toast scale from `0.86` to `0.76`.
+
+### The Reasoning
+- The Try Free Tutorial path still felt oversized at `844x390` after the broader mobile-landscape scale.
+- This keeps the requested scale-only approach while targeting the specific cramped viewport range without changing desktop, tablet, or taller landscape screens.
+
+### The Tech Debt
+- None. The fix remains scoped to coarse-pointer mobile landscape and uses only scale overrides.
+
+## 2026-05-22 - Reflow Bot Found Screen for Mobile Landscape
+
+### The Change
+- Added semantic layout hooks to [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) for the bot found screen, practice banner, duel grid, player cards, VS label, and deposit/status area.
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so bot/tutorial opponent-found screens use a two-column layout only in coarse-pointer short landscape viewports:
+  - Left column: player card, VS label, bot card.
+  - Right column: practice banner and compact match/deposit/status info.
+- Kept the active match toast compact in the same mobile landscape viewport via the existing [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx) toast hook.
+
+### The Reasoning
+- The Try Free Tutorial flow reaches this screen after character selection, and the previous desktop-style stack was too tall and visually crowded on iPhone landscape.
+- A two-column layout uses the available width instead of fighting the limited height, matching the requested structure while keeping desktop and larger tablet views on the original layout.
+- The media query is scoped to `orientation: landscape`, `max-width: 960px`, `max-height: 540px`, and `pointer: coarse`, so regular desktop and tablet layouts remain untouched.
+
+### The Tech Debt
+- The deposit/status panel still uses descendant selectors for some compact text sizing. A future cleanup could add first-class semantic classes inside `DepositPanel` if this layout needs more tuning.
+
+## 2026-05-22 - Center Bot Duel Stack in Mobile Landscape
+
+### The Change
+- Updated the bot/tutorial opponent-found mobile landscape grid in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the left duel stack uses content-sized rows (`auto auto auto`) instead of stretching player and bot cards to fill the whole column height.
+- Increased the internal duel stack gap slightly from `6px` to `8px` so the cards and VS label read as a centered cluster.
+
+### The Reasoning
+- The two-column mobile landscape layout was structurally correct, but the player and bot cards stretched from top to bottom, making the left side feel pinned to the extremes.
+- Content-sized rows keep `[You] / VS / [Bot]` grouped in the middle, matching the intended compact duel presentation without affecting desktop or larger tablet layouts.
+
+### The Tech Debt
+- None. This is a small CSS-only refinement inside the existing coarse-pointer short-landscape query.
+
+## 2026-05-22 - Align Bot Found Columns in Mobile Landscape
+
+### The Change
+- Updated the bot/tutorial opponent-found mobile landscape CSS in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the left duel stack and right info stack both occupy row 2 of the layout grid.
+- Changed the bot layout columns from `42% / 58%` to `38% / 62%`.
+- Capped the player and bot card width at `22rem` and centered each card inside the left column.
+- Centered the right deposit/status area vertically in the same row as the duel stack.
+
+### The Reasoning
+- The previous two-column layout had the left duel stack spanning both rows, while the right status panel started lower. This made the columns feel misaligned.
+- Moving both major content groups into the same row gives them a shared vertical baseline, while the narrower card cap removes the empty right-side space inside the player and bot cards.
+
+### The Tech Debt
+- None. This remains a CSS-only refinement scoped to mobile landscape bot/tutorial found screens.
+
+## 2026-05-22 - Unstack Bot Found Notifications and Lift Info Card
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the bot/tutorial found info shell has no extra top margin and is lifted slightly inside the mobile landscape layout.
+- Moved the active match toast lower and narrowed it in the same mobile landscape query so it no longer stacks directly on top of the practice banner.
+
+### The Reasoning
+- The left duel stack and the right info panel still felt misaligned because the info card had visual top offset inside its grid area.
+- The practice banner and tutorial toast were occupying the same top notification lane, so separating their vertical positions removes the stacked notification effect without changing desktop or larger tablet views.
+
+### The Tech Debt
+- None. This is scoped to the existing short, coarse-pointer landscape media query.
+
+## 2026-05-22 - Center Bot Found Layout Vertically
+
+### The Change
+- Updated the mobile landscape bot/tutorial found layout in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the outer grid uses content-sized rows (`auto auto`) and `align-content: center`.
+- Removed the manual `translateY(-44px)` lift from the right info card.
+- Slightly increased the row gap to keep the centered group readable after removing the manual offset.
+
+### The Reasoning
+- The previous fix lifted the right info card by hand, which made the bottom gap too large and the whole layout feel high in the viewport.
+- Centering the actual grid content as a group balances the top and bottom breathing room without relying on hard-coded upward movement.
+
+### The Tech Debt
+- None. This is a CSS-only refinement inside the existing mobile landscape bot/tutorial query.
+
+## 2026-05-22 - Center Practice Banner and Remove Tutorial Toast
+
+### The Change
+- Removed the success toast emitted by the Try Free Tutorial path in [LobbyScreen.tsx](/d:/projects/Cora/apps/web/src/components/lobby/LobbyScreen.tsx).
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the practice mode banner spans the full bot/tutorial found mobile landscape grid and centers itself with a capped width.
+
+### The Reasoning
+- The tutorial transition already has the practice mode banner and match status panel, so the extra "Tutorial match initialized" toast duplicated the message and visually stacked over the banner.
+- Centering the practice banner across both columns makes it read as a screen-level status instead of a right-column panel.
+
+### The Tech Debt
+- None. The toast removal is limited to the tutorial success path; other lobby success/error toasts remain intact.
+
+## 2026-05-22 - Normalize Practice Banner Centering
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the bot/tutorial practice mode banner explicitly clears leftover fixed-position offsets, uses `translate: 0 0`, centers with auto margins, and has a slightly narrower capped width.
+
+### The Reasoning
+- The banner was spanning both columns but still visually read as attached to the left side because its inherited notification sizing/positioning made the centered grid item feel offset.
+- Clearing those offsets and using explicit centered sizing makes the banner sit as a screen-level heading above the two-column layout.
+
+### The Tech Debt
+- None. This remains scoped to the mobile landscape bot/tutorial found screen.
+
+## 2026-05-22 - Correct Bot Found Banner Grid Logic
+
+### The Change
+- Updated [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) so the bot/tutorial practice banner is forced to be a static grid item in row 1 spanning both columns.
+- Replaced the combined grid `gap` with explicit row and column gaps for the mobile landscape bot/tutorial layout.
+- Added `!important` resets for the practice banner's fixed-position offsets and translate/transform utilities.
+
+### The Reasoning
+- The intended mobile landscape structure is `tutorial banner` above `duel stack | info panel`.
+- The banner still appeared clipped toward the left because it retained behavior from its original fixed notification role. Hard-resetting those mobile-landscape-only properties makes the sectioning match the intended two-row layout.
+
+### The Tech Debt
+- None. This only applies inside the existing coarse-pointer short-landscape media query.
+
+## 2026-05-22 - Make Tutorial Banner Normal Flow
+
+### The Change
+- Removed the fixed-position Tailwind utilities from the bot/tutorial practice banner in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx).
+- Simplified the mobile landscape banner override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) now that the banner is no longer fighting fixed positioning.
+
+### The Reasoning
+- The target structure is `tutorial banner` above `duel stack | info panel`.
+- Reusing the old fixed notification classes made the banner keep escaping the mobile landscape grid, even with CSS resets. Making the JSX element normal-flow gives the grid full control over placement.
+
+### The Tech Debt
+- None. The banner only renders for bot/tutorial matches, so removing fixed utilities does not affect normal PvP opponent-found alerts.
+
+## 2026-05-22 - Force Tutorial Found Grid Areas
+
+### The Change
+- Updated the bot/tutorial opponent-found mobile landscape rules in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) to use explicit `practice`, `duel`, and `deposit` grid areas.
+- Forced the relevant layout utilities inside that mobile-landscape-only query so the practice banner becomes a centered top row and the second row is `VS stack | info panel`.
+
+### The Reasoning
+- The intended structure is `tutorial banner` above `duel stack | info panel`.
+- The previous rules still depended on normal grid placement and inherited utility behavior, which let the banner visually drift into the left cluster.
+
+### The Tech Debt
+- None. The override is still limited to short coarse-pointer landscape viewports for bot/tutorial matches.
+
+## 2026-05-22 - Center Practice Banner on Tablet and Desktop
+
+### The Change
+- Updated the practice mode banner wrapper in [OpponentFound.tsx](/d:/projects/Cora/apps/web/src/components/lobby/OpponentFound.tsx) with `mx-auto` and `self-center`.
+
+### The Reasoning
+- Outside the mobile landscape grid override, the banner is a normal flex child with a capped width, so it defaulted to the left edge of the opponent-found content column.
+- Centering the wrapper fixes tablet and desktop alignment while leaving the mobile landscape media query untouched.
+
+### The Tech Debt
+- None. Mobile landscape keeps its explicit grid-area override.
+
+## 2026-05-22 - Compact Portrait Bot Duel Cards
+
+### The Change
+- Added a portrait-only bot/tutorial override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for the opponent-found duel section.
+- The portrait duel area now lays out as `[you card] VS [rival card]`, with each card using a compact 3:4 ratio and vertical `label -> portrait -> wallet` content.
+- Hid the longer character name/base lines in this portrait bot view to keep the cards readable.
+
+### The Reasoning
+- Portrait mobile has enough vertical scroll room, but the full-width stacked cards made the rival reveal area feel heavy and repetitive.
+- A compact side-by-side duel row gives the user the intended matchup read at a glance while leaving the existing deposit panel below for scrolling.
+
+### The Tech Debt
+- None. This is scoped to portrait coarse-pointer screens and does not touch the mobile landscape grid.
+
+## 2026-05-22 - Extend Portrait Duel Cards to Tablet
+
+### The Change
+- Broadened the portrait bot/tutorial duel override in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) from phone widths to tablet portrait widths.
+- Capped the compact 3:4 player cards at `12rem` so they do not balloon on iPad portrait.
+- Removed the portrait-only flex spacer above the deposit panel so the status card sits closer to the duel row.
+
+### The Reasoning
+- Tablet portrait was still using the roomy desktop card row, which left a large empty gap before the match info panel.
+- Reusing the compact portrait duel treatment keeps the matchup visually tight and lets the scrollable status content follow naturally.
+
+### The Tech Debt
+- None. Mobile landscape remains governed by its separate explicit grid-area media query.
+
+## 2026-05-22 - Scale Tablet Portrait Duel Cards Up
+
+### The Change
+- Added a tablet-portrait layer in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) for bot/tutorial opponent-found screens.
+- Increased the 3:4 duel card cap, portrait size, VS label size, and duel spacing for `641px-960px` portrait coarse-pointer viewports.
+
+### The Reasoning
+- Tablet portrait has enough width and height for a larger matchup row, and the phone-sized cards made the info panel sit too high with too much empty space below.
+- Scaling the duel row up restores the intended visual weight while keeping the info panel below the matchup.
+
+### The Tech Debt
+- None. Phone portrait and mobile landscape keep their separate overrides.
+
+## 2026-05-22 - Increase Tablet Portrait Duel Scale
+
+### The Change
+- Raised the tablet-portrait bot/tutorial duel card cap in [globals.css](/d:/projects/Cora/apps/web/src/app/globals.css) from `15.5rem` to `17.5rem`.
+- Increased the tablet portrait image/question mark size, VS label size, card padding, and info-panel gap.
+
+### The Reasoning
+- The first tablet portrait pass still left the matchup row feeling undersized for iPad-style portrait space.
+- Scaling the duel row further gives the cards the right visual weight while preserving the phone portrait and mobile landscape layouts.
+
+### The Tech Debt
+- None. This remains isolated to the tablet portrait media query.
+
