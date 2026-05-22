@@ -82,14 +82,14 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md intro-overlay-backdrop"
       >
         <motion.div
           initial={{ scale: 0.95, y: 15 }}
           animate={{ scale: 1, y: 0 }}
           exit={{ scale: 0.95, y: 15 }}
           transition={{ type: "spring", damping: 25, stiffness: 220 }}
-          className="frame-cut relative flex flex-col w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+          className="intro-overlay-modal frame-cut relative flex flex-col w-full max-w-4xl max-h-[90vh] overflow-y-auto"
           style={{
             border: "2px solid rgba(248, 214, 148, 0.42)",
             background: "linear-gradient(150deg, #10231b 0%, #0d1a14 100%)",
@@ -97,15 +97,15 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
           }}
         >
           {/* Top border highlight glow */}
-          <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[var(--tone-mint,#cbefc1)] to-transparent opacity-60" />
+          <div className="intro-overlay-glow absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[var(--tone-mint,#cbefc1)] to-transparent opacity-60" />
 
           {/* Content Body Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-12 min-h-[500px]">
+          <div className="intro-overlay-grid grid grid-cols-1 md:grid-cols-12 min-h-[500px]">
             {/* Visual Panel Area - Left 7 columns */}
-            <div className="col-span-1 md:col-span-7 relative flex items-center justify-center min-h-[300px] md:min-h-0 bg-black/40 border-b md:border-b-0 md:border-r border-white/10 p-6">
+            <div className="intro-overlay-visual col-span-1 md:col-span-7 relative flex items-center justify-center min-h-[300px] md:min-h-0 bg-black/40 border-b md:border-b-0 md:border-r border-white/10 p-6">
               {assetsAvailable[PANELS[currentStep].assetUrl] ? (
                 // Play Real Asset if Available
-                <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-white/10 shadow-lg">
+                <div className="intro-overlay-video-wrapper relative w-full aspect-video rounded-lg overflow-hidden border border-white/10 shadow-lg">
                   <IntroPanelVideo
                     key={PANELS[currentStep].assetUrl}
                     src={PANELS[currentStep].assetUrl}
@@ -114,7 +114,7 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
                 </div>
               ) : (
                 // Beautiful Premium Animated CSS/SVG fallback Mockup
-                <div className="relative w-full max-w-[480px] aspect-video rounded-lg overflow-hidden border border-white/10 bg-[#0d1612] shadow-2xl flex flex-col justify-between">
+                <div className="intro-overlay-mockup-wrapper relative w-full max-w-[480px] aspect-video rounded-lg overflow-hidden border border-white/10 bg-[#0d1612] shadow-2xl flex flex-col justify-between">
                   <div className="absolute inset-0 arena-grid opacity-10 pointer-events-none" />
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.6)_100%)] pointer-events-none" />
 
@@ -142,29 +142,29 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
             </div>
 
             {/* Copy / Action Area - Right 5 columns */}
-            <div className="col-span-1 md:col-span-5 flex flex-col justify-between p-6 md:p-8">
-              <div className="space-y-4">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[var(--tone-mint,#cbefc1)]/20 bg-[var(--tone-mint,#cbefc1)]/5">
-                  <span className="h-2 w-2 rounded-full bg-[var(--tone-mint,#cbefc1)] animate-pulse" />
-                  <span className="font-gabarito text-[10px] font-black uppercase tracking-[0.16em] text-[var(--tone-mint,#cbefc1)]">
+            <div className="intro-overlay-content col-span-1 md:col-span-5 flex flex-col justify-between p-6 md:p-8">
+              <div className="intro-overlay-text-wrapper space-y-4">
+                <div className="intro-overlay-step-pill inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[var(--tone-mint,#cbefc1)]/20 bg-[var(--tone-mint,#cbefc1)]/5">
+                  <span className="intro-overlay-step-pill-dot h-2 w-2 rounded-full bg-[var(--tone-mint,#cbefc1)] animate-pulse" />
+                  <span className="intro-overlay-step-pill-text font-gabarito text-[10px] font-black uppercase tracking-[0.16em] text-[var(--tone-mint,#cbefc1)]">
                     Step {currentStep + 1} of {PANELS.length}
                   </span>
                 </div>
 
-                <h2 className="font-caprasimo text-3xl text-white leading-tight">
+                <h2 className="intro-overlay-title font-caprasimo text-3xl text-white leading-tight">
                   {PANELS[currentStep].title}
                 </h2>
 
-                <p className="font-gabarito text-sm leading-relaxed text-[var(--tone-cream,#f3efe7)]/80">
+                <p className="intro-overlay-copy font-gabarito text-sm leading-relaxed text-[var(--tone-cream,#f3efe7)]/80">
                   {PANELS[currentStep].copy}
                 </p>
               </div>
 
               {/* Navigation Stack */}
-              <div className="mt-8 space-y-4">
-                <div className="flex items-center justify-between gap-3">
+              <div className="intro-overlay-nav mt-8 space-y-4">
+                <div className="intro-overlay-nav-flex flex items-center justify-between gap-3">
                   {/* Step indicators */}
-                  <div className="flex gap-2">
+                  <div className="intro-overlay-dots-container flex gap-2">
                     {PANELS.map((_, idx) => (
                       <button
                         key={idx}
@@ -179,7 +179,7 @@ export function IntroOverlay({ isOpen, onClose }: IntroOverlayProps) {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="intro-overlay-btn-group flex items-center gap-2">
                     {currentStep < PANELS.length - 1 ? (
                       <>
                         <button
@@ -286,10 +286,10 @@ function IntroPanelVideo({ src, title }: { src: string; title: string }) {
 /* Fallback 0: Wallet / Devnet Setup Mockup */
 function WalletDevnetMockup() {
   return (
-    <div className="relative flex h-full w-full flex-col justify-between overflow-hidden p-5">
+    <div className="wallet-mockup relative flex h-full w-full flex-col justify-between overflow-hidden p-5">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(248,214,148,0.16),transparent_35%),radial-gradient(circle_at_80%_75%,rgba(203,239,193,0.12),transparent_38%)]" />
 
-      <div className="relative flex items-center justify-between">
+      <div className="wallet-mockup-header relative flex items-center justify-between">
         <div>
           <p className="font-gabarito text-[9px] font-black uppercase tracking-[0.18em] text-[#f8d694]">
             Wallet Setup
@@ -305,8 +305,8 @@ function WalletDevnetMockup() {
         </motion.div>
       </div>
 
-      <div className="relative grid flex-1 place-items-center">
-        <div className="w-full max-w-[340px] rounded-xl border border-white/10 bg-black/45 p-4 shadow-2xl">
+      <div className="wallet-mockup-body relative grid flex-1 place-items-center">
+        <div className="wallet-mockup-card w-full max-w-[340px] rounded-xl border border-white/10 bg-black/45 p-4 shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full bg-[linear-gradient(145deg,#6f3a28,#f8d694)]" />
@@ -320,7 +320,7 @@ function WalletDevnetMockup() {
             </span>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="wallet-mockup-steps mt-4 space-y-3">
             {[
               ["Connect wallet", "Done"],
               ["Switch network", "Devnet"],
