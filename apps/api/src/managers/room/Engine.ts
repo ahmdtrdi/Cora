@@ -176,7 +176,11 @@ export class Engine {
             antiCheatWarning: isSuspicious,
           };
 
-          this.manager.blockchain.settleMatch(room, data.winnerAddress);
+          void this.manager.blockchain.settleMatch(room, data.winnerAddress).then((result) => {
+            if (!result.ok) {
+              console.error(`[RoomEngine] Settlement failed for room ${room.id}`);
+            }
+          });
           this.manager.network.broadcastToRoom(room, {
             type: 'matchResult',
             payload: result,
